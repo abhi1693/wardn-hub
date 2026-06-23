@@ -88,6 +88,15 @@ Phase 7 adds the first usable browser experience:
 - Protected data views for moderation queues, namespace claims, partner support, and audit records
 - Runtime API base URL support through `NEXT_PUBLIC_API_BASE_URL`
 
+## Phase 8 Frontend Auth And Operator Actions
+
+Phase 8 makes the console operable:
+
+- Login, logout, first-user bootstrap, and bearer token fallback controls
+- Submission submit, withdraw, approve, reject, and publish actions
+- Namespace claim creation plus verify, fail, and revoke actions
+- Partner activation and server support creation controls
+
 ## Commands
 
 ```sh

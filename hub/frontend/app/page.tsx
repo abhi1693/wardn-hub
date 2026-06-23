@@ -18,13 +18,25 @@ import { useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_API_BASE_URL,
   HubApiError,
+  bootstrap,
+  createNamespaceClaim,
+  createPartnerSupport,
   getServer,
+  getApiToken,
   listAuditEvents,
   listNamespaceClaims,
   listPartnerOrganizations,
   listPartnerSupport,
   listServers,
   listSubmissions,
+  login,
+  logout,
+  namespaceDecision,
+  rejectSubmission,
+  revokeNamespaceClaim,
+  setApiToken,
+  submissionAction,
+  updatePartnerOrganization,
 } from "@/lib/api/hub";
 import type {
   AuditEventRead,
@@ -34,10 +46,13 @@ import type {
   RegistryServerRead,
   RegistryServerVersionRead,
   SubmissionRead,
+  UserRead,
 } from "@/lib/api/generated/model";
 
 type Section = "browse" | "submissions" | "partners" | "namespaces" | "audit" | "settings";
 type LoadState = "idle" | "loading" | "ready" | "error" | "auth";
+type NamespaceMethod = "github" | "dns" | "http";
+type SupportLevel = "official" | "verified" | "compatible" | "deprecated";
 
 const navItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
   { id: "browse", label: "Browse", icon: Server },
@@ -93,6 +108,20 @@ function ProtectedState({ state, error }: { state: LoadState; error: string }) {
   }
   if (state === "error") return <EmptyState title="Request failed" detail={error} />;
   return null;
+}
+
+function ActionButton({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button className="small-button" onClick={onClick} type="button">
+      {children}
+    </button>
+  );
 }
 
 function AppShell({
@@ -335,9 +364,13 @@ function SubmissionsView() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
+  const [busyId, setBusyId] = useState("");
+  const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    listSubmissions()
+  async function refresh() {
+    setState("loading");
+    setError("");
+    return listSubmissions()
       .then((response) => {
         setSubmissions(response.submissions);
         setState("ready");
@@ -346,11 +379,42 @@ function SubmissionsView() {
         setError(caught instanceof Error ? caught.message : "Unable to load submissions.");
         setState(statusFromError(caught));
       });
+  }
+
+  async function mutateSubmission(
+    submission: SubmissionRead,
+    action: "submit" | "withdraw" | "approve" | "publish" | "reject",
+  ) {
+    const message =
+      action === "reject" ? window.prompt("Rejection message", submission.rejectionMessage) : "";
+    if (action === "reject" && !message) return;
+    setBusyId(submission.id);
+    setNotice("");
+    try {
+      if (action === "reject") {
+        await rejectSubmission(submission.id, { message: message ?? "" });
+      } else {
+        await submissionAction(submission.id, action);
+      }
+      setNotice(`${action} completed for ${submission.name}`);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action failed.");
+      setState(statusFromError(caught));
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   return (
     <DataView title="Submission queue" eyebrow="Moderation" icon={FileCheck2}>
       <ProtectedState state={state} error={error} />
+      {notice && <div className="notice">{notice}</div>}
       {state === "ready" && (
         <div className="records">
           {submissions.length === 0 && <EmptyState title="No submissions" detail="Queue is empty." />}
@@ -361,7 +425,33 @@ function SubmissionsView() {
                 <small>{submission.version} · {submission.submissionType}</small>
               </div>
               <Pill tone={toneFor(submission.status)}>{submission.status}</Pill>
-              <span>{formatDate(submission.updatedAt)}</span>
+              <div className="action-strip">
+                {submission.status === "draft" || submission.status === "rejected" ? (
+                  <ActionButton onClick={() => void mutateSubmission(submission, "submit")}>
+                    Submit
+                  </ActionButton>
+                ) : null}
+                {submission.status === "submitted" ? (
+                  <>
+                    <ActionButton onClick={() => void mutateSubmission(submission, "approve")}>
+                      Approve
+                    </ActionButton>
+                    <ActionButton onClick={() => void mutateSubmission(submission, "reject")}>
+                      Reject
+                    </ActionButton>
+                    <ActionButton onClick={() => void mutateSubmission(submission, "withdraw")}>
+                      Withdraw
+                    </ActionButton>
+                  </>
+                ) : null}
+                {submission.status === "approved" ? (
+                  <ActionButton onClick={() => void mutateSubmission(submission, "publish")}>
+                    Publish
+                  </ActionButton>
+                ) : null}
+                {busyId === submission.id && <span className="muted">Working</span>}
+                <span>{formatDate(submission.updatedAt)}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -374,9 +464,14 @@ function NamespacesView() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [claims, setClaims] = useState<NamespaceClaimRead[]>([]);
+  const [namespace, setNamespace] = useState("");
+  const [method, setMethod] = useState<NamespaceMethod>("github");
+  const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    listNamespaceClaims()
+  async function refresh() {
+    setState("loading");
+    setError("");
+    return listNamespaceClaims()
       .then((response) => {
         setClaims(response.claims);
         setState("ready");
@@ -385,11 +480,66 @@ function NamespacesView() {
         setError(caught instanceof Error ? caught.message : "Unable to load namespace claims.");
         setState(statusFromError(caught));
       });
+  }
+
+  async function createClaim(event: React.FormEvent) {
+    event.preventDefault();
+    setNotice("");
+    try {
+      await createNamespaceClaim({ namespace, method });
+      setNamespace("");
+      setNotice("Namespace claim created.");
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create namespace claim.");
+      setState(statusFromError(caught));
+    }
+  }
+
+  async function mutateClaim(claim: NamespaceClaimRead, action: "verify" | "fail" | "revoke") {
+    setNotice("");
+    try {
+      if (action === "revoke") {
+        await revokeNamespaceClaim(claim.id);
+      } else {
+        await namespaceDecision(claim.id, action, { verificationPayload: {} });
+      }
+      setNotice(`${action} completed for ${claim.namespace}`);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Namespace action failed.");
+      setState(statusFromError(caught));
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   return (
     <DataView title="Namespace claims" eyebrow="Trust Plane" icon={ShieldCheck}>
       <ProtectedState state={state} error={error} />
+      <form className="inline-form" onSubmit={(event) => void createClaim(event)}>
+        <input
+          onChange={(event) => setNamespace(event.target.value)}
+          placeholder="io.github.example/*"
+          required
+          value={namespace}
+        />
+        <select
+          onChange={(event) => setMethod(event.target.value as NamespaceMethod)}
+          value={method}
+        >
+          <option value="github">github</option>
+          <option value="dns">dns</option>
+          <option value="http">http</option>
+        </select>
+        <button className="text-button" type="submit">
+          Claim
+        </button>
+      </form>
+      {notice && <div className="notice">{notice}</div>}
       {state === "ready" && (
         <div className="records">
           {claims.length === 0 && <EmptyState title="No claims" detail="No namespace claims." />}
@@ -400,7 +550,22 @@ function NamespacesView() {
                 <small>{claim.method}</small>
               </div>
               <Pill tone={toneFor(claim.status)}>{claim.status}</Pill>
-              <span>{formatDate(claim.updatedAt)}</span>
+              <div className="action-strip">
+                {claim.status !== "verified" && (
+                  <ActionButton onClick={() => void mutateClaim(claim, "verify")}>
+                    Verify
+                  </ActionButton>
+                )}
+                {claim.status === "pending" && (
+                  <ActionButton onClick={() => void mutateClaim(claim, "fail")}>Fail</ActionButton>
+                )}
+                {claim.status !== "revoked" && (
+                  <ActionButton onClick={() => void mutateClaim(claim, "revoke")}>
+                    Revoke
+                  </ActionButton>
+                )}
+                <span>{formatDate(claim.updatedAt)}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -416,24 +581,28 @@ function PartnersView() {
   const [partners, setPartners] = useState<PartnerOrganizationRead[]>([]);
   const [selected, setSelected] = useState("");
   const [support, setSupport] = useState<PartnerServerSupportRead[]>([]);
+  const [supportServer, setSupportServer] = useState("");
+  const [supportLevel, setSupportLevel] = useState<SupportLevel>("compatible");
+  const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    listPartnerOrganizations()
+  async function refreshPartners() {
+    setState("loading");
+    setError("");
+    return listPartnerOrganizations()
       .then((response) => {
         setPartners(response.organizations);
-        setSelected(response.organizations[0]?.id ?? "");
+        setSelected((current) => current || response.organizations[0]?.id || "");
         setState("ready");
       })
       .catch((caught) => {
         setError(caught instanceof Error ? caught.message : "Unable to load partners.");
         setState(statusFromError(caught));
       });
-  }, []);
+  }
 
-  useEffect(() => {
-    if (!selected) return;
-    queueMicrotask(() => setSupportState("loading"));
-    listPartnerSupport(selected)
+  async function refreshSupport(organizationId: string) {
+    setSupportState("loading");
+    return listPartnerSupport(organizationId)
       .then((response) => {
         setSupport(response.support);
         setSupportState("ready");
@@ -442,11 +611,59 @@ function PartnersView() {
         setError(caught instanceof Error ? caught.message : "Unable to load support records.");
         setSupportState(statusFromError(caught));
       });
+  }
+
+  async function activateSelectedPartner() {
+    if (!selected) return;
+    setNotice("");
+    try {
+      await updatePartnerOrganization(selected, {
+        isPartner: true,
+        partnerStatus: "active",
+        partnerTier: "verified",
+      });
+      setNotice("Partner metadata updated.");
+      await refreshPartners();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update partner.");
+      setState(statusFromError(caught));
+    }
+  }
+
+  async function createSupport(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selected) return;
+    setNotice("");
+    try {
+      await createPartnerSupport(selected, {
+        serverName: supportServer,
+        supportLevel,
+        supportStatus: "active",
+      });
+      setSupportServer("");
+      setNotice("Server support record created.");
+      await refreshSupport(selected);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create support record.");
+      setSupportState(statusFromError(caught));
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void refreshPartners(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    const timeoutId = window.setTimeout(() => void refreshSupport(selected), 0);
+    return () => window.clearTimeout(timeoutId);
   }, [selected]);
 
   return (
     <DataView title="Partner organizations" eyebrow="Support Metadata" icon={Building2}>
       <ProtectedState state={state} error={error} />
+      {notice && <div className="notice">{notice}</div>}
       {state === "ready" && (
         <div className="split-layout">
           <div className="records">
@@ -468,7 +685,30 @@ function PartnersView() {
             ))}
           </div>
           <div className="side-surface">
-            <h2>Server support</h2>
+            <div className="side-header">
+              <h2>Server support</h2>
+              <ActionButton onClick={() => void activateSelectedPartner()}>Mark active</ActionButton>
+            </div>
+            <form className="stacked-form" onSubmit={(event) => void createSupport(event)}>
+              <input
+                onChange={(event) => setSupportServer(event.target.value)}
+                placeholder="io.github.example/weather"
+                required
+                value={supportServer}
+              />
+              <select
+                onChange={(event) => setSupportLevel(event.target.value as SupportLevel)}
+                value={supportLevel}
+              >
+                <option value="compatible">compatible</option>
+                <option value="verified">verified</option>
+                <option value="official">official</option>
+                <option value="deprecated">deprecated</option>
+              </select>
+              <button className="text-button" type="submit">
+                Add support
+              </button>
+            </form>
             <ProtectedState state={supportState} error={error} />
             {supportState === "ready" && support.length === 0 && (
               <EmptyState title="No support records" detail="No mapped servers." />
@@ -525,8 +765,126 @@ function AuditView() {
 }
 
 function SettingsView() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [token, setToken] = useState("");
+  const [user, setUser] = useState<UserRead | null>(null);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    queueMicrotask(() => setToken(getApiToken()));
+  }, []);
+
+  async function submitLogin(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    try {
+      const response = await login({ email, password });
+      setUser(response);
+      setNotice(`Signed in as ${response.email}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Login failed.");
+    }
+  }
+
+  async function submitBootstrap(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    try {
+      const response = await bootstrap({
+        email,
+        password,
+        first_name: firstName,
+        last_name: lastName,
+      });
+      setUser(response);
+      setNotice(`Bootstrapped ${response.email}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Bootstrap failed.");
+    }
+  }
+
+  async function submitLogout() {
+    setError("");
+    setNotice("");
+    try {
+      await logout();
+      setUser(null);
+      setNotice("Signed out.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Logout failed.");
+    }
+  }
+
+  function saveToken() {
+    setApiToken(token);
+    setNotice(token.trim() ? "Bearer token saved." : "Bearer token cleared.");
+  }
+
   return (
     <DataView title="Settings" eyebrow="Runtime" icon={KeyRound}>
+      {notice && <div className="notice">{notice}</div>}
+      {error && <div className="error-banner">{error}</div>}
+      <div className="auth-layout">
+        <form className="form-surface" onSubmit={(event) => void submitLogin(event)}>
+          <h2>Login</h2>
+          <input
+            autoComplete="email"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="admin@example.com"
+            type="email"
+            value={email}
+          />
+          <input
+            autoComplete="current-password"
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="password"
+            type="password"
+            value={password}
+          />
+          <div className="form-actions">
+            <button className="text-button" type="submit">
+              Login
+            </button>
+            <button className="small-button" onClick={() => void submitLogout()} type="button">
+              Logout
+            </button>
+          </div>
+          {user && <p className="muted">Current session: {user.email}</p>}
+        </form>
+        <form className="form-surface" onSubmit={(event) => void submitBootstrap(event)}>
+          <h2>Bootstrap</h2>
+          <input
+            onChange={(event) => setFirstName(event.target.value)}
+            placeholder="First name"
+            value={firstName}
+          />
+          <input
+            onChange={(event) => setLastName(event.target.value)}
+            placeholder="Last name"
+            value={lastName}
+          />
+          <button className="text-button" type="submit">
+            Create first superuser
+          </button>
+        </form>
+        <div className="form-surface">
+          <h2>Bearer Token</h2>
+          <input
+            onChange={(event) => setToken(event.target.value)}
+            placeholder="whub_..."
+            value={token}
+          />
+          <button className="text-button" onClick={saveToken} type="button">
+            Save token
+          </button>
+        </div>
+      </div>
       <div className="settings-grid">
         <span>API base URL</span>
         <strong>{process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL}</strong>

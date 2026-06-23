@@ -217,6 +217,18 @@ button {
   background: var(--accent);
   color: #ffffff;
   font-weight: 700;
+  padding: 0 12px;
+}
+
+.small-button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--foreground);
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .registry-layout {
@@ -370,6 +382,13 @@ button {
   overflow-wrap: anywhere;
 }
 
+.action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .records {
   display: grid;
   gap: 0;
@@ -391,6 +410,91 @@ button {
 .side-surface {
   min-height: 260px;
   padding: 14px;
+}
+
+.side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.side-header h2 {
+  margin: 0;
+}
+
+.inline-form,
+.stacked-form,
+.form-surface {
+  display: grid;
+  gap: 10px;
+}
+
+.inline-form {
+  grid-template-columns: minmax(180px, 1fr) 150px 92px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.stacked-form {
+  margin-bottom: 14px;
+}
+
+.inline-form input,
+.inline-form select,
+.stacked-form input,
+.stacked-form select,
+.form-surface input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--foreground);
+  outline: none;
+  padding: 0 10px;
+}
+
+.auth-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.form-surface {
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.form-surface h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notice,
+.error-banner {
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.notice {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.error-banner {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 
 .pill-stack {
@@ -469,7 +573,9 @@ button {
 
   .toolbar,
   .registry-layout,
-  .split-layout {
+  .split-layout,
+  .inline-form,
+  .auth-layout {
     grid-template-columns: 1fr;
   }
 
