@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import UUID
 
 from app.modules.registry import repository
 from app.modules.registry.exceptions import (
@@ -9,7 +11,10 @@ from app.modules.registry.exceptions import (
 )
 from app.modules.registry.models import RegistryServer, RegistryServerVersion
 from app.modules.registry.schemas import (
+    ActorSummary,
     MCPServerDocument,
+    NamespaceTrustSummary,
+    PartnerSupportSummary,
     RegistryLatestVersionSummary,
     RegistryListMetadata,
     RegistryServerDetailResponse,
@@ -20,6 +25,22 @@ from app.modules.registry.schemas import (
     RegistryServerVersionListResponse,
     RegistryServerVersionRead,
     RegistryServerVersionUpdate,
+)
+
+
+@dataclass
+class RegistryTrustContext:
+    users: dict[UUID, object]
+    organizations: dict[UUID, object]
+    namespace_claims: dict[str, object]
+    partner_support: dict[str, list[tuple[object, object]]]
+
+
+EMPTY_TRUST_CONTEXT = RegistryTrustContext(
+    users={},
+    organizations={},
+    namespace_claims={},
+    partner_support={},
 )
 
 
@@ -50,9 +71,151 @@ def document_values(payload: MCPServerDocument) -> dict:
     }
 
 
+def namespace_for_server_name(name: str) -> str:
+    return f"{name.split('/', 1)[0]}/*"
+
+
+def actor_summary_for_user(user) -> ActorSummary:
+    return ActorSummary(
+        id=user.id,
+        login=user.email,
+        type="User",
+        name=user.display_name,
+        url=f"/api/v1/users/{user.id}",
+        htmlUrl="",
+    )
+
+
+def actor_summary_for_organization(organization) -> ActorSummary:
+    return ActorSummary(
+        id=organization.id,
+        login=organization.slug,
+        type="Organization",
+        name=organization.name,
+        url=f"/api/v1/organizations/{organization.id}",
+        htmlUrl=f"/{organization.slug}",
+    )
+
+
+def user_actor(user_id: UUID | None, trust: RegistryTrustContext) -> ActorSummary | None:
+    if user_id is None:
+        return None
+    user = trust.users.get(user_id)
+    return actor_summary_for_user(user) if user is not None else None
+
+
+def organization_actor(
+    organization_id: UUID | None,
+    trust: RegistryTrustContext,
+) -> ActorSummary | None:
+    if organization_id is None:
+        return None
+    organization = trust.organizations.get(organization_id)
+    return actor_summary_for_organization(organization) if organization is not None else None
+
+
+def owner_actor(
+    *,
+    owner_user_id: UUID | None,
+    owner_organization_id: UUID | None,
+    trust: RegistryTrustContext,
+) -> ActorSummary | None:
+    return organization_actor(owner_organization_id, trust) or user_actor(owner_user_id, trust)
+
+
+def namespace_claim_summary(
+    server_name: str,
+    trust: RegistryTrustContext,
+) -> NamespaceTrustSummary | None:
+    claim = trust.namespace_claims.get(namespace_for_server_name(server_name))
+    if claim is None:
+        return None
+    return NamespaceTrustSummary(
+        namespace=claim.namespace,
+        status="verified",
+        method=claim.method,
+        ownerOrganization=organization_actor(claim.owner_organization_id, trust),
+        verifiedAt=claim.verified_at,
+    )
+
+
+def partner_support_summary(
+    server_name: str,
+    trust: RegistryTrustContext,
+) -> list[PartnerSupportSummary]:
+    summaries = []
+    for support, organization in trust.partner_support.get(server_name, []):
+        summaries.append(
+            PartnerSupportSummary(
+                organization=actor_summary_for_organization(organization),
+                supportLevel=support.support_level,
+                supportStatus=support.support_status,
+                supportUrl=support.support_url,
+                docsUrl=support.docs_url,
+                startsAt=support.starts_at,
+                endsAt=support.ends_at,
+            )
+        )
+    return summaries
+
+
+async def build_trust_context(
+    session,
+    *,
+    servers: list[RegistryServer] | None = None,
+    versions: list[RegistryServerVersion] | None = None,
+) -> RegistryTrustContext:
+    servers = servers or []
+    versions = versions or []
+    user_ids: set[UUID] = set()
+    organization_ids: set[UUID] = set()
+    server_names = {server.name for server in servers} | {version.name for version in versions}
+
+    for server in servers:
+        for user_id in (server.owner_user_id, server.created_by_user_id, server.updated_by_user_id):
+            if user_id is not None:
+                user_ids.add(user_id)
+        if server.owner_organization_id is not None:
+            organization_ids.add(server.owner_organization_id)
+
+    for version in versions:
+        for user_id in (
+            version.owner_user_id,
+            version.created_by_user_id,
+            version.updated_by_user_id,
+            version.publisher_user_id,
+        ):
+            if user_id is not None:
+                user_ids.add(user_id)
+        if version.owner_organization_id is not None:
+            organization_ids.add(version.owner_organization_id)
+
+    namespace_claims = await repository.list_verified_namespace_claims(
+        session,
+        {namespace_for_server_name(name) for name in server_names},
+    )
+    for claim in namespace_claims.values():
+        if claim.owner_organization_id is not None:
+            organization_ids.add(claim.owner_organization_id)
+
+    partner_support = await repository.list_partner_support_for_servers(session, server_names)
+    for records in partner_support.values():
+        for _support, organization in records:
+            organization_ids.add(organization.id)
+
+    return RegistryTrustContext(
+        users=await repository.list_users_by_ids(session, user_ids),
+        organizations=await repository.list_organizations_by_ids(session, organization_ids),
+        namespace_claims=namespace_claims,
+        partner_support=partner_support,
+    )
+
+
 def server_summary(
     server: RegistryServer,
     latest_version: RegistryServerVersion | None = None,
+    *,
+    trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
 ) -> RegistryServerRead:
     latest = None
     if latest_version is not None:
@@ -61,8 +224,9 @@ def server_summary(
             version=latest_version.version,
             status=latest_version.status,
             published_at=latest_version.published_at,
-            published_by=None,
+            published_by=user_actor(latest_version.publisher_user_id, trust),
         )
+    namespace_claim = namespace_claim_summary(server.name, trust)
     return RegistryServerRead(
         id=server.id,
         name=server.name,
@@ -74,13 +238,29 @@ def server_summary(
         status=server.status,
         status_message=server.status_message,
         visibility=server.visibility,
+        owner=owner_actor(
+            owner_user_id=server.owner_user_id,
+            owner_organization_id=server.owner_organization_id,
+            trust=trust,
+        ),
+        organization=organization_actor(server.owner_organization_id, trust),
+        created_by=user_actor(server.created_by_user_id, trust),
+        updated_by=user_actor(server.updated_by_user_id, trust),
         latest_version=latest,
+        namespace_claim=namespace_claim,
+        namespace_verified=namespace_claim is not None,
+        partner_support=partner_support_summary(server.name, trust),
         created_at=server.created_at,
         updated_at=server.updated_at,
     )
 
 
-def version_summary(version: RegistryServerVersion) -> RegistryServerVersionRead:
+def version_summary(
+    version: RegistryServerVersion,
+    *,
+    trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
+) -> RegistryServerVersionRead:
+    namespace_claim = namespace_claim_summary(version.name, trust)
     return RegistryServerVersionRead(
         id=version.id,
         server_id=version.server_id,
@@ -97,6 +277,18 @@ def version_summary(version: RegistryServerVersion) -> RegistryServerVersionRead
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
+        owner=owner_actor(
+            owner_user_id=version.owner_user_id,
+            owner_organization_id=version.owner_organization_id,
+            trust=trust,
+        ),
+        organization=organization_actor(version.owner_organization_id, trust),
+        created_by=user_actor(version.created_by_user_id, trust),
+        updated_by=user_actor(version.updated_by_user_id, trust),
+        published_by=user_actor(version.publisher_user_id, trust),
+        namespace_claim=namespace_claim,
+        namespace_verified=namespace_claim is not None,
+        partner_support=partner_support_summary(version.name, trust),
         published_at=version.published_at,
         status_changed_at=version.status_changed_at,
         created_at=version.created_at,
@@ -108,7 +300,12 @@ async def server_with_latest(session, server: RegistryServer) -> RegistryServerR
     latest = None
     if server.current_version_id:
         latest = await repository.get_server_version(session, server.name, "latest")
-    return server_summary(server, latest)
+    trust = await build_trust_context(
+        session,
+        servers=[server],
+        versions=[latest] if latest else [],
+    )
+    return server_summary(server, latest, trust=trust)
 
 
 async def create_server_version(
@@ -352,9 +549,10 @@ async def get_server_detail(
         include_deleted=include_deleted,
     )
     latest = next((candidate for candidate in versions if candidate.is_latest), None)
+    trust = await build_trust_context(session, servers=[server], versions=versions)
     return RegistryServerDetailResponse(
-        server=server_summary(server, latest),
-        versions=[version_summary(version) for version in versions],
+        server=server_summary(server, latest, trust=trust),
+        versions=[version_summary(version, trust=trust) for version in versions],
     )
 
 
@@ -371,8 +569,9 @@ async def list_versions(
     )
     if not versions and await repository.count_versions_for_name(session, name) == 0:
         raise RegistryServerNotFoundError("server not found")
+    trust = await build_trust_context(session, versions=versions)
     return RegistryServerVersionListResponse(
-        versions=[version_summary(version) for version in versions],
+        versions=[version_summary(version, trust=trust) for version in versions],
         metadata=RegistryListMetadata(count=len(versions)),
     )
 
@@ -400,7 +599,14 @@ async def get_version_detail(
         if version.is_latest
         else await repository.get_server_version(session, name, "latest")
     )
+    trust = await build_trust_context(
+        session,
+        servers=[server],
+        versions=[candidate for candidate in (version, latest) if candidate is not None],
+    )
+    support = partner_support_summary(version.name, trust)
     return RegistryServerVersionDetailResponse(
-        server=server_summary(server, latest),
-        version=version_summary(version),
+        server=server_summary(server, latest, trust=trust),
+        version=version_summary(version, trust=trust),
+        support={"partnerSupport": [item.model_dump(by_alias=True) for item in support]},
     )

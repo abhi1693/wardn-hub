@@ -4,7 +4,11 @@ from uuid import UUID
 from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.namespaces.models import NamespaceClaim
+from app.modules.organizations.models import Organization
+from app.modules.partners.models import OrganizationServerSupport
 from app.modules.registry.models import RegistryServer, RegistryServerVersion
+from app.modules.users.models import User
 
 
 def visible_servers_query(include_deleted: bool) -> Select[tuple[RegistryServer]]:
@@ -90,9 +94,32 @@ async def list_servers(
             RegistryServerVersion.server_id == RegistryServer.id,
         ).where(RegistryServerVersion.version == version)
 
-    # Phase 1 stores packages/remotes as JSONB but keeps advanced support/partner
-    # filters as no-ops until trust-plane tables land in later phases.
-    _ = support_level, partner, registry_type, transport_type
+    if support_level or partner is not None:
+        support_exists_query = (
+            select(OrganizationServerSupport.id)
+            .join(
+                Organization,
+                Organization.id == OrganizationServerSupport.organization_id,
+            )
+            .where(
+                OrganizationServerSupport.server_name == RegistryServer.name,
+                OrganizationServerSupport.support_status == "active",
+                Organization.is_partner.is_(True),
+                Organization.partner_status == "active",
+            )
+        )
+        if support_level:
+            support_exists_query = support_exists_query.where(
+                OrganizationServerSupport.support_level == support_level
+            )
+        support_exists = support_exists_query.exists()
+        statement = statement.where(
+            support_exists if partner is not False else ~support_exists
+        )
+
+    # Registry target filters require JSONB path semantics; keep them as no-ops
+    # until the registry query layer gets explicit package/remote indexes.
+    _ = registry_type, transport_type
 
     statement = statement.order_by(RegistryServer.name.asc())
     result = await session.execute(statement.offset(offset).limit(limit + 1))
@@ -148,3 +175,63 @@ async def latest_visible_version(
     )
     return result.scalar_one_or_none()
 
+
+async def list_users_by_ids(session: AsyncSession, user_ids: set[UUID]) -> dict[UUID, User]:
+    if not user_ids:
+        return {}
+    result = await session.execute(select(User).where(User.id.in_(user_ids)))
+    return {user.id: user for user in result.scalars().all()}
+
+
+async def list_organizations_by_ids(
+    session: AsyncSession,
+    organization_ids: set[UUID],
+) -> dict[UUID, Organization]:
+    if not organization_ids:
+        return {}
+    result = await session.execute(
+        select(Organization).where(Organization.id.in_(organization_ids))
+    )
+    return {organization.id: organization for organization in result.scalars().all()}
+
+
+async def list_verified_namespace_claims(
+    session: AsyncSession,
+    namespaces: set[str],
+) -> dict[str, NamespaceClaim]:
+    if not namespaces:
+        return {}
+    result = await session.execute(
+        select(NamespaceClaim).where(
+            NamespaceClaim.namespace.in_(namespaces),
+            NamespaceClaim.status == "verified",
+        )
+    )
+    return {claim.namespace: claim for claim in result.scalars().all()}
+
+
+async def list_partner_support_for_servers(
+    session: AsyncSession,
+    server_names: set[str],
+) -> dict[str, list[tuple[OrganizationServerSupport, Organization]]]:
+    if not server_names:
+        return {}
+    result = await session.execute(
+        select(OrganizationServerSupport, Organization)
+        .join(Organization, Organization.id == OrganizationServerSupport.organization_id)
+        .where(
+            OrganizationServerSupport.server_name.in_(server_names),
+            OrganizationServerSupport.support_status == "active",
+            Organization.is_partner.is_(True),
+            Organization.partner_status == "active",
+        )
+        .order_by(
+            OrganizationServerSupport.server_name.asc(),
+            OrganizationServerSupport.support_level.asc(),
+            Organization.name.asc(),
+        )
+    )
+    support_by_server: dict[str, list[tuple[OrganizationServerSupport, Organization]]] = {}
+    for support, organization in result.all():
+        support_by_server.setdefault(support.server_name, []).append((support, organization))
+    return support_by_server

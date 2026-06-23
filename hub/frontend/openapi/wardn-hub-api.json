@@ -430,6 +430,52 @@
         "title": "NamespaceClaimRead",
         "type": "object"
       },
+      "NamespaceTrustSummary": {
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "ownerOrganization": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "const": "verified",
+            "title": "Status",
+            "type": "string"
+          },
+          "verifiedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verifiedat"
+          }
+        },
+        "required": [
+          "namespace",
+          "status",
+          "method"
+        ],
+        "title": "NamespaceTrustSummary",
+        "type": "object"
+      },
       "OrganizationCreate": {
         "properties": {
           "name": {
@@ -1283,6 +1329,74 @@
         "title": "PartnerServerSupportUpdate",
         "type": "object"
       },
+      "PartnerSupportSummary": {
+        "properties": {
+          "docsUrl": {
+            "title": "Docsurl",
+            "type": "string"
+          },
+          "endsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endsat"
+          },
+          "organization": {
+            "$ref": "#/components/schemas/ActorSummary"
+          },
+          "startsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startsat"
+          },
+          "supportLevel": {
+            "enum": [
+              "official",
+              "verified",
+              "compatible",
+              "deprecated"
+            ],
+            "title": "Supportlevel",
+            "type": "string"
+          },
+          "supportStatus": {
+            "enum": [
+              "active",
+              "pending",
+              "suspended",
+              "ended"
+            ],
+            "title": "Supportstatus",
+            "type": "string"
+          },
+          "supportUrl": {
+            "title": "Supporturl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization",
+          "supportLevel",
+          "supportStatus",
+          "supportUrl",
+          "docsUrl"
+        ],
+        "title": "PartnerSupportSummary",
+        "type": "object"
+      },
       "RegistryLatestVersionSummary": {
         "properties": {
           "id": {
@@ -1435,6 +1549,21 @@
             "title": "Name",
             "type": "string"
           },
+          "namespaceClaim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NamespaceTrustSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "namespaceVerified": {
+            "default": false,
+            "title": "Namespaceverified",
+            "type": "boolean"
+          },
           "organization": {
             "anyOf": [
               {
@@ -1456,16 +1585,11 @@
             ]
           },
           "partnerSupport": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Partnersupport"
+            "items": {
+              "$ref": "#/components/schemas/PartnerSupportSummary"
+            },
+            "title": "Partnersupport",
+            "type": "array"
           },
           "repository": {
             "anyOf": [
@@ -1752,6 +1876,21 @@
             "title": "Name",
             "type": "string"
           },
+          "namespaceClaim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NamespaceTrustSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "namespaceVerified": {
+            "default": false,
+            "title": "Namespaceverified",
+            "type": "boolean"
+          },
           "organization": {
             "anyOf": [
               {
@@ -1778,6 +1917,13 @@
               "type": "object"
             },
             "title": "Packages",
+            "type": "array"
+          },
+          "partnerSupport": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerSupportSummary"
+            },
+            "title": "Partnersupport",
             "type": "array"
           },
           "publishedAt": {

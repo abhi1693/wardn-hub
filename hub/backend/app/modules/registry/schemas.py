@@ -73,6 +73,32 @@ class RegistryLatestVersionSummary(BaseModel):
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
 
 
+class NamespaceTrustSummary(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    namespace: str
+    status: Literal["verified"]
+    method: str
+    owner_organization: ActorSummary | None = Field(default=None, alias="ownerOrganization")
+    verified_at: datetime | None = Field(default=None, alias="verifiedAt")
+
+
+class PartnerSupportSummary(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    organization: ActorSummary
+    support_level: Literal["official", "verified", "compatible", "deprecated"] = Field(
+        alias="supportLevel"
+    )
+    support_status: Literal["active", "pending", "suspended", "ended"] = Field(
+        alias="supportStatus"
+    )
+    support_url: str = Field(alias="supportUrl")
+    docs_url: str = Field(alias="docsUrl")
+    starts_at: datetime | None = Field(default=None, alias="startsAt")
+    ends_at: datetime | None = Field(default=None, alias="endsAt")
+
+
 class RegistryServerRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -91,7 +117,12 @@ class RegistryServerRead(BaseModel):
     created_by: ActorSummary | None = Field(default=None, alias="createdBy")
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     latest_version: RegistryLatestVersionSummary | None = Field(default=None, alias="latestVersion")
-    partner_support: dict[str, Any] | None = Field(default=None, alias="partnerSupport")
+    namespace_claim: NamespaceTrustSummary | None = Field(default=None, alias="namespaceClaim")
+    namespace_verified: bool = Field(default=False, alias="namespaceVerified")
+    partner_support: list[PartnerSupportSummary] = Field(
+        default_factory=list,
+        alias="partnerSupport",
+    )
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
 
@@ -120,6 +151,12 @@ class RegistryServerVersionRead(BaseModel):
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
     approver: ActorSummary | None = None
+    namespace_claim: NamespaceTrustSummary | None = Field(default=None, alias="namespaceClaim")
+    namespace_verified: bool = Field(default=False, alias="namespaceVerified")
+    partner_support: list[PartnerSupportSummary] = Field(
+        default_factory=list,
+        alias="partnerSupport",
+    )
     published_at: datetime = Field(alias="publishedAt")
     status_changed_at: datetime = Field(alias="statusChangedAt")
     created_at: datetime = Field(alias="createdAt")
@@ -153,4 +190,3 @@ class RegistryServerVersionDetailResponse(BaseModel):
     version: RegistryServerVersionRead
     support: dict[str, Any] | None = None
     approval: dict[str, Any] | None = None
-

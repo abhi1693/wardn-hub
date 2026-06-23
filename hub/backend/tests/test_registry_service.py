@@ -3,6 +3,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.modules.namespaces.models import NamespaceClaim
+from app.modules.organizations.models import Organization
+from app.modules.partners.models import OrganizationServerSupport
 from app.modules.registry import service
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
@@ -76,6 +79,10 @@ def server_model() -> RegistryServer:
         status="active",
         status_message="",
         visibility="public",
+        owner_organization_id=None,
+        owner_user_id=None,
+        created_by_user_id=None,
+        updated_by_user_id=None,
         created_at=now,
         updated_at=now,
     )
@@ -91,6 +98,11 @@ def version_model(server_id, version: str, *, is_latest: bool) -> RegistryServer
         status="active",
         status_message="",
         is_latest=is_latest,
+        owner_organization_id=None,
+        owner_user_id=None,
+        created_by_user_id=None,
+        updated_by_user_id=None,
+        publisher_user_id=None,
         published_at=now,
         status_changed_at=now,
         created_at=now,
@@ -184,3 +196,88 @@ async def test_update_rejects_path_mismatch() -> None:
             "1.0.0",
             registry_payload("2.0.0"),
         )
+
+
+@pytest.mark.asyncio
+async def test_get_server_detail_includes_namespace_and_partner_support(monkeypatch) -> None:
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+    organization = Organization(
+        id=uuid4(),
+        name="Acme",
+        slug="acme",
+        status="active",
+        is_partner=True,
+        partner_status="active",
+        partner_tier="official",
+        website_url="",
+        support_email="support@example.com",
+        partner_profile={},
+        partner_internal_notes="",
+        created_at=now,
+        updated_at=now,
+    )
+    server = server_model()
+    server.owner_organization_id = organization.id
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    version.owner_organization_id = organization.id
+    namespace_claim = NamespaceClaim(
+        id=uuid4(),
+        namespace="io.github.example/*",
+        owner_organization_id=organization.id,
+        claimed_by_user_id=uuid4(),
+        method="github",
+        status="verified",
+        verification_payload={},
+        verified_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    support = OrganizationServerSupport(
+        id=uuid4(),
+        organization_id=organization.id,
+        server_name=server.name,
+        support_level="official",
+        support_status="active",
+        support_url="https://example.com/support",
+        docs_url="https://example.com/docs",
+        contact_policy={},
+        internal_notes="",
+        created_at=now,
+        updated_at=now,
+    )
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [version]
+
+    async def namespace_claims(*args, **kwargs):
+        return {namespace_claim.namespace: namespace_claim}
+
+    async def partner_support(*args, **kwargs):
+        return {server.name: [(support, organization)]}
+
+    async def organizations(*args, **kwargs):
+        return {organization.id: organization}
+
+    async def users(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "get_server", get_server)
+    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "list_verified_namespace_claims", namespace_claims)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", partner_support)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", organizations)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", users)
+
+    response = await service.get_server_detail(FakeSession(), server.name)
+
+    assert response.server.namespace_verified is True
+    assert response.server.namespace_claim is not None
+    assert response.server.namespace_claim.namespace == "io.github.example/*"
+    assert response.server.owner is not None
+    assert response.server.owner.login == "acme"
+    assert response.server.partner_support[0].support_level == "official"
+    assert response.server.partner_support[0].organization.login == "acme"
+    assert response.versions[0].namespace_verified is True

@@ -70,6 +70,15 @@ Phase 5 adds partner organization metadata and server support records:
 - Support levels for official, verified, compatible, and deprecated relationships
 - Audit events for partner metadata and support record changes
 
+## Phase 6 Registry Trust Metadata
+
+Phase 6 exposes trust-plane data through registry read APIs:
+
+- Owner and organization actor summaries on registry server/version responses
+- Verified namespace claim metadata and `namespaceVerified` flags
+- Active partner support summaries on registry server/version responses
+- Partner and support-level filters backed by partner support records
+
 ## Commands
 
 ```sh

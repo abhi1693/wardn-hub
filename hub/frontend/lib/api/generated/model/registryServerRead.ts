@@ -5,9 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ActorSummary } from './actorSummary';
+import type { NamespaceTrustSummary } from './namespaceTrustSummary';
+import type { PartnerSupportSummary } from './partnerSupportSummary';
 import type { RegistryLatestVersionSummary } from './registryLatestVersionSummary';
 import type { RegistryServerReadIconsItem } from './registryServerReadIconsItem';
-import type { RegistryServerReadPartnerSupport } from './registryServerReadPartnerSupport';
 import type { RegistryServerReadRepository } from './registryServerReadRepository';
 import type { RegistryServerReadStatus } from './registryServerReadStatus';
 import type { RegistryServerReadVisibility } from './registryServerReadVisibility';
@@ -20,9 +21,11 @@ export interface RegistryServerRead {
   id: string;
   latestVersion?: RegistryLatestVersionSummary | null;
   name: string;
+  namespaceClaim?: NamespaceTrustSummary | null;
+  namespaceVerified?: boolean;
   organization?: ActorSummary | null;
   owner?: ActorSummary | null;
-  partnerSupport?: RegistryServerReadPartnerSupport;
+  partnerSupport?: PartnerSupportSummary[];
   repository?: RegistryServerReadRepository;
   status: RegistryServerReadStatus;
   statusMessage: string;
