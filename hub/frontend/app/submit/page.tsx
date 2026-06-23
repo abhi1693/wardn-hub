@@ -647,6 +647,7 @@ export default function SubmitServerPage() {
   );
   const isManualSource = sourceMode === "manual";
   const effectiveName = isManualSource || isNameOverrideEnabled ? name : name || derivedName;
+  const iconPreviewUrl = iconUrl.trim();
 
   useEffect(() => {
     currentUser()
@@ -1128,12 +1129,25 @@ export default function SubmitServerPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="server-icon-url">Icon URL</Label>
-                  <Input
-                    id="server-icon-url"
-                    onChange={(event) => setIconUrl(event.target.value)}
-                    placeholder="https://example.com/icon.svg"
-                    value={iconUrl}
-                  />
+                  <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-3">
+                    <Input
+                      id="server-icon-url"
+                      onChange={(event) => setIconUrl(event.target.value)}
+                      placeholder="https://example.com/icon.svg"
+                      value={iconUrl}
+                    />
+                    <div
+                      aria-hidden={!iconPreviewUrl}
+                      aria-label={iconPreviewUrl ? "Icon preview" : undefined}
+                      className="size-10 rounded-md border border-border bg-card bg-contain bg-center bg-no-repeat"
+                      role={iconPreviewUrl ? "img" : undefined}
+                      style={
+                        iconPreviewUrl
+                          ? { backgroundImage: `url(${JSON.stringify(iconPreviewUrl)})` }
+                          : undefined
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="grid gap-2 md:col-span-2">
                   <Label htmlFor="server-description">Description</Label>
