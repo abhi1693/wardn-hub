@@ -925,7 +925,7 @@ function DataView({
 }
 
 export default function Home() {
-  const [section, setSection] = useState<Section>("browse");
+  const [section, setSection] = useState<Section>("settings");
 
   return (
     <AppShell section={section} onSectionChange={setSection}>
