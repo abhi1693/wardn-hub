@@ -837,7 +837,7 @@ export default function SubmitServerPage() {
                   </Button>
                 ) : null}
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <button
                     aria-pressed={sourceMode === "manual"}
@@ -869,7 +869,7 @@ export default function SubmitServerPage() {
                 </div>
 
                 {sourceMode === "repository" ? (
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid w-full gap-4 md:grid-cols-2">
                     <div className="grid gap-2">
                       <Label htmlFor="server-repository-source">Repository Source</Label>
                       <Select onValueChange={(value) => setRepositorySource(value)} value={repositorySource}>
@@ -912,7 +912,7 @@ export default function SubmitServerPage() {
                 ) : null}
 
                 {sourceImportMessage ? (
-                  <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+                  <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                     {sourceImportMessage}
                   </div>
                 ) : null}
