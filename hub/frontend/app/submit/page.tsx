@@ -530,7 +530,8 @@ export default function SubmitServerPage() {
     sourceMode === "repository" ? repositoryUrl : "",
     packages,
   );
-  const effectiveName = isNameOverrideEnabled ? name : name || derivedName;
+  const isManualSource = sourceMode === "manual";
+  const effectiveName = isManualSource || isNameOverrideEnabled ? name : name || derivedName;
 
   useEffect(() => {
     currentUser()
@@ -651,7 +652,11 @@ export default function SubmitServerPage() {
     try {
       const serverName = effectiveName.trim();
       if (!serverName) {
-        throw new Error("Add a package target, add repository details, or override the server name.");
+        throw new Error(
+          isManualSource
+            ? "Add a server name."
+            : "Add a package target, add repository details, or override the server name.",
+        );
       }
       if (!SERVER_NAME_PATTERN.test(serverName)) {
         throw new Error("Server name must use the publisher/server format.");
@@ -897,33 +902,29 @@ export default function SubmitServerPage() {
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor="server-name">Name</Label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        checked={isNameOverrideEnabled}
-                        onChange={(event) => {
-                          const isEnabled = event.target.checked;
-                          setIsNameOverrideEnabled(isEnabled);
-                          if (isEnabled && !name.trim()) {
-                            setName(derivedName);
-                          }
-                        }}
-                        type="checkbox"
-                      />
-                      Override
-                    </label>
+                    {!isManualSource ? (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          checked={isNameOverrideEnabled}
+                          onChange={(event) => {
+                            const isEnabled = event.target.checked;
+                            setIsNameOverrideEnabled(isEnabled);
+                            if (isEnabled && !name.trim()) {
+                              setName(derivedName);
+                            }
+                          }}
+                          type="checkbox"
+                        />
+                        Override
+                      </label>
+                    ) : null}
                   </div>
                   <Input
                     id="server-name"
                     onChange={(event) => setName(event.target.value)}
-                    placeholder={
-                      isNameOverrideEnabled
-                        ? "io.github.example/server"
-                        : sourceMode === "manual"
-                          ? "Generated from package"
-                          : "Generated from source"
-                    }
-                    readOnly={!isNameOverrideEnabled}
-                    required={isNameOverrideEnabled}
+                    placeholder={isManualSource || isNameOverrideEnabled ? "publisher/server" : "Generated from source"}
+                    readOnly={!isManualSource && !isNameOverrideEnabled}
+                    required={isManualSource || isNameOverrideEnabled}
                     value={effectiveName}
                   />
                 </div>
