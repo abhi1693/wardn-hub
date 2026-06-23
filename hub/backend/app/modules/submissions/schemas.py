@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.registry.schemas import RegistryServerVersionCreate
 
@@ -17,6 +17,12 @@ class SubmissionCreate(BaseModel):
     owner_user_id: UUID | None = Field(default=None, alias="ownerUserId")
     owner_organization_id: UUID | None = Field(default=None, alias="ownerOrganizationId")
     server_json: RegistryServerVersionCreate = Field(alias="serverJson")
+
+    @model_validator(mode="after")
+    def new_servers_start_at_initial_version(self) -> "SubmissionCreate":
+        if self.submission_type == "new_server" and self.server_json.version != "1.0.0":
+            raise ValueError("new server submissions must start at version 1.0.0")
+        return self
 
 
 class SubmissionUpdate(BaseModel):

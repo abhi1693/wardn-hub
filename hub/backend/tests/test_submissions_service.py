@@ -67,6 +67,11 @@ def registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
     )
 
 
+def test_new_server_submission_starts_at_one_zero_zero() -> None:
+    with pytest.raises(ValueError, match="new server submissions must start"):
+        SubmissionCreate(serverJson=registry_payload(version="1.1.0"))
+
+
 @pytest.mark.asyncio
 async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> None:
     submitter = current_user()

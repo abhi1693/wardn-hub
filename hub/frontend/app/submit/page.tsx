@@ -33,6 +33,8 @@ import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
 const DEFAULT_SCHEMA =
   "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
 const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
+const SERVER_VERSION_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 let generatedId = 0;
 
@@ -448,7 +450,7 @@ function metadataFromMcpJson(value: Record<string, unknown>, repositoryUrl: stri
   return {
     source: "mcp.json",
     title: serverTitle || "",
-    version: "latest",
+    version: "1.0.0",
     websiteUrl: repositoryUrl,
     repository: {
       source: "github",
@@ -461,7 +463,6 @@ function metadataFromMcpJson(value: Record<string, unknown>, repositoryUrl: stri
             {
               registryType: command.includes("uv") ? "uvx" : "npm",
               identifier: packageIdentifier,
-              version: "latest",
               transport: { type: "stdio" },
             },
           ]
@@ -507,7 +508,7 @@ export default function SubmitServerPage() {
   const [name, setName] = useState("");
   const [isNameOverrideEnabled, setIsNameOverrideEnabled] = useState(false);
   const [title, setTitle] = useState("");
-  const [version, setVersion] = useState("latest");
+  const [version, setVersion] = useState("1.0.0");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [repositorySource, setRepositorySource] = useState("github");
@@ -615,7 +616,7 @@ export default function SubmitServerPage() {
       setRepositorySubfolder(metadataRepository.subfolder || repositorySubfolder);
       setName(metadata.name || "");
       setTitle(metadata.title || "");
-      setVersion(metadata.version || "latest");
+      setVersion("1.0.0");
       setDescription(metadata.description || "");
       setWebsiteUrl(metadata.websiteUrl || metadataRepository.url || repositoryUrl);
       setIconUrl(metadataIconUrl);
@@ -647,6 +648,9 @@ export default function SubmitServerPage() {
       if (!SERVER_NAME_PATTERN.test(serverName)) {
         throw new Error("Server name must use the namespace/server format.");
       }
+      if (!SERVER_VERSION_PATTERN.test(version.trim())) {
+        throw new Error("Server version must be a semantic version, starting at 1.0.0 for new submissions.");
+      }
 
       const remotePayload = remotes
         .filter((remote) => remote.url.trim())
@@ -657,14 +661,17 @@ export default function SubmitServerPage() {
         }));
       const packagePayload = packages
         .filter((packageTarget) => packageTarget.identifier.trim())
-        .map((packageTarget) => ({
-          registryType: packageTarget.registryType.trim() || "npm",
-          identifier: packageTarget.identifier.trim(),
-          version: packageTarget.version.trim() || version.trim(),
-          transport: { type: packageTarget.transportType.trim() || "stdio" },
-          environmentVariables: publicEnvironment(packageTarget.environmentVariables),
-          packageArguments: publicPackageArguments(packageTarget.packageArguments),
-        }));
+        .map((packageTarget) => {
+          const packageVersion = packageTarget.version.trim();
+          return {
+            registryType: packageTarget.registryType.trim() || "npm",
+            identifier: packageTarget.identifier.trim(),
+            ...(packageVersion ? { version: packageVersion } : {}),
+            transport: { type: packageTarget.transportType.trim() || "stdio" },
+            environmentVariables: publicEnvironment(packageTarget.environmentVariables),
+            packageArguments: publicPackageArguments(packageTarget.packageArguments),
+          };
+        });
 
       if (remotePayload.length === 0 && packagePayload.length === 0) {
         throw new Error("Add at least one remote endpoint or package target.");
@@ -883,7 +890,9 @@ export default function SubmitServerPage() {
                   <Input
                     id="server-version"
                     onChange={(event) => setVersion(event.target.value)}
+                    pattern={SERVER_VERSION_PATTERN.source}
                     placeholder="1.0.0"
+                    readOnly
                     required
                     value={version}
                   />
@@ -1112,7 +1121,7 @@ export default function SubmitServerPage() {
                           onChange={(event) =>
                             updatePackage(packageTarget.id, { version: event.target.value })
                           }
-                          placeholder="latest"
+                          placeholder="optional package version"
                           value={packageTarget.version}
                         />
                       </div>

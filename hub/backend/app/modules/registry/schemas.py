@@ -5,6 +5,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 MCP_SERVER_NAME_PATTERN = r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$"
+SEMVER_PATTERN = (
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 RegistryServerStatus = Literal["active", "deprecated", "deleted", "quarantined"]
 RegistryVersionStatus = Literal["active", "deprecated", "deleted", "quarantined", "rejected"]
 RegistryVisibility = Literal["public", "unlisted", "private_preview"]
@@ -22,7 +27,7 @@ class MCPServerDocument(BaseModel):
     description: str = Field(min_length=1)
     title: str = Field(default="", max_length=100)
     repository: dict[str, Any] | None = None
-    version: str = Field(min_length=1, max_length=255)
+    version: str = Field(min_length=1, max_length=255, pattern=SEMVER_PATTERN)
     website_url: str = Field(default="", alias="websiteUrl", max_length=2048)
     icons: list[dict[str, Any]] = Field(default_factory=list)
     packages: list[dict[str, Any]] = Field(default_factory=list)

@@ -64,3 +64,7 @@ def test_server_name_requires_namespace() -> None:
     with pytest.raises(ValueError):
         RegistryServerVersionCreate(**registry_payload(name="weather"))
 
+
+def test_server_version_requires_semver() -> None:
+    with pytest.raises(ValueError):
+        RegistryServerVersionCreate(**registry_payload(version="latest"))
