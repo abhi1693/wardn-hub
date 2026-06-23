@@ -212,17 +212,27 @@ function AppShell({
   );
 }
 
-function serverSubmitUrl(serverName: string, version: string) {
+function serverSubmitUrl(serverName: string, version: string, intent?: "edit" | "version") {
   const params = new URLSearchParams({ server: serverName, version });
+  if (intent) {
+    params.set("intent", intent);
+  }
   return `/submit?${params}`;
 }
 
-function BrowseView({ isAdmin }: { isAdmin: boolean }) {
+function BrowseView({
+  isAdmin,
+  isAuthenticated,
+}: {
+  isAdmin: boolean;
+  isAuthenticated: boolean;
+}) {
   const [servers, setServers] = useState<RegistryServerRead[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyServer, setBusyServer] = useState("");
+  const canShowServerActions = isAuthenticated || isAdmin;
 
   async function refresh() {
     setState("loading");
@@ -296,7 +306,7 @@ function BrowseView({ isAdmin }: { isAdmin: boolean }) {
                 </span>
                 <span className="server-card-status">
                   <Pill tone={toneFor(server.status)}>{server.status}</Pill>
-                  {isAdmin ? (
+                  {canShowServerActions ? (
                     <span className="server-card-actions">
                       {server.latestVersion?.version ? (
                         <button
@@ -305,10 +315,11 @@ function BrowseView({ isAdmin }: { isAdmin: boolean }) {
                           onClick={() => {
                             window.location.href = serverSubmitUrl(
                               server.name,
-                              server.latestVersion?.version ?? "",
+                              isAdmin ? server.latestVersion?.version ?? "" : "new",
+                              "edit",
                             );
                           }}
-                          title="Edit latest version"
+                          title={isAdmin ? "Edit latest version" : "Submit edit for review"}
                           type="button"
                         >
                           <Pencil size={16} />
@@ -318,23 +329,25 @@ function BrowseView({ isAdmin }: { isAdmin: boolean }) {
                         aria-label={`Add version for ${server.name}`}
                         className="icon-button"
                         onClick={() => {
-                          window.location.href = serverSubmitUrl(server.name, "new");
+                          window.location.href = serverSubmitUrl(server.name, "new", "version");
                         }}
                         title="Add version"
                         type="button"
                       >
                         <Plus size={16} />
                       </button>
-                      <button
-                        aria-label={`Delete ${server.name}`}
-                        className="icon-button danger"
-                        disabled={busyServer === server.name}
-                        onClick={() => void deleteMcpServer(server)}
-                        title="Delete server and all versions"
-                        type="button"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {isAdmin ? (
+                        <button
+                          aria-label={`Delete ${server.name}`}
+                          className="icon-button danger"
+                          disabled={busyServer === server.name}
+                          onClick={() => void deleteMcpServer(server)}
+                          title="Delete server and all versions"
+                          type="button"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      ) : null}
                     </span>
                   ) : null}
                 </span>
@@ -734,7 +747,7 @@ export default function Home() {
       onSectionChange={selectSection}
       section={section}
     >
-      {section === "browse" && <BrowseView isAdmin={isAdmin} />}
+      {section === "browse" && <BrowseView isAdmin={isAdmin} isAuthenticated={isAuthenticated} />}
       {isAdmin && section === "submissions" && <SubmissionsView />}
       {isAdmin && section === "partners" && <PartnersView />}
       {isAdmin && section === "audit" && <AuditView />}

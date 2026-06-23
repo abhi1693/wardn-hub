@@ -741,25 +741,36 @@ export default function SubmitServerPage() {
   const isAddingNewVersion = submissionMode === "new_version";
   const isEditingPublishedServer = submissionMode === "server_edit";
   const isAddingPublishedServerVersion = submissionMode === "server_new_version";
+  const canManagePublishedServers = Boolean(user?.is_superuser);
   const isServerNameLocked = Boolean(lockedServerName);
   const isVersionLocked = Boolean(lockedVersion);
   const pageTitle = (() => {
     if (isAddingNewVersion) return "Add server version";
-    if (isAddingPublishedServerVersion) return "Add MCP server version";
-    if (isEditingPublishedServer) return "Edit MCP server";
+    if (isAddingPublishedServerVersion) {
+      return canManagePublishedServers ? "Add MCP server version" : "Add server version";
+    }
+    if (isEditingPublishedServer) {
+      return canManagePublishedServers ? "Edit MCP server" : "Add server version";
+    }
     if (isEditingExistingSubmission) return "Edit submission";
     return "Submit server";
   })();
   const pageDescription = (() => {
     if (isAddingNewVersion) return "Create a new review submission for the same published server.";
-    if (isAddingPublishedServerVersion) return "Publish a new version for this MCP server.";
+    if (isAddingPublishedServerVersion || (isEditingPublishedServer && !canManagePublishedServers)) {
+      return canManagePublishedServers
+        ? "Publish a new version for this MCP server."
+        : "Create a new review submission for the same published server.";
+    }
     if (isEditingPublishedServer) return "Update the latest published registry document.";
     if (isEditingExistingSubmission) return "Update this submission and send it back to review.";
     return "Provide the registry document details for review. Approved submissions become public server cards.";
   })();
   const submitButtonLabel = (() => {
     if (isAddingNewVersion) return "Submit new version";
-    if (isAddingPublishedServerVersion) return "Publish new version";
+    if (isAddingPublishedServerVersion || (isEditingPublishedServer && !canManagePublishedServers)) {
+      return canManagePublishedServers ? "Publish new version" : "Submit new version";
+    }
     if (isEditingPublishedServer) return "Save MCP server";
     if (isEditingExistingSubmission) return "Submit update for review";
     return "Submit for review";
@@ -1143,6 +1154,10 @@ export default function SubmitServerPage() {
           : {}),
       };
 
+      if (isEditingPublishedServer && !canManagePublishedServers) {
+        throw new Error("Published server edits must be submitted as a new version.");
+      }
+
       if (isEditingPublishedServer) {
         await updateServerVersion(lockedServerName, lockedVersion, serverJson);
         setSourceImportMessage("");
@@ -1151,9 +1166,19 @@ export default function SubmitServerPage() {
       }
 
       if (isAddingPublishedServerVersion) {
-        await createServerVersion(serverJson);
+        if (canManagePublishedServers) {
+          await createServerVersion(serverJson);
+          setSourceImportMessage("");
+          router.push("/");
+          return;
+        }
+        const draft = await createSubmission({
+          submissionType: "new_version",
+          serverJson,
+        });
+        await submissionAction(draft.id, "submit");
         setSourceImportMessage("");
-        router.push("/");
+        router.push("/submissions");
         return;
       }
 

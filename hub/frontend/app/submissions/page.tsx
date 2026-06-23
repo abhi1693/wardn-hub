@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FileCheck2, Plus } from "lucide-react";
+import { ArrowLeft, FileCheck2, Pencil, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,10 @@ function statusClass(status: SubmissionRead["status"]) {
     default:
       return "border-border bg-muted text-muted-foreground";
   }
+}
+
+function isEditableSubmission(status: SubmissionRead["status"]) {
+  return status !== "published";
 }
 
 export default function SubmissionsPage() {
@@ -127,19 +131,35 @@ export default function SubmissionsPage() {
                   </div>
                 ) : null}
                 {submissions.map((submission) => (
-                  <Link
+                  <div
                     className="grid gap-3 rounded-md border bg-card p-4 text-foreground shadow-[var(--shadow-card)] hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_auto]"
-                    href={`/submissions/${submission.id}`}
                     key={submission.id}
                   >
                     <div className="grid gap-1">
-                      <div className="font-medium">{submission.name}</div>
+                      <Link className="font-medium hover:underline" href={`/submissions/${submission.id}`}>
+                        {submission.name}
+                      </Link>
                       <div className="text-sm text-muted-foreground">
                         {submission.version} - {submission.submissionType} - updated{" "}
                         {formatDate(submission.updatedAt)}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        {isEditableSubmission(submission.status) ? (
+                          <Button asChild aria-label={`Edit ${submission.name}`} size="icon" variant="outline">
+                            <Link href={`/submit?submission=${submission.id}`} title="Edit submission">
+                              <Pencil className="size-4" />
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button asChild aria-label={`Add version for ${submission.name}`} size="icon" variant="outline">
+                            <Link href={`/submit?submission=${submission.id}&version=new`} title="Add version">
+                              <Plus className="size-4" />
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
                       <span
                         className={cn(
                           "rounded-full border px-3 py-1 text-xs font-medium",
@@ -149,7 +169,7 @@ export default function SubmissionsPage() {
                         {submission.status}
                       </span>
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             ) : null}
