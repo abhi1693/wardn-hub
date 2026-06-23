@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
+from app.modules.registry.category_seed import CategorySeed
 from app.modules.registry.models import (
     RegistryCategory,
     RegistryServer,
@@ -253,6 +254,42 @@ async def list_categories(session: AsyncSession) -> list[RegistryCategory]:
         .order_by(RegistryCategory.sort_order.asc(), RegistryCategory.name.asc())
     )
     return list(result.scalars().all())
+
+
+async def seed_categories(
+    session: AsyncSession,
+    category_seeds: tuple[CategorySeed, ...],
+) -> list[RegistryCategory]:
+    if not category_seeds:
+        return []
+
+    result = await session.execute(
+        select(RegistryCategory).where(
+            RegistryCategory.slug.in_([category.slug for category in category_seeds])
+        )
+    )
+    categories_by_slug = {category.slug: category for category in result.scalars().all()}
+
+    for category_seed in category_seeds:
+        category = categories_by_slug.get(category_seed.slug)
+        if category is None:
+            category = RegistryCategory(
+                slug=category_seed.slug,
+                name=category_seed.name,
+                description=category_seed.description,
+                sort_order=category_seed.sort_order,
+                status="active",
+            )
+            session.add(category)
+            categories_by_slug[category_seed.slug] = category
+        else:
+            category.name = category_seed.name
+            category.description = category_seed.description
+            category.sort_order = category_seed.sort_order
+            category.status = "active"
+
+    await session.flush()
+    return [categories_by_slug[category.slug] for category in category_seeds]
 
 
 async def list_categories_for_servers(

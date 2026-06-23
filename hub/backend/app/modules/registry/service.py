@@ -1,9 +1,10 @@
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import re
 from uuid import UUID
 
 from app.modules.registry import repository
+from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
@@ -580,6 +581,13 @@ async def list_servers(
 
 async def list_categories(session) -> RegistryCategoryListResponse:
     categories = await repository.list_categories(session)
+    return RegistryCategoryListResponse(
+        categories=[category_summary(category) for category in categories]
+    )
+
+
+async def seed_default_categories(session) -> RegistryCategoryListResponse:
+    categories = await repository.seed_categories(session, MCP_SERVERS_CATEGORY_SEEDS)
     return RegistryCategoryListResponse(
         categories=[category_summary(category) for category in categories]
     )

@@ -96,6 +96,7 @@ Phase 8 makes the console operable:
 ```sh
 cd hub/backend
 uv run --extra dev python -m app.openapi --output ../frontend/openapi/wardn-hub-api.json
+uv run --extra dev python -m app.manage seed-categories
 uv run --extra dev pytest
 ```
 

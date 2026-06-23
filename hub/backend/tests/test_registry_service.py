@@ -6,6 +6,7 @@ import pytest
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
 from app.modules.registry import service
+from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
@@ -130,6 +131,60 @@ def test_category_values_extracts_publisher_metadata() -> None:
     }
 
     assert service.category_values(payload) == ["development", "cloud-service"]
+
+
+def test_seed_categories_match_mcpservers_taxonomy() -> None:
+    assert [category.name for category in MCP_SERVERS_CATEGORY_SEEDS] == [
+        "Search",
+        "Web Scraping",
+        "Communication",
+        "Productivity",
+        "Marketing",
+        "Design",
+        "Memory",
+        "Finance",
+        "Development",
+        "Database",
+        "Cloud Service",
+        "File System",
+        "Cloud Storage",
+        "Version Control",
+        "Other",
+    ]
+    assert len({category.slug for category in MCP_SERVERS_CATEGORY_SEEDS}) == len(
+        MCP_SERVERS_CATEGORY_SEEDS
+    )
+
+
+@pytest.mark.asyncio
+async def test_seed_default_categories_uses_seed_taxonomy(monkeypatch) -> None:
+    captured = None
+
+    async def seed_categories(*args):
+        nonlocal captured
+        captured = args[1]
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        return [
+            RegistryCategory(
+                id=uuid4(),
+                slug=category.slug,
+                name=category.name,
+                description=category.description,
+                sort_order=category.sort_order,
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
+            for category in captured
+        ]
+
+    monkeypatch.setattr(service.repository, "seed_categories", seed_categories)
+
+    response = await service.seed_default_categories(FakeSession())
+
+    assert captured == MCP_SERVERS_CATEGORY_SEEDS
+    assert response.categories[0].slug == "search"
+    assert response.categories[-1].slug == "other"
 
 
 @pytest.mark.asyncio
