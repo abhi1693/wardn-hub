@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { HubApiError, currentUser, listSubmissions } from "@/lib/api/hub";
-import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
+import type { SubmissionRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
 type LoadState = "loading" | "ready" | "error" | "auth";
@@ -44,7 +44,6 @@ function statusClass(status: SubmissionRead["status"]) {
 export default function SubmissionsPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
-  const [user, setUser] = useState<UserRead | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
 
   useEffect(() => {
@@ -53,7 +52,6 @@ export default function SubmissionsPage() {
       setError("");
       Promise.all([currentUser(), listSubmissions()])
         .then(([current, response]) => {
-          setUser(current);
           setSubmissions(
             response.submissions.filter((submission) => submission.submitterUserId === current.id),
           );
@@ -86,7 +84,7 @@ export default function SubmissionsPage() {
         </div>
 
         <Card>
-          <CardHeader className="flex items-start justify-between gap-4 space-y-0 md:flex-row">
+          <CardHeader>
             <div className="grid gap-1.5">
               <CardDescription className="flex items-center gap-2 uppercase">
                 <FileCheck2 className="size-4" />
@@ -94,11 +92,6 @@ export default function SubmissionsPage() {
               </CardDescription>
               <CardTitle className="text-2xl">Submission review</CardTitle>
             </div>
-            {user ? (
-              <span className="rounded-md border bg-muted px-3 py-1 text-xs text-muted-foreground">
-                {user.email}
-              </span>
-            ) : null}
           </CardHeader>
           <CardContent className="grid gap-4">
             {state === "loading" ? (
