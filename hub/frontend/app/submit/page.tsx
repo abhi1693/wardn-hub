@@ -960,7 +960,6 @@ export default function SubmitServerPage() {
                     onChange={(event) => setVersion(event.target.value)}
                     pattern={SERVER_VERSION_PATTERN.source}
                     placeholder="1.0.0"
-                    readOnly
                     required
                     value={version}
                   />
