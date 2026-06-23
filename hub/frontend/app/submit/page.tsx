@@ -104,6 +104,9 @@ type GitHubRepositoryMetadata = {
   description?: unknown;
   homepage?: unknown;
   html_url?: unknown;
+  owner?: {
+    avatar_url?: unknown;
+  };
 };
 
 const PACKAGE_RUNTIME_OPTIONS = [
@@ -370,6 +373,7 @@ async function fetchGitHubRepositoryMetadata(repositoryReference: string): Promi
     return {
       title: stringValue(payload.name),
       description: stringValue(payload.description),
+      iconUrl: stringValue(payload.owner?.avatar_url),
       websiteUrl: homepage || htmlUrl,
     };
   } catch {
@@ -417,6 +421,7 @@ function metadataWithFallback(metadata: SourceMetadata, fallback: SourceMetadata
     title: metadata.title || fallback.title,
     description: metadata.description || fallback.description,
     documentation: metadata.documentation || fallback.documentation,
+    iconUrl: metadata.iconUrl || fallback.iconUrl,
     websiteUrl: metadata.websiteUrl || fallback.websiteUrl,
   };
 }
