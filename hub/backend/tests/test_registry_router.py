@@ -4,6 +4,7 @@ from app.db.session import get_db_session
 from app.main import create_app
 from app.modules.registry import router
 from app.modules.registry.exceptions import DuplicateRegistryVersionError
+from app.modules.users.dependencies import require_superuser
 
 
 def test_registry_openapi_exposes_phase_one_paths() -> None:
@@ -38,7 +39,11 @@ def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:
     async def duplicate(*args, **kwargs):
         raise DuplicateRegistryVersionError("duplicate")
 
+    async def superuser():
+        return object()
+
     app.dependency_overrides[get_db_session] = fake_session
+    app.dependency_overrides[require_superuser] = superuser
     monkeypatch.setattr(router, "create_server_version", duplicate)
 
     response = TestClient(app).post(
@@ -62,3 +67,17 @@ def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:
     assert response.status_code == 409
     assert response.json() == {"detail": "server version already exists"}
 
+
+def test_admin_create_requires_authentication() -> None:
+    response = TestClient(create_app()).post(
+        "/api/v1/admin/mcp/servers",
+        json={
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "name": "io.github.example/weather",
+            "description": "Weather tools for forecasts",
+            "version": "1.0.0",
+            "packages": [{"registryType": "mcpb", "identifier": "example.mcpb"}],
+        },
+    )
+
+    assert response.status_code == 401

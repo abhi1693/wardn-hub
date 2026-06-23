@@ -29,6 +29,17 @@ Phase 1 adds the initial MCP server/version store:
 - `server.json`-compatible validation with MCPB package metadata allowed
 - Latest-version behavior, soft delete, cursor pagination, search, and OpenAPI client generation
 
+## Phase 2 Auth And Organizations
+
+Phase 2 adds the identity and organization foundation:
+
+- Bootstrap first local superuser at `/api/v1/users/bootstrap`
+- Login/logout session cookie flow under `/api/v1/auth`
+- User API token CRUD under `/api/v1/auth/api-tokens`
+- Organizations, roles, and memberships under `/api/v1/organizations`
+- System organization roles with explicit permission strings
+- Registry admin routes protected by superuser authentication
+
 ## Commands
 
 ```sh

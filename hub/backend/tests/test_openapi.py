@@ -18,12 +18,22 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/admin/mcp/servers",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
+        "/api/v1/auth/api-tokens",
+        "/api/v1/auth/api-tokens/{token_id}",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
         "/api/v1/health/live",
         "/api/v1/health/ready",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/versions",
         "/api/v1/mcp/servers/{server_name}/versions/{version}",
+        "/api/v1/organizations",
+        "/api/v1/organizations/{organization_id}",
+        "/api/v1/organizations/{organization_id}/memberships",
+        "/api/v1/organizations/{organization_id}/memberships/{user_id}",
+        "/api/v1/organizations/{organization_id}/roles",
+        "/api/v1/users/bootstrap",
     }
 
 

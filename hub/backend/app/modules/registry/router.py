@@ -30,6 +30,8 @@ from app.modules.registry.service import (
     set_latest_version,
     update_server_version,
 )
+from app.modules.users.dependencies import require_superuser
+from app.modules.users.models import User
 
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
 admin_router = APIRouter(prefix="/admin/mcp/servers", tags=["admin-mcp"])
@@ -152,6 +154,7 @@ async def get_mcp_server(
 async def admin_create_mcp_server_version(
     payload: RegistryServerVersionCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await create_server_version(session, payload)
@@ -175,6 +178,7 @@ async def admin_update_mcp_server_version(
     version: str,
     payload: RegistryServerVersionUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await update_server_version(session, server_name, version, payload)
@@ -194,6 +198,7 @@ async def admin_set_latest_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await set_latest_version(session, server_name, version)
@@ -213,6 +218,7 @@ async def admin_delete_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
 ) -> None:
     try:
         await delete_server_version(session, server_name, version)
