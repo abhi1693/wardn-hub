@@ -17,6 +17,7 @@ import type {
   SubmissionRejectRequest,
   SubmissionRead,
   SubmissionListResponse,
+  SubmissionUpdate,
   UserCreate,
   UserRead,
 } from "@/lib/api/generated/model";
@@ -130,6 +131,14 @@ export function getSubmission(submissionId: string) {
 export function createSubmission(payload: SubmissionCreate) {
   return request<SubmissionRead>("/submissions", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSubmission(submissionId: string, payload: SubmissionUpdate) {
+  return request<SubmissionRead>(`/submissions/${submissionId}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });

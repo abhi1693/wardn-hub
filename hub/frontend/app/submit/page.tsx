@@ -27,10 +27,12 @@ import {
   HubApiError,
   createSubmission,
   currentUser,
+  getSubmission,
   listCategories,
   submissionAction,
+  updateSubmission,
 } from "@/lib/api/hub";
-import type { RegistryCategoryRead, UserRead } from "@/lib/api/generated/model";
+import type { RegistryCategoryRead, SubmissionRead, UserRead } from "@/lib/api/generated/model";
 
 const DEFAULT_SCHEMA =
   "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
@@ -80,6 +82,7 @@ type PackageTarget = {
 };
 
 type SourceMode = "manual" | "repository";
+type SubmissionMode = "new" | "edit" | "new_version";
 
 type SourceMetadata = {
   source?: string;
@@ -514,6 +517,29 @@ function firstIconUrl(value: unknown) {
   return stringValue(icon?.src);
 }
 
+function categoryFromServerJson(value: Record<string, unknown>) {
+  const meta = value._meta;
+  if (!meta || typeof meta !== "object") {
+    return "";
+  }
+
+  const publisherMeta = (meta as Record<string, unknown>)[PUBLISHER_META_KEY];
+  if (!publisherMeta || typeof publisherMeta !== "object") {
+    return "";
+  }
+
+  return stringValue((publisherMeta as Record<string, unknown>).category);
+}
+
+function bumpPatchVersion(value: string) {
+  const match = value.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) {
+    return value;
+  }
+
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
 function publicHeaders(headers: HeaderField[]) {
   return headers
     .filter((header) => header.name.trim())
@@ -669,6 +695,12 @@ export default function SubmitServerPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserRead | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [submissionMode, setSubmissionMode] = useState<SubmissionMode>("new");
+  const [editingSubmissionId, setEditingSubmissionId] = useState("");
+  const [editingSubmissionType, setEditingSubmissionType] =
+    useState<SubmissionRead["submissionType"]>("new_server");
+  const [isLoadingSubmission, setIsLoadingSubmission] = useState(false);
+  const [lockedServerName, setLockedServerName] = useState("");
   const [name, setName] = useState("");
   const [isNameOverrideEnabled, setIsNameOverrideEnabled] = useState(false);
   const [title, setTitle] = useState("");
@@ -695,6 +727,24 @@ export default function SubmitServerPage() {
   const isManualSource = sourceMode === "manual";
   const effectiveName = isManualSource || isNameOverrideEnabled ? name : name || derivedName;
   const iconPreviewUrl = iconUrl.trim();
+  const isEditingExistingSubmission = submissionMode === "edit" && editingSubmissionId;
+  const isAddingNewVersion = submissionMode === "new_version";
+  const isServerNameLocked = Boolean(lockedServerName);
+  const pageTitle = isAddingNewVersion
+    ? "Add server version"
+    : isEditingExistingSubmission
+      ? "Edit submission"
+      : "Submit server";
+  const pageDescription = isAddingNewVersion
+    ? "Create a new review submission for the same published server."
+    : isEditingExistingSubmission
+      ? "Update this submission and send it back to review."
+      : "Provide the registry document details for review. Approved submissions become public server cards.";
+  const submitButtonLabel = isAddingNewVersion
+    ? "Submit new version"
+    : isEditingExistingSubmission
+      ? "Submit update for review"
+      : "Submit for review";
 
   useEffect(() => {
     currentUser()
@@ -713,6 +763,66 @@ export default function SubmitServerPage() {
         setCategories([]);
         setCategory("");
       });
+  }, []);
+
+  function loadSubmissionIntoForm(submission: SubmissionRead, mode: SubmissionMode) {
+    const serverJson = submission.serverJson ?? {};
+    const repository = serverJson.repository && typeof serverJson.repository === "object"
+      ? (serverJson.repository as Record<string, unknown>)
+      : null;
+    const repositoryReference = normalizeRepositoryReference(stringValue(repository?.url));
+    const icons = records(serverJson.icons);
+
+    setSubmissionMode(mode);
+    setEditingSubmissionId(mode === "edit" ? submission.id : "");
+    setEditingSubmissionType(mode === "new_version" ? "new_version" : submission.submissionType);
+    setLockedServerName(mode === "new_version" ? submission.name : "");
+    setSourceMode(repositoryReference ? "repository" : "manual");
+    setRepositoryUrl(repositoryReference);
+    setRepositorySubfolder(stringValue(repository?.subfolder));
+    setName(submission.name);
+    setIsNameOverrideEnabled(true);
+    setTitle(stringValue(serverJson.title));
+    setVersion(mode === "new_version" ? bumpPatchVersion(submission.version) : submission.version);
+    setDescription(stringValue(serverJson.description));
+    setDocumentation(stringValue(serverJson.documentation));
+    setWebsiteUrl(stringValue(serverJson.websiteUrl));
+    setCategory(categoryFromServerJson(serverJson));
+    setIconUrl(firstIconUrl(icons));
+    setRemotes(importedRemotes(serverJson.remotes));
+    setPackages(importedPackages(serverJson.packages));
+    setSourceImportMessage(
+      mode === "new_version"
+        ? "Published server loaded. Update the version before submitting."
+        : "Submission loaded for editing.",
+    );
+  }
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const submissionId = searchParams.get("submission") ?? "";
+      if (!submissionId) {
+        return;
+      }
+
+      const requestedMode: SubmissionMode = searchParams.get("version") === "new" ? "new_version" : "edit";
+      setIsLoadingSubmission(true);
+      setError("");
+      getSubmission(submissionId)
+        .then((submission) => {
+          if (submission.status === "published" && requestedMode !== "new_version") {
+            setError("Published submissions cannot be edited. Add a new version instead.");
+            return;
+          }
+          loadSubmissionIntoForm(submission, requestedMode);
+        })
+        .catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "Submission could not be loaded.");
+        })
+        .finally(() => setIsLoadingSubmission(false));
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   function clearRepositoryDerivedState() {
@@ -872,7 +982,13 @@ export default function SubmitServerPage() {
         throw new Error("Server name must use the publisher/server format.");
       }
       if (!SERVER_VERSION_PATTERN.test(version.trim())) {
-        throw new Error("Server version must be a semantic version, starting at 1.0.0 for new submissions.");
+        throw new Error("Server version must be a semantic version.");
+      }
+      if (submissionMode === "new" && version.trim() !== "1.0.0") {
+        throw new Error("New server submissions must start at version 1.0.0.");
+      }
+      if (isAddingNewVersion && serverName !== lockedServerName) {
+        throw new Error("New versions must use the published server name.");
       }
 
       const remotePayload = remotes
@@ -939,10 +1055,16 @@ export default function SubmitServerPage() {
           : {}),
       };
 
-      const draft = await createSubmission({
-        submissionType: "new_server",
-        serverJson,
-      });
+      const submissionType = isAddingNewVersion ? "new_version" : editingSubmissionType;
+      const draft = isEditingExistingSubmission
+        ? await updateSubmission(editingSubmissionId, {
+            submissionType,
+            serverJson,
+          })
+        : await createSubmission({
+            submissionType,
+            serverJson,
+          });
       await submissionAction(draft.id, "submit");
       setSourceImportMessage("");
       router.push("/submissions");
@@ -973,9 +1095,9 @@ export default function SubmitServerPage() {
 
         <section className="grid gap-1 border-b border-border pb-4">
           <p className="eyebrow">MCP Registry</p>
-          <h1 className="text-balance text-2xl leading-8 font-semibold">Submit server</h1>
+          <h1 className="text-balance text-2xl leading-8 font-semibold">{pageTitle}</h1>
           <p className="max-w-[680px] text-pretty text-sm text-muted-foreground">
-            Provide the registry document details for review. Approved submissions become public server cards.
+            {pageDescription}
           </p>
         </section>
 
@@ -1003,6 +1125,12 @@ export default function SubmitServerPage() {
 
         {authChecked && user && (
           <form className="space-y-5" onSubmit={submitForm}>
+            {isLoadingSubmission ? (
+              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                Loading submission.
+              </div>
+            ) : null}
+
             {error ? (
               <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
@@ -1097,7 +1225,7 @@ export default function SubmitServerPage() {
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor="server-name">Name</Label>
-                    {!isManualSource ? (
+                    {!isManualSource && !isServerNameLocked ? (
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           checked={isNameOverrideEnabled}
@@ -1116,12 +1244,25 @@ export default function SubmitServerPage() {
                   </div>
                   <Input
                     id="server-name"
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder={isManualSource || isNameOverrideEnabled ? "publisher/server" : "Generated from source"}
-                    readOnly={!isManualSource && !isNameOverrideEnabled}
-                    required={isManualSource || isNameOverrideEnabled}
+                    onChange={(event) => {
+                      if (!isServerNameLocked) {
+                        setName(event.target.value);
+                      }
+                    }}
+                    placeholder={
+                      isManualSource || isNameOverrideEnabled || isServerNameLocked
+                        ? "publisher/server"
+                        : "Generated from source"
+                    }
+                    readOnly={isServerNameLocked || (!isManualSource && !isNameOverrideEnabled)}
+                    required={isManualSource || isNameOverrideEnabled || isServerNameLocked}
                     value={effectiveName}
                   />
+                  {isServerNameLocked ? (
+                    <p className="text-xs text-muted-foreground">
+                      New versions must use the same server name.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="server-version">Version</Label>
@@ -1691,7 +1832,7 @@ export default function SubmitServerPage() {
               </Button>
               <Button disabled={isSubmitting} type="submit">
                 <Save className="size-4" />
-                {isSubmitting ? "Submitting" : "Submit for review"}
+                {isSubmitting ? "Submitting" : submitButtonLabel}
               </Button>
             </div>
           </form>

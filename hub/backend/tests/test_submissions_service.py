@@ -6,8 +6,11 @@ import pytest
 
 from app.modules.registry.schemas import RegistryServerVersionCreate
 from app.modules.submissions import service
-from app.modules.submissions.exceptions import InvalidSubmissionTransitionError
-from app.modules.submissions.schemas import SubmissionCreate
+from app.modules.submissions.exceptions import (
+    InvalidSubmissionTransitionError,
+    SubmissionValidationError,
+)
+from app.modules.submissions.schemas import SubmissionCreate, SubmissionUpdate
 from app.modules.users.models import User
 
 
@@ -70,6 +73,24 @@ def registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
 def test_new_server_submission_starts_at_one_zero_zero() -> None:
     with pytest.raises(ValueError, match="new server submissions must start"):
         SubmissionCreate(serverJson=registry_payload(version="1.1.0"))
+
+
+@pytest.mark.asyncio
+async def test_new_version_submission_requires_published_server(monkeypatch) -> None:
+    async def missing_server(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.registry_repository, "get_server", missing_server)
+
+    with pytest.raises(SubmissionValidationError, match="published server"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(
+                submissionType="new_version",
+                serverJson=registry_payload(version="1.0.1"),
+            ),
+        )
 
 
 @pytest.mark.asyncio
@@ -152,3 +173,75 @@ async def test_withdraw_requires_submitted_status(monkeypatch) -> None:
 
     with pytest.raises(InvalidSubmissionTransitionError):
         await service.withdraw_submission(FakeSession(), submitter, submission.id)
+
+
+@pytest.mark.asyncio
+async def test_update_submission_allowed_until_published(monkeypatch) -> None:
+    submitter = current_user()
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="approved",
+        server_json=registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+
+    response = await service.update_submission(
+        FakeSession(),
+        submitter,
+        submission.id,
+        SubmissionUpdate(serverJson=registry_payload(version="1.0.1")),
+    )
+
+    assert response.status == "draft"
+    assert response.version == "1.0.1"
+
+
+@pytest.mark.asyncio
+async def test_update_submission_rejects_published(monkeypatch) -> None:
+    submitter = current_user()
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="published",
+        server_json=registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    with pytest.raises(InvalidSubmissionTransitionError, match="published submissions"):
+        await service.update_submission(
+            FakeSession(),
+            submitter,
+            submission.id,
+            SubmissionUpdate(serverJson=registry_payload(version="1.0.1")),
+        )

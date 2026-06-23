@@ -98,9 +98,26 @@ export default function SubmissionDetailPage() {
               Back to registry
             </Link>
           </Button>
-          <Button asChild variant="outline">
-            <Link href="/submit">New submission</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {submission ? (
+              submission.status === "published" ? (
+                <Button asChild>
+                  <Link href={`/submit?submission=${submission.id}&version=new`}>
+                    Add new version
+                  </Link>
+                </Button>
+              ) : (
+                <Button asChild>
+                  <Link href={`/submit?submission=${submission.id}`}>
+                    Edit submission
+                  </Link>
+                </Button>
+              )
+            ) : null}
+            <Button asChild variant="outline">
+              <Link href="/submit">New submission</Link>
+            </Button>
+          </div>
         </div>
 
         <Card>

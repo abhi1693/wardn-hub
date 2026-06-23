@@ -14,6 +14,7 @@ from app.modules.submissions.exceptions import (
     InvalidSubmissionTransitionError,
     SubmissionAccessDeniedError,
     SubmissionNotFoundError,
+    SubmissionValidationError,
 )
 from app.modules.submissions.models import ServerSubmission
 from app.modules.submissions.schemas import (
@@ -62,8 +63,8 @@ def ensure_can_read_submission(user: User, submission: ServerSubmission) -> None
 
 def ensure_can_mutate_submission(user: User, submission: ServerSubmission) -> None:
     ensure_can_read_submission(user, submission)
-    if submission.status not in {"draft", "rejected"}:
-        raise InvalidSubmissionTransitionError("submission cannot be edited")
+    if submission.status == "published":
+        raise InvalidSubmissionTransitionError("published submissions cannot be edited")
 
 
 async def ensure_version_not_published(
@@ -79,6 +80,19 @@ async def ensure_version_not_published(
     )
     if existing is not None and existing.status != "deleted":
         raise DuplicatePublishedVersionError("server version already published")
+
+
+async def ensure_submission_type_allowed(
+    session: AsyncSession,
+    submission_type: str,
+    name: str,
+) -> None:
+    if submission_type != "new_version":
+        return
+
+    server = await registry_repository.get_server(session, name)
+    if server is None:
+        raise SubmissionValidationError("new version submissions require a published server")
 
 
 async def get_submission(
@@ -112,6 +126,11 @@ async def create_submission(
     user: User,
     payload: SubmissionCreate,
 ) -> SubmissionRead:
+    await ensure_submission_type_allowed(
+        session,
+        payload.submission_type,
+        payload.server_json.name,
+    )
     await ensure_version_not_published(
         session,
         payload.server_json.name,
@@ -163,6 +182,7 @@ async def update_submission(
         submission.validation_result = validation_result_for(server_json)
     if payload.submission_type is not None:
         submission.submission_type = payload.submission_type
+    await ensure_submission_type_allowed(session, submission.submission_type, submission.name)
     if "owner_user_id" in payload.model_fields_set:
         submission.owner_user_id = payload.owner_user_id
     if "owner_organization_id" in payload.model_fields_set:
