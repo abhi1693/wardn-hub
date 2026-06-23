@@ -21,6 +21,23 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    is_partner: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    partner_status: Mapped[str] = mapped_column(
+        String(32),
+        default="none",
+        nullable=False,
+        index=True,
+    )
+    partner_tier: Mapped[str] = mapped_column(
+        String(32),
+        default="community",
+        nullable=False,
+        index=True,
+    )
+    website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
+    support_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
+    partner_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    partner_internal_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     roles: Mapped[list["OrganizationRole"]] = relationship(
         back_populates="organization",
@@ -127,4 +144,3 @@ DEFAULT_ORGANIZATION_ROLES: dict[str, dict[str, Any]] = {
         "permissions": [],
     },
 }
-

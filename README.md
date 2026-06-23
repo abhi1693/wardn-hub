@@ -60,6 +60,16 @@ Phase 4 adds the first trust-plane surface:
 - Pending, verified, failed, and revoked claim states
 - Audit events for namespace claim lifecycle changes
 
+## Phase 5 Partner Support
+
+Phase 5 adds partner organization metadata and server support records:
+
+- Partner fields on organizations for status, tier, profile, and support contact
+- Partner organization listing under `/api/v1/partners`
+- Server support mappings under `/api/v1/partners/organizations/{organization_id}/server-support`
+- Support levels for official, verified, compatible, and deprecated relationships
+- Audit events for partner metadata and support record changes
+
 ## Commands
 
 ```sh

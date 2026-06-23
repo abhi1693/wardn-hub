@@ -771,6 +771,518 @@
         "title": "OrganizationUpdate",
         "type": "object"
       },
+      "PartnerOrganizationListResponse": {
+        "properties": {
+          "organizations": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerOrganizationRead"
+            },
+            "title": "Organizations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organizations"
+        ],
+        "title": "PartnerOrganizationListResponse",
+        "type": "object"
+      },
+      "PartnerOrganizationRead": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isPartner": {
+            "title": "Ispartner",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "partnerProfile": {
+            "additionalProperties": true,
+            "title": "Partnerprofile",
+            "type": "object"
+          },
+          "partnerStatus": {
+            "enum": [
+              "none",
+              "pending",
+              "active",
+              "suspended",
+              "ended"
+            ],
+            "title": "Partnerstatus",
+            "type": "string"
+          },
+          "partnerTier": {
+            "enum": [
+              "official",
+              "supported",
+              "verified",
+              "community"
+            ],
+            "title": "Partnertier",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "supportEmail": {
+            "title": "Supportemail",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "websiteUrl": {
+            "title": "Websiteurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "status",
+          "isPartner",
+          "partnerStatus",
+          "partnerTier",
+          "websiteUrl",
+          "supportEmail",
+          "partnerProfile",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PartnerOrganizationRead",
+        "type": "object"
+      },
+      "PartnerOrganizationUpdate": {
+        "properties": {
+          "isPartner": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ispartner"
+          },
+          "partnerInternalNotes": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partnerinternalnotes"
+          },
+          "partnerProfile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partnerprofile"
+          },
+          "partnerStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "pending",
+                  "active",
+                  "suspended",
+                  "ended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partnerstatus"
+          },
+          "partnerTier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "official",
+                  "supported",
+                  "verified",
+                  "community"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partnertier"
+          },
+          "supportEmail": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportemail"
+          },
+          "websiteUrl": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Websiteurl"
+          }
+        },
+        "title": "PartnerOrganizationUpdate",
+        "type": "object"
+      },
+      "PartnerServerSupportCreate": {
+        "properties": {
+          "contactPolicy": {
+            "additionalProperties": true,
+            "title": "Contactpolicy",
+            "type": "object"
+          },
+          "docsUrl": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Docsurl",
+            "type": "string"
+          },
+          "endsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endsat"
+          },
+          "internalNotes": {
+            "default": "",
+            "maxLength": 10000,
+            "title": "Internalnotes",
+            "type": "string"
+          },
+          "serverName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Servername",
+            "type": "string"
+          },
+          "startsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startsat"
+          },
+          "supportLevel": {
+            "default": "compatible",
+            "enum": [
+              "official",
+              "verified",
+              "compatible",
+              "deprecated"
+            ],
+            "title": "Supportlevel",
+            "type": "string"
+          },
+          "supportStatus": {
+            "default": "pending",
+            "enum": [
+              "active",
+              "pending",
+              "suspended",
+              "ended"
+            ],
+            "title": "Supportstatus",
+            "type": "string"
+          },
+          "supportUrl": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Supporturl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverName"
+        ],
+        "title": "PartnerServerSupportCreate",
+        "type": "object"
+      },
+      "PartnerServerSupportListResponse": {
+        "properties": {
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerServerSupportRead"
+            },
+            "title": "Support",
+            "type": "array"
+          }
+        },
+        "required": [
+          "support"
+        ],
+        "title": "PartnerServerSupportListResponse",
+        "type": "object"
+      },
+      "PartnerServerSupportRead": {
+        "properties": {
+          "contactPolicy": {
+            "additionalProperties": true,
+            "title": "Contactpolicy",
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "docsUrl": {
+            "title": "Docsurl",
+            "type": "string"
+          },
+          "endsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endsat"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "title": "Organizationid",
+            "type": "string"
+          },
+          "serverName": {
+            "title": "Servername",
+            "type": "string"
+          },
+          "startsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startsat"
+          },
+          "supportLevel": {
+            "enum": [
+              "official",
+              "verified",
+              "compatible",
+              "deprecated"
+            ],
+            "title": "Supportlevel",
+            "type": "string"
+          },
+          "supportStatus": {
+            "enum": [
+              "active",
+              "pending",
+              "suspended",
+              "ended"
+            ],
+            "title": "Supportstatus",
+            "type": "string"
+          },
+          "supportUrl": {
+            "title": "Supporturl",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "serverName",
+          "supportLevel",
+          "supportStatus",
+          "supportUrl",
+          "docsUrl",
+          "contactPolicy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PartnerServerSupportRead",
+        "type": "object"
+      },
+      "PartnerServerSupportUpdate": {
+        "properties": {
+          "contactPolicy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contactpolicy"
+          },
+          "docsUrl": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docsurl"
+          },
+          "endsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endsat"
+          },
+          "internalNotes": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internalnotes"
+          },
+          "startsAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startsat"
+          },
+          "supportLevel": {
+            "anyOf": [
+              {
+                "enum": [
+                  "official",
+                  "verified",
+                  "compatible",
+                  "deprecated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportlevel"
+          },
+          "supportStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "pending",
+                  "suspended",
+                  "ended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportstatus"
+          },
+          "supportUrl": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supporturl"
+          }
+        },
+        "title": "PartnerServerSupportUpdate",
+        "type": "object"
+      },
       "RegistryLatestVersionSummary": {
         "properties": {
           "id": {
@@ -4350,6 +4862,379 @@
         "summary": "Create Organization Role",
         "tags": [
           "organizations"
+        ]
+      }
+    },
+    "/api/v1/partners": {
+      "get": {
+        "operationId": "partners_list",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerOrganizationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Partner Organization Records",
+        "tags": [
+          "partners"
+        ]
+      }
+    },
+    "/api/v1/partners/organizations/{organization_id}": {
+      "patch": {
+        "operationId": "partners_update_organization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerOrganizationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerOrganizationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Partner Organization Record",
+        "tags": [
+          "partners"
+        ]
+      }
+    },
+    "/api/v1/partners/organizations/{organization_id}/server-support": {
+      "get": {
+        "operationId": "partners_server_support_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerServerSupportListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Partner Server Support Records",
+        "tags": [
+          "partners"
+        ]
+      },
+      "post": {
+        "operationId": "partners_server_support_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerServerSupportCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerServerSupportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Partner Server Support Record",
+        "tags": [
+          "partners"
+        ]
+      }
+    },
+    "/api/v1/partners/server-support/{support_id}": {
+      "patch": {
+        "operationId": "partners_server_support_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "support_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Support Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerServerSupportUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerServerSupportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Partner Server Support Record",
+        "tags": [
+          "partners"
         ]
       }
     },
