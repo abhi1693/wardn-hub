@@ -28,7 +28,12 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://wardn_hub:wardn_hub@localhost:5432/wardn_hub",
         description="Async SQLAlchemy database URL.",
     )
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ]
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -41,4 +46,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
