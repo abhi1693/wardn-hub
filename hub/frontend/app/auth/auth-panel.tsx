@@ -1,10 +1,20 @@
 "use client";
 
-import { ArrowLeft, Database, LockKeyhole, LogIn, Mail, User, UserPlus } from "lucide-react";
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { HubApiError, login, registerUser, setApiToken } from "@/lib/api/hub";
 
 type AuthMode = "login" | "register";
@@ -12,197 +22,161 @@ type AuthMode = "login" | "register";
 function AuthPanelContent({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isRegister = mode === "register";
   const next = searchParams.get("next");
   const nextPath = next ? `/?section=${encodeURIComponent(next)}` : "/";
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setIsSubmitting(true);
 
-    if (isRegister && password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "");
+    const password = String(formData.get("password") ?? "");
 
-    setLoading(true);
     try {
       setApiToken("");
       if (isRegister) {
+        const confirmPassword = String(formData.get("confirmPassword") ?? "");
+        if (password !== confirmPassword) {
+          setError("Passwords do not match.");
+          setIsSubmitting(false);
+          return;
+        }
+
         await registerUser({
           email,
           password,
-          first_name: firstName,
-          last_name: lastName,
+          first_name: String(formData.get("firstName") ?? ""),
+          last_name: String(formData.get("lastName") ?? ""),
         });
       } else {
         await login({ email, password });
       }
-      router.push(nextPath);
-      router.refresh();
     } catch (caught) {
+      setIsSubmitting(false);
       if (caught instanceof HubApiError && caught.status === 409) {
         setError("An account already exists for that email.");
+      } else if (caught instanceof HubApiError && caught.status === 401) {
+        setError("The email or password is incorrect.");
       } else {
-        setError(caught instanceof Error ? caught.message : "Authentication failed.");
+        setError(isRegister ? "Registration is currently unavailable." : "Sign in is currently unavailable.");
       }
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    router.replace(nextPath);
+    router.refresh();
   }
 
   return (
-    <main className="auth-page">
-      <section className="auth-layout" aria-labelledby="auth-title">
-        <div className="auth-identity">
-          <Link className="auth-back" href="/">
-            <ArrowLeft size={16} />
-            Back to registry
-          </Link>
-          <div className="auth-brand">
-            <Database size={22} />
-            <span>Wardn Hub</span>
+    <main className="flex min-h-dvh items-center justify-center bg-background p-5">
+      <Card className="w-full max-w-[420px]">
+        <CardHeader className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
+              W
+            </div>
+            <div className="text-sm font-semibold">Wardn Hub</div>
           </div>
           <div>
-            <p className="eyebrow">Access control</p>
-            <h1 id="auth-title">{isRegister ? "Create your account" : "Sign in to Wardn Hub"}</h1>
-            <p className="auth-copy">
-              {isRegister
-                ? "Use a work email to create a session for submissions, namespace claims, partner records, and audit access."
-                : "Use your Wardn Hub account to manage submissions, namespace trust, partner support, and operational reviews."}
-            </p>
+            <CardTitle className="text-2xl">{isRegister ? "Create account" : "Sign in"}</CardTitle>
+            <CardDescription>
+              {isRegister ? "Create access to the MCP registry." : "Access your MCP registry workspace."}
+            </CardDescription>
           </div>
-          <dl className="auth-proof">
-            <div>
-              <dt>Session security</dt>
-              <dd>HTTP-only cookie</dd>
-            </div>
-            <div>
-              <dt>Protected workflows</dt>
-              <dd>Submissions, namespaces, partners</dd>
-            </div>
-            <div>
-              <dt>Registry browsing</dt>
-              <dd>Public access</dd>
-            </div>
-          </dl>
-        </div>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-4" method="post" onSubmit={(event) => void handleSubmit(event)}>
+            {isRegister ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="firstName">First name</Label>
+                  <Input autoComplete="given-name" id="firstName" name="firstName" placeholder="First" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="lastName">Last name</Label>
+                  <Input autoComplete="family-name" id="lastName" name="lastName" placeholder="Last" />
+                </div>
+              </div>
+            ) : null}
 
-        <form className="auth-card" onSubmit={(event) => void submit(event)}>
-          <div className="auth-card-head">
-            <div className="auth-card-icon">
-              {isRegister ? <UserPlus size={19} /> : <LockKeyhole size={19} />}
-            </div>
-            <div>
-              <h2>{isRegister ? "Register" : "Login"}</h2>
-              <p>{isRegister ? "Start with a standard user account." : "Continue with your existing account."}</p>
-            </div>
-          </div>
-
-          {isRegister && (
-            <div className="auth-name-grid">
-              <label className="auth-field">
-                <span>First name</span>
-                <span className="auth-input-wrap">
-                  <User size={16} />
-                  <input
-                    autoComplete="given-name"
-                    onChange={(event) => setFirstName(event.target.value)}
-                    value={firstName}
-                  />
-                </span>
-              </label>
-              <label className="auth-field">
-                <span>Last name</span>
-                <span className="auth-input-wrap">
-                  <User size={16} />
-                  <input
-                    autoComplete="family-name"
-                    onChange={(event) => setLastName(event.target.value)}
-                    value={lastName}
-                  />
-                </span>
-              </label>
-            </div>
-          )}
-
-          <label className="auth-field">
-            <span>Email</span>
-            <span className="auth-input-wrap">
-              <Mail size={16} />
-              <input
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
                 autoComplete="email"
-                onChange={(event) => setEmail(event.target.value)}
+                id="email"
+                name="email"
+                placeholder="admin@example.com"
                 required
                 type="email"
-                value={email}
               />
-            </span>
-          </label>
+            </div>
 
-          <label className="auth-field">
-            <span>Password</span>
-            <span className="auth-input-wrap">
-              <LockKeyhole size={16} />
-              <input
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
                 autoComplete={isRegister ? "new-password" : "current-password"}
+                id="password"
                 minLength={isRegister ? 8 : undefined}
-                onChange={(event) => setPassword(event.target.value)}
+                name="password"
+                placeholder="Enter password"
                 required
                 type="password"
-                value={password}
               />
-            </span>
-          </label>
+            </div>
 
-          {isRegister && (
-            <label className="auth-field">
-              <span>Confirm password</span>
-              <span className="auth-input-wrap">
-                <LockKeyhole size={16} />
-                <input
+            {isRegister ? (
+              <div className="grid gap-2">
+                <Label htmlFor="confirmPassword">Confirm password</Label>
+                <Input
                   autoComplete="new-password"
+                  id="confirmPassword"
                   minLength={8}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  name="confirmPassword"
+                  placeholder="Confirm password"
                   required
                   type="password"
-                  value={confirmPassword}
                 />
-              </span>
-            </label>
-          )}
+              </div>
+            ) : null}
 
-          {error && <div className="error-banner">{error}</div>}
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          <button className="auth-submit" disabled={loading} type="submit">
-            {isRegister ? <UserPlus size={17} /> : <LogIn size={17} />}
-            {loading ? "Working" : isRegister ? "Create account" : "Sign in"}
-          </button>
+            <Button className="w-full" disabled={isSubmitting} type="submit">
+              {isSubmitting
+                ? isRegister
+                  ? "Creating account"
+                  : "Signing in"
+                : isRegister
+                  ? "Create account"
+                  : "Sign in"}
+            </Button>
 
-          <p className="auth-switch">
-            {isRegister ? "Already have an account?" : "Need an account?"}{" "}
-            <Link href={isRegister ? `/login${nextQuery}` : `/register${nextQuery}`}>
-              {isRegister ? "Sign in" : "Create account"}
-            </Link>
-          </p>
-        </form>
-      </section>
+            <p className="text-center text-sm text-muted-foreground">
+              {isRegister ? "Already have an account?" : "Need an account?"}{" "}
+              <Link
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                href={isRegister ? `/login${nextQuery}` : `/register${nextQuery}`}
+              >
+                {isRegister ? "Sign in" : "Create account"}
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   );
 }
 
 export function AuthPanel({ mode }: { mode: AuthMode }) {
   return (
-    <Suspense fallback={<div className="auth-page" />}>
+    <Suspense fallback={<main className="flex min-h-dvh items-center justify-center bg-background p-5" />}>
       <AuthPanelContent mode={mode} />
     </Suspense>
   );
