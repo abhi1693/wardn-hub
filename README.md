@@ -79,6 +79,15 @@ Phase 6 exposes trust-plane data through registry read APIs:
 - Active partner support summaries on registry server/version responses
 - Partner and support-level filters backed by partner support records
 
+## Phase 7 Frontend Product Surface
+
+Phase 7 adds the first usable browser experience:
+
+- Operational app shell with registry, submissions, partners, namespaces, audit, and settings views
+- Registry browse/detail workflow with trust and partner support badges
+- Protected data views for moderation queues, namespace claims, partner support, and audit records
+- Runtime API base URL support through `NEXT_PUBLIC_API_BASE_URL`
+
 ## Commands
 
 ```sh
