@@ -98,6 +98,13 @@ type SourceMetadata = {
   packages?: unknown;
 };
 
+type GitHubRepositoryMetadata = {
+  name?: unknown;
+  description?: unknown;
+  homepage?: unknown;
+  html_url?: unknown;
+};
+
 const PACKAGE_RUNTIME_OPTIONS = [
   { value: "uvx", label: "UVX package" },
   { value: "npm", label: "NPM package" },
@@ -347,6 +354,52 @@ function repositoryWebUrl(source: string, value: string) {
   return `https://${host}/${repository.owner}/${repository.repo}`;
 }
 
+async function fetchGitHubRepositoryMetadata(
+  repositorySource: string,
+  repositoryReference: string,
+): Promise<SourceMetadata> {
+  const repository = parseRepositoryReference(repositorySource, repositoryReference);
+  if (repositorySource !== "github" || !repository) {
+    return {};
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}`,
+      {
+        cache: "no-store",
+        headers: {
+          Accept: "application/vnd.github+json",
+        },
+      },
+    );
+    if (!response.ok) {
+      return {};
+    }
+
+    const payload = (await response.json()) as GitHubRepositoryMetadata;
+    const homepage = stringValue(payload.homepage);
+    const htmlUrl = stringValue(payload.html_url);
+
+    return {
+      title: stringValue(payload.name),
+      description: stringValue(payload.description),
+      websiteUrl: homepage || htmlUrl,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function metadataWithFallback(metadata: SourceMetadata, fallback: SourceMetadata): SourceMetadata {
+  return {
+    ...metadata,
+    title: metadata.title || fallback.title,
+    description: metadata.description || fallback.description,
+    websiteUrl: metadata.websiteUrl || fallback.websiteUrl,
+  };
+}
+
 function generatedServerName(repositorySource: string, repositoryUrl: string, packages: PackageTarget[]) {
   const repository = parseRepositoryReference(repositorySource, repositoryUrl);
   if (repository) {
@@ -552,6 +605,7 @@ async function importSourceMetadata(
   if (candidates.length === 0) {
     throw new Error("Source import currently supports GitHub repositories.");
   }
+  const githubMetadata = await fetchGitHubRepositoryMetadata(repositorySource, repositoryReference);
 
   for (const candidate of candidates) {
     const response = await fetch(candidate, { cache: "no-store" });
@@ -561,7 +615,7 @@ async function importSourceMetadata(
 
     const payload = (await response.json()) as Record<string, unknown>;
     if (payload.$schema || payload.packages || payload.remotes) {
-      return {
+      return metadataWithFallback({
         ...(payload as SourceMetadata),
         source: "server.json",
         repository: {
@@ -569,10 +623,13 @@ async function importSourceMetadata(
           url: repositoryReference,
           subfolder,
         },
-      };
+      }, githubMetadata);
     }
     if (payload.mcpServers) {
-      return metadataFromMcpJson(payload, repositorySource, repositoryReference);
+      return metadataWithFallback(
+        metadataFromMcpJson(payload, repositorySource, repositoryReference),
+        githubMetadata,
+      );
     }
   }
 
