@@ -58,6 +58,14 @@ const protectedNavItems: Array<{ id: Section; label: string; icon: typeof Server
   { id: "audit", label: "Audit", icon: History },
 ];
 
+const adminSections = new Set<Section>(["submissions", "partners", "namespaces", "audit"]);
+
+function isAdminUser(user: UserRead | null) {
+  return Boolean(
+    user?.is_superuser || user?.is_global_moderator || user?.is_global_partner_manager,
+  );
+}
+
 function statusFromError(error: unknown): LoadState {
   return error instanceof HubApiError && error.status === 401 ? "auth" : "error";
 }
@@ -120,6 +128,7 @@ function ActionButton({
 function AppShell({
   section,
   isAuthenticated,
+  isAdmin,
   onSectionChange,
   onLogin,
   onRegister,
@@ -128,15 +137,14 @@ function AppShell({
 }: {
   section: Section;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   onSectionChange: (section: Section) => void;
   onLogin: () => void;
   onRegister: () => void;
   onLogout: () => void;
   children: React.ReactNode;
 }) {
-  const navItems = isAuthenticated
-    ? [...publicNavItems, ...protectedNavItems]
-    : publicNavItems;
+  const navItems = isAdmin ? [...publicNavItems, ...protectedNavItems] : publicNavItems;
 
   return (
     <main className="site-shell">
@@ -164,9 +172,11 @@ function AppShell({
         <div className="site-actions">
           {isAuthenticated ? (
             <>
-              <button className="text-button subtle" onClick={() => onSectionChange("submissions")} type="button">
-                Submit
-              </button>
+              {isAdmin && (
+                <button className="text-button subtle" onClick={() => onSectionChange("submissions")} type="button">
+                  Submit
+                </button>
+              )}
               <button className="small-button" onClick={onLogout} type="button">
                 Sign out
               </button>
@@ -712,13 +722,14 @@ export default function Home() {
   const [section, setSection] = useState<Section>("browse");
   const [user, setUser] = useState<UserRead | null>(null);
   const isAuthenticated = user !== null;
+  const isAdmin = isAdminUser(user);
 
   useEffect(() => {
     currentUser()
       .then((response) => {
         setUser(response);
         const nextSection = new URLSearchParams(window.location.search).get("section");
-        if (isSection(nextSection) && nextSection !== "browse") {
+        if (isSection(nextSection) && adminSections.has(nextSection) && isAdminUser(response)) {
           setSection(nextSection);
         }
       })
@@ -732,8 +743,12 @@ export default function Home() {
   }
 
   function selectSection(nextSection: Section) {
-    if (nextSection !== "browse" && !isAuthenticated) {
+    if (adminSections.has(nextSection) && !isAuthenticated) {
       goToAuth("login", nextSection);
+      return;
+    }
+    if (adminSections.has(nextSection) && !isAdmin) {
+      setSection("browse");
       return;
     }
     setSection(nextSection);
@@ -748,6 +763,7 @@ export default function Home() {
 
   return (
     <AppShell
+      isAdmin={isAdmin}
       isAuthenticated={isAuthenticated}
       onLogin={() => goToAuth("login")}
       onLogout={() => void signOut()}
@@ -756,10 +772,10 @@ export default function Home() {
       section={section}
     >
       {section === "browse" && <BrowseView />}
-      {isAuthenticated && section === "submissions" && <SubmissionsView />}
-      {isAuthenticated && section === "partners" && <PartnersView />}
-      {isAuthenticated && section === "namespaces" && <NamespacesView />}
-      {isAuthenticated && section === "audit" && <AuditView />}
+      {isAdmin && section === "submissions" && <SubmissionsView />}
+      {isAdmin && section === "partners" && <PartnersView />}
+      {isAdmin && section === "namespaces" && <NamespacesView />}
+      {isAdmin && section === "audit" && <AuditView />}
     </AppShell>
   );
 }
