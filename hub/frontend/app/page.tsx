@@ -323,7 +323,7 @@ function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
-function BrowseView() {
+function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
   const [servers, setServers] = useState<RegistryServerRead[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [detail, setDetail] = useState<RegistryServerVersionRead[]>([]);
@@ -405,16 +405,36 @@ function BrowseView() {
     .filter((server) => server.version)
     .slice(0, 6);
 
+  const verifiedCount = servers.filter((server) => server.namespaceVerified).length;
+  const partnerBackedCount = servers.filter(
+    (server) => (server.partnerSupport ?? []).length > 0,
+  ).length;
+
   return (
     <div className="home-view">
       <section className="hero-section">
-        <div className="hero-copy">
-          <p className="eyebrow">MCP Registry</p>
-          <h1>Wardn Hub MCP Servers</h1>
-          <p className="hero-subtitle">
-            Discover, verify, and operate Model Context Protocol servers with partner support,
-            namespace trust, moderation, and audit metadata in one registry.
-          </p>
+        <div className="hero-grid">
+          <div className="hero-copy">
+            <p className="eyebrow">MCP Registry</p>
+            <h1>Wardn Hub MCP Servers</h1>
+            <p className="hero-subtitle">
+              Discover MCP servers by trust signal, partner support, and namespace ownership.
+            </p>
+          </div>
+          <div className="registry-status-panel">
+            <div>
+              <span>Servers</span>
+              <strong>{servers.length}</strong>
+            </div>
+            <div>
+              <span>Verified namespaces</span>
+              <strong>{verifiedCount}</strong>
+            </div>
+            <div>
+              <span>Partner backed</span>
+              <strong>{partnerBackedCount}</strong>
+            </div>
+          </div>
         </div>
         <form className="hero-search" onSubmit={submitSearch}>
           <label className="search-field large">
@@ -468,7 +488,7 @@ function BrowseView() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Featured</p>
-            <h2>MCP servers</h2>
+            <h2>Servers</h2>
           </div>
           <button className="icon-button" onClick={() => void refresh()} title="Refresh" type="button">
             <RefreshCw size={17} />
@@ -477,7 +497,19 @@ function BrowseView() {
         {state === "loading" && <EmptyState title="Loading" detail="Fetching registry." />}
         {state === "error" && <EmptyState title="Registry unavailable" detail={error} />}
         {state === "ready" && servers.length === 0 && (
-          <EmptyState title="No servers" detail="No matching registry entries." />
+          <div className="empty-catalog">
+            <div>
+              <p className="eyebrow">Ready for submissions</p>
+              <h3>No MCP servers published yet</h3>
+              <p>
+                Published submissions will appear here as searchable registry cards with version,
+                namespace, and partner support metadata.
+              </p>
+            </div>
+            <button className="text-button" onClick={onSubmitServer} type="button">
+              Submit server
+            </button>
+          </div>
         )}
         <div className="server-grid">
           {servers.map((server) => (
@@ -515,9 +547,30 @@ function BrowseView() {
         </div>
       </section>
 
+      <section className="topic-section">
+        <div className="section-heading compact">
+          <div>
+            <p className="eyebrow">Browse</p>
+            <h2>Trust signals</h2>
+          </div>
+        </div>
+        <div className="topic-grid">
+          {registryChips.slice(1).map((chip) => (
+            <button className="topic-card" key={chip.label} onClick={() => applyChip(chip)} type="button">
+              <strong>{chip.label}</strong>
+              <span>
+                {chip.label === "Partners"
+                  ? "Servers mapped to active partner support"
+                  : `${chip.label} support level`}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {(selectedServer || latestVersions.length > 0) && (
       <section className="registry-layout">
         <aside className="detail-pane">
-          {!selectedServer && <EmptyState title="No selection" detail="Select a server." />}
           {selectedServer && (
             <>
               <div className="detail-head">
@@ -595,6 +648,7 @@ function BrowseView() {
           ))}
         </div>
       </section>
+      )}
     </div>
   );
 }
@@ -1053,7 +1107,7 @@ export default function Home() {
 
   return (
     <AppShell section={section} onOpenAuth={() => setAuthOpen(true)} onSectionChange={setSection}>
-      {section === "browse" && <BrowseView />}
+      {section === "browse" && <BrowseView onSubmitServer={() => setSection("submissions")} />}
       {section === "submissions" && <SubmissionsView />}
       {section === "partners" && <PartnersView />}
       {section === "namespaces" && <NamespacesView />}
