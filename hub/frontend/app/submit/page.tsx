@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { FormEvent } from "react";
+import type { ClipboardEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, Database, Plus, Save, Trash2 } from "lucide-react";
 
@@ -114,6 +114,12 @@ const REPOSITORY_SOURCE_OPTIONS = [
   { value: "git", label: "Git" },
 ];
 
+const REPOSITORY_SOURCE_HOSTS: Record<string, string> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+  bitbucket: "bitbucket.org",
+};
+
 const TRANSPORT_OPTIONS = [
   { value: "stdio", label: "stdio" },
   { value: "streamable-http", label: "streamable-http" },
@@ -217,10 +223,39 @@ function cleanNamePart(value: string) {
     .replace(/^[._-]+|[._-]+$/g, "");
 }
 
-function parseRepositoryUrl(value: string) {
+function sourceHost(source: string) {
+  return REPOSITORY_SOURCE_HOSTS[source.trim().toLowerCase()] ?? "";
+}
+
+function stripGitSuffix(value: string) {
+  return value.trim().replace(/\.git$/i, "");
+}
+
+function parseRepositoryReference(source: string, value: string) {
   const rawValue = value.trim();
   if (!rawValue) {
     return null;
+  }
+
+  const rawPathParts = rawValue
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean);
+  if (!rawValue.includes("://") && !rawValue.includes("@") && rawPathParts.length >= 2) {
+    return {
+      host: sourceHost(source),
+      owner: rawPathParts[0],
+      repo: stripGitSuffix(rawPathParts[1]),
+    };
+  }
+
+  const sshMatch = rawValue.match(/^(?:git@|ssh:\/\/git@)([^/:]+)[:/]([^/]+)\/([^/?#]+)(?:[/?#].*)?$/i);
+  if (sshMatch) {
+    return {
+      host: sshMatch[1].toLowerCase().replace(/^www\./, ""),
+      owner: sshMatch[2],
+      repo: stripGitSuffix(sshMatch[3]),
+    };
   }
 
   try {
@@ -233,10 +268,18 @@ function parseRepositoryUrl(value: string) {
     return {
       host: url.hostname.toLowerCase().replace(/^www\./, ""),
       owner: pathParts[0],
-      repo: pathParts[1],
+      repo: stripGitSuffix(pathParts[1]),
     };
   } catch {
-    return null;
+    if (rawPathParts.length < 2) {
+      return null;
+    }
+
+    return {
+      host: sourceHost(source),
+      owner: rawPathParts[0],
+      repo: stripGitSuffix(rawPathParts[1]),
+    };
   }
 }
 
@@ -252,6 +295,9 @@ function repositoryPublisher(source: string, host: string, owner: string) {
   }
   if (sourceName === "bitbucket" || host === "bitbucket.org") {
     return ownerPart ? `org.bitbucket.${ownerPart}` : "";
+  }
+  if (sourceName === "git") {
+    return ownerPart ? `git.${ownerPart}` : "";
   }
 
   const hostPublisher = host
@@ -282,8 +328,27 @@ function packagePublisher(registryType: string, identifier: string) {
   };
 }
 
+function normalizeRepositoryReference(source: string, value: string) {
+  const repository = parseRepositoryReference(source, value);
+  if (!repository) {
+    return value.trim();
+  }
+
+  return `${repository.owner}/${repository.repo}`;
+}
+
+function repositoryWebUrl(source: string, value: string) {
+  const repository = parseRepositoryReference(source, value);
+  const host = repository?.host || sourceHost(source);
+  if (!repository || !host) {
+    return "";
+  }
+
+  return `https://${host}/${repository.owner}/${repository.repo}`;
+}
+
 function generatedServerName(repositorySource: string, repositoryUrl: string, packages: PackageTarget[]) {
-  const repository = parseRepositoryUrl(repositoryUrl);
+  const repository = parseRepositoryReference(repositorySource, repositoryUrl);
   if (repository) {
     const publisher = repositoryPublisher(repositorySource, repository.host, repository.owner);
     const serverName = cleanNamePart(repository.repo);
@@ -424,9 +489,9 @@ function publicPackageArguments(packageArguments: PackageArgumentField[]): Recor
     .filter((argument): argument is Record<string, unknown> => Boolean(argument));
 }
 
-function githubRawCandidates(repositoryUrl: string, subfolder: string) {
-  const repository = parseRepositoryUrl(repositoryUrl);
-  if (!repository || repository.host !== "github.com") {
+function githubRawCandidates(repositorySource: string, repositoryReference: string, subfolder: string) {
+  const repository = parseRepositoryReference(repositorySource, repositoryReference);
+  if (!repository || repositorySource !== "github") {
     return [];
   }
 
@@ -442,7 +507,11 @@ function githubRawCandidates(repositoryUrl: string, subfolder: string) {
   );
 }
 
-function metadataFromMcpJson(value: Record<string, unknown>, repositoryUrl: string): SourceMetadata {
+function metadataFromMcpJson(
+  value: Record<string, unknown>,
+  repositorySource: string,
+  repositoryReference: string,
+): SourceMetadata {
   const servers = value.mcpServers as Record<string, unknown> | undefined;
   const [serverTitle, rawConfig] = Object.entries(servers ?? {})[0] ?? [];
   const config = rawConfig && typeof rawConfig === "object" ? (rawConfig as Record<string, unknown>) : {};
@@ -455,10 +524,10 @@ function metadataFromMcpJson(value: Record<string, unknown>, repositoryUrl: stri
     source: "mcp.json",
     title: serverTitle || "",
     version: "1.0.0",
-    websiteUrl: repositoryUrl,
+    websiteUrl: repositoryWebUrl(repositorySource, repositoryReference),
     repository: {
-      source: "github",
-      url: repositoryUrl,
+      source: repositorySource,
+      url: repositoryReference,
     },
     remotes: url ? [{ type: "streamable-http", url }] : [],
     packages:
@@ -474,8 +543,12 @@ function metadataFromMcpJson(value: Record<string, unknown>, repositoryUrl: stri
   };
 }
 
-async function importSourceMetadata(repositoryUrl: string, subfolder: string): Promise<SourceMetadata> {
-  const candidates = githubRawCandidates(repositoryUrl, subfolder);
+async function importSourceMetadata(
+  repositorySource: string,
+  repositoryReference: string,
+  subfolder: string,
+): Promise<SourceMetadata> {
+  const candidates = githubRawCandidates(repositorySource, repositoryReference, subfolder);
   if (candidates.length === 0) {
     throw new Error("Source import currently supports GitHub repositories.");
   }
@@ -492,14 +565,14 @@ async function importSourceMetadata(repositoryUrl: string, subfolder: string): P
         ...(payload as SourceMetadata),
         source: "server.json",
         repository: {
-          source: "github",
-          url: repositoryUrl,
+          source: repositorySource,
+          url: repositoryReference,
           subfolder,
         },
       };
     }
     if (payload.mcpServers) {
-      return metadataFromMcpJson(payload, repositoryUrl);
+      return metadataFromMcpJson(payload, repositorySource, repositoryReference);
     }
   }
 
@@ -555,6 +628,37 @@ export default function SubmitServerPage() {
         setCategory("");
       });
   }, []);
+
+  function clearRepositoryDerivedState() {
+    setSourceImportMessage("");
+    if (!isNameOverrideEnabled) {
+      setName("");
+    }
+  }
+
+  function updateRepositorySource(value: string) {
+    setRepositorySource(value);
+    setRepositoryUrl((current) => normalizeRepositoryReference(value, current));
+    clearRepositoryDerivedState();
+  }
+
+  function updateRepositoryReference(value: string) {
+    setRepositoryUrl(value);
+    clearRepositoryDerivedState();
+  }
+
+  function normalizeCurrentRepositoryReference() {
+    setRepositoryUrl((current) => normalizeRepositoryReference(repositorySource, current));
+  }
+
+  function pasteRepositoryReference(event: ClipboardEvent<HTMLInputElement>) {
+    const pastedValue = event.clipboardData.getData("text");
+    const normalizedValue = normalizeRepositoryReference(repositorySource, pastedValue);
+    if (normalizedValue && normalizedValue !== pastedValue.trim()) {
+      event.preventDefault();
+      updateRepositoryReference(normalizedValue);
+    }
+  }
 
   function updateRemote(id: string, patch: Partial<RemoteTarget>) {
     setRemotes((current) =>
@@ -629,21 +733,35 @@ export default function SubmitServerPage() {
     setIsImportingSource(true);
 
     try {
-      const metadata = await importSourceMetadata(repositoryUrl, repositorySubfolder);
+      const repositoryReference = normalizeRepositoryReference(repositorySource, repositoryUrl);
+      setRepositoryUrl(repositoryReference);
+      const metadata = await importSourceMetadata(
+        repositorySource,
+        repositoryReference,
+        repositorySubfolder,
+      );
       const metadataRepository = metadata.repository ?? {};
+      const metadataRepositorySource = metadataRepository.source || repositorySource;
+      const metadataRepositoryReference = normalizeRepositoryReference(
+        metadataRepositorySource,
+        metadataRepository.url || repositoryReference,
+      );
       const metadataPackages = importedPackages(metadata.packages);
       const metadataRemotes = importedRemotes(metadata.remotes);
       const metadataIconUrl = metadata.iconUrl || firstIconUrl(metadata.icons);
 
       setSourceMode("repository");
-      setRepositorySource(metadataRepository.source || "github");
-      setRepositoryUrl(metadataRepository.url || repositoryUrl);
+      setRepositorySource(metadataRepositorySource);
+      setRepositoryUrl(metadataRepositoryReference);
       setRepositorySubfolder(metadataRepository.subfolder || repositorySubfolder);
       setName(metadata.name || "");
       setTitle(metadata.title || "");
       setVersion("1.0.0");
       setDescription(metadata.description || "");
-      setWebsiteUrl(metadata.websiteUrl || metadataRepository.url || repositoryUrl);
+      setWebsiteUrl(
+        metadata.websiteUrl ||
+          repositoryWebUrl(metadataRepositorySource, metadataRepositoryReference),
+      );
       setIconUrl(metadataIconUrl);
       setPackages(metadataPackages);
       setRemotes(metadataRemotes);
@@ -706,10 +824,11 @@ export default function SubmitServerPage() {
         throw new Error("Add at least one remote endpoint or package target.");
       }
 
-      const repository = sourceMode === "repository" && repositoryUrl.trim()
+      const repositoryReference = normalizeRepositoryReference(repositorySource, repositoryUrl);
+      const repository = sourceMode === "repository" && repositoryReference
         ? {
             source: repositorySource.trim() || "github",
-            url: repositoryUrl.trim(),
+            url: repositoryReference,
             subfolder: repositorySubfolder.trim(),
           }
         : null;
@@ -872,7 +991,7 @@ export default function SubmitServerPage() {
                   <div className="grid w-full gap-4 md:grid-cols-2">
                     <div className="grid gap-2">
                       <Label htmlFor="server-repository-source">Repository Source</Label>
-                      <Select onValueChange={(value) => setRepositorySource(value)} value={repositorySource}>
+                      <Select onValueChange={updateRepositorySource} value={repositorySource}>
                         <SelectTrigger id="server-repository-source">
                           <SelectValue />
                         </SelectTrigger>
@@ -886,17 +1005,13 @@ export default function SubmitServerPage() {
                       </Select>
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="server-repository-url">Repository URL</Label>
+                      <Label htmlFor="server-repository-url">Repository</Label>
                       <Input
                         id="server-repository-url"
-                        onChange={(event) => {
-                          setRepositoryUrl(event.target.value);
-                          setSourceImportMessage("");
-                          if (!isNameOverrideEnabled) {
-                            setName("");
-                          }
-                        }}
-                        placeholder="https://github.com/org/repo"
+                        onBlur={normalizeCurrentRepositoryReference}
+                        onChange={(event) => updateRepositoryReference(event.target.value)}
+                        onPaste={pasteRepositoryReference}
+                        placeholder="owner/repo"
                         value={repositoryUrl}
                       />
                     </div>
