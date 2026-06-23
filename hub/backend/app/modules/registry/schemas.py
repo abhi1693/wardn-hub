@@ -25,6 +25,7 @@ class MCPServerDocument(BaseModel):
     )
     name: str = Field(min_length=3, max_length=200, pattern=MCP_SERVER_NAME_PATTERN)
     description: str = Field(min_length=1)
+    documentation: str = ""
     title: str = Field(default="", max_length=100)
     repository: dict[str, Any] | None = None
     version: str = Field(min_length=1, max_length=255, pattern=SEMVER_PATTERN)
@@ -111,6 +112,7 @@ class RegistryServerRead(BaseModel):
     name: str
     title: str
     description: str
+    documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
     repository: dict[str, Any] | None = None
     icons: list[dict[str, Any]] = Field(default_factory=list)
@@ -140,6 +142,7 @@ class RegistryServerVersionRead(BaseModel):
     version: str
     title: str
     description: str
+    documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
     repository: dict[str, Any] | None = None
     packages: list[dict[str, Any]] = Field(default_factory=list)

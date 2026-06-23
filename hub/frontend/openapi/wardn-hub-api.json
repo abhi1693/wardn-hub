@@ -245,237 +245,6 @@
         "title": "LoginRequest",
         "type": "object"
       },
-      "NamespaceClaimCreate": {
-        "properties": {
-          "expiresAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expiresat"
-          },
-          "method": {
-            "default": "github",
-            "enum": [
-              "github",
-              "dns",
-              "http",
-              "manual_partner",
-              "imported_official"
-            ],
-            "title": "Method",
-            "type": "string"
-          },
-          "namespace": {
-            "maxLength": 255,
-            "minLength": 3,
-            "title": "Namespace",
-            "type": "string"
-          },
-          "ownerOrganizationId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ownerorganizationid"
-          },
-          "verificationPayload": {
-            "additionalProperties": true,
-            "title": "Verificationpayload",
-            "type": "object"
-          }
-        },
-        "required": [
-          "namespace"
-        ],
-        "title": "NamespaceClaimCreate",
-        "type": "object"
-      },
-      "NamespaceClaimDecision": {
-        "properties": {
-          "verificationPayload": {
-            "additionalProperties": true,
-            "title": "Verificationpayload",
-            "type": "object"
-          }
-        },
-        "title": "NamespaceClaimDecision",
-        "type": "object"
-      },
-      "NamespaceClaimListResponse": {
-        "properties": {
-          "claims": {
-            "items": {
-              "$ref": "#/components/schemas/NamespaceClaimRead"
-            },
-            "title": "Claims",
-            "type": "array"
-          }
-        },
-        "required": [
-          "claims"
-        ],
-        "title": "NamespaceClaimListResponse",
-        "type": "object"
-      },
-      "NamespaceClaimRead": {
-        "properties": {
-          "claimedByUserId": {
-            "format": "uuid",
-            "title": "Claimedbyuserid",
-            "type": "string"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "title": "Createdat",
-            "type": "string"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expiresat"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "method": {
-            "enum": [
-              "github",
-              "dns",
-              "http",
-              "manual_partner",
-              "imported_official"
-            ],
-            "title": "Method",
-            "type": "string"
-          },
-          "namespace": {
-            "title": "Namespace",
-            "type": "string"
-          },
-          "ownerOrganizationId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ownerorganizationid"
-          },
-          "status": {
-            "enum": [
-              "pending",
-              "verified",
-              "failed",
-              "revoked"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "title": "Updatedat",
-            "type": "string"
-          },
-          "verificationPayload": {
-            "additionalProperties": true,
-            "title": "Verificationpayload",
-            "type": "object"
-          },
-          "verifiedAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Verifiedat"
-          }
-        },
-        "required": [
-          "id",
-          "namespace",
-          "claimedByUserId",
-          "method",
-          "status",
-          "verificationPayload",
-          "createdAt",
-          "updatedAt"
-        ],
-        "title": "NamespaceClaimRead",
-        "type": "object"
-      },
-      "NamespaceTrustSummary": {
-        "properties": {
-          "method": {
-            "title": "Method",
-            "type": "string"
-          },
-          "namespace": {
-            "title": "Namespace",
-            "type": "string"
-          },
-          "ownerOrganization": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ActorSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "const": "verified",
-            "title": "Status",
-            "type": "string"
-          },
-          "verifiedAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Verifiedat"
-          }
-        },
-        "required": [
-          "namespace",
-          "status",
-          "method"
-        ],
-        "title": "NamespaceTrustSummary",
-        "type": "object"
-      },
       "OrganizationCreate": {
         "properties": {
           "name": {
@@ -1579,6 +1348,11 @@
             "title": "Description",
             "type": "string"
           },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
           "icons": {
             "items": {
               "additionalProperties": true,
@@ -1605,21 +1379,6 @@
           "name": {
             "title": "Name",
             "type": "string"
-          },
-          "namespaceClaim": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NamespaceTrustSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "namespaceVerified": {
-            "default": false,
-            "title": "Namespaceverified",
-            "type": "boolean"
           },
           "organization": {
             "anyOf": [
@@ -1750,6 +1509,11 @@
             "title": "Description",
             "type": "string"
           },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
           "icons": {
             "items": {
               "additionalProperties": true,
@@ -1802,6 +1566,7 @@
           "version": {
             "maxLength": 255,
             "minLength": 1,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
             "title": "Version",
             "type": "string"
           },
@@ -1919,6 +1684,11 @@
             "title": "Description",
             "type": "string"
           },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
           "icons": {
             "items": {
               "additionalProperties": true,
@@ -1939,21 +1709,6 @@
           "name": {
             "title": "Name",
             "type": "string"
-          },
-          "namespaceClaim": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NamespaceTrustSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "namespaceVerified": {
-            "default": false,
-            "title": "Namespaceverified",
-            "type": "boolean"
           },
           "organization": {
             "anyOf": [
@@ -2131,6 +1886,11 @@
             "title": "Description",
             "type": "string"
           },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
           "icons": {
             "items": {
               "additionalProperties": true,
@@ -2183,6 +1943,7 @@
           "version": {
             "maxLength": 255,
             "minLength": 1,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
             "title": "Version",
             "type": "string"
           },
@@ -4128,408 +3889,6 @@
         "summary": "Get Mcp Server Version",
         "tags": [
           "mcp"
-        ]
-      }
-    },
-    "/api/v1/namespaces/claims": {
-      "get": {
-        "operationId": "namespace_claims_list",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamespaceClaimListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Namespace Claim Records",
-        "tags": [
-          "namespaces"
-        ]
-      },
-      "post": {
-        "operationId": "namespace_claims_create",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NamespaceClaimCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamespaceClaimRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Namespace Claim Record",
-        "tags": [
-          "namespaces"
-        ]
-      }
-    },
-    "/api/v1/namespaces/claims/{claim_id}": {
-      "get": {
-        "operationId": "namespace_claims_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "claim_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Claim Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamespaceClaimRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Namespace Claim Record",
-        "tags": [
-          "namespaces"
-        ]
-      }
-    },
-    "/api/v1/namespaces/claims/{claim_id}/fail": {
-      "post": {
-        "operationId": "namespace_claims_fail",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "claim_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Claim Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NamespaceClaimDecision"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamespaceClaimRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Fail Namespace Claim Record",
-        "tags": [
-          "namespaces"
-        ]
-      }
-    },
-    "/api/v1/namespaces/claims/{claim_id}/revoke": {
-      "post": {
-        "operationId": "namespace_claims_revoke",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "claim_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Claim Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamespaceClaimRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Revoke Namespace Claim Record",
-        "tags": [
-          "namespaces"
-        ]
-      }
-    },
-    "/api/v1/namespaces/claims/{claim_id}/verify": {
-      "post": {
-        "operationId": "namespace_claims_verify",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "claim_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Claim Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NamespaceClaimDecision"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamespaceClaimRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Verify Namespace Claim Record",
-        "tags": [
-          "namespaces"
         ]
       }
     },

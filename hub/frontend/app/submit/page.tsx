@@ -85,6 +85,7 @@ type SourceMetadata = {
   name?: string;
   title?: string;
   description?: string;
+  documentation?: string;
   version?: string;
   websiteUrl?: string;
   repository?: {
@@ -376,11 +377,46 @@ async function fetchGitHubRepositoryMetadata(repositoryReference: string): Promi
   }
 }
 
+async function fetchGitHubReadmeDocumentation(
+  repositoryReference: string,
+  subfolder: string,
+): Promise<SourceMetadata> {
+  const repository = parseRepositoryReference(repositoryReference);
+  if (!repository) {
+    return {};
+  }
+
+  const folder = subfolder.trim().replace(/^\/+|\/+$/g, "");
+  const readmePath = folder
+    ? `/${folder.split("/").map(encodeURIComponent).join("/")}`
+    : "";
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/readme${readmePath}`,
+      {
+        cache: "no-store",
+        headers: {
+          Accept: "application/vnd.github.raw",
+        },
+      },
+    );
+    if (!response.ok) {
+      return {};
+    }
+
+    return { documentation: await response.text() };
+  } catch {
+    return {};
+  }
+}
+
 function metadataWithFallback(metadata: SourceMetadata, fallback: SourceMetadata): SourceMetadata {
   return {
     ...metadata,
     title: metadata.title || fallback.title,
     description: metadata.description || fallback.description,
+    documentation: metadata.documentation || fallback.documentation,
     websiteUrl: metadata.websiteUrl || fallback.websiteUrl,
   };
 }
@@ -588,7 +624,11 @@ async function importSourceMetadata(
   if (candidates.length === 0) {
     throw new Error("Source import currently supports GitHub repositories.");
   }
-  const githubMetadata = await fetchGitHubRepositoryMetadata(repositoryReference);
+  const [githubMetadata, githubReadme] = await Promise.all([
+    fetchGitHubRepositoryMetadata(repositoryReference),
+    fetchGitHubReadmeDocumentation(repositoryReference, subfolder),
+  ]);
+  const githubFallback = { ...githubMetadata, ...githubReadme };
 
   for (const candidate of candidates) {
     const response = await fetch(candidate, { cache: "no-store" });
@@ -606,12 +646,12 @@ async function importSourceMetadata(
           url: repositoryReference,
           subfolder,
         },
-      }, githubMetadata);
+      }, githubFallback);
     }
     if (payload.mcpServers) {
       return metadataWithFallback(
         metadataFromMcpJson(payload, repositoryReference),
-        githubMetadata,
+        githubFallback,
       );
     }
   }
@@ -627,6 +667,7 @@ export default function SubmitServerPage() {
   const [title, setTitle] = useState("");
   const [version, setVersion] = useState("1.0.0");
   const [description, setDescription] = useState("");
+  const [documentation, setDocumentation] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
@@ -787,6 +828,7 @@ export default function SubmitServerPage() {
       setTitle(metadata.title || "");
       setVersion("1.0.0");
       setDescription(metadata.description || "");
+      setDocumentation(metadata.documentation || "");
       setWebsiteUrl(
         metadata.websiteUrl ||
           repositoryWebUrl(metadataRepositoryReference),
@@ -874,6 +916,7 @@ export default function SubmitServerPage() {
         name: serverName,
         title: title.trim(),
         description: description.trim(),
+        documentation: documentation.trim(),
         version: version.trim(),
         websiteUrl: websiteUrl.trim(),
         repository,
@@ -1151,12 +1194,22 @@ export default function SubmitServerPage() {
                 </div>
                 <div className="grid gap-2 md:col-span-2">
                   <Label htmlFor="server-description">Description</Label>
-                  <textarea
-                    className="min-h-56 rounded-[var(--radius)] border border-input bg-card px-3 py-2 text-sm shadow-[var(--shadow-card)] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                  <Input
                     id="server-description"
                     onChange={(event) => setDescription(event.target.value)}
+                    placeholder="Short server description"
                     required
                     value={description}
+                  />
+                </div>
+                <div className="grid gap-2 md:col-span-2">
+                  <Label htmlFor="server-documentation">Documentation</Label>
+                  <textarea
+                    className="min-h-56 rounded-[var(--radius)] border border-input bg-card px-3 py-2 text-sm shadow-[var(--shadow-card)] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                    id="server-documentation"
+                    onChange={(event) => setDocumentation(event.target.value)}
+                    placeholder="README or usage documentation"
+                    value={documentation}
                   />
                 </div>
               </CardContent>

@@ -67,6 +67,7 @@ def document_values(payload: MCPServerDocument) -> dict:
         "name": payload.name,
         "title": payload.title,
         "description": payload.description,
+        "documentation": payload.documentation,
         "version": payload.version,
         "website_url": payload.website_url,
         "repository": payload.repository,
@@ -268,6 +269,7 @@ def server_summary(
         name=server.name,
         title=server.title,
         description=server.description,
+        documentation=server.documentation,
         website_url=server.website_url,
         repository=server.repository,
         icons=server.icons,
@@ -302,6 +304,7 @@ def version_summary(
         version=version.version,
         title=version.title,
         description=version.description,
+        documentation=version.documentation,
         website_url=version.website_url,
         repository=version.repository,
         packages=version.packages,
@@ -363,6 +366,7 @@ async def create_server_version(
             name=payload.name,
             title=payload.title,
             description=payload.description,
+            documentation=payload.documentation,
             website_url=payload.website_url,
             repository=payload.repository,
             icons=payload.icons,
@@ -376,6 +380,7 @@ async def create_server_version(
     else:
         server.title = payload.title
         server.description = payload.description
+        server.documentation = payload.documentation
         server.website_url = payload.website_url
         server.repository = payload.repository
         server.icons = payload.icons

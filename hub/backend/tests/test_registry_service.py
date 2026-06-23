@@ -53,6 +53,7 @@ def registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
             "name": "io.github.example/weather",
             "title": "Weather",
             "description": "Weather tools for forecasts",
+            "documentation": "# Weather MCP\n\nUse this server for forecast tools.",
             "version": version,
             "packages": [
                 {
@@ -73,6 +74,7 @@ def server_model() -> RegistryServer:
         name="io.github.example/weather",
         title="Weather",
         description="Weather tools for forecasts",
+        documentation="# Weather MCP\n\nUse this server for forecast tools.",
         website_url="",
         repository=None,
         icons=[],

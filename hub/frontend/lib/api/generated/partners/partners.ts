@@ -293,3 +293,5 @@ export const partnersServerSupportUpdate = async (supportId: string,
   const data: partnersServerSupportUpdateResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as partnersServerSupportUpdateResponse
 }
+
+

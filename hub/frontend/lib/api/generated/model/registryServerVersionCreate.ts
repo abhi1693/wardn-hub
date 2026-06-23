@@ -16,6 +16,7 @@ export interface RegistryServerVersionCreate {
   _meta?: _RegistryServerVersionCreateMeta;
   /** @minLength 1 */
   description: string;
+  documentation?: string;
   icons?: RegistryServerVersionCreateIconsItem[];
   /**
      * @minLength 3
@@ -31,6 +32,7 @@ export interface RegistryServerVersionCreate {
   /**
      * @minLength 1
      * @maxLength 255
+     * @pattern ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$
      */
   version: string;
   /** @maxLength 2048 */

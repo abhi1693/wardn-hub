@@ -29,6 +29,7 @@ class RegistryServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     title: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    documentation: Mapped[str] = mapped_column(Text, default="", nullable=False)
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     repository: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     icons: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
@@ -72,6 +73,7 @@ class RegistryServerVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     title: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    documentation: Mapped[str] = mapped_column(Text, default="", nullable=False)
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     repository: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     packages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
@@ -110,7 +112,11 @@ class RegistryCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class RegistryServerCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mcp_server_categories"
     __table_args__ = (
-        UniqueConstraint("server_id", "category_id", name="uq_mcp_server_categories_server_category"),
+        UniqueConstraint(
+            "server_id",
+            "category_id",
+            name="uq_mcp_server_categories_server_category",
+        ),
     )
 
     server_id: Mapped[uuid.UUID] = mapped_column(

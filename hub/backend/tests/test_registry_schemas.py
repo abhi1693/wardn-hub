@@ -9,6 +9,7 @@ def registry_payload(**overrides):
         "name": "io.github.example/weather",
         "title": "Weather",
         "description": "Weather tools for forecasts",
+        "documentation": "# Weather MCP\n\nUse this server for forecast tools.",
         "version": "1.0.0",
         "websiteUrl": "https://example.com/weather",
         "packages": [
@@ -34,6 +35,7 @@ def test_mcp_server_document_preserves_aliases_and_meta() -> None:
 
     assert serialized["$schema"].endswith("/server.schema.json")
     assert serialized["websiteUrl"] == "https://example.com/weather"
+    assert serialized["documentation"].startswith("# Weather MCP")
     assert serialized["_meta"]["io.modelcontextprotocol.registry/publisher-provided"] == {
         "category": "weather"
     }
