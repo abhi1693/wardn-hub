@@ -40,6 +40,16 @@ Phase 2 adds the identity and organization foundation:
 - System organization roles with explicit permission strings
 - Registry admin routes protected by superuser authentication
 
+## Phase 3 Submissions And Audit
+
+Phase 3 adds the moderation workflow around registry publishing:
+
+- Server submissions under `/api/v1/submissions`
+- Draft, submit, withdraw, approve, reject, and publish state transitions
+- Publishing an approved submission into the Phase 1 registry store
+- Audit event persistence for submission lifecycle actions
+- Superuser audit event listing under `/api/v1/audit/events`
+
 ## Commands
 
 ```sh

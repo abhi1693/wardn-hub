@@ -49,6 +49,108 @@
         "title": "ActorSummary",
         "type": "object"
       },
+      "AuditEventListResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventRead"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "AuditEventListResponse",
+        "type": "object"
+      },
+      "AuditEventRead": {
+        "properties": {
+          "actorTokenId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actortokenid"
+          },
+          "actorUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actoruserid"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "eventType": {
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ipAddress": {
+            "title": "Ipaddress",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "organizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizationid"
+          },
+          "subjectId": {
+            "title": "Subjectid",
+            "type": "string"
+          },
+          "subjectType": {
+            "title": "Subjecttype",
+            "type": "string"
+          },
+          "userAgent": {
+            "title": "Useragent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventType",
+          "subjectType",
+          "subjectId",
+          "ipAddress",
+          "userAgent",
+          "createdAt"
+        ],
+        "title": "AuditEventRead",
+        "type": "object"
+      },
       "BootstrapUserCreate": {
         "properties": {
           "email": {
@@ -1193,6 +1295,296 @@
         "title": "RegistryServerVersionUpdate",
         "type": "object"
       },
+      "SubmissionCreate": {
+        "properties": {
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          },
+          "serverJson": {
+            "$ref": "#/components/schemas/RegistryServerVersionCreate"
+          },
+          "submissionType": {
+            "default": "new_server",
+            "enum": [
+              "new_server",
+              "new_version",
+              "metadata_edit",
+              "takedown_appeal"
+            ],
+            "title": "Submissiontype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverJson"
+        ],
+        "title": "SubmissionCreate",
+        "type": "object"
+      },
+      "SubmissionListResponse": {
+        "properties": {
+          "submissions": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionRead"
+            },
+            "title": "Submissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "submissions"
+        ],
+        "title": "SubmissionListResponse",
+        "type": "object"
+      },
+      "SubmissionRead": {
+        "properties": {
+          "approvedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvedat"
+          },
+          "approverUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approveruserid"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          },
+          "publishedServerVersionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedserverversionid"
+          },
+          "rejectionMessage": {
+            "title": "Rejectionmessage",
+            "type": "string"
+          },
+          "serverJson": {
+            "additionalProperties": true,
+            "title": "Serverjson",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "submitted",
+              "approved",
+              "rejected",
+              "withdrawn",
+              "published"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submissionType": {
+            "enum": [
+              "new_server",
+              "new_version",
+              "metadata_edit",
+              "takedown_appeal"
+            ],
+            "title": "Submissiontype",
+            "type": "string"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "submitterUserId": {
+            "format": "uuid",
+            "title": "Submitteruserid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "validationResult": {
+            "additionalProperties": true,
+            "title": "Validationresult",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "submitterUserId",
+          "submissionType",
+          "status",
+          "serverJson",
+          "validationResult",
+          "rejectionMessage",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "SubmissionRead",
+        "type": "object"
+      },
+      "SubmissionRejectRequest": {
+        "properties": {
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "SubmissionRejectRequest",
+        "type": "object"
+      },
+      "SubmissionUpdate": {
+        "properties": {
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          },
+          "serverJson": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryServerVersionCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submissionType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "new_server",
+                  "new_version",
+                  "metadata_edit",
+                  "takedown_appeal"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submissiontype"
+          }
+        },
+        "title": "SubmissionUpdate",
+        "type": "object"
+      },
       "UserAPITokenCreate": {
         "properties": {
           "description": {
@@ -1849,6 +2241,67 @@
         "summary": "Admin Set Latest Mcp Server Version",
         "tags": [
           "admin-mcp"
+        ]
+      }
+    },
+    "/api/v1/audit/events": {
+      "get": {
+        "operationId": "audit_events_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit Events",
+        "tags": [
+          "audit"
         ]
       }
     },
@@ -3310,6 +3763,573 @@
         "summary": "Create Organization Role",
         "tags": [
           "organizations"
+        ]
+      }
+    },
+    "/api/v1/submissions": {
+      "get": {
+        "operationId": "submissions_list",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Submission Records",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "post": {
+        "operationId": "submissions_create",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}": {
+      "get": {
+        "operationId": "submissions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "put": {
+        "operationId": "submissions_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/approve": {
+      "post": {
+        "operationId": "submissions_approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/publish": {
+      "post": {
+        "operationId": "submissions_publish",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/reject": {
+      "post": {
+        "operationId": "submissions_reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionRejectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/submit": {
+      "post": {
+        "operationId": "submissions_submit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/submissions/{submission_id}/withdraw": {
+      "post": {
+        "operationId": "submissions_withdraw",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Submission Record",
+        "tags": [
+          "submissions"
         ]
       }
     },

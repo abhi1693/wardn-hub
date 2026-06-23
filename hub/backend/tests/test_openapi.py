@@ -18,6 +18,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/admin/mcp/servers",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
+        "/api/v1/audit/events",
         "/api/v1/auth/api-tokens",
         "/api/v1/auth/api-tokens/{token_id}",
         "/api/v1/auth/login",
@@ -33,6 +34,13 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/organizations/{organization_id}/memberships",
         "/api/v1/organizations/{organization_id}/memberships/{user_id}",
         "/api/v1/organizations/{organization_id}/roles",
+        "/api/v1/submissions",
+        "/api/v1/submissions/{submission_id}",
+        "/api/v1/submissions/{submission_id}/approve",
+        "/api/v1/submissions/{submission_id}/publish",
+        "/api/v1/submissions/{submission_id}/reject",
+        "/api/v1/submissions/{submission_id}/submit",
+        "/api/v1/submissions/{submission_id}/withdraw",
         "/api/v1/users/bootstrap",
     }
 
