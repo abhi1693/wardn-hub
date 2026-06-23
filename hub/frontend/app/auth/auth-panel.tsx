@@ -27,7 +27,7 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
 
   const isRegister = mode === "register";
   const next = searchParams.get("next");
-  const nextPath = next ? `/?section=${encodeURIComponent(next)}` : "/";
+  const nextPath = next === "submit" ? "/submit" : next ? `/?section=${encodeURIComponent(next)}` : "/";
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

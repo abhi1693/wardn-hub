@@ -7,6 +7,7 @@ import {
   FileCheck2,
   History,
   LogIn,
+  Plus,
   Server,
   ShieldCheck,
   UserPlus,
@@ -172,11 +173,10 @@ function AppShell({
         <div className="site-actions">
           {isAuthenticated ? (
             <>
-              {isAdmin && (
-                <button className="text-button subtle" onClick={() => onSectionChange("submissions")} type="button">
-                  Submit
-                </button>
-              )}
+              <button className="text-button" onClick={() => { window.location.href = "/submit"; }} type="button">
+                <Plus size={16} />
+                Submit server
+              </button>
               <button className="small-button" onClick={onLogout} type="button">
                 Sign out
               </button>

@@ -17,6 +17,7 @@ import type {
   RegistryCategoryListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
+  SubmissionCreate,
   SubmissionRejectRequest,
   SubmissionRead,
   SubmissionListResponse,
@@ -124,6 +125,14 @@ export function getServer(serverName: string) {
 
 export function listSubmissions() {
   return request<SubmissionListResponse>("/submissions");
+}
+
+export function createSubmission(payload: SubmissionCreate) {
+  return request<SubmissionRead>("/submissions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export function listNamespaceClaims() {
