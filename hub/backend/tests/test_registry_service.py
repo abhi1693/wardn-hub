@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import pytest
 
-from app.modules.namespaces.models import NamespaceClaim
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
 from app.modules.registry import service
@@ -153,7 +152,6 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     monkeypatch.setattr(service.repository, "get_server_version", missing_server)
     monkeypatch.setattr(service.repository, "clear_latest_for_server", clear_latest)
     monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
-    monkeypatch.setattr(service.repository, "list_verified_namespace_claims", empty_categories)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_categories)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_categories)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_categories)
@@ -223,7 +221,7 @@ async def test_update_rejects_path_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_server_detail_includes_namespace_and_partner_support(monkeypatch) -> None:
+async def test_get_server_detail_includes_partner_support(monkeypatch) -> None:
     now = datetime(2026, 6, 23, tzinfo=UTC)
     organization = Organization(
         id=uuid4(),
@@ -244,18 +242,6 @@ async def test_get_server_detail_includes_namespace_and_partner_support(monkeypa
     server.owner_organization_id = organization.id
     version = version_model(server.id, "1.0.0", is_latest=True)
     version.owner_organization_id = organization.id
-    namespace_claim = NamespaceClaim(
-        id=uuid4(),
-        namespace="io.github.example/*",
-        owner_organization_id=organization.id,
-        claimed_by_user_id=uuid4(),
-        method="github",
-        status="verified",
-        verification_payload={},
-        verified_at=now,
-        created_at=now,
-        updated_at=now,
-    )
     support = OrganizationServerSupport(
         id=uuid4(),
         organization_id=organization.id,
@@ -275,9 +261,6 @@ async def test_get_server_detail_includes_namespace_and_partner_support(monkeypa
 
     async def list_versions(*args, **kwargs):
         return [version]
-
-    async def namespace_claims(*args, **kwargs):
-        return {namespace_claim.namespace: namespace_claim}
 
     async def partner_support(*args, **kwargs):
         return {server.name: [(support, organization)]}
@@ -306,7 +289,6 @@ async def test_get_server_detail_includes_namespace_and_partner_support(monkeypa
 
     monkeypatch.setattr(service.repository, "get_server", get_server)
     monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
-    monkeypatch.setattr(service.repository, "list_verified_namespace_claims", namespace_claims)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", partner_support)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", categories)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", organizations)
@@ -314,12 +296,8 @@ async def test_get_server_detail_includes_namespace_and_partner_support(monkeypa
 
     response = await service.get_server_detail(FakeSession(), server.name)
 
-    assert response.server.namespace_verified is True
-    assert response.server.namespace_claim is not None
-    assert response.server.namespace_claim.namespace == "io.github.example/*"
     assert response.server.owner is not None
     assert response.server.owner.login == "acme"
     assert response.server.partner_support[0].support_level == "official"
     assert response.server.partner_support[0].organization.login == "acme"
     assert response.server.categories[0].slug == "development"
-    assert response.versions[0].namespace_verified is True

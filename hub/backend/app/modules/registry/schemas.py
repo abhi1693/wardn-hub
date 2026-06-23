@@ -78,16 +78,6 @@ class RegistryLatestVersionSummary(BaseModel):
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
 
 
-class NamespaceTrustSummary(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    namespace: str
-    status: Literal["verified"]
-    method: str
-    owner_organization: ActorSummary | None = Field(default=None, alias="ownerOrganization")
-    verified_at: datetime | None = Field(default=None, alias="verifiedAt")
-
-
 class PartnerSupportSummary(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -132,8 +122,6 @@ class RegistryServerRead(BaseModel):
     created_by: ActorSummary | None = Field(default=None, alias="createdBy")
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     latest_version: RegistryLatestVersionSummary | None = Field(default=None, alias="latestVersion")
-    namespace_claim: NamespaceTrustSummary | None = Field(default=None, alias="namespaceClaim")
-    namespace_verified: bool = Field(default=False, alias="namespaceVerified")
     categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
@@ -167,8 +155,6 @@ class RegistryServerVersionRead(BaseModel):
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
     approver: ActorSummary | None = None
-    namespace_claim: NamespaceTrustSummary | None = Field(default=None, alias="namespaceClaim")
-    namespace_verified: bool = Field(default=False, alias="namespaceVerified")
     categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,

@@ -119,14 +119,13 @@ DEFAULT_ORGANIZATION_ROLES: dict[str, dict[str, Any]] = {
             "servers.create",
             "servers.update",
             "submissions.approve",
-            "namespaces.manage",
             "partner_status.manage",
         ],
     },
     "admin": {
         "name": "Admin",
-        "description": "Manage organization-owned server definitions and namespaces.",
-        "permissions": ["servers.create", "servers.update", "namespaces.manage"],
+        "description": "Manage organization-owned server definitions.",
+        "permissions": ["servers.create", "servers.update"],
     },
     "publisher": {
         "name": "Publisher",

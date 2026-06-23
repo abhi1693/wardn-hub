@@ -29,7 +29,6 @@ def validation_result_for(payload: RegistryServerVersionCreate) -> dict:
     checks = [
         {"name": "schema", "status": "passed"},
         {"name": "target", "status": "passed"},
-        {"name": "namespace", "status": "warning", "message": "Namespace verification pending."},
     ]
     return {"status": "warning", "checks": checks}
 

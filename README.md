@@ -1,8 +1,8 @@
 # Wardn Hub
 
 Wardn Hub is a private MCP server definition registry. It stores server records,
-versioned `server.json`-compatible documents, submissions, namespace ownership,
-partner metadata, moderation state, and audit history.
+versioned `server.json`-compatible documents, submissions, partner metadata,
+moderation state, and audit history.
 
 Runtime execution is intentionally out of scope.
 
@@ -50,15 +50,11 @@ Phase 3 adds the moderation workflow around registry publishing:
 - Audit event persistence for submission lifecycle actions
 - Superuser audit event listing under `/api/v1/audit/events`
 
-## Phase 4 Namespaces
+## Phase 4 Trust Model
 
-Phase 4 adds the first trust-plane surface:
-
-- Namespace claims under `/api/v1/namespaces/claims`
-- GitHub-style namespaces such as `io.github.example/*`
-- Reverse-DNS namespaces such as `com.example/*`
-- Pending, verified, failed, and revoked claim states
-- Audit events for namespace claim lifecycle changes
+Phase 4 namespace claims are currently deferred. Server identifiers still use
+stable `publisher/server` names, but namespace ownership workflows are not part
+of the active product surface.
 
 ## Phase 5 Partner Support
 
@@ -75,7 +71,6 @@ Phase 5 adds partner organization metadata and server support records:
 Phase 6 exposes trust-plane data through registry read APIs:
 
 - Owner and organization actor summaries on registry server/version responses
-- Verified namespace claim metadata and `namespaceVerified` flags
 - Active partner support summaries on registry server/version responses
 - Partner and support-level filters backed by partner support records
 
@@ -83,9 +78,9 @@ Phase 6 exposes trust-plane data through registry read APIs:
 
 Phase 7 adds the first usable browser experience:
 
-- Operational app shell with registry, submissions, partners, namespaces, audit, and settings views
+- Operational app shell with registry, submissions, partners, audit, and settings views
 - Registry browse/detail workflow with trust and partner support badges
-- Protected data views for moderation queues, namespace claims, partner support, and audit records
+- Protected data views for moderation queues, partner support, and audit records
 - Runtime API base URL support through `NEXT_PUBLIC_API_BASE_URL`
 
 ## Phase 8 Frontend Auth And Operator Actions
@@ -94,7 +89,6 @@ Phase 8 makes the console operable:
 
 - Login, logout, first-user bootstrap, and bearer token fallback controls
 - Submission submit, withdraw, approve, reject, and publish actions
-- Namespace claim creation plus verify, fail, and revoke actions
 - Partner activation and server support creation controls
 
 ## Commands

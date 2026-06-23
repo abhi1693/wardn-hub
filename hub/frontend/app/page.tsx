@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BadgeCheck,
   Building2,
   Database,
   FileCheck2,
@@ -9,33 +8,27 @@ import {
   LogIn,
   Plus,
   Server,
-  ShieldCheck,
   UserPlus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
   HubApiError,
-  createNamespaceClaim,
   createPartnerSupport,
   currentUser,
   listAuditEvents,
-  listNamespaceClaims,
   listPartnerOrganizations,
   listPartnerSupport,
   listServers,
   listSubmissions,
   logout,
-  namespaceDecision,
   rejectSubmission,
-  revokeNamespaceClaim,
   setApiToken,
   submissionAction,
   updatePartnerOrganization,
 } from "@/lib/api/hub";
 import type {
   AuditEventRead,
-  NamespaceClaimRead,
   PartnerOrganizationRead,
   PartnerServerSupportRead,
   RegistryServerRead,
@@ -43,9 +36,8 @@ import type {
   UserRead,
 } from "@/lib/api/generated/model";
 
-type Section = "browse" | "submissions" | "partners" | "namespaces" | "audit";
+type Section = "browse" | "submissions" | "partners" | "audit";
 type LoadState = "idle" | "loading" | "ready" | "error" | "auth";
-type NamespaceMethod = "github" | "dns" | "http";
 type SupportLevel = "official" | "verified" | "compatible" | "deprecated";
 
 const publicNavItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
@@ -55,11 +47,10 @@ const publicNavItems: Array<{ id: Section; label: string; icon: typeof Server }>
 const protectedNavItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
   { id: "submissions", label: "Submissions", icon: FileCheck2 },
   { id: "partners", label: "Partners", icon: Building2 },
-  { id: "namespaces", label: "Namespaces", icon: ShieldCheck },
   { id: "audit", label: "Audit", icon: History },
 ];
 
-const adminSections = new Set<Section>(["submissions", "partners", "namespaces", "audit"]);
+const adminSections = new Set<Section>(["submissions", "partners", "audit"]);
 
 function isAdminUser(user: UserRead | null) {
   return Boolean(
@@ -264,11 +255,6 @@ function BrowseView() {
                     {item.name}
                   </Pill>
                 ))}
-                {server.namespaceVerified && (
-                  <Pill tone="success">
-                    <BadgeCheck size={13} /> namespace
-                  </Pill>
-                )}
                 {(server.partnerSupport ?? []).slice(0, 2).map((support) => (
                   <Pill key={`${support.organization.id}-${support.supportLevel}`} tone="success">
                     {support.supportLevel}
@@ -378,120 +364,6 @@ function SubmissionsView() {
                 ) : null}
                 {busyId === submission.id && <span className="muted">Working</span>}
                 <span>{formatDate(submission.updatedAt)}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </DataView>
-  );
-}
-
-function NamespacesView() {
-  const [state, setState] = useState<LoadState>("loading");
-  const [error, setError] = useState("");
-  const [claims, setClaims] = useState<NamespaceClaimRead[]>([]);
-  const [namespace, setNamespace] = useState("");
-  const [method, setMethod] = useState<NamespaceMethod>("github");
-  const [notice, setNotice] = useState("");
-
-  async function refresh() {
-    setState("loading");
-    setError("");
-    return listNamespaceClaims()
-      .then((response) => {
-        setClaims(response.claims);
-        setState("ready");
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Unable to load namespace claims.");
-        setState(statusFromError(caught));
-      });
-  }
-
-  async function createClaim(event: React.FormEvent) {
-    event.preventDefault();
-    setNotice("");
-    try {
-      await createNamespaceClaim({ namespace, method });
-      setNamespace("");
-      setNotice("Namespace claim created.");
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create namespace claim.");
-      setState(statusFromError(caught));
-    }
-  }
-
-  async function mutateClaim(claim: NamespaceClaimRead, action: "verify" | "fail" | "revoke") {
-    setNotice("");
-    try {
-      if (action === "revoke") {
-        await revokeNamespaceClaim(claim.id);
-      } else {
-        await namespaceDecision(claim.id, action, { verificationPayload: {} });
-      }
-      setNotice(`${action} completed for ${claim.namespace}`);
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Namespace action failed.");
-      setState(statusFromError(caught));
-    }
-  }
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => void refresh(), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
-
-  return (
-    <DataView title="Namespace claims" eyebrow="Trust Plane" icon={ShieldCheck}>
-      <ProtectedState state={state} error={error} />
-      <form className="inline-form" onSubmit={(event) => void createClaim(event)}>
-        <input
-          onChange={(event) => setNamespace(event.target.value)}
-          placeholder="io.github.example/*"
-          required
-          value={namespace}
-        />
-        <select
-          onChange={(event) => setMethod(event.target.value as NamespaceMethod)}
-          value={method}
-        >
-          <option value="github">github</option>
-          <option value="dns">dns</option>
-          <option value="http">http</option>
-        </select>
-        <button className="text-button" type="submit">
-          Claim
-        </button>
-      </form>
-      {notice && <div className="notice">{notice}</div>}
-      {state === "ready" && (
-        <div className="records">
-          {claims.length === 0 && <EmptyState title="No claims" detail="No namespace claims." />}
-          {claims.map((claim) => (
-            <div className="record-row" key={claim.id}>
-              <div>
-                <strong>{claim.namespace}</strong>
-                <small>{claim.method}</small>
-              </div>
-              <Pill tone={toneFor(claim.status)}>{claim.status}</Pill>
-              <div className="action-strip">
-                {claim.status !== "verified" && (
-                  <ActionButton onClick={() => void mutateClaim(claim, "verify")}>
-                    Verify
-                  </ActionButton>
-                )}
-                {claim.status === "pending" && (
-                  <ActionButton onClick={() => void mutateClaim(claim, "fail")}>Fail</ActionButton>
-                )}
-                {claim.status !== "revoked" && (
-                  <ActionButton onClick={() => void mutateClaim(claim, "revoke")}>
-                    Revoke
-                  </ActionButton>
-                )}
-                <span>{formatDate(claim.updatedAt)}</span>
               </div>
             </div>
           ))}
@@ -774,12 +646,11 @@ export default function Home() {
       {section === "browse" && <BrowseView />}
       {isAdmin && section === "submissions" && <SubmissionsView />}
       {isAdmin && section === "partners" && <PartnersView />}
-      {isAdmin && section === "namespaces" && <NamespacesView />}
       {isAdmin && section === "audit" && <AuditView />}
     </AppShell>
   );
 }
 
 function isSection(value: string | null): value is Section {
-  return ["browse", "submissions", "partners", "namespaces", "audit"].includes(value ?? "");
+  return ["browse", "submissions", "partners", "audit"].includes(value ?? "");
 }

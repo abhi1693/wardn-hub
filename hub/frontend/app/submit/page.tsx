@@ -195,7 +195,7 @@ function emptyPackage(): PackageTarget {
   };
 }
 
-function cleanNamespacePart(value: string) {
+function cleanPublisherPart(value: string) {
   return value
     .trim()
     .toLowerCase()
@@ -236,9 +236,9 @@ function parseRepositoryUrl(value: string) {
   }
 }
 
-function repositoryNamespace(source: string, host: string, owner: string) {
+function repositoryPublisher(source: string, host: string, owner: string) {
   const sourceName = source.trim().toLowerCase();
-  const ownerPart = cleanNamespacePart(owner);
+  const ownerPart = cleanPublisherPart(owner);
 
   if (sourceName === "github" || host === "github.com") {
     return ownerPart ? `io.github.${ownerPart}` : "";
@@ -250,30 +250,30 @@ function repositoryNamespace(source: string, host: string, owner: string) {
     return ownerPart ? `org.bitbucket.${ownerPart}` : "";
   }
 
-  const hostNamespace = host
+  const hostPublisher = host
     .split(".")
     .reverse()
-    .map(cleanNamespacePart)
+    .map(cleanPublisherPart)
     .filter(Boolean)
     .join(".");
 
-  return [hostNamespace, ownerPart].filter(Boolean).join(".");
+  return [hostPublisher, ownerPart].filter(Boolean).join(".");
 }
 
-function packageNamespace(registryType: string, identifier: string) {
-  const runtime = cleanNamespacePart(registryType || "package");
+function packagePublisher(registryType: string, identifier: string) {
+  const runtime = cleanPublisherPart(registryType || "package");
   const trimmedIdentifier = identifier.trim();
   const scopedMatch = trimmedIdentifier.match(/^@([^/]+)\/(.+)$/);
 
   if (scopedMatch) {
     return {
-      namespace: ["io", runtime, cleanNamespacePart(scopedMatch[1])].filter(Boolean).join("."),
+      publisher: ["io", runtime, cleanPublisherPart(scopedMatch[1])].filter(Boolean).join("."),
       name: cleanNamePart(scopedMatch[2]),
     };
   }
 
   return {
-    namespace: ["io", runtime].filter(Boolean).join("."),
+    publisher: ["io", runtime].filter(Boolean).join("."),
     name: cleanNamePart(trimmedIdentifier),
   };
 }
@@ -281,18 +281,18 @@ function packageNamespace(registryType: string, identifier: string) {
 function generatedServerName(repositorySource: string, repositoryUrl: string, packages: PackageTarget[]) {
   const repository = parseRepositoryUrl(repositoryUrl);
   if (repository) {
-    const namespace = repositoryNamespace(repositorySource, repository.host, repository.owner);
+    const publisher = repositoryPublisher(repositorySource, repository.host, repository.owner);
     const serverName = cleanNamePart(repository.repo);
-    if (namespace && serverName) {
-      return `${namespace}/${serverName}`;
+    if (publisher && serverName) {
+      return `${publisher}/${serverName}`;
     }
   }
 
   const packageTarget = packages.find((item) => item.identifier.trim());
   if (packageTarget) {
-    const generatedPackage = packageNamespace(packageTarget.registryType, packageTarget.identifier);
-    if (generatedPackage.namespace && generatedPackage.name) {
-      return `${generatedPackage.namespace}/${generatedPackage.name}`;
+    const generatedPackage = packagePublisher(packageTarget.registryType, packageTarget.identifier);
+    if (generatedPackage.publisher && generatedPackage.name) {
+      return `${generatedPackage.publisher}/${generatedPackage.name}`;
     }
   }
 
@@ -646,7 +646,7 @@ export default function SubmitServerPage() {
         throw new Error("Add repository details or override the server name.");
       }
       if (!SERVER_NAME_PATTERN.test(serverName)) {
-        throw new Error("Server name must use the namespace/server format.");
+        throw new Error("Server name must use the publisher/server format.");
       }
       if (!SERVER_VERSION_PATTERN.test(version.trim())) {
         throw new Error("Server version must be a semantic version, starting at 1.0.0 for new submissions.");

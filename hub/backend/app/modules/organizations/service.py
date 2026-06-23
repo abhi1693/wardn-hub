@@ -48,7 +48,6 @@ def permissions_for_user(user: User, membership: OrganizationMembership | None) 
             "servers.create",
             "servers.update",
             "submissions.approve",
-            "namespaces.manage",
             "partner_status.manage",
         }
     if membership is None or not membership.is_active:

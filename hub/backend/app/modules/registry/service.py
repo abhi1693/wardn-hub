@@ -14,7 +14,6 @@ from app.modules.registry.models import RegistryCategory, RegistryServer, Regist
 from app.modules.registry.schemas import (
     ActorSummary,
     MCPServerDocument,
-    NamespaceTrustSummary,
     PartnerSupportSummary,
     RegistryCategoryListResponse,
     RegistryCategoryRead,
@@ -35,7 +34,6 @@ from app.modules.registry.schemas import (
 class RegistryTrustContext:
     users: dict[UUID, object]
     organizations: dict[UUID, object]
-    namespace_claims: dict[str, object]
     partner_support: dict[str, list[tuple[object, object]]]
     categories: dict[UUID, list[RegistryCategory]]
 
@@ -43,7 +41,6 @@ class RegistryTrustContext:
 EMPTY_TRUST_CONTEXT = RegistryTrustContext(
     users={},
     organizations={},
-    namespace_claims={},
     partner_support={},
     categories={},
 )
@@ -116,10 +113,6 @@ def category_values_from_server_json(server_json: dict) -> list[str]:
     return category_values_from_metadata(metadata if isinstance(metadata, dict) else {})
 
 
-def namespace_for_server_name(name: str) -> str:
-    return f"{name.split('/', 1)[0]}/*"
-
-
 def actor_summary_for_user(user) -> ActorSummary:
     return ActorSummary(
         id=user.id,
@@ -166,22 +159,6 @@ def owner_actor(
     trust: RegistryTrustContext,
 ) -> ActorSummary | None:
     return organization_actor(owner_organization_id, trust) or user_actor(owner_user_id, trust)
-
-
-def namespace_claim_summary(
-    server_name: str,
-    trust: RegistryTrustContext,
-) -> NamespaceTrustSummary | None:
-    claim = trust.namespace_claims.get(namespace_for_server_name(server_name))
-    if claim is None:
-        return None
-    return NamespaceTrustSummary(
-        namespace=claim.namespace,
-        status="verified",
-        method=claim.method,
-        ownerOrganization=organization_actor(claim.owner_organization_id, trust),
-        verifiedAt=claim.verified_at,
-    )
 
 
 def partner_support_summary(
@@ -252,14 +229,6 @@ async def build_trust_context(
         if version.owner_organization_id is not None:
             organization_ids.add(version.owner_organization_id)
 
-    namespace_claims = await repository.list_verified_namespace_claims(
-        session,
-        {namespace_for_server_name(name) for name in server_names},
-    )
-    for claim in namespace_claims.values():
-        if claim.owner_organization_id is not None:
-            organization_ids.add(claim.owner_organization_id)
-
     partner_support = await repository.list_partner_support_for_servers(session, server_names)
     for records in partner_support.values():
         for _support, organization in records:
@@ -273,7 +242,6 @@ async def build_trust_context(
     return RegistryTrustContext(
         users=await repository.list_users_by_ids(session, user_ids),
         organizations=await repository.list_organizations_by_ids(session, organization_ids),
-        namespace_claims=namespace_claims,
         partner_support=partner_support,
         categories=categories,
     )
@@ -294,7 +262,6 @@ def server_summary(
             published_at=latest_version.published_at,
             published_by=user_actor(latest_version.publisher_user_id, trust),
         )
-    namespace_claim = namespace_claim_summary(server.name, trust)
     return RegistryServerRead(
         id=server.id,
         name=server.name,
@@ -315,8 +282,6 @@ def server_summary(
         created_by=user_actor(server.created_by_user_id, trust),
         updated_by=user_actor(server.updated_by_user_id, trust),
         latest_version=latest,
-        namespace_claim=namespace_claim,
-        namespace_verified=namespace_claim is not None,
         categories=categories_for_server(server.id, trust),
         partner_support=partner_support_summary(server.name, trust),
         created_at=server.created_at,
@@ -329,7 +294,6 @@ def version_summary(
     *,
     trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
 ) -> RegistryServerVersionRead:
-    namespace_claim = namespace_claim_summary(version.name, trust)
     return RegistryServerVersionRead(
         id=version.id,
         server_id=version.server_id,
@@ -355,8 +319,6 @@ def version_summary(
         created_by=user_actor(version.created_by_user_id, trust),
         updated_by=user_actor(version.updated_by_user_id, trust),
         published_by=user_actor(version.publisher_user_id, trust),
-        namespace_claim=namespace_claim,
-        namespace_verified=namespace_claim is not None,
         categories=categories_for_server(version.server_id, trust),
         partner_support=partner_support_summary(version.name, trust),
         published_at=version.published_at,

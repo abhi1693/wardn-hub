@@ -4,10 +4,6 @@ import type {
   AuditEventListResponse,
   BootstrapUserCreate,
   LoginRequest,
-  NamespaceClaimCreate,
-  NamespaceClaimDecision,
-  NamespaceClaimListResponse,
-  NamespaceClaimRead,
   PartnerOrganizationListResponse,
   PartnerOrganizationRead,
   PartnerOrganizationUpdate,
@@ -135,10 +131,6 @@ export function createSubmission(payload: SubmissionCreate) {
   });
 }
 
-export function listNamespaceClaims() {
-  return request<NamespaceClaimListResponse>("/namespaces/claims");
-}
-
 export function listPartnerOrganizations() {
   return request<PartnerOrganizationListResponse>("/partners");
 }
@@ -210,30 +202,6 @@ export function rejectSubmission(submissionId: string, payload: SubmissionReject
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-}
-
-export function createNamespaceClaim(payload: NamespaceClaimCreate) {
-  return request<NamespaceClaimRead>("/namespaces/claims", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export function namespaceDecision(
-  claimId: string,
-  action: "verify" | "fail",
-  payload: NamespaceClaimDecision,
-) {
-  return request<NamespaceClaimRead>(`/namespaces/claims/${claimId}/${action}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export function revokeNamespaceClaim(claimId: string) {
-  return request<NamespaceClaimRead>(`/namespaces/claims/${claimId}/revoke`, { method: "POST" });
 }
 
 export function updatePartnerOrganization(

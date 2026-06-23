@@ -4,7 +4,6 @@ from uuid import UUID
 from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.namespaces.models import NamespaceClaim
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
 from app.modules.registry.models import (
@@ -218,21 +217,6 @@ async def list_organizations_by_ids(
         select(Organization).where(Organization.id.in_(organization_ids))
     )
     return {organization.id: organization for organization in result.scalars().all()}
-
-
-async def list_verified_namespace_claims(
-    session: AsyncSession,
-    namespaces: set[str],
-) -> dict[str, NamespaceClaim]:
-    if not namespaces:
-        return {}
-    result = await session.execute(
-        select(NamespaceClaim).where(
-            NamespaceClaim.namespace.in_(namespaces),
-            NamespaceClaim.status == "verified",
-        )
-    )
-    return {claim.namespace: claim for claim in result.scalars().all()}
 
 
 async def list_partner_support_for_servers(
