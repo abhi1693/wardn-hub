@@ -16,6 +16,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
     assert schema["openapi"].startswith("3.")
     assert set(schema["paths"]) == {
         "/api/v1/admin/mcp/servers",
+        "/api/v1/admin/mcp/servers/{server_name}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
         "/api/v1/audit/events",

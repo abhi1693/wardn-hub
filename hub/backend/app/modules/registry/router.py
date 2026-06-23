@@ -13,20 +13,21 @@ from app.modules.registry.exceptions import (
     RegistryVersionNotFoundError,
 )
 from app.modules.registry.schemas import (
+    RegistryCategoryListResponse,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerVersionCreate,
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
     RegistryServerVersionUpdate,
-    RegistryCategoryListResponse,
 )
 from app.modules.registry.service import (
     create_server_version,
+    delete_server,
     delete_server_version,
-    list_categories,
     get_server_detail,
     get_version_detail,
+    list_categories,
     list_servers,
     list_versions,
     set_latest_version,
@@ -239,5 +240,23 @@ async def admin_delete_mcp_server_version(
     try:
         await delete_server_version(session, server_name, version)
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    await session.commit()
+
+
+@admin_router.delete(
+    "/{server_name:path}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="admin_mcp_servers_delete",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def admin_delete_mcp_server(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
+) -> None:
+    try:
+        await delete_server(session, server_name)
+    except RegistryServerNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     await session.commit()

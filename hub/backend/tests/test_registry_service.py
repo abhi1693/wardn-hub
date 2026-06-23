@@ -267,6 +267,39 @@ async def test_delete_latest_promotes_replacement(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_delete_server_deletes_all_versions(monkeypatch) -> None:
+    server = server_model()
+    server.current_version_id = uuid4()
+    latest = version_model(server.id, "2.0.0", is_latest=True)
+    previous = version_model(server.id, "1.0.0", is_latest=False)
+    synced_categories: list[str] | None = None
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [latest, previous]
+
+    async def sync_categories(*args):
+        nonlocal synced_categories
+        synced_categories = args[2]
+
+    monkeypatch.setattr(service.repository, "get_server", get_server)
+    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
+
+    await service.delete_server(FakeSession(), "io.github.example/weather")
+
+    assert server.status == "deleted"
+    assert server.current_version_id is None
+    assert latest.status == "deleted"
+    assert latest.is_latest is False
+    assert previous.status == "deleted"
+    assert previous.is_latest is False
+    assert synced_categories == []
+
+
+@pytest.mark.asyncio
 async def test_update_rejects_path_mismatch() -> None:
     with pytest.raises(RegistryVersionNotFoundError):
         await service.update_server_version(

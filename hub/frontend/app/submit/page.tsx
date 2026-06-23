@@ -25,14 +25,23 @@ import {
 } from "@/components/ui/select";
 import {
   HubApiError,
+  createServerVersion,
   createSubmission,
   currentUser,
+  getServer,
   getSubmission,
   listCategories,
   submissionAction,
+  updateServerVersion,
   updateSubmission,
 } from "@/lib/api/hub";
-import type { RegistryCategoryRead, SubmissionRead, UserRead } from "@/lib/api/generated/model";
+import type {
+  RegistryCategoryRead,
+  RegistryServerDetailResponse,
+  RegistryServerVersionRead,
+  SubmissionRead,
+  UserRead,
+} from "@/lib/api/generated/model";
 
 const DEFAULT_SCHEMA =
   "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
@@ -82,7 +91,7 @@ type PackageTarget = {
 };
 
 type SourceMode = "manual" | "repository";
-type SubmissionMode = "new" | "edit" | "new_version";
+type SubmissionMode = "new" | "edit" | "new_version" | "server_edit" | "server_new_version";
 
 type SourceMetadata = {
   source?: string;
@@ -701,6 +710,7 @@ export default function SubmitServerPage() {
     useState<SubmissionRead["submissionType"]>("new_server");
   const [isLoadingSubmission, setIsLoadingSubmission] = useState(false);
   const [lockedServerName, setLockedServerName] = useState("");
+  const [lockedVersion, setLockedVersion] = useState("");
   const [name, setName] = useState("");
   const [isNameOverrideEnabled, setIsNameOverrideEnabled] = useState(false);
   const [title, setTitle] = useState("");
@@ -729,22 +739,31 @@ export default function SubmitServerPage() {
   const iconPreviewUrl = iconUrl.trim();
   const isEditingExistingSubmission = submissionMode === "edit" && editingSubmissionId;
   const isAddingNewVersion = submissionMode === "new_version";
+  const isEditingPublishedServer = submissionMode === "server_edit";
+  const isAddingPublishedServerVersion = submissionMode === "server_new_version";
   const isServerNameLocked = Boolean(lockedServerName);
-  const pageTitle = isAddingNewVersion
-    ? "Add server version"
-    : isEditingExistingSubmission
-      ? "Edit submission"
-      : "Submit server";
-  const pageDescription = isAddingNewVersion
-    ? "Create a new review submission for the same published server."
-    : isEditingExistingSubmission
-      ? "Update this submission and send it back to review."
-      : "Provide the registry document details for review. Approved submissions become public server cards.";
-  const submitButtonLabel = isAddingNewVersion
-    ? "Submit new version"
-    : isEditingExistingSubmission
-      ? "Submit update for review"
-      : "Submit for review";
+  const isVersionLocked = Boolean(lockedVersion);
+  const pageTitle = (() => {
+    if (isAddingNewVersion) return "Add server version";
+    if (isAddingPublishedServerVersion) return "Add MCP server version";
+    if (isEditingPublishedServer) return "Edit MCP server";
+    if (isEditingExistingSubmission) return "Edit submission";
+    return "Submit server";
+  })();
+  const pageDescription = (() => {
+    if (isAddingNewVersion) return "Create a new review submission for the same published server.";
+    if (isAddingPublishedServerVersion) return "Publish a new version for this MCP server.";
+    if (isEditingPublishedServer) return "Update the latest published registry document.";
+    if (isEditingExistingSubmission) return "Update this submission and send it back to review.";
+    return "Provide the registry document details for review. Approved submissions become public server cards.";
+  })();
+  const submitButtonLabel = (() => {
+    if (isAddingNewVersion) return "Submit new version";
+    if (isAddingPublishedServerVersion) return "Publish new version";
+    if (isEditingPublishedServer) return "Save MCP server";
+    if (isEditingExistingSubmission) return "Submit update for review";
+    return "Submit for review";
+  })();
 
   useEffect(() => {
     currentUser()
@@ -777,6 +796,7 @@ export default function SubmitServerPage() {
     setEditingSubmissionId(mode === "edit" ? submission.id : "");
     setEditingSubmissionType(mode === "new_version" ? "new_version" : submission.submissionType);
     setLockedServerName(mode === "new_version" ? submission.name : "");
+    setLockedVersion("");
     setSourceMode(repositoryReference ? "repository" : "manual");
     setRepositoryUrl(repositoryReference);
     setRepositorySubfolder(stringValue(repository?.subfolder));
@@ -798,11 +818,76 @@ export default function SubmitServerPage() {
     );
   }
 
+  function loadServerVersionIntoForm(
+    response: RegistryServerDetailResponse,
+    version: RegistryServerVersionRead,
+    mode: "server_edit" | "server_new_version",
+  ) {
+    const serverJson = version.serverJson ?? {};
+    const repository = serverJson.repository && typeof serverJson.repository === "object"
+      ? (serverJson.repository as Record<string, unknown>)
+      : null;
+    const repositoryReference = normalizeRepositoryReference(stringValue(repository?.url));
+    const icons = records(serverJson.icons);
+
+    setSubmissionMode(mode);
+    setEditingSubmissionId("");
+    setEditingSubmissionType("new_server");
+    setLockedServerName(response.server.name);
+    setLockedVersion(mode === "server_edit" ? version.version : "");
+    setSourceMode(repositoryReference ? "repository" : "manual");
+    setRepositoryUrl(repositoryReference);
+    setRepositorySubfolder(stringValue(repository?.subfolder));
+    setName(response.server.name);
+    setIsNameOverrideEnabled(true);
+    setTitle(stringValue(serverJson.title) || response.server.title);
+    setVersion(mode === "server_new_version" ? bumpPatchVersion(version.version) : version.version);
+    setDescription(stringValue(serverJson.description) || response.server.description);
+    setDocumentation(stringValue(serverJson.documentation) || response.server.documentation || "");
+    setWebsiteUrl(stringValue(serverJson.websiteUrl) || response.server.websiteUrl || "");
+    setCategory(categoryFromServerJson(serverJson));
+    setIconUrl(firstIconUrl(icons));
+    setRemotes(importedRemotes(serverJson.remotes));
+    setPackages(importedPackages(serverJson.packages));
+    setSourceImportMessage(
+      mode === "server_new_version"
+        ? "Published server loaded. Update the version before publishing."
+        : "Published server loaded for editing.",
+    );
+  }
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       const searchParams = new URLSearchParams(window.location.search);
       const submissionId = searchParams.get("submission") ?? "";
-      if (!submissionId) {
+      const serverName = searchParams.get("server") ?? "";
+      if (!submissionId && !serverName) {
+        return;
+      }
+
+      if (serverName) {
+        const requestedVersion = searchParams.get("version") ?? "latest";
+        const requestedMode = requestedVersion === "new" ? "server_new_version" : "server_edit";
+        setIsLoadingSubmission(true);
+        setError("");
+        getServer(serverName)
+          .then((response) => {
+            const versions = response.versions ?? [];
+            const version = requestedVersion === "new"
+              ? versions.find((item) => item.isLatest) ?? versions[0]
+              : versions.find((item) => item.version === requestedVersion)
+                ?? versions.find((item) => item.isLatest)
+                ?? versions[0];
+            if (!version) {
+              setError("Server version could not be loaded.");
+              return;
+            }
+            loadServerVersionIntoForm(response, version, requestedMode);
+          })
+          .catch((caught) => {
+            setError(caught instanceof Error ? caught.message : "Server could not be loaded.");
+          })
+          .finally(() => setIsLoadingSubmission(false));
         return;
       }
 
@@ -987,8 +1072,11 @@ export default function SubmitServerPage() {
       if (submissionMode === "new" && version.trim() !== "1.0.0") {
         throw new Error("New server submissions must start at version 1.0.0.");
       }
-      if (isAddingNewVersion && serverName !== lockedServerName) {
+      if ((isAddingNewVersion || isAddingPublishedServerVersion) && serverName !== lockedServerName) {
         throw new Error("New versions must use the published server name.");
+      }
+      if (isEditingPublishedServer && version.trim() !== lockedVersion) {
+        throw new Error("Published server edits must keep the same version.");
       }
 
       const remotePayload = remotes
@@ -1054,6 +1142,20 @@ export default function SubmitServerPage() {
             }
           : {}),
       };
+
+      if (isEditingPublishedServer) {
+        await updateServerVersion(lockedServerName, lockedVersion, serverJson);
+        setSourceImportMessage("");
+        router.push("/");
+        return;
+      }
+
+      if (isAddingPublishedServerVersion) {
+        await createServerVersion(serverJson);
+        setSourceImportMessage("");
+        router.push("/");
+        return;
+      }
 
       const submissionType = isAddingNewVersion ? "new_version" : editingSubmissionType;
       const draft = isEditingExistingSubmission
@@ -1268,12 +1370,22 @@ export default function SubmitServerPage() {
                   <Label htmlFor="server-version">Version</Label>
                   <Input
                     id="server-version"
-                    onChange={(event) => setVersion(event.target.value)}
+                    onChange={(event) => {
+                      if (!isVersionLocked) {
+                        setVersion(event.target.value);
+                      }
+                    }}
                     pattern={SERVER_VERSION_PATTERN.source}
                     placeholder="1.0.0"
+                    readOnly={isVersionLocked}
                     required
                     value={version}
                   />
+                  {isVersionLocked ? (
+                    <p className="text-xs text-muted-foreground">
+                      Published server edits keep the current version.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="server-title">Title</Label>

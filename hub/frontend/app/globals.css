@@ -550,6 +550,32 @@ button {
   gap: 12px;
 }
 
+.server-card-status,
+.server-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.server-card-status {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.server-card-actions .icon-button {
+  width: 30px;
+  height: 30px;
+}
+
+.icon-button.danger {
+  color: #b42318;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .server-card strong {
   display: block;
   overflow-wrap: anywhere;

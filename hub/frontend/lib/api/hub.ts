@@ -13,6 +13,9 @@ import type {
   RegistryCategoryListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
+  RegistryServerVersionCreate,
+  RegistryServerVersionDetailResponse,
+  RegistryServerVersionUpdate,
   SubmissionCreate,
   SubmissionRejectRequest,
   SubmissionRead,
@@ -118,6 +121,35 @@ export function getServer(serverName: string) {
   return request<RegistryServerDetailResponse>(
     `/mcp/servers/${encodeURIComponent(serverName)}`,
   );
+}
+
+export function createServerVersion(payload: RegistryServerVersionCreate) {
+  return request<RegistryServerVersionDetailResponse>("/admin/mcp/servers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateServerVersion(
+  serverName: string,
+  version: string,
+  payload: RegistryServerVersionUpdate,
+) {
+  return request<RegistryServerVersionDetailResponse>(
+    `/admin/mcp/servers/${encodeURIComponent(serverName)}/versions/${encodeURIComponent(version)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function deleteServer(serverName: string) {
+  return request<void>(`/admin/mcp/servers/${encodeURIComponent(serverName)}`, {
+    method: "DELETE",
+  });
 }
 
 export function listSubmissions() {

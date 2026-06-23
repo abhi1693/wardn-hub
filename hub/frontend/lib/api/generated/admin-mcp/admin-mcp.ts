@@ -67,6 +67,60 @@ export const adminMcpServersCreateVersion = async (registryServerVersionCreate: 
 }
 
 
+export type adminMcpServersDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type adminMcpServersDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type adminMcpServersDeleteResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type adminMcpServersDeleteResponseSuccess = (adminMcpServersDeleteResponse204) & {
+  headers: Headers;
+};
+export type adminMcpServersDeleteResponseError = (adminMcpServersDeleteResponse404 | adminMcpServersDeleteResponse422) & {
+  headers: Headers;
+};
+
+export type adminMcpServersDeleteResponse = (adminMcpServersDeleteResponseSuccess | adminMcpServersDeleteResponseError)
+
+export const getAdminMcpServersDeleteUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/admin/mcp/servers/${serverName}`
+}
+
+/**
+ * @summary Admin Delete Mcp Server
+ */
+export const adminMcpServersDelete = async (serverName: string, options?: RequestInit): Promise<adminMcpServersDeleteResponse> => {
+
+  const res = await fetch(getAdminMcpServersDeleteUrl(serverName),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminMcpServersDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as adminMcpServersDeleteResponse
+}
+
+
 export type adminMcpServersDeleteVersionResponse204 = {
   data: void
   status: 204

@@ -511,6 +511,32 @@ async def delete_server_version(session, name: str, version_name: str) -> None:
     await session.flush()
 
 
+async def delete_server(session, name: str) -> None:
+    server = await repository.get_server(session, name, include_deleted=True)
+    if server is None:
+        raise RegistryServerNotFoundError("server not found")
+    if server.status == "deleted":
+        return
+
+    now = datetime.now(UTC)
+    versions = await repository.list_server_versions(
+        session,
+        name,
+        include_deleted=True,
+    )
+    for version in versions:
+        version.status = "deleted"
+        version.status_message = "Deleted from Wardn Hub."
+        version.is_latest = False
+        version.status_changed_at = now
+
+    server.status = "deleted"
+    server.status_message = "All versions deleted from Wardn Hub."
+    server.current_version_id = None
+    await repository.sync_server_categories(session, server.id, [])
+    await session.flush()
+
+
 async def set_latest_version(
     session,
     name: str,

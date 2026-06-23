@@ -6,8 +6,10 @@ import {
   FileCheck2,
   History,
   LogIn,
+  Pencil,
   Plus,
   Server,
+  Trash2,
   UserPlus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -16,6 +18,7 @@ import {
   HubApiError,
   createPartnerSupport,
   currentUser,
+  deleteServer,
   listAuditEvents,
   listPartnerOrganizations,
   listPartnerSupport,
@@ -209,10 +212,17 @@ function AppShell({
   );
 }
 
-function BrowseView() {
+function serverSubmitUrl(serverName: string, version: string) {
+  const params = new URLSearchParams({ server: serverName, version });
+  return `/submit?${params}`;
+}
+
+function BrowseView({ isAdmin }: { isAdmin: boolean }) {
   const [servers, setServers] = useState<RegistryServerRead[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busyServer, setBusyServer] = useState("");
 
   async function refresh() {
     setState("loading");
@@ -227,6 +237,27 @@ function BrowseView() {
     }
   }
 
+  async function deleteMcpServer(server: RegistryServerRead) {
+    const isConfirmed = window.confirm(
+      `Delete ${server.name} and all published versions? This cannot be undone from the UI.`,
+    );
+    if (!isConfirmed) return;
+
+    setBusyServer(server.name);
+    setNotice("");
+    setError("");
+    try {
+      await deleteServer(server.name);
+      setNotice(`${server.name} deleted.`);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete server.");
+      setState(statusFromError(caught));
+    } finally {
+      setBusyServer("");
+    }
+  }
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timeoutId);
@@ -236,6 +267,7 @@ function BrowseView() {
     <div className="home-view simple-home">
       {state === "loading" && <EmptyState title="Loading" detail="Fetching MCP servers." />}
       {state === "error" && <EmptyState title="Registry unavailable" detail={error} />}
+      {notice && <div className="notice">{notice}</div>}
       {state === "ready" && servers.length === 0 && (
         <div className="server-grid">
           <article className="server-card empty-server-card">
@@ -262,7 +294,50 @@ function BrowseView() {
                   <strong>{server.title || server.name}</strong>
                   <small>{server.name}</small>
                 </span>
-                <Pill tone={toneFor(server.status)}>{server.status}</Pill>
+                <span className="server-card-status">
+                  <Pill tone={toneFor(server.status)}>{server.status}</Pill>
+                  {isAdmin ? (
+                    <span className="server-card-actions">
+                      {server.latestVersion?.version ? (
+                        <button
+                          aria-label={`Edit ${server.name}`}
+                          className="icon-button"
+                          onClick={() => {
+                            window.location.href = serverSubmitUrl(
+                              server.name,
+                              server.latestVersion?.version ?? "",
+                            );
+                          }}
+                          title="Edit latest version"
+                          type="button"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      ) : null}
+                      <button
+                        aria-label={`Add version for ${server.name}`}
+                        className="icon-button"
+                        onClick={() => {
+                          window.location.href = serverSubmitUrl(server.name, "new");
+                        }}
+                        title="Add version"
+                        type="button"
+                      >
+                        <Plus size={16} />
+                      </button>
+                      <button
+                        aria-label={`Delete ${server.name}`}
+                        className="icon-button danger"
+                        disabled={busyServer === server.name}
+                        onClick={() => void deleteMcpServer(server)}
+                        title="Delete server and all versions"
+                        type="button"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </span>
+                  ) : null}
+                </span>
               </span>
               <span className="server-card-description">{server.description}</span>
               <span className="pill-stack">
@@ -659,7 +734,7 @@ export default function Home() {
       onSectionChange={selectSection}
       section={section}
     >
-      {section === "browse" && <BrowseView />}
+      {section === "browse" && <BrowseView isAdmin={isAdmin} />}
       {isAdmin && section === "submissions" && <SubmissionsView />}
       {isAdmin && section === "partners" && <PartnersView />}
       {isAdmin && section === "audit" && <AuditView />}
