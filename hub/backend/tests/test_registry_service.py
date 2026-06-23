@@ -12,7 +12,7 @@ from app.modules.registry.exceptions import (
     InvalidRegistryCursorError,
     RegistryVersionNotFoundError,
 )
-from app.modules.registry.models import RegistryServer, RegistryServerVersion
+from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
 from app.modules.registry.schemas import RegistryServerVersionCreate
 
 
@@ -121,6 +121,18 @@ def test_parse_cursor() -> None:
         service.parse_cursor("not-a-cursor")
 
 
+def test_category_values_extracts_publisher_metadata() -> None:
+    payload = registry_payload()
+    payload.meta = {
+        service.PUBLISHER_META_KEY: {
+            "category": "Development",
+            "categories": ["Cloud Service", "Development"],
+        }
+    }
+
+    assert service.category_values(payload) == ["development", "cloud-service"]
+
+
 @pytest.mark.asyncio
 async def test_create_server_version_creates_server_and_latest(monkeypatch) -> None:
     calls: list[str] = []
@@ -131,13 +143,25 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     async def clear_latest(*args, **kwargs):
         calls.append("clear_latest")
 
+    async def sync_categories(*args, **kwargs):
+        calls.append("sync_categories")
+
+    async def empty_categories(*args, **kwargs):
+        return {}
+
     monkeypatch.setattr(service.repository, "get_server", missing_server)
     monkeypatch.setattr(service.repository, "get_server_version", missing_server)
     monkeypatch.setattr(service.repository, "clear_latest_for_server", clear_latest)
+    monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
+    monkeypatch.setattr(service.repository, "list_verified_namespace_claims", empty_categories)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_categories)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_categories)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_categories)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_categories)
 
     response = await service.create_server_version(FakeSession(), registry_payload())
 
-    assert calls == ["clear_latest"]
+    assert calls == ["clear_latest", "sync_categories"]
     assert response.server.name == "io.github.example/weather"
     assert response.server.latest_version is not None
     assert response.server.latest_version.version == "1.0.0"
@@ -264,10 +288,27 @@ async def test_get_server_detail_includes_namespace_and_partner_support(monkeypa
     async def users(*args, **kwargs):
         return {}
 
+    async def categories(*args, **kwargs):
+        return {
+            server.id: [
+                RegistryCategory(
+                    id=uuid4(),
+                    slug="development",
+                    name="Development",
+                    description="Developer tooling",
+                    sort_order=180,
+                    status="active",
+                    created_at=now,
+                    updated_at=now,
+                )
+            ]
+        }
+
     monkeypatch.setattr(service.repository, "get_server", get_server)
     monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
     monkeypatch.setattr(service.repository, "list_verified_namespace_claims", namespace_claims)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", partner_support)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", categories)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", organizations)
     monkeypatch.setattr(service.repository, "list_users_by_ids", users)
 
@@ -280,4 +321,5 @@ async def test_get_server_detail_includes_namespace_and_partner_support(monkeypa
     assert response.server.owner.login == "acme"
     assert response.server.partner_support[0].support_level == "official"
     assert response.server.partner_support[0].organization.login == "acme"
+    assert response.server.categories[0].slug == "development"
     assert response.versions[0].namespace_verified is True

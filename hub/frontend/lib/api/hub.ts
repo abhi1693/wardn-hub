@@ -14,6 +14,7 @@ import type {
   PartnerServerSupportCreate,
   PartnerServerSupportListResponse,
   PartnerServerSupportRead,
+  RegistryCategoryListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   SubmissionRejectRequest,
@@ -80,6 +81,7 @@ export function listServers(params: {
   search?: string;
   supportLevel?: string;
   partner?: boolean;
+  category?: string;
   limit?: number;
 }) {
   return request<RegistryServerListResponse>(
@@ -87,9 +89,14 @@ export function listServers(params: {
       search: params.search,
       support_level: params.supportLevel,
       partner: params.partner,
+      category: params.category,
       limit: params.limit ?? 25,
     })}`,
   );
+}
+
+export function listCategories() {
+  return request<RegistryCategoryListResponse>("/mcp/categories");
 }
 
 export function getServer(serverName: string) {

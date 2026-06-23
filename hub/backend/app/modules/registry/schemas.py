@@ -99,6 +99,16 @@ class PartnerSupportSummary(BaseModel):
     ends_at: datetime | None = Field(default=None, alias="endsAt")
 
 
+class RegistryCategoryRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    slug: str
+    name: str
+    description: str = ""
+    sort_order: int = Field(alias="sortOrder")
+
+
 class RegistryServerRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -119,6 +129,7 @@ class RegistryServerRead(BaseModel):
     latest_version: RegistryLatestVersionSummary | None = Field(default=None, alias="latestVersion")
     namespace_claim: NamespaceTrustSummary | None = Field(default=None, alias="namespaceClaim")
     namespace_verified: bool = Field(default=False, alias="namespaceVerified")
+    categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
         alias="partnerSupport",
@@ -153,6 +164,7 @@ class RegistryServerVersionRead(BaseModel):
     approver: ActorSummary | None = None
     namespace_claim: NamespaceTrustSummary | None = Field(default=None, alias="namespaceClaim")
     namespace_verified: bool = Field(default=False, alias="namespaceVerified")
+    categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
         alias="partnerSupport",
@@ -173,6 +185,10 @@ class RegistryListMetadata(BaseModel):
 class RegistryServerListResponse(BaseModel):
     servers: list[RegistryServerRead]
     metadata: RegistryListMetadata
+
+
+class RegistryCategoryListResponse(BaseModel):
+    categories: list[RegistryCategoryRead]
 
 
 class RegistryServerVersionListResponse(BaseModel):

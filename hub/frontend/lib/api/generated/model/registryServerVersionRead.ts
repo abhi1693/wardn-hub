@@ -7,6 +7,7 @@
 import type { ActorSummary } from './actorSummary';
 import type { NamespaceTrustSummary } from './namespaceTrustSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
+import type { RegistryCategoryRead } from './registryCategoryRead';
 import type { RegistryServerVersionReadIconsItem } from './registryServerVersionReadIconsItem';
 import type { RegistryServerVersionReadPackagesItem } from './registryServerVersionReadPackagesItem';
 import type { RegistryServerVersionReadRemotesItem } from './registryServerVersionReadRemotesItem';
@@ -16,6 +17,7 @@ import type { RegistryServerVersionReadStatus } from './registryServerVersionRea
 
 export interface RegistryServerVersionRead {
   approver?: ActorSummary | null;
+  categories?: RegistryCategoryRead[];
   createdAt: string;
   createdBy?: ActorSummary | null;
   description: string;

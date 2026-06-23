@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -94,3 +94,35 @@ class RegistryServerVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+class RegistryCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mcp_categories"
+    __table_args__ = (UniqueConstraint("slug", name="uq_mcp_categories_slug"),)
+
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+
+
+class RegistryServerCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mcp_server_categories"
+    __table_args__ = (
+        UniqueConstraint("server_id", "category_id", name="uq_mcp_server_categories_server_category"),
+    )
+
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mcp_servers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mcp_categories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[str] = mapped_column(String(32), default="metadata", nullable=False)

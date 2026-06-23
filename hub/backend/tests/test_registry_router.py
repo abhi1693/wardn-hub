@@ -11,6 +11,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
     schema = TestClient(create_app()).get("/api/v1/openapi.json").json()
 
     assert {
+        "/api/v1/mcp/categories",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/versions",
@@ -19,6 +20,9 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
     }.issubset(set(schema["paths"]))
+    assert (
+        schema["paths"]["/api/v1/mcp/categories"]["get"]["operationId"] == "mcp_categories_list"
+    )
     assert schema["paths"]["/api/v1/mcp/servers"]["get"]["operationId"] == "mcp_servers_list"
     assert (
         schema["paths"]["/api/v1/admin/mcp/servers"]["post"]["operationId"]

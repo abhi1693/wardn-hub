@@ -1397,6 +1397,56 @@
         "title": "PartnerSupportSummary",
         "type": "object"
       },
+      "RegistryCategoryListResponse": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories"
+        ],
+        "title": "RegistryCategoryListResponse",
+        "type": "object"
+      },
+      "RegistryCategoryRead": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "sortOrder": {
+            "title": "Sortorder",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "sortOrder"
+        ],
+        "title": "RegistryCategoryRead",
+        "type": "object"
+      },
       "RegistryLatestVersionSummary": {
         "properties": {
           "id": {
@@ -1503,6 +1553,13 @@
       },
       "RegistryServerRead": {
         "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -1835,6 +1892,13 @@
                 "type": "null"
               }
             ]
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
           },
           "createdAt": {
             "format": "date-time",
@@ -3500,6 +3564,27 @@
         ]
       }
     },
+    "/api/v1/mcp/categories": {
+      "get": {
+        "operationId": "mcp_categories_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryCategoryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Mcp Categories",
+        "tags": [
+          "mcp-categories"
+        ]
+      }
+    },
     "/api/v1/mcp/servers": {
       "get": {
         "operationId": "mcp_servers_list",
@@ -3654,6 +3739,22 @@
                 }
               ],
               "title": "Transport Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
             }
           },
           {

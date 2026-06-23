@@ -70,6 +70,8 @@ export * from './partnerServerSupportUpdateSupportStatus';
 export * from './partnerSupportSummary';
 export * from './partnerSupportSummarySupportLevel';
 export * from './partnerSupportSummarySupportStatus';
+export * from './registryCategoryListResponse';
+export * from './registryCategoryRead';
 export * from './registryLatestVersionSummary';
 export * from './registryLatestVersionSummaryStatus';
 export * from './registryListMetadata';

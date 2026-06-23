@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import re
 from uuid import UUID
 
 from app.modules.registry import repository
@@ -9,12 +10,14 @@ from app.modules.registry.exceptions import (
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
-from app.modules.registry.models import RegistryServer, RegistryServerVersion
+from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
 from app.modules.registry.schemas import (
     ActorSummary,
     MCPServerDocument,
     NamespaceTrustSummary,
     PartnerSupportSummary,
+    RegistryCategoryListResponse,
+    RegistryCategoryRead,
     RegistryLatestVersionSummary,
     RegistryListMetadata,
     RegistryServerDetailResponse,
@@ -34,6 +37,7 @@ class RegistryTrustContext:
     organizations: dict[UUID, object]
     namespace_claims: dict[str, object]
     partner_support: dict[str, list[tuple[object, object]]]
+    categories: dict[UUID, list[RegistryCategory]]
 
 
 EMPTY_TRUST_CONTEXT = RegistryTrustContext(
@@ -41,7 +45,11 @@ EMPTY_TRUST_CONTEXT = RegistryTrustContext(
     organizations={},
     namespace_claims={},
     partner_support={},
+    categories={},
 )
+
+
+PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"
 
 
 def parse_cursor(cursor: str | None) -> int:
@@ -69,6 +77,43 @@ def document_values(payload: MCPServerDocument) -> dict:
         "icons": payload.icons,
         "server_json": payload.model_dump(by_alias=True, exclude_none=True),
     }
+
+
+def category_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return slug or "other"
+
+
+def category_values_from_metadata(metadata: dict) -> list[str]:
+    publisher_metadata = metadata.get(PUBLISHER_META_KEY, {})
+    if not isinstance(publisher_metadata, dict):
+        return []
+
+    raw_values = []
+    category = publisher_metadata.get("category")
+    categories = publisher_metadata.get("categories")
+    if isinstance(category, str):
+        raw_values.append(category)
+    if isinstance(categories, list):
+        raw_values.extend(value for value in categories if isinstance(value, str))
+
+    slugs = []
+    seen = set()
+    for value in raw_values:
+        slug = category_slug(value)
+        if slug not in seen:
+            seen.add(slug)
+            slugs.append(slug)
+    return slugs
+
+
+def category_values(payload: MCPServerDocument) -> list[str]:
+    return category_values_from_metadata(payload.meta or {})
+
+
+def category_values_from_server_json(server_json: dict) -> list[str]:
+    metadata = server_json.get("_meta", {})
+    return category_values_from_metadata(metadata if isinstance(metadata, dict) else {})
 
 
 def namespace_for_server_name(name: str) -> str:
@@ -159,6 +204,23 @@ def partner_support_summary(
     return summaries
 
 
+def category_summary(category: RegistryCategory) -> RegistryCategoryRead:
+    return RegistryCategoryRead(
+        id=category.id,
+        slug=category.slug,
+        name=category.name,
+        description=category.description,
+        sortOrder=category.sort_order,
+    )
+
+
+def categories_for_server(
+    server_id: UUID,
+    trust: RegistryTrustContext,
+) -> list[RegistryCategoryRead]:
+    return [category_summary(category) for category in trust.categories.get(server_id, [])]
+
+
 async def build_trust_context(
     session,
     *,
@@ -203,11 +265,17 @@ async def build_trust_context(
         for _support, organization in records:
             organization_ids.add(organization.id)
 
+    categories = await repository.list_categories_for_servers(
+        session,
+        {server.id for server in servers} | {version.server_id for version in versions},
+    )
+
     return RegistryTrustContext(
         users=await repository.list_users_by_ids(session, user_ids),
         organizations=await repository.list_organizations_by_ids(session, organization_ids),
         namespace_claims=namespace_claims,
         partner_support=partner_support,
+        categories=categories,
     )
 
 
@@ -249,6 +317,7 @@ def server_summary(
         latest_version=latest,
         namespace_claim=namespace_claim,
         namespace_verified=namespace_claim is not None,
+        categories=categories_for_server(server.id, trust),
         partner_support=partner_support_summary(server.name, trust),
         created_at=server.created_at,
         updated_at=server.updated_at,
@@ -288,6 +357,7 @@ def version_summary(
         published_by=user_actor(version.publisher_user_id, trust),
         namespace_claim=namespace_claim,
         namespace_verified=namespace_claim is not None,
+        categories=categories_for_server(version.server_id, trust),
         partner_support=partner_support_summary(version.name, trust),
         published_at=version.published_at,
         status_changed_at=version.status_changed_at,
@@ -376,11 +446,13 @@ async def create_server_version(
     await session.flush()
     await session.refresh(version)
     server.current_version_id = version.id
+    await repository.sync_server_categories(session, server.id, category_values(payload))
     await session.flush()
     await session.refresh(server)
+    trust = await build_trust_context(session, servers=[server], versions=[version])
     return RegistryServerVersionDetailResponse(
-        server=server_summary(server, version),
-        version=version_summary(version),
+        server=server_summary(server, version, trust=trust),
+        version=version_summary(version, trust=trust),
     )
 
 
@@ -419,13 +491,15 @@ async def update_server_version(
         server.website_url = payload.website_url
         server.repository = payload.repository
         server.icons = payload.icons
+        await repository.sync_server_categories(session, server.id, category_values(payload))
 
     await session.flush()
     await session.refresh(version)
     await session.refresh(server)
+    trust = await build_trust_context(session, servers=[server], versions=[version])
     return RegistryServerVersionDetailResponse(
-        server=server_summary(server, version if version.is_latest else None),
-        version=version_summary(version),
+        server=server_summary(server, version if version.is_latest else None, trust=trust),
+        version=version_summary(version, trust=trust),
     )
 
 
@@ -489,12 +563,18 @@ async def set_latest_version(
     server.website_url = version.website_url
     server.repository = version.repository
     server.icons = version.icons
+    await repository.sync_server_categories(
+        session,
+        server.id,
+        category_values_from_server_json(version.server_json),
+    )
     await session.flush()
     await session.refresh(version)
     await session.refresh(server)
+    trust = await build_trust_context(session, servers=[server], versions=[version])
     return RegistryServerVersionDetailResponse(
-        server=server_summary(server, version),
-        version=version_summary(version),
+        server=server_summary(server, version, trust=trust),
+        version=version_summary(version, trust=trust),
     )
 
 
@@ -512,6 +592,7 @@ async def list_servers(
     registry_type: str | None = None,
     transport_type: str | None = None,
     status: str | None = None,
+    category: str | None = None,
 ) -> RegistryServerListResponse:
     offset = parse_cursor(cursor)
     servers, next_cursor = await repository.list_servers(
@@ -526,11 +607,19 @@ async def list_servers(
         partner=partner,
         registry_type=registry_type,
         transport_type=transport_type,
+        category=category,
         status=status,
     )
     return RegistryServerListResponse(
         servers=[await server_with_latest(session, server) for server in servers],
         metadata=RegistryListMetadata(count=len(servers), next_cursor=next_cursor),
+    )
+
+
+async def list_categories(session) -> RegistryCategoryListResponse:
+    categories = await repository.list_categories(session)
+    return RegistryCategoryListResponse(
+        categories=[category_summary(category) for category in categories]
     )
 
 

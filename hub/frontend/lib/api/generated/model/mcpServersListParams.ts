@@ -20,5 +20,6 @@ support_level?: string | null;
 partner?: boolean | null;
 registry_type?: string | null;
 transport_type?: string | null;
+category?: string | null;
 status?: string | null;
 };

@@ -1,14 +1,23 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, func, or_, select, update
+from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.namespaces.models import NamespaceClaim
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
-from app.modules.registry.models import RegistryServer, RegistryServerVersion
+from app.modules.registry.models import (
+    RegistryCategory,
+    RegistryServer,
+    RegistryServerCategory,
+    RegistryServerVersion,
+)
 from app.modules.users.models import User
+
+
+def category_name_from_slug(slug: str) -> str:
+    return " ".join(part.capitalize() for part in slug.split("-") if part) or "Other"
 
 
 def visible_servers_query(include_deleted: bool) -> Select[tuple[RegistryServer]]:
@@ -71,6 +80,7 @@ async def list_servers(
     partner: bool | None = None,
     registry_type: str | None = None,
     transport_type: str | None = None,
+    category: str | None = None,
     status: str | None = None,
 ) -> tuple[list[RegistryServer], str]:
     statement = visible_servers_query(include_deleted or updated_since is not None)
@@ -87,6 +97,21 @@ async def list_servers(
         statement = statement.where(RegistryServer.updated_at >= updated_since)
     if status:
         statement = statement.where(RegistryServer.status == status)
+    if category:
+        statement = (
+            statement.join(
+                RegistryServerCategory,
+                RegistryServerCategory.server_id == RegistryServer.id,
+            )
+            .join(RegistryCategory, RegistryCategory.id == RegistryServerCategory.category_id)
+            .where(
+                RegistryCategory.status == "active",
+                or_(
+                    RegistryCategory.slug == category,
+                    RegistryCategory.name.ilike(category),
+                ),
+            )
+        )
 
     if version and version != "latest":
         statement = statement.join(
@@ -235,3 +260,84 @@ async def list_partner_support_for_servers(
     for support, organization in result.all():
         support_by_server.setdefault(support.server_name, []).append((support, organization))
     return support_by_server
+
+
+async def list_categories(session: AsyncSession) -> list[RegistryCategory]:
+    result = await session.execute(
+        select(RegistryCategory)
+        .where(RegistryCategory.status == "active")
+        .order_by(RegistryCategory.sort_order.asc(), RegistryCategory.name.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_categories_for_servers(
+    session: AsyncSession,
+    server_ids: set[UUID],
+) -> dict[UUID, list[RegistryCategory]]:
+    if not server_ids:
+        return {}
+    result = await session.execute(
+        select(RegistryServerCategory.server_id, RegistryCategory)
+        .join(RegistryCategory, RegistryCategory.id == RegistryServerCategory.category_id)
+        .where(
+            RegistryServerCategory.server_id.in_(server_ids),
+            RegistryCategory.status == "active",
+        )
+        .order_by(
+            RegistryServerCategory.server_id.asc(),
+            RegistryCategory.sort_order.asc(),
+            RegistryCategory.name.asc(),
+        )
+    )
+    categories_by_server: dict[UUID, list[RegistryCategory]] = {}
+    for server_id, category in result.all():
+        categories_by_server.setdefault(server_id, []).append(category)
+    return categories_by_server
+
+
+async def sync_server_categories(
+    session: AsyncSession,
+    server_id: UUID,
+    category_slugs: list[str],
+) -> None:
+    await session.execute(
+        delete(RegistryServerCategory).where(RegistryServerCategory.server_id == server_id)
+    )
+    if not category_slugs:
+        return
+
+    result = await session.execute(
+        select(RegistryCategory).where(
+            RegistryCategory.slug.in_(category_slugs),
+            RegistryCategory.status == "active",
+        )
+    )
+    categories_by_slug = {category.slug: category for category in result.scalars().all()}
+    created_missing = False
+    for slug in category_slugs:
+        if slug not in categories_by_slug:
+            category = RegistryCategory(
+                slug=slug,
+                name=category_name_from_slug(slug),
+                description="",
+                sort_order=1000,
+                status="active",
+            )
+            session.add(category)
+            categories_by_slug[slug] = category
+            created_missing = True
+
+    if created_missing:
+        await session.flush()
+
+    for slug in category_slugs:
+        category = categories_by_slug.get(slug)
+        if category is not None:
+            session.add(
+                RegistryServerCategory(
+                    server_id=server_id,
+                    category_id=category.id,
+                    source="metadata",
+                )
+            )

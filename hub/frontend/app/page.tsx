@@ -25,6 +25,7 @@ import {
   createPartnerSupport,
   getServer,
   getApiToken,
+  listCategories,
   listAuditEvents,
   listNamespaceClaims,
   listPartnerOrganizations,
@@ -45,6 +46,7 @@ import type {
   NamespaceClaimRead,
   PartnerOrganizationRead,
   PartnerServerSupportRead,
+  RegistryCategoryRead,
   RegistryServerRead,
   RegistryServerVersionRead,
   SubmissionRead,
@@ -66,17 +68,34 @@ const navItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
 ];
 
 const supportLevels = ["", "official", "verified", "compatible", "deprecated"];
-const registryChips = [
-  { label: "Featured", supportLevel: "", partnerOnly: false, search: "" },
-  { label: "All", supportLevel: "", partnerOnly: false, search: "" },
-  { label: "Official", supportLevel: "official", partnerOnly: false, search: "" },
-  { label: "Verified", supportLevel: "verified", partnerOnly: false, search: "" },
-  { label: "Search", supportLevel: "", partnerOnly: false, search: "search" },
-  { label: "Development", supportLevel: "", partnerOnly: false, search: "development" },
-  { label: "Database", supportLevel: "", partnerOnly: false, search: "database" },
-  { label: "Cloud Service", supportLevel: "", partnerOnly: false, search: "cloud" },
-  { label: "Productivity", supportLevel: "", partnerOnly: false, search: "productivity" },
-  { label: "Partners", supportLevel: "", partnerOnly: true, search: "" },
+type RegistryChip = {
+  label: string;
+  supportLevel: string;
+  partnerOnly: boolean;
+  search: string;
+  category: string;
+};
+
+const registryChips: RegistryChip[] = [
+  { label: "Featured", supportLevel: "", partnerOnly: false, search: "", category: "" },
+  { label: "All", supportLevel: "", partnerOnly: false, search: "", category: "" },
+  { label: "Official", supportLevel: "official", partnerOnly: false, search: "", category: "" },
+  { label: "Verified", supportLevel: "verified", partnerOnly: false, search: "", category: "" },
+  { label: "Partners", supportLevel: "", partnerOnly: true, search: "", category: "" },
+];
+
+const fallbackCategoryChips: RegistryChip[] = [
+  { label: "Search", supportLevel: "", partnerOnly: false, search: "", category: "search" },
+  { label: "Development", supportLevel: "", partnerOnly: false, search: "", category: "development" },
+  { label: "Database", supportLevel: "", partnerOnly: false, search: "", category: "database" },
+  {
+    label: "Cloud Service",
+    supportLevel: "",
+    partnerOnly: false,
+    search: "",
+    category: "cloud-service",
+  },
+  { label: "Productivity", supportLevel: "", partnerOnly: false, search: "", category: "productivity" },
 ];
 
 const topicCards = [
@@ -119,6 +138,10 @@ function toneFor(value: string) {
   if (["pending", "submitted", "compatible"].includes(value)) return "pending";
   if (["failed", "rejected", "suspended", "quarantined"].includes(value)) return "danger";
   return "neutral";
+}
+
+function serverCategories(server: RegistryServerRead): RegistryCategoryRead[] {
+  return server.categories ?? [];
 }
 
 function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
@@ -357,11 +380,15 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
   const [search, setSearch] = useState("");
   const [supportLevel, setSupportLevel] = useState("");
   const [partnerOnly, setPartnerOnly] = useState(false);
+  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
+  const [activeChip, setActiveChip] = useState("Featured");
 
   async function refresh(overrides?: {
     search?: string;
     supportLevel?: string;
     partnerOnly?: boolean;
+    category?: string;
   }) {
     setState("loading");
     setError("");
@@ -370,6 +397,7 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
         search: overrides?.search ?? search,
         supportLevel: overrides?.supportLevel ?? supportLevel,
         partner: (overrides?.partnerOnly ?? partnerOnly) || undefined,
+        category: overrides?.category ?? category,
       });
       setServers(response.servers);
       setSelected((current) => current || response.servers[0]?.name || "");
@@ -384,6 +412,12 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
     const timeoutId = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    listCategories()
+      .then((response) => setCategories(response.categories))
+      .catch(() => setCategories([]));
   }, []);
 
   useEffect(() => {
@@ -408,19 +442,23 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
     [selected, servers],
   );
 
-  function applyChip(chip: (typeof registryChips)[number]) {
+  function applyChip(chip: RegistryChip) {
+    setActiveChip(chip.label);
     setSearch(chip.search);
     setSupportLevel(chip.supportLevel);
     setPartnerOnly(chip.partnerOnly);
+    setCategory(chip.category);
     void refresh({
       search: chip.search,
       supportLevel: chip.supportLevel,
       partnerOnly: chip.partnerOnly,
+      category: chip.category,
     });
   }
 
   function submitSearch(event: React.FormEvent) {
     event.preventDefault();
+    setActiveChip("");
     void refresh();
   }
 
@@ -438,6 +476,17 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
   const partnerBackedCount = servers.filter(
     (server) => (server.partnerSupport ?? []).length > 0,
   ).length;
+  const categoryChips =
+    categories.length > 0
+      ? categories.map((item) => ({
+          label: item.name,
+          supportLevel: "",
+          partnerOnly: false,
+          search: "",
+          category: item.slug,
+        }))
+      : fallbackCategoryChips;
+  const visibleChips = [...registryChips, ...categoryChips];
 
   return (
     <div className="home-view">
@@ -498,15 +547,9 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
           </button>
         </form>
         <div className="category-strip" aria-label="Registry filters">
-          {registryChips.map((chip) => (
+          {visibleChips.map((chip) => (
             <button
-              className={
-                search === chip.search &&
-                supportLevel === chip.supportLevel &&
-                partnerOnly === chip.partnerOnly
-                  ? "active"
-                  : ""
-              }
+              className={activeChip === chip.label ? "active" : ""}
               key={chip.label}
               onClick={() => applyChip(chip)}
               type="button"
@@ -568,6 +611,11 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
                   </span>
                   <span className="server-card-description">{server.description}</span>
                   <span className="pill-stack">
+                    {serverCategories(server).slice(0, 2).map((item) => (
+                      <Pill key={item.slug} tone="neutral">
+                        {item.name}
+                      </Pill>
+                    ))}
                     {server.namespaceVerified && (
                       <Pill tone="success">
                         <BadgeCheck size={13} /> namespace
@@ -665,6 +713,10 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
                 <strong>
                   {selectedServer.namespaceClaim?.namespace ??
                     (selectedServer.namespaceVerified ? "verified" : "unverified")}
+                </strong>
+                <span>Categories</span>
+                <strong>
+                  {serverCategories(selectedServer).map((item) => item.name).join(", ") || "uncategorized"}
                 </strong>
                 <span>Updated</span>
                 <strong>{formatDate(selectedServer.updatedAt)}</strong>

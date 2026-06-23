@@ -19,10 +19,12 @@ from app.modules.registry.schemas import (
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
     RegistryServerVersionUpdate,
+    RegistryCategoryListResponse,
 )
 from app.modules.registry.service import (
     create_server_version,
     delete_server_version,
+    list_categories,
     get_server_detail,
     get_version_detail,
     list_servers,
@@ -34,7 +36,19 @@ from app.modules.users.dependencies import require_superuser
 from app.modules.users.models import User
 
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
+categories_router = APIRouter(prefix="/mcp/categories", tags=["mcp-categories"])
 admin_router = APIRouter(prefix="/admin/mcp/servers", tags=["admin-mcp"])
+
+
+@categories_router.get(
+    "",
+    response_model=RegistryCategoryListResponse,
+    operation_id="mcp_categories_list",
+)
+async def list_mcp_categories(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryCategoryListResponse:
+    return await list_categories(session)
 
 
 @public_router.get(
@@ -54,6 +68,7 @@ async def list_mcp_servers(
     partner: bool | None = None,
     registry_type: str | None = None,
     transport_type: str | None = None,
+    category: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
 ) -> RegistryServerListResponse:
     try:
@@ -69,6 +84,7 @@ async def list_mcp_servers(
             partner=partner,
             registry_type=registry_type,
             transport_type=transport_type,
+            category=category,
             status=status_filter,
         )
     except InvalidRegistryCursorError as exc:
