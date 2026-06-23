@@ -38,9 +38,25 @@ export class HubApiError extends Error {
 }
 
 function apiBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL
-  );
+  const configured =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL;
+  if (typeof window === "undefined") return configured;
+
+  const pageHost = window.location.hostname;
+  if (pageHost === "localhost" || pageHost === "127.0.0.1") return configured;
+
+  try {
+    const url = new URL(configured);
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      url.hostname = pageHost;
+      url.protocol = window.location.protocol;
+      return url.toString().replace(/\/$/, "");
+    }
+  } catch {
+    return configured;
+  }
+
+  return configured;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
