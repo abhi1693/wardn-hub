@@ -50,6 +50,16 @@ Phase 3 adds the moderation workflow around registry publishing:
 - Audit event persistence for submission lifecycle actions
 - Superuser audit event listing under `/api/v1/audit/events`
 
+## Phase 4 Namespaces
+
+Phase 4 adds the first trust-plane surface:
+
+- Namespace claims under `/api/v1/namespaces/claims`
+- GitHub-style namespaces such as `io.github.example/*`
+- Reverse-DNS namespaces such as `com.example/*`
+- Pending, verified, failed, and revoked claim states
+- Audit events for namespace claim lifecycle changes
+
 ## Commands
 
 ```sh
