@@ -6,23 +6,21 @@ import {
   Database,
   FileCheck2,
   History,
-  KeyRound,
   LogIn,
   RefreshCw,
   Search,
   Server,
-  Settings,
   ShieldCheck,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  DEFAULT_API_BASE_URL,
   HubApiError,
   bootstrap,
   createNamespaceClaim,
   createPartnerSupport,
+  currentUser,
   getServer,
   getApiToken,
   listCategories,
@@ -53,18 +51,20 @@ import type {
   UserRead,
 } from "@/lib/api/generated/model";
 
-type Section = "browse" | "submissions" | "partners" | "namespaces" | "audit" | "settings";
+type Section = "browse" | "submissions" | "partners" | "namespaces" | "audit";
 type LoadState = "idle" | "loading" | "ready" | "error" | "auth";
 type NamespaceMethod = "github" | "dns" | "http";
 type SupportLevel = "official" | "verified" | "compatible" | "deprecated";
 
-const navItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
+const publicNavItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
   { id: "browse", label: "Home", icon: Server },
+];
+
+const protectedNavItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
   { id: "submissions", label: "Submissions", icon: FileCheck2 },
   { id: "partners", label: "Partners", icon: Building2 },
   { id: "namespaces", label: "Namespaces", icon: ShieldCheck },
   { id: "audit", label: "Audit", icon: History },
-  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 const supportLevels = ["", "official", "verified", "compatible", "deprecated"];
@@ -182,15 +182,23 @@ function ActionButton({
 
 function AppShell({
   section,
+  isAuthenticated,
   onSectionChange,
   onOpenAuth,
+  onLogout,
   children,
 }: {
   section: Section;
+  isAuthenticated: boolean;
   onSectionChange: (section: Section) => void;
   onOpenAuth: () => void;
+  onLogout: () => void;
   children: React.ReactNode;
 }) {
+  const navItems = isAuthenticated
+    ? [...publicNavItems, ...protectedNavItems]
+    : publicNavItems;
+
   return (
     <main className="site-shell">
       <header className="site-header">
@@ -215,13 +223,21 @@ function AppShell({
           })}
         </nav>
         <div className="site-actions">
-          <button className="text-button subtle" onClick={() => onSectionChange("submissions")} type="button">
-            Submit
-          </button>
-          <button className="text-button" onClick={onOpenAuth} type="button">
-            <LogIn size={16} />
-            Sign in
-          </button>
+          {isAuthenticated ? (
+            <>
+              <button className="text-button subtle" onClick={() => onSectionChange("submissions")} type="button">
+                Submit
+              </button>
+              <button className="small-button" onClick={onLogout} type="button">
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button className="text-button" onClick={onOpenAuth} type="button">
+              <LogIn size={16} />
+              Sign in
+            </button>
+          )}
         </div>
       </header>
       <section className="workspace">
@@ -231,7 +247,15 @@ function AppShell({
   );
 }
 
-function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AuthDialog({
+  open,
+  onClose,
+  onAuthChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAuthChange: (user: UserRead | null) => void;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -255,6 +279,7 @@ function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     try {
       const response = await login({ email, password });
       setUser(response);
+      onAuthChange(response);
       setNotice(`Signed in as ${response.email}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Login failed.");
@@ -273,6 +298,7 @@ function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
         last_name: lastName,
       });
       setUser(response);
+      onAuthChange(response);
       setNotice(`Bootstrapped ${response.email}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Bootstrap failed.");
@@ -285,15 +311,31 @@ function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     try {
       await logout();
       setUser(null);
+      setApiToken("");
+      onAuthChange(null);
       setNotice("Signed out.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Logout failed.");
     }
   }
 
-  function saveToken() {
+  async function saveToken() {
     setApiToken(token);
-    setNotice(token.trim() ? "Bearer token saved." : "Bearer token cleared.");
+    if (!token.trim()) {
+      onAuthChange(null);
+      setNotice("Bearer token cleared.");
+      return;
+    }
+    try {
+      const response = await currentUser();
+      setUser(response);
+      onAuthChange(response);
+      setNotice("Bearer token saved.");
+    } catch (caught) {
+      onAuthChange(null);
+      setError(caught instanceof Error ? caught.message : "Token validation failed.");
+      setNotice("");
+    }
   }
 
   return (
@@ -360,7 +402,7 @@ function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
               placeholder="whub_..."
               value={token}
             />
-            <button className="text-button" onClick={saveToken} type="button">
+            <button className="text-button" onClick={() => void saveToken()} type="button">
               Save token
             </button>
           </div>
@@ -1156,21 +1198,6 @@ function AuditView() {
   );
 }
 
-function SettingsView() {
-  return (
-    <DataView title="Settings" eyebrow="Runtime" icon={KeyRound}>
-      <div className="settings-grid">
-        <span>API base URL</span>
-        <strong>{process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL}</strong>
-        <span>Authentication</span>
-        <strong>Session cookie / bearer token</strong>
-        <span>Generated client</span>
-        <strong>OpenAPI + Orval</strong>
-      </div>
-    </DataView>
-  );
-}
-
 function DataView({
   title,
   eyebrow,
@@ -1200,19 +1227,54 @@ function DataView({
 
 export default function Home() {
   const [section, setSection] = useState<Section>("browse");
+  const [user, setUser] = useState<UserRead | null>(null);
   const [authOpen, setAuthOpen] = useState(
     () => typeof window !== "undefined" && window.location.search.includes("auth=1"),
   );
+  const isAuthenticated = user !== null;
+
+  useEffect(() => {
+    currentUser()
+      .then((response) => setUser(response))
+      .catch(() => setUser(null));
+  }, []);
+
+  function selectSection(nextSection: Section) {
+    if (nextSection !== "browse" && !isAuthenticated) {
+      setAuthOpen(true);
+      return;
+    }
+    setSection(nextSection);
+  }
+
+  async function signOut() {
+    await logout().catch(() => undefined);
+    setApiToken("");
+    setUser(null);
+    setSection("browse");
+  }
 
   return (
-    <AppShell section={section} onOpenAuth={() => setAuthOpen(true)} onSectionChange={setSection}>
-      {section === "browse" && <BrowseView onSubmitServer={() => setSection("submissions")} />}
-      {section === "submissions" && <SubmissionsView />}
-      {section === "partners" && <PartnersView />}
-      {section === "namespaces" && <NamespacesView />}
-      {section === "audit" && <AuditView />}
-      {section === "settings" && <SettingsView />}
-      <AuthDialog onClose={() => setAuthOpen(false)} open={authOpen} />
+    <AppShell
+      isAuthenticated={isAuthenticated}
+      onLogout={() => void signOut()}
+      onOpenAuth={() => setAuthOpen(true)}
+      onSectionChange={selectSection}
+      section={section}
+    >
+      {section === "browse" && <BrowseView onSubmitServer={() => selectSection("submissions")} />}
+      {isAuthenticated && section === "submissions" && <SubmissionsView />}
+      {isAuthenticated && section === "partners" && <PartnersView />}
+      {isAuthenticated && section === "namespaces" && <NamespacesView />}
+      {isAuthenticated && section === "audit" && <AuditView />}
+      <AuthDialog
+        onAuthChange={(nextUser) => {
+          setUser(nextUser);
+          if (!nextUser) setSection("browse");
+        }}
+        onClose={() => setAuthOpen(false)}
+        open={authOpen}
+      />
     </AppShell>
   );
 }

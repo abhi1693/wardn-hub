@@ -77,6 +77,11 @@ async def logout(response: Response) -> None:
     )
 
 
+@router.get("/me", response_model=UserRead, operation_id="auth_me")
+async def me(current_user: Annotated[User, Depends(get_current_user)]) -> UserRead:
+    return UserRead.model_validate(current_user)
+
+
 @router.post(
     "/api-tokens",
     response_model=UserAPITokenCreated,
@@ -149,4 +154,3 @@ async def delete_api_token(
     except UserAPITokenNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     await session.commit()
-

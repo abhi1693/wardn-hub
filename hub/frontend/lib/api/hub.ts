@@ -147,6 +147,10 @@ export function login(payload: LoginRequest) {
   });
 }
 
+export function currentUser() {
+  return request<UserRead>("/auth/me");
+}
+
 export function bootstrap(payload: BootstrapUserCreate) {
   return request<UserRead>("/users/bootstrap", {
     method: "POST",
