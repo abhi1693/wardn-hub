@@ -513,7 +513,7 @@ export default function SubmitServerPage() {
   const [version, setVersion] = useState("1.0.0");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
-  const [sourceMode, setSourceMode] = useState<SourceMode>("manual");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("repository");
   const [repositorySource, setRepositorySource] = useState("github");
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [repositorySubfolder, setRepositorySubfolder] = useState("");
@@ -799,7 +799,7 @@ export default function SubmitServerPage() {
               <CardHeader className="flex items-center justify-between gap-3 space-y-0">
                 <div>
                   <CardTitle>Submission source</CardTitle>
-                  <CardDescription>Manual entry is available for servers without a public repository.</CardDescription>
+                  <CardDescription>Import from a public repository or switch to manual entry.</CardDescription>
                 </div>
                 {sourceMode === "repository" ? (
                   <Button
