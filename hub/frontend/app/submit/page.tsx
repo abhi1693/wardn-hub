@@ -26,12 +26,14 @@ import {
   HubApiError,
   createSubmission,
   currentUser,
+  listCategories,
   submissionAction,
 } from "@/lib/api/hub";
-import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
+import type { RegistryCategoryRead, SubmissionRead, UserRead } from "@/lib/api/generated/model";
 
 const DEFAULT_SCHEMA =
   "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
+const PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided";
 const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
 const SERVER_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -513,6 +515,8 @@ export default function SubmitServerPage() {
   const [version, setVersion] = useState("1.0.0");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
+  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
   const [sourceMode, setSourceMode] = useState<SourceMode>("repository");
   const [repositorySource, setRepositorySource] = useState("github");
   const [repositoryUrl, setRepositoryUrl] = useState("");
@@ -538,6 +542,18 @@ export default function SubmitServerPage() {
       .then((response) => setUser(response))
       .catch(() => setUser(null))
       .finally(() => setAuthChecked(true));
+  }, []);
+
+  useEffect(() => {
+    listCategories()
+      .then((response) => {
+        setCategories(response.categories);
+        setCategory((current) => current || response.categories[0]?.slug || "");
+      })
+      .catch(() => {
+        setCategories([]);
+        setCategory("");
+      });
   }, []);
 
   function updateRemote(id: string, patch: Partial<RemoteTarget>) {
@@ -716,6 +732,15 @@ export default function SubmitServerPage() {
         remotes: remotePayload,
         packages: packagePayload,
         icons,
+        ...(category
+          ? {
+              _meta: {
+                [PUBLISHER_META_KEY]: {
+                  category,
+                },
+              },
+            }
+          : {}),
       };
 
       const draft = await createSubmission({
@@ -948,6 +973,21 @@ export default function SubmitServerPage() {
                     placeholder="Grafana"
                     value={title}
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="server-category">Category</Label>
+                  <Select onValueChange={(value) => setCategory(value)} value={category}>
+                    <SelectTrigger id="server-category">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((item) => (
+                        <SelectItem key={item.slug} value={item.slug}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="server-website">Website URL</Label>
