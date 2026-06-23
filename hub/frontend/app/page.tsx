@@ -11,18 +11,16 @@ import {
   Search,
   Server,
   ShieldCheck,
-  X,
+  UserPlus,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
   HubApiError,
-  bootstrap,
   createNamespaceClaim,
   createPartnerSupport,
   currentUser,
   getServer,
-  getApiToken,
   listCategories,
   listAuditEvents,
   listNamespaceClaims,
@@ -30,7 +28,6 @@ import {
   listPartnerSupport,
   listServers,
   listSubmissions,
-  login,
   logout,
   namespaceDecision,
   rejectSubmission,
@@ -184,14 +181,16 @@ function AppShell({
   section,
   isAuthenticated,
   onSectionChange,
-  onOpenAuth,
+  onLogin,
+  onRegister,
   onLogout,
   children,
 }: {
   section: Section;
   isAuthenticated: boolean;
   onSectionChange: (section: Section) => void;
-  onOpenAuth: () => void;
+  onLogin: () => void;
+  onRegister: () => void;
   onLogout: () => void;
   children: React.ReactNode;
 }) {
@@ -233,10 +232,16 @@ function AppShell({
               </button>
             </>
           ) : (
-            <button className="text-button" onClick={onOpenAuth} type="button">
-              <LogIn size={16} />
-              Sign in
-            </button>
+            <>
+              <button className="small-button" onClick={onLogin} type="button">
+                <LogIn size={15} />
+                Sign in
+              </button>
+              <button className="text-button" onClick={onRegister} type="button">
+                <UserPlus size={16} />
+                Create account
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -244,171 +249,6 @@ function AppShell({
         {children}
       </section>
     </main>
-  );
-}
-
-function AuthDialog({
-  open,
-  onClose,
-  onAuthChange,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onAuthChange: (user: UserRead | null) => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [token, setToken] = useState("");
-  const [user, setUser] = useState<UserRead | null>(null);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    queueMicrotask(() => setToken(getApiToken()));
-  }, [open]);
-
-  if (!open) return null;
-
-  async function submitLogin(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setNotice("");
-    try {
-      const response = await login({ email, password });
-      setUser(response);
-      onAuthChange(response);
-      setNotice(`Signed in as ${response.email}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Login failed.");
-    }
-  }
-
-  async function submitBootstrap(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setNotice("");
-    try {
-      const response = await bootstrap({
-        email,
-        password,
-        first_name: firstName,
-        last_name: lastName,
-      });
-      setUser(response);
-      onAuthChange(response);
-      setNotice(`Bootstrapped ${response.email}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Bootstrap failed.");
-    }
-  }
-
-  async function submitLogout() {
-    setError("");
-    setNotice("");
-    try {
-      await logout();
-      setUser(null);
-      setApiToken("");
-      onAuthChange(null);
-      setNotice("Signed out.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Logout failed.");
-    }
-  }
-
-  async function saveToken() {
-    setApiToken(token);
-    if (!token.trim()) {
-      onAuthChange(null);
-      setNotice("Bearer token cleared.");
-      return;
-    }
-    try {
-      const response = await currentUser();
-      setUser(response);
-      onAuthChange(response);
-      setNotice("Bearer token saved.");
-    } catch (caught) {
-      onAuthChange(null);
-      setError(caught instanceof Error ? caught.message : "Token validation failed.");
-      setNotice("");
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section aria-label="Authentication" className="auth-modal">
-        <header className="modal-header">
-          <div>
-            <p className="eyebrow">Access</p>
-            <h2>Sign in to Wardn Hub</h2>
-          </div>
-          <button className="icon-button" onClick={onClose} title="Close" type="button">
-            <X size={17} />
-          </button>
-        </header>
-        {notice && <div className="notice">{notice}</div>}
-        {error && <div className="error-banner">{error}</div>}
-        <div className="auth-modal-grid">
-          <form className="form-surface primary-auth" onSubmit={(event) => void submitLogin(event)}>
-            <h3>Session login</h3>
-            <input
-              autoComplete="email"
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="admin@example.com"
-              type="email"
-              value={email}
-            />
-            <input
-              autoComplete="current-password"
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="password"
-              type="password"
-              value={password}
-            />
-            <div className="form-actions">
-              <button className="text-button" type="submit">
-                Login
-              </button>
-              <button className="small-button" onClick={() => void submitLogout()} type="button">
-                Logout
-              </button>
-            </div>
-            {user && <p className="muted">Current session: {user.email}</p>}
-          </form>
-          <form className="form-surface" onSubmit={(event) => void submitBootstrap(event)}>
-            <h3>First-time setup</h3>
-            <input
-              onChange={(event) => setFirstName(event.target.value)}
-              placeholder="First name"
-              value={firstName}
-            />
-            <input
-              onChange={(event) => setLastName(event.target.value)}
-              placeholder="Last name"
-              value={lastName}
-            />
-            <button className="text-button" type="submit">
-              Create superuser
-            </button>
-          </form>
-          <div className="form-surface">
-            <h3>Bearer token</h3>
-            <input
-              onChange={(event) => setToken(event.target.value)}
-              placeholder="whub_..."
-              value={token}
-            />
-            <button className="text-button" onClick={() => void saveToken()} type="button">
-              Save token
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
   );
 }
 
@@ -1228,20 +1068,29 @@ function DataView({
 export default function Home() {
   const [section, setSection] = useState<Section>("browse");
   const [user, setUser] = useState<UserRead | null>(null);
-  const [authOpen, setAuthOpen] = useState(
-    () => typeof window !== "undefined" && window.location.search.includes("auth=1"),
-  );
   const isAuthenticated = user !== null;
 
   useEffect(() => {
     currentUser()
-      .then((response) => setUser(response))
+      .then((response) => {
+        setUser(response);
+        const nextSection = new URLSearchParams(window.location.search).get("section");
+        if (isSection(nextSection) && nextSection !== "browse") {
+          setSection(nextSection);
+        }
+      })
       .catch(() => setUser(null));
   }, []);
 
+  function goToAuth(mode: "login" | "register", nextSection?: Section) {
+    const params = new URLSearchParams();
+    if (nextSection && nextSection !== "browse") params.set("next", nextSection);
+    window.location.href = `/${mode}${params.size ? `?${params}` : ""}`;
+  }
+
   function selectSection(nextSection: Section) {
     if (nextSection !== "browse" && !isAuthenticated) {
-      setAuthOpen(true);
+      goToAuth("login", nextSection);
       return;
     }
     setSection(nextSection);
@@ -1257,8 +1106,9 @@ export default function Home() {
   return (
     <AppShell
       isAuthenticated={isAuthenticated}
+      onLogin={() => goToAuth("login")}
       onLogout={() => void signOut()}
-      onOpenAuth={() => setAuthOpen(true)}
+      onRegister={() => goToAuth("register")}
       onSectionChange={selectSection}
       section={section}
     >
@@ -1267,14 +1117,10 @@ export default function Home() {
       {isAuthenticated && section === "partners" && <PartnersView />}
       {isAuthenticated && section === "namespaces" && <NamespacesView />}
       {isAuthenticated && section === "audit" && <AuditView />}
-      <AuthDialog
-        onAuthChange={(nextUser) => {
-          setUser(nextUser);
-          if (!nextUser) setSection("browse");
-        }}
-        onClose={() => setAuthOpen(false)}
-        open={authOpen}
-      />
     </AppShell>
   );
+}
+
+function isSection(value: string | null): value is Section {
+  return ["browse", "submissions", "partners", "namespaces", "audit"].includes(value ?? "");
 }

@@ -13,6 +13,7 @@ import type {
   UserAPITokenListResponse,
   UserAPITokenRead,
   UserAPITokenUpdate,
+  UserCreate,
   UserRead
 } from '../model';
 
@@ -366,6 +367,60 @@ export const authMe = async ( options?: RequestInit): Promise<authMeResponse> =>
 
   const data: authMeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as authMeResponse
+}
+
+
+export type authRegisterResponse201 = {
+  data: UserRead
+  status: 201
+}
+
+export type authRegisterResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type authRegisterResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type authRegisterResponseSuccess = (authRegisterResponse201) & {
+  headers: Headers;
+};
+export type authRegisterResponseError = (authRegisterResponse409 | authRegisterResponse422) & {
+  headers: Headers;
+};
+
+export type authRegisterResponse = (authRegisterResponseSuccess | authRegisterResponseError)
+
+export const getAuthRegisterUrl = () => {
+
+
+
+
+  return `http://localhost:8000/api/v1/auth/register`
+}
+
+/**
+ * @summary Register
+ */
+export const authRegister = async (userCreate: UserCreate, options?: RequestInit): Promise<authRegisterResponse> => {
+
+  const res = await fetch(getAuthRegisterUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(userCreate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authRegisterResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as authRegisterResponse
 }
 
 

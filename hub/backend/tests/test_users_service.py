@@ -5,7 +5,11 @@ import pytest
 
 from app.core.security import verify_password
 from app.modules.users import service
-from app.modules.users.exceptions import BootstrapUserExistsError, InvalidLoginError
+from app.modules.users.exceptions import (
+    BootstrapUserExistsError,
+    DuplicateUserError,
+    InvalidLoginError,
+)
 from app.modules.users.schemas import LoginRequest, UserCreate
 
 
@@ -62,6 +66,17 @@ async def test_create_user_normalizes_email_and_hashes_password(monkeypatch) -> 
         "correct horse battery staple",
         user.local_credentials.password_hash,
     )
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_duplicate_email(monkeypatch) -> None:
+    async def existing_user(*args, **kwargs):
+        return object()
+
+    monkeypatch.setattr(service.repository, "get_user_by_email", existing_user)
+
+    with pytest.raises(DuplicateUserError):
+        await service.create_user(FakeSession(), user_payload())
 
 
 @pytest.mark.asyncio

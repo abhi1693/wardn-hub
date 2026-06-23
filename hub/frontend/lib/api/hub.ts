@@ -20,6 +20,7 @@ import type {
   SubmissionRejectRequest,
   SubmissionRead,
   SubmissionListResponse,
+  UserCreate,
   UserRead,
 } from "@/lib/api/generated/model";
 
@@ -141,6 +142,14 @@ export function getApiToken() {
 
 export function login(payload: LoginRequest) {
   return request<UserRead>("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function registerUser(payload: UserCreate) {
+  return request<UserRead>("/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

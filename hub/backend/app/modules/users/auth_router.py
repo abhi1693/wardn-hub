@@ -9,10 +9,15 @@ from app.core.schemas import ErrorResponse
 from app.core.security import create_session_token
 from app.db.session import get_db_session
 from app.modules.users.dependencies import get_current_user
-from app.modules.users.exceptions import InvalidLoginError, UserAPITokenNotFoundError
+from app.modules.users.exceptions import (
+    DuplicateUserError,
+    InvalidLoginError,
+    UserAPITokenNotFoundError,
+)
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     LoginRequest,
+    UserCreate,
     UserAPITokenCreate,
     UserAPITokenCreated,
     UserAPITokenListResponse,
@@ -22,6 +27,7 @@ from app.modules.users.schemas import (
 )
 from app.modules.users.service import (
     authenticate_local_user,
+    create_user,
     create_user_api_token,
     delete_user_api_token,
     list_user_api_tokens,
@@ -29,6 +35,19 @@ from app.modules.users.service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def set_session_cookie(response: Response, user_id: UUID) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=create_session_token(user_id),
+        httponly=True,
+        secure=settings.environment != "local",
+        samesite="lax",
+        max_age=settings.session_ttl_seconds,
+        path="/",
+    )
 
 
 @router.post(
@@ -50,16 +69,33 @@ async def login(
             detail="invalid email or password",
         ) from exc
 
-    settings = get_settings()
-    response.set_cookie(
-        key=settings.session_cookie_name,
-        value=create_session_token(user.id),
-        httponly=True,
-        secure=settings.environment != "local",
-        samesite="lax",
-        max_age=settings.session_ttl_seconds,
-        path="/",
-    )
+    set_session_cookie(response, user.id)
+    await session.commit()
+    await session.refresh(user)
+    return UserRead.model_validate(user)
+
+
+@router.post(
+    "/register",
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="auth_register",
+    responses={status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
+)
+async def register(
+    payload: UserCreate,
+    response: Response,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserRead:
+    try:
+        user = await create_user(session, payload, is_superuser=False)
+    except DuplicateUserError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="email already exists",
+        ) from exc
+
+    set_session_cookie(response, user.id)
     await session.commit()
     await session.refresh(user)
     return UserRead.model_validate(user)

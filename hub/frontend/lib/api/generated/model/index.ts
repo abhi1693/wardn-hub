@@ -119,6 +119,7 @@ export * from './userAPITokenCreated';
 export * from './userAPITokenListResponse';
 export * from './userAPITokenRead';
 export * from './userAPITokenUpdate';
+export * from './userCreate';
 export * from './userRead';
 export * from './validationError';
 export * from './validationErrorCtx';
