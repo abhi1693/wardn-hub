@@ -19,6 +19,16 @@ This scaffold includes:
 - Next.js frontend under `hub/frontend`
 - Orval config targeting the generated backend OpenAPI schema
 
+## Phase 1 Registry API
+
+Phase 1 adds the initial MCP server/version store:
+
+- Public read endpoints under `/api/v1/mcp/servers`
+- Admin version CRUD under `/api/v1/admin/mcp/servers`
+- `mcp_servers` and `mcp_server_versions` models and Alembic migration
+- `server.json`-compatible validation with MCPB package metadata allowed
+- Latest-version behavior, soft delete, cursor pagination, search, and OpenAPI client generation
+
 ## Commands
 
 ```sh

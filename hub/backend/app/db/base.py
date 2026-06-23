@@ -6,7 +6,4 @@ class Base(DeclarativeBase):
 
 
 def import_models() -> None:
-    # Phase 0 has no persisted domain models yet. Later phases import modules here
-    # so Alembic can collect metadata for autogeneration.
-    return None
-
+    from app.modules.registry import models as _registry_models  # noqa: F401

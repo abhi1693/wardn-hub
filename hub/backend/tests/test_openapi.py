@@ -15,8 +15,15 @@ def test_openapi_exposes_phase_zero_paths() -> None:
     schema = response.json()
     assert schema["openapi"].startswith("3.")
     assert set(schema["paths"]) == {
+        "/api/v1/admin/mcp/servers",
+        "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
+        "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
         "/api/v1/health/live",
         "/api/v1/health/ready",
+        "/api/v1/mcp/servers",
+        "/api/v1/mcp/servers/{server_name}",
+        "/api/v1/mcp/servers/{server_name}/versions",
+        "/api/v1/mcp/servers/{server_name}/versions/{version}",
     }
 
 
@@ -42,4 +49,3 @@ def test_export_openapi_writes_schema(tmp_path: Path) -> None:
 
     assert output_path.exists()
     assert "/api/v1/health/live" in output_path.read_text(encoding="utf-8")
-
