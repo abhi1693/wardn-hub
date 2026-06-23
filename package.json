@@ -1,0 +1,16 @@
+{
+  "name": "wardn-hub",
+  "private": true,
+  "workspaces": [
+    "hub/frontend"
+  ],
+  "scripts": {
+    "api:openapi": "cd hub/backend && uv run --extra dev python -m app.openapi --output ../frontend/openapi/wardn-hub-api.json",
+    "web:api:generate": "npm run api:openapi && npm --workspace hub/frontend run api:generate",
+    "web:dev": "npm --workspace hub/frontend run dev",
+    "web:build": "npm --workspace hub/frontend run build",
+    "web:lint": "npm --workspace hub/frontend run lint",
+    "backend:test": "cd hub/backend && uv run --extra dev pytest",
+    "backend:lint": "cd hub/backend && uv run --extra dev ruff check ."
+  }
+}

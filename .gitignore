@@ -1,0 +1,15 @@
+docs/research/wardn-hub-mcp-registry-research.md
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+
+# IDE
+.idea/
