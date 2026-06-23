@@ -76,6 +76,8 @@ type PackageTarget = {
   packageArguments: PackageArgumentField[];
 };
 
+type SourceMode = "manual" | "repository";
+
 type SourceMetadata = {
   source?: string;
   name?: string;
@@ -511,6 +513,7 @@ export default function SubmitServerPage() {
   const [version, setVersion] = useState("1.0.0");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("manual");
   const [repositorySource, setRepositorySource] = useState("github");
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [repositorySubfolder, setRepositorySubfolder] = useState("");
@@ -522,7 +525,11 @@ export default function SubmitServerPage() {
   const [submitted, setSubmitted] = useState<SubmissionRead | null>(null);
   const [isImportingSource, setIsImportingSource] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const derivedName = generatedServerName(repositorySource, repositoryUrl, packages);
+  const derivedName = generatedServerName(
+    repositorySource,
+    sourceMode === "repository" ? repositoryUrl : "",
+    packages,
+  );
   const effectiveName = isNameOverrideEnabled ? name : name || derivedName;
 
   useEffect(() => {
@@ -611,6 +618,7 @@ export default function SubmitServerPage() {
       const metadataRemotes = importedRemotes(metadata.remotes);
       const metadataIconUrl = metadata.iconUrl || firstIconUrl(metadata.icons);
 
+      setSourceMode("repository");
       setRepositorySource(metadataRepository.source || "github");
       setRepositoryUrl(metadataRepository.url || repositoryUrl);
       setRepositorySubfolder(metadataRepository.subfolder || repositorySubfolder);
@@ -643,7 +651,7 @@ export default function SubmitServerPage() {
     try {
       const serverName = effectiveName.trim();
       if (!serverName) {
-        throw new Error("Add repository details or override the server name.");
+        throw new Error("Add a package target, add repository details, or override the server name.");
       }
       if (!SERVER_NAME_PATTERN.test(serverName)) {
         throw new Error("Server name must use the publisher/server format.");
@@ -677,7 +685,7 @@ export default function SubmitServerPage() {
         throw new Error("Add at least one remote endpoint or package target.");
       }
 
-      const repository = repositoryUrl.trim()
+      const repository = sourceMode === "repository" && repositoryUrl.trim()
         ? {
             source: repositorySource.trim() || "github",
             url: repositoryUrl.trim(),
@@ -785,66 +793,94 @@ export default function SubmitServerPage() {
             <Card>
               <CardHeader className="flex items-center justify-between gap-3 space-y-0">
                 <div>
-                  <CardTitle>Source</CardTitle>
-                  <CardDescription>Import from a GitHub registry file or enter source details.</CardDescription>
+                  <CardTitle>Submission source</CardTitle>
+                  <CardDescription>Manual entry is available for servers without a public repository.</CardDescription>
                 </div>
-                <Button
-                  disabled={!repositoryUrl.trim() || isImportingSource}
-                  onClick={handleImportSource}
-                  type="button"
-                  variant="outline"
-                >
-                  {isImportingSource ? "Importing" : "Import"}
-                </Button>
+                {sourceMode === "repository" ? (
+                  <Button
+                    disabled={!repositoryUrl.trim() || isImportingSource}
+                    onClick={handleImportSource}
+                    type="button"
+                    variant="outline"
+                  >
+                    {isImportingSource ? "Importing" : "Import"}
+                  </Button>
+                ) : null}
               </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="server-repository-source">Repository Source</Label>
-                  <Select onValueChange={(value) => setRepositorySource(value)} value={repositorySource}>
-                    <SelectTrigger id="server-repository-source">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REPOSITORY_SOURCE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="server-repository-url">Repository URL</Label>
-                  <Input
-                    id="server-repository-url"
-                    onChange={(event) => {
-                      setRepositoryUrl(event.target.value);
+              <CardContent className="grid gap-4">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    aria-pressed={sourceMode === "manual"}
+                    className={
+                      sourceMode === "manual"
+                        ? "inline-flex h-9 items-center justify-center rounded-[var(--radius)] bg-slate-900 px-4 text-sm font-medium text-white shadow-[var(--shadow-card)] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                        : "inline-flex h-9 items-center justify-center rounded-[var(--radius)] border border-border bg-card px-4 text-sm font-medium text-foreground shadow-[var(--shadow-card)] outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                    }
+                    onClick={() => {
+                      setSourceMode("manual");
                       setSourceImportMessage("");
-                      if (!isNameOverrideEnabled) {
-                        setName("");
-                      }
                     }}
-                    placeholder="https://github.com/org/repo"
-                    value={repositoryUrl}
-                  />
+                    type="button"
+                  >
+                    Manual entry
+                  </button>
+                  <button
+                    aria-pressed={sourceMode === "repository"}
+                    className={
+                      sourceMode === "repository"
+                        ? "inline-flex h-9 items-center justify-center rounded-[var(--radius)] bg-slate-900 px-4 text-sm font-medium text-white shadow-[var(--shadow-card)] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                        : "inline-flex h-9 items-center justify-center rounded-[var(--radius)] border border-border bg-card px-4 text-sm font-medium text-foreground shadow-[var(--shadow-card)] outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                    }
+                    onClick={() => setSourceMode("repository")}
+                    type="button"
+                  >
+                    Public repository
+                  </button>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="server-repository-subfolder">Repository Subfolder</Label>
-                  <Input
-                    id="server-repository-subfolder"
-                    onChange={(event) => setRepositorySubfolder(event.target.value)}
-                    value={repositorySubfolder}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="server-icon-url">Icon URL</Label>
-                  <Input
-                    id="server-icon-url"
-                    onChange={(event) => setIconUrl(event.target.value)}
-                    placeholder="https://example.com/icon.svg"
-                    value={iconUrl}
-                  />
-                </div>
+
+                {sourceMode === "repository" ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="server-repository-source">Repository Source</Label>
+                      <Select onValueChange={(value) => setRepositorySource(value)} value={repositorySource}>
+                        <SelectTrigger id="server-repository-source">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REPOSITORY_SOURCE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="server-repository-url">Repository URL</Label>
+                      <Input
+                        id="server-repository-url"
+                        onChange={(event) => {
+                          setRepositoryUrl(event.target.value);
+                          setSourceImportMessage("");
+                          if (!isNameOverrideEnabled) {
+                            setName("");
+                          }
+                        }}
+                        placeholder="https://github.com/org/repo"
+                        value={repositoryUrl}
+                      />
+                    </div>
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label htmlFor="server-repository-subfolder">Repository Subfolder</Label>
+                      <Input
+                        id="server-repository-subfolder"
+                        onChange={(event) => setRepositorySubfolder(event.target.value)}
+                        value={repositorySubfolder}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
                 {sourceImportMessage ? (
                   <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
                     {sourceImportMessage}
@@ -879,7 +915,13 @@ export default function SubmitServerPage() {
                   <Input
                     id="server-name"
                     onChange={(event) => setName(event.target.value)}
-                    placeholder={isNameOverrideEnabled ? "io.github.example/server" : "Generated from source"}
+                    placeholder={
+                      isNameOverrideEnabled
+                        ? "io.github.example/server"
+                        : sourceMode === "manual"
+                          ? "Generated from package"
+                          : "Generated from source"
+                    }
                     readOnly={!isNameOverrideEnabled}
                     required={isNameOverrideEnabled}
                     value={effectiveName}
@@ -914,6 +956,15 @@ export default function SubmitServerPage() {
                     placeholder="https://example.com"
                     type="url"
                     value={websiteUrl}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="server-icon-url">Icon URL</Label>
+                  <Input
+                    id="server-icon-url"
+                    onChange={(event) => setIconUrl(event.target.value)}
+                    placeholder="https://example.com/icon.svg"
+                    value={iconUrl}
                   />
                 </div>
                 <div className="grid gap-2 md:col-span-2">
