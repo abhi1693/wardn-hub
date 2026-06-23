@@ -165,9 +165,9 @@ button {
 
 .hero-section {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   border-bottom: 1px solid var(--border);
-  padding: 48px 0 24px;
+  padding: 42px 0 22px;
 }
 
 .hero-grid {
@@ -183,17 +183,17 @@ button {
 
 .hero-copy h1 {
   margin: 8px 0 0;
-  font-size: 54px;
-  line-height: 58px;
+  font-size: 50px;
+  line-height: 56px;
   letter-spacing: 0;
 }
 
 .hero-subtitle {
-  max-width: 760px;
+  max-width: 650px;
   margin: 16px 0 0;
   color: #536070;
-  font-size: 18px;
-  line-height: 28px;
+  font-size: 17px;
+  line-height: 26px;
 }
 
 .registry-status-panel {
@@ -233,7 +233,7 @@ button {
   grid-template-columns: minmax(260px, 1fr) 180px 126px 100px;
   gap: 10px;
   align-items: center;
-  max-width: 930px;
+  max-width: 960px;
 }
 
 .category-strip {
@@ -285,16 +285,27 @@ button {
   line-height: 24px;
 }
 
+.catalog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.catalog-main {
+  min-width: 0;
+}
+
 .empty-catalog {
-  display: flex;
-  min-height: 190px;
+  display: grid;
+  min-height: 238px;
+  grid-template-columns: minmax(0, 1fr) 190px auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  gap: 22px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  padding: 26px;
+  padding: 24px 26px;
 }
 
 .empty-catalog h3 {
@@ -304,11 +315,29 @@ button {
 }
 
 .empty-catalog p {
-  max-width: 650px;
+  max-width: 560px;
   margin: 0;
   color: var(--muted-foreground);
   font-size: 15px;
   line-height: 23px;
+}
+
+.empty-catalog-steps {
+  display: grid;
+  gap: 8px;
+}
+
+.empty-catalog-steps span {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .topic-section {
@@ -516,10 +545,24 @@ button {
 .latest-panel {
   display: grid;
   align-content: start;
+  min-height: 238px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   padding: 16px;
+}
+
+.latest-empty {
+  display: grid;
+  min-height: 150px;
+  align-content: center;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.latest-empty strong {
+  color: var(--foreground);
 }
 
 .latest-row {
@@ -942,6 +985,7 @@ button {
 
   .toolbar,
   .hero-search,
+  .catalog-grid,
   .registry-layout,
   .split-layout,
   .inline-form,
@@ -958,7 +1002,7 @@ button {
   }
 
   .empty-catalog {
-    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .server-list-header {
