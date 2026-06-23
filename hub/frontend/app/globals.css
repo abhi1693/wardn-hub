@@ -186,6 +186,10 @@ button {
   gap: 26px;
 }
 
+.simple-home {
+  padding-top: 28px;
+}
+
 .hero-section {
   display: grid;
   gap: 16px;

@@ -7,21 +7,17 @@ import {
   FileCheck2,
   History,
   LogIn,
-  RefreshCw,
-  Search,
   Server,
   ShieldCheck,
   UserPlus,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   HubApiError,
   createNamespaceClaim,
   createPartnerSupport,
   currentUser,
-  getServer,
-  listCategories,
   listAuditEvents,
   listNamespaceClaims,
   listPartnerOrganizations,
@@ -41,9 +37,7 @@ import type {
   NamespaceClaimRead,
   PartnerOrganizationRead,
   PartnerServerSupportRead,
-  RegistryCategoryRead,
   RegistryServerRead,
-  RegistryServerVersionRead,
   SubmissionRead,
   UserRead,
 } from "@/lib/api/generated/model";
@@ -62,56 +56,6 @@ const protectedNavItems: Array<{ id: Section; label: string; icon: typeof Server
   { id: "partners", label: "Partners", icon: Building2 },
   { id: "namespaces", label: "Namespaces", icon: ShieldCheck },
   { id: "audit", label: "Audit", icon: History },
-];
-
-const supportLevels = ["", "official", "verified", "compatible", "deprecated"];
-type RegistryChip = {
-  label: string;
-  supportLevel: string;
-  partnerOnly: boolean;
-  search: string;
-  category: string;
-};
-
-const registryChips: RegistryChip[] = [
-  { label: "Featured", supportLevel: "", partnerOnly: false, search: "", category: "" },
-  { label: "All", supportLevel: "", partnerOnly: false, search: "", category: "" },
-  { label: "Official", supportLevel: "official", partnerOnly: false, search: "", category: "" },
-  { label: "Verified", supportLevel: "verified", partnerOnly: false, search: "", category: "" },
-  { label: "Partners", supportLevel: "", partnerOnly: true, search: "", category: "" },
-];
-
-const fallbackCategoryChips: RegistryChip[] = [
-  { label: "Search", supportLevel: "", partnerOnly: false, search: "", category: "search" },
-  { label: "Development", supportLevel: "", partnerOnly: false, search: "", category: "development" },
-  { label: "Database", supportLevel: "", partnerOnly: false, search: "", category: "database" },
-  {
-    label: "Cloud Service",
-    supportLevel: "",
-    partnerOnly: false,
-    search: "",
-    category: "cloud-service",
-  },
-  { label: "Productivity", supportLevel: "", partnerOnly: false, search: "", category: "productivity" },
-];
-
-const topicCards = [
-  {
-    title: "Browser Automation MCP",
-    detail: "Servers for browser control, screenshots, scraping, and repeatable web tasks.",
-  },
-  {
-    title: "RAG MCP",
-    detail: "Retrieval, vector search, knowledge bases, and source-grounded workflows.",
-  },
-  {
-    title: "OpenAPI MCP",
-    detail: "Expose REST APIs, schemas, and developer docs to MCP-compatible agents.",
-  },
-  {
-    title: "Coding Agent MCP",
-    detail: "Repository context, pull requests, documentation lookup, and local tooling.",
-  },
 ];
 
 function statusFromError(error: unknown): LoadState {
@@ -135,10 +79,6 @@ function toneFor(value: string) {
   if (["pending", "submitted", "compatible"].includes(value)) return "pending";
   if (["failed", "rejected", "suspended", "quarantined"].includes(value)) return "danger";
   return "neutral";
-}
-
-function serverCategories(server: RegistryServerRead): RegistryCategoryRead[] {
-  return server.categories ?? [];
 }
 
 function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?: string }) {
@@ -252,37 +192,17 @@ function AppShell({
   );
 }
 
-function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
+function BrowseView() {
   const [servers, setServers] = useState<RegistryServerRead[]>([]);
-  const [selected, setSelected] = useState<string>("");
-  const [detail, setDetail] = useState<RegistryServerVersionRead[]>([]);
   const [state, setState] = useState<LoadState>("idle");
-  const [detailState, setDetailState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [supportLevel, setSupportLevel] = useState("");
-  const [partnerOnly, setPartnerOnly] = useState(false);
-  const [category, setCategory] = useState("");
-  const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
-  const [activeChip, setActiveChip] = useState("Featured");
 
-  async function refresh(overrides?: {
-    search?: string;
-    supportLevel?: string;
-    partnerOnly?: boolean;
-    category?: string;
-  }) {
+  async function refresh() {
     setState("loading");
     setError("");
     try {
-      const response = await listServers({
-        search: overrides?.search ?? search,
-        supportLevel: overrides?.supportLevel ?? supportLevel,
-        partner: (overrides?.partnerOnly ?? partnerOnly) || undefined,
-        category: overrides?.category ?? category,
-      });
+      const response = await listServers({ limit: 60 });
       setServers(response.servers);
-      setSelected((current) => current || response.servers[0]?.name || "");
       setState("ready");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load registry.");
@@ -293,342 +213,65 @@ function BrowseView({ onSubmitServer }: { onSubmitServer: () => void }) {
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    listCategories()
-      .then((response) => setCategories(response.categories))
-      .catch(() => setCategories([]));
-  }, []);
-
-  useEffect(() => {
-    if (!selected) {
-      queueMicrotask(() => setDetail([]));
-      return;
-    }
-    queueMicrotask(() => setDetailState("loading"));
-    getServer(selected)
-      .then((response) => {
-        setDetail(response.versions ?? []);
-        setDetailState("ready");
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Unable to load server detail.");
-        setDetailState(statusFromError(caught));
-      });
-  }, [selected]);
-
-  const selectedServer = useMemo(
-    () => servers.find((server) => server.name === selected),
-    [selected, servers],
-  );
-
-  function applyChip(chip: RegistryChip) {
-    setActiveChip(chip.label);
-    setSearch(chip.search);
-    setSupportLevel(chip.supportLevel);
-    setPartnerOnly(chip.partnerOnly);
-    setCategory(chip.category);
-    void refresh({
-      search: chip.search,
-      supportLevel: chip.supportLevel,
-      partnerOnly: chip.partnerOnly,
-      category: chip.category,
-    });
-  }
-
-  function submitSearch(event: React.FormEvent) {
-    event.preventDefault();
-    setActiveChip("");
-    void refresh();
-  }
-
-  const latestVersions = servers
-    .map((server) => ({
-      name: server.name,
-      title: server.title || server.name,
-      version: server.latestVersion?.version,
-      updatedAt: server.updatedAt,
-    }))
-    .filter((server) => server.version)
-    .slice(0, 6);
-
-  const verifiedCount = servers.filter((server) => server.namespaceVerified).length;
-  const partnerBackedCount = servers.filter(
-    (server) => (server.partnerSupport ?? []).length > 0,
-  ).length;
-  const categoryChips =
-    categories.length > 0
-      ? categories.map((item) => ({
-          label: item.name,
-          supportLevel: "",
-          partnerOnly: false,
-          search: "",
-          category: item.slug,
-        }))
-      : fallbackCategoryChips;
-  const visibleChips = [...registryChips, ...categoryChips];
 
   return (
-    <div className="home-view">
-      <section className="hero-section">
-        <div className="hero-grid">
-          <div className="hero-copy">
-            <p className="eyebrow">MCP Registry</p>
-            <h1>Wardn Hub MCP Servers</h1>
-            <p className="hero-subtitle">
-              Discover MCP servers by trust signal, partner support, and namespace ownership.
-            </p>
-          </div>
-          <div className="registry-status-panel">
-            <div>
-              <span>Servers</span>
-              <strong>{servers.length}</strong>
-            </div>
-            <div>
-              <span>Verified namespaces</span>
-              <strong>{verifiedCount}</strong>
-            </div>
-            <div>
-              <span>Partner backed</span>
-              <strong>{partnerBackedCount}</strong>
-            </div>
-          </div>
+    <div className="home-view simple-home">
+      {state === "loading" && <EmptyState title="Loading" detail="Fetching MCP servers." />}
+      {state === "error" && <EmptyState title="Registry unavailable" detail={error} />}
+      {state === "ready" && servers.length === 0 && (
+        <div className="server-grid">
+          <article className="server-card empty-server-card">
+            <span className="server-card-head">
+              <span>
+                <strong>No MCP servers published yet</strong>
+                <small>Published servers will appear here as cards.</small>
+              </span>
+              <Pill tone="neutral">empty</Pill>
+            </span>
+            <span className="server-card-description">
+              Once submissions are approved and published, this page will show one card per MCP
+              server.
+            </span>
+          </article>
         </div>
-        <form className="hero-search" onSubmit={submitSearch}>
-          <label className="search-field large">
-            <Search size={18} />
-            <input
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search servers, namespaces, owners"
-              value={search}
-            />
-          </label>
-          <select
-            aria-label="Support level"
-            onChange={(event) => setSupportLevel(event.target.value)}
-            value={supportLevel}
-          >
-            {supportLevels.map((level) => (
-              <option key={level || "any"} value={level}>
-                {level || "Any support"}
-              </option>
-            ))}
-          </select>
-          <label className="toggle">
-            <input
-              checked={partnerOnly}
-              onChange={(event) => setPartnerOnly(event.target.checked)}
-              type="checkbox"
-            />
-            <span>Partners</span>
-          </label>
-          <button className="text-button" type="submit">
-            Search
-          </button>
-        </form>
-        <div className="category-strip" aria-label="Registry filters">
-          {visibleChips.map((chip) => (
-            <button
-              className={activeChip === chip.label ? "active" : ""}
-              key={chip.label}
-              onClick={() => applyChip(chip)}
-              type="button"
-            >
-              {chip.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="home-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Featured</p>
-            <h2>Featured MCPs</h2>
-          </div>
-          <button className="icon-button" onClick={() => void refresh()} title="Refresh" type="button">
-            <RefreshCw size={17} />
-          </button>
-        </div>
-        <div className="catalog-grid">
-          <div className="catalog-main">
-            {state === "loading" && <EmptyState title="Loading" detail="Fetching registry." />}
-            {state === "error" && <EmptyState title="Registry unavailable" detail={error} />}
-            {state === "ready" && servers.length === 0 && (
-              <div className="empty-catalog">
-                <div>
-                  <p className="eyebrow">Ready for submissions</p>
-                  <h3>No MCP servers published yet</h3>
-                  <p>
-                    Published submissions will appear as searchable registry cards with namespace,
-                    version, support, and review metadata.
-                  </p>
-                </div>
-                <div className="empty-catalog-steps">
-                  <span>Review submission</span>
-                  <span>Verify namespace</span>
-                  <span>Publish version</span>
-                </div>
-                <button className="text-button" onClick={onSubmitServer} type="button">
-                  Submit server
-                </button>
-              </div>
-            )}
-            <div className="server-grid">
-              {servers.map((server) => (
-                <button
-                  className={`server-card ${selected === server.name ? "selected" : ""}`}
-                  key={server.id}
-                  onClick={() => setSelected(server.name)}
-                  type="button"
-                >
-                  <span className="server-card-head">
-                    <span>
-                      <strong>{server.title || server.name}</strong>
-                      <small>{server.name}</small>
-                    </span>
-                    <Pill tone={toneFor(server.status)}>{server.status}</Pill>
-                  </span>
-                  <span className="server-card-description">{server.description}</span>
-                  <span className="pill-stack">
-                    {serverCategories(server).slice(0, 2).map((item) => (
-                      <Pill key={item.slug} tone="neutral">
-                        {item.name}
-                      </Pill>
-                    ))}
-                    {server.namespaceVerified && (
-                      <Pill tone="success">
-                        <BadgeCheck size={13} /> namespace
-                      </Pill>
-                    )}
-                    {(server.partnerSupport ?? []).slice(0, 2).map((support) => (
-                      <Pill key={`${support.organization.id}-${support.supportLevel}`} tone="success">
-                        {support.supportLevel}
-                      </Pill>
-                    ))}
-                    {server.latestVersion?.version && (
-                      <Pill tone="neutral">{server.latestVersion.version}</Pill>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <aside className="latest-panel">
-            <div className="section-heading compact">
-              <div>
-                <p className="eyebrow">Latest</p>
-                <h2>Latest MCPs</h2>
-              </div>
-            </div>
-            {latestVersions.length === 0 && (
-              <div className="latest-empty">
-                <strong>No published versions</strong>
-                <span>Approved releases will appear here as soon as they are published.</span>
-              </div>
-            )}
-            {latestVersions.map((version) => (
-              <button
-                className="latest-row"
-                key={version.name}
-                onClick={() => setSelected(version.name)}
-                type="button"
-              >
+      )}
+      {servers.length > 0 && (
+        <div className="server-grid">
+          {servers.map((server) => (
+            <article className="server-card" key={server.id}>
+              <span className="server-card-head">
                 <span>
-                  <strong>{version.title}</strong>
-                  <small>{version.name}</small>
+                  <strong>{server.title || server.name}</strong>
+                  <small>{server.name}</small>
                 </span>
-                <span>
-                  <Pill tone="neutral">{version.version}</Pill>
-                  <small>{formatDate(version.updatedAt)}</small>
-                </span>
-              </button>
-            ))}
-          </aside>
-        </div>
-      </section>
-
-      <section className="topic-section">
-        <div className="section-heading compact">
-          <div>
-            <p className="eyebrow">Popular topics</p>
-            <h2>Focused MCP workflows</h2>
-          </div>
-        </div>
-        <div className="topic-grid">
-          {topicCards.map((topic) => (
-            <button
-              className="topic-card"
-              key={topic.title}
-              onClick={() => {
-                setSearch(topic.title);
-                void refresh({ search: topic.title });
-              }}
-              type="button"
-            >
-              <strong>{topic.title}</strong>
-              <span>{topic.detail}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {selectedServer && (
-      <section className="registry-layout">
-        <aside className="detail-pane">
-          <>
-              <div className="detail-head">
-                <div>
-                  <p className="eyebrow">Server Profile</p>
-                  <h2>{selectedServer.title || selectedServer.name}</h2>
-                  <p>{selectedServer.name}</p>
-                </div>
-                <Pill tone={toneFor(selectedServer.status)}>{selectedServer.status}</Pill>
-              </div>
-              <p className="description">{selectedServer.description}</p>
-              <div className="metadata-grid">
-                <span>Owner</span>
-                <strong>{selectedServer.owner?.login ?? "Wardn"}</strong>
-                <span>Namespace</span>
-                <strong>
-                  {selectedServer.namespaceClaim?.namespace ??
-                    (selectedServer.namespaceVerified ? "verified" : "unverified")}
-                </strong>
-                <span>Categories</span>
-                <strong>
-                  {serverCategories(selectedServer).map((item) => item.name).join(", ") || "uncategorized"}
-                </strong>
-                <span>Updated</span>
-                <strong>{formatDate(selectedServer.updatedAt)}</strong>
-              </div>
-              <section className="detail-section">
-                <h3>Partner support</h3>
-                {(selectedServer.partnerSupport ?? []).length === 0 && (
-                  <p className="muted">No active partner support records.</p>
+                <Pill tone={toneFor(server.status)}>{server.status}</Pill>
+              </span>
+              <span className="server-card-description">{server.description}</span>
+              <span className="pill-stack">
+                {(server.categories ?? []).slice(0, 2).map((item) => (
+                  <Pill key={item.slug} tone="neutral">
+                    {item.name}
+                  </Pill>
+                ))}
+                {server.namespaceVerified && (
+                  <Pill tone="success">
+                    <BadgeCheck size={13} /> namespace
+                  </Pill>
                 )}
-                {(selectedServer.partnerSupport ?? []).map((support) => (
-                  <div className="support-row" key={`${support.organization.id}-${support.supportLevel}`}>
-                    <span>{support.organization.name}</span>
-                    <Pill tone="success">{support.supportLevel}</Pill>
-                  </div>
+                {(server.partnerSupport ?? []).slice(0, 2).map((support) => (
+                  <Pill key={`${support.organization.id}-${support.supportLevel}`} tone="success">
+                    {support.supportLevel}
+                  </Pill>
                 ))}
-              </section>
-              <section className="detail-section">
-                <h3>Versions</h3>
-                {detailState === "loading" && <p className="muted">Loading versions.</p>}
-                {detail.map((version) => (
-                  <div className="version-row" key={version.id}>
-                    <span>{version.version}</span>
-                    <Pill tone={toneFor(version.status)}>{version.status}</Pill>
-                    {version.isLatest && <Pill tone="success">latest</Pill>}
-                  </div>
-                ))}
-              </section>
-          </>
-        </aside>
-      </section>
+                {server.latestVersion?.version && (
+                  <Pill tone="neutral">{server.latestVersion.version}</Pill>
+                )}
+                <Pill tone="neutral">{formatDate(server.updatedAt)}</Pill>
+              </span>
+            </article>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1112,7 +755,7 @@ export default function Home() {
       onSectionChange={selectSection}
       section={section}
     >
-      {section === "browse" && <BrowseView onSubmitServer={() => selectSection("submissions")} />}
+      {section === "browse" && <BrowseView />}
       {isAuthenticated && section === "submissions" && <SubmissionsView />}
       {isAuthenticated && section === "partners" && <PartnersView />}
       {isAuthenticated && section === "namespaces" && <NamespacesView />}
