@@ -523,7 +523,7 @@ export default function SubmitServerPage() {
   const [repositorySubfolder, setRepositorySubfolder] = useState("");
   const [iconUrl, setIconUrl] = useState("");
   const [remotes, setRemotes] = useState<RemoteTarget[]>([]);
-  const [packages, setPackages] = useState<PackageTarget[]>(() => [emptyPackage()]);
+  const [packages, setPackages] = useState<PackageTarget[]>([]);
   const [error, setError] = useState("");
   const [sourceImportMessage, setSourceImportMessage] = useState("");
   const [submitted, setSubmitted] = useState<SubmissionRead | null>(null);
@@ -645,7 +645,7 @@ export default function SubmitServerPage() {
       setDescription(metadata.description || "");
       setWebsiteUrl(metadata.websiteUrl || metadataRepository.url || repositoryUrl);
       setIconUrl(metadataIconUrl);
-      setPackages(metadataPackages.length ? metadataPackages : [emptyPackage()]);
+      setPackages(metadataPackages);
       setRemotes(metadataRemotes);
       setSourceImportMessage(
         metadata.source === "server.json"
