@@ -14,14 +14,14 @@
 
 :root {
   color-scheme: light;
-  --background: #f7f8fb;
-  --foreground: #171923;
+  --background: #f5f7fa;
+  --foreground: #17202a;
   --surface: #ffffff;
   --muted: #eef1f5;
   --muted-foreground: #657081;
   --border: #d8dee8;
-  --sidebar: #101820;
-  --sidebar-foreground: #e8edf3;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #253142;
   --accent: #006d77;
   --accent-strong: #004e55;
   --success: #147a52;
@@ -66,7 +66,7 @@ button {
 .app-shell {
   display: grid;
   min-height: 100vh;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 264px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -75,7 +75,8 @@ button {
   height: 100vh;
   background: var(--sidebar);
   color: var(--sidebar-foreground);
-  padding: 18px 14px;
+  border-right: 1px solid var(--border);
+  padding: 22px 14px;
 }
 
 .brand {
@@ -85,6 +86,7 @@ button {
   height: 38px;
   padding: 0 8px;
   font-weight: 700;
+  color: var(--foreground);
 }
 
 .nav-list {
@@ -102,25 +104,66 @@ button {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgb(232 237 243 / 72%);
+  color: var(--muted-foreground);
   padding: 0 10px;
   text-align: left;
 }
 
 .nav-item:hover,
 .nav-item.active {
-  background: rgb(255 255 255 / 10%);
-  color: #ffffff;
+  background: #edf6f7;
+  color: var(--accent-strong);
 }
 
 .workspace {
   min-width: 0;
-  padding: 26px 30px 72px;
+  padding: 0 30px 72px;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(245 247 250 / 92%);
+  backdrop-filter: blur(10px);
+  padding: 15px 0;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.environment-pill {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .view {
   display: grid;
   gap: 18px;
+  margin-top: 22px;
 }
 
 .view-header {
@@ -211,13 +254,23 @@ button {
 }
 
 .text-button {
+  display: inline-flex;
   height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   border: 0;
   border-radius: 6px;
   background: var(--accent);
   color: #ffffff;
   font-weight: 700;
   padding: 0 12px;
+}
+
+.text-button.subtle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
 }
 
 .small-button {
@@ -456,13 +509,6 @@ button {
   padding: 0 10px;
 }
 
-.auth-layout {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
 .form-surface {
   align-content: start;
   border: 1px solid var(--border);
@@ -470,7 +516,8 @@ button {
   padding: 14px;
 }
 
-.form-surface h2 {
+.form-surface h2,
+.form-surface h3 {
   margin: 0;
   font-size: 14px;
 }
@@ -495,6 +542,54 @@ button {
 .error-banner {
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgb(23 32 42 / 42%);
+  padding: 24px;
+}
+
+.auth-modal {
+  display: grid;
+  width: min(980px, 100%);
+  max-height: calc(100vh - 48px);
+  gap: 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgb(23 32 42 / 24%);
+  padding: 18px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.auth-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.25fr) minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: 14px;
+}
+
+.primary-auth {
+  border-color: #b7d9dc;
+  background: #fbfefe;
 }
 
 .pill-stack {
@@ -575,7 +670,7 @@ button {
   .registry-layout,
   .split-layout,
   .inline-form,
-  .auth-layout {
+  .auth-modal-grid {
     grid-template-columns: 1fr;
   }
 

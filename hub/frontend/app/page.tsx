@@ -7,11 +7,13 @@ import {
   FileCheck2,
   History,
   KeyRound,
+  LogIn,
   RefreshCw,
   Search,
   Server,
   Settings,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -127,12 +129,16 @@ function ActionButton({
 function AppShell({
   section,
   onSectionChange,
+  onOpenAuth,
   children,
 }: {
   section: Section;
   onSectionChange: (section: Section) => void;
+  onOpenAuth: () => void;
   children: React.ReactNode;
 }) {
+  const activeItem = navItems.find((item) => item.id === section);
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -157,8 +163,162 @@ function AppShell({
           })}
         </nav>
       </aside>
-      <section className="workspace">{children}</section>
+      <section className="workspace">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Wardn Hub</p>
+            <h1>{activeItem?.label ?? "Browse"}</h1>
+          </div>
+          <div className="topbar-actions">
+            <span className="environment-pill">Local API</span>
+            <button className="text-button subtle" onClick={onOpenAuth} type="button">
+              <LogIn size={16} />
+              Sign in
+            </button>
+          </div>
+        </header>
+        {children}
+      </section>
     </main>
+  );
+}
+
+function AuthDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [token, setToken] = useState("");
+  const [user, setUser] = useState<UserRead | null>(null);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    queueMicrotask(() => setToken(getApiToken()));
+  }, [open]);
+
+  if (!open) return null;
+
+  async function submitLogin(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    try {
+      const response = await login({ email, password });
+      setUser(response);
+      setNotice(`Signed in as ${response.email}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Login failed.");
+    }
+  }
+
+  async function submitBootstrap(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    try {
+      const response = await bootstrap({
+        email,
+        password,
+        first_name: firstName,
+        last_name: lastName,
+      });
+      setUser(response);
+      setNotice(`Bootstrapped ${response.email}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Bootstrap failed.");
+    }
+  }
+
+  async function submitLogout() {
+    setError("");
+    setNotice("");
+    try {
+      await logout();
+      setUser(null);
+      setNotice("Signed out.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Logout failed.");
+    }
+  }
+
+  function saveToken() {
+    setApiToken(token);
+    setNotice(token.trim() ? "Bearer token saved." : "Bearer token cleared.");
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section aria-label="Authentication" className="auth-modal">
+        <header className="modal-header">
+          <div>
+            <p className="eyebrow">Access</p>
+            <h2>Sign in to Wardn Hub</h2>
+          </div>
+          <button className="icon-button" onClick={onClose} title="Close" type="button">
+            <X size={17} />
+          </button>
+        </header>
+        {notice && <div className="notice">{notice}</div>}
+        {error && <div className="error-banner">{error}</div>}
+        <div className="auth-modal-grid">
+          <form className="form-surface primary-auth" onSubmit={(event) => void submitLogin(event)}>
+            <h3>Session login</h3>
+            <input
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="admin@example.com"
+              type="email"
+              value={email}
+            />
+            <input
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="password"
+              type="password"
+              value={password}
+            />
+            <div className="form-actions">
+              <button className="text-button" type="submit">
+                Login
+              </button>
+              <button className="small-button" onClick={() => void submitLogout()} type="button">
+                Logout
+              </button>
+            </div>
+            {user && <p className="muted">Current session: {user.email}</p>}
+          </form>
+          <form className="form-surface" onSubmit={(event) => void submitBootstrap(event)}>
+            <h3>First-time setup</h3>
+            <input
+              onChange={(event) => setFirstName(event.target.value)}
+              placeholder="First name"
+              value={firstName}
+            />
+            <input
+              onChange={(event) => setLastName(event.target.value)}
+              placeholder="Last name"
+              value={lastName}
+            />
+            <button className="text-button" type="submit">
+              Create superuser
+            </button>
+          </form>
+          <div className="form-surface">
+            <h3>Bearer token</h3>
+            <input
+              onChange={(event) => setToken(event.target.value)}
+              placeholder="whub_..."
+              value={token}
+            />
+            <button className="text-button" onClick={saveToken} type="button">
+              Save token
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -765,126 +925,8 @@ function AuditView() {
 }
 
 function SettingsView() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [token, setToken] = useState("");
-  const [user, setUser] = useState<UserRead | null>(null);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    queueMicrotask(() => setToken(getApiToken()));
-  }, []);
-
-  async function submitLogin(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setNotice("");
-    try {
-      const response = await login({ email, password });
-      setUser(response);
-      setNotice(`Signed in as ${response.email}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Login failed.");
-    }
-  }
-
-  async function submitBootstrap(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setNotice("");
-    try {
-      const response = await bootstrap({
-        email,
-        password,
-        first_name: firstName,
-        last_name: lastName,
-      });
-      setUser(response);
-      setNotice(`Bootstrapped ${response.email}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Bootstrap failed.");
-    }
-  }
-
-  async function submitLogout() {
-    setError("");
-    setNotice("");
-    try {
-      await logout();
-      setUser(null);
-      setNotice("Signed out.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Logout failed.");
-    }
-  }
-
-  function saveToken() {
-    setApiToken(token);
-    setNotice(token.trim() ? "Bearer token saved." : "Bearer token cleared.");
-  }
-
   return (
     <DataView title="Settings" eyebrow="Runtime" icon={KeyRound}>
-      {notice && <div className="notice">{notice}</div>}
-      {error && <div className="error-banner">{error}</div>}
-      <div className="auth-layout">
-        <form className="form-surface" onSubmit={(event) => void submitLogin(event)}>
-          <h2>Login</h2>
-          <input
-            autoComplete="email"
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="admin@example.com"
-            type="email"
-            value={email}
-          />
-          <input
-            autoComplete="current-password"
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="password"
-            type="password"
-            value={password}
-          />
-          <div className="form-actions">
-            <button className="text-button" type="submit">
-              Login
-            </button>
-            <button className="small-button" onClick={() => void submitLogout()} type="button">
-              Logout
-            </button>
-          </div>
-          {user && <p className="muted">Current session: {user.email}</p>}
-        </form>
-        <form className="form-surface" onSubmit={(event) => void submitBootstrap(event)}>
-          <h2>Bootstrap</h2>
-          <input
-            onChange={(event) => setFirstName(event.target.value)}
-            placeholder="First name"
-            value={firstName}
-          />
-          <input
-            onChange={(event) => setLastName(event.target.value)}
-            placeholder="Last name"
-            value={lastName}
-          />
-          <button className="text-button" type="submit">
-            Create first superuser
-          </button>
-        </form>
-        <div className="form-surface">
-          <h2>Bearer Token</h2>
-          <input
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="whub_..."
-            value={token}
-          />
-          <button className="text-button" onClick={saveToken} type="button">
-            Save token
-          </button>
-        </div>
-      </div>
       <div className="settings-grid">
         <span>API base URL</span>
         <strong>{process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL}</strong>
@@ -925,10 +967,13 @@ function DataView({
 }
 
 export default function Home() {
-  const [section, setSection] = useState<Section>("settings");
+  const [section, setSection] = useState<Section>("browse");
+  const [authOpen, setAuthOpen] = useState(
+    () => typeof window !== "undefined" && window.location.search.includes("auth=1"),
+  );
 
   return (
-    <AppShell section={section} onSectionChange={setSection}>
+    <AppShell section={section} onOpenAuth={() => setAuthOpen(true)} onSectionChange={setSection}>
       {section === "browse" && <BrowseView />}
       {section === "submissions" && <SubmissionsView />}
       {section === "partners" && <PartnersView />}
@@ -952,6 +997,7 @@ export default function Home() {
           );
         })}
       </div>
+      <AuthDialog onClose={() => setAuthOpen(false)} open={authOpen} />
     </AppShell>
   );
 }
