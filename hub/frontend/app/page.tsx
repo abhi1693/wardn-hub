@@ -164,7 +164,23 @@ function AppShell({
         <div className="site-actions">
           {isAuthenticated ? (
             <>
-              <button className="text-button" onClick={() => { window.location.href = "/submit"; }} type="button">
+              <button
+                className="text-button"
+                onClick={() => {
+                  window.location.href = "/submissions";
+                }}
+                type="button"
+              >
+                <FileCheck2 size={16} />
+                My submissions
+              </button>
+              <button
+                className="text-button"
+                onClick={() => {
+                  window.location.href = "/submit";
+                }}
+                type="button"
+              >
                 <Plus size={16} />
                 Submit server
               </button>

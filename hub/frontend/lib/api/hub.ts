@@ -123,6 +123,10 @@ export function listSubmissions() {
   return request<SubmissionListResponse>("/submissions");
 }
 
+export function getSubmission(submissionId: string) {
+  return request<SubmissionRead>(`/submissions/${submissionId}`);
+}
+
 export function createSubmission(payload: SubmissionCreate) {
   return request<SubmissionRead>("/submissions", {
     method: "POST",

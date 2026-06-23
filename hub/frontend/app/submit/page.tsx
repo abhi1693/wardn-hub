@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ClipboardEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, Database, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Database, Plus, Save, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,7 @@ import {
   listCategories,
   submissionAction,
 } from "@/lib/api/hub";
-import type { RegistryCategoryRead, SubmissionRead, UserRead } from "@/lib/api/generated/model";
+import type { RegistryCategoryRead, UserRead } from "@/lib/api/generated/model";
 
 const DEFAULT_SCHEMA =
   "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
@@ -665,6 +666,7 @@ async function importSourceMetadata(
 }
 
 export default function SubmitServerPage() {
+  const router = useRouter();
   const [user, setUser] = useState<UserRead | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [name, setName] = useState("");
@@ -684,7 +686,6 @@ export default function SubmitServerPage() {
   const [packages, setPackages] = useState<PackageTarget[]>([]);
   const [error, setError] = useState("");
   const [sourceImportMessage, setSourceImportMessage] = useState("");
-  const [submitted, setSubmitted] = useState<SubmissionRead | null>(null);
   const [isImportingSource, setIsImportingSource] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const derivedName = generatedServerName(
@@ -856,7 +857,6 @@ export default function SubmitServerPage() {
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
-    setSubmitted(null);
     setIsSubmitting(true);
 
     try {
@@ -943,9 +943,9 @@ export default function SubmitServerPage() {
         submissionType: "new_server",
         serverJson,
       });
-      const submittedRecord = await submissionAction(draft.id, "submit");
-      setSubmitted(submittedRecord);
+      await submissionAction(draft.id, "submit");
       setSourceImportMessage("");
+      router.push("/submissions");
     } catch (caught) {
       if (caught instanceof HubApiError) {
         setError(caught.message);
@@ -1006,13 +1006,6 @@ export default function SubmitServerPage() {
             {error ? (
               <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
-              </div>
-            ) : null}
-
-            {submitted ? (
-              <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-                <CheckCircle2 className="size-4" />
-                Submission queued for review.
               </div>
             ) : null}
 
