@@ -7,7 +7,6 @@ import {
   History,
   LogIn,
   Server,
-  UserPlus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -150,7 +149,6 @@ function AppShell({
   user,
   onSectionChange,
   onLogin,
-  onRegister,
   onLogout,
   children,
 }: {
@@ -160,7 +158,6 @@ function AppShell({
   user: UserRead | null;
   onSectionChange: (section: Section) => void;
   onLogin: () => void;
-  onRegister: () => void;
   onLogout: () => void;
   children: React.ReactNode;
 }) {
@@ -188,16 +185,10 @@ function AppShell({
           isAuthenticated ? (
             <HeaderUserMenu onLogout={onLogout} user={user} />
           ) : (
-            <>
-              <button className="site-nav-cta" onClick={onLogin} type="button">
-                <LogIn size={15} />
-                Sign in
-              </button>
-              <button className="site-action-link" onClick={onRegister} type="button">
-                <UserPlus size={16} />
-                Create account
-              </button>
-            </>
+            <button className="site-nav-cta" onClick={onLogin} type="button">
+              <LogIn size={15} />
+              Sign in
+            </button>
           )
         }
       />
@@ -501,7 +492,6 @@ export default function Home() {
       isAuthenticated={isAuthenticated}
       onLogin={() => goToAuth("login")}
       onLogout={() => void signOut()}
-      onRegister={() => goToAuth("register")}
       onSectionChange={selectSection}
       section={section}
       user={user}

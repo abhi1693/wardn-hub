@@ -3,7 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, FileCheck2, KeyRound, LogIn, LogOut, UserPlus } from "lucide-react";
+import { ChevronDown, FileCheck2, KeyRound, LogIn, LogOut } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -317,16 +317,10 @@ function PublicHeaderContent({
             </button>
           </>
         ) : loaded ? (
-          <>
-            <Link className="site-nav-cta" href="/login">
-              <LogIn size={15} />
-              Sign in
-            </Link>
-            <Link className="site-action-link" href="/register">
-              <UserPlus size={16} />
-              Create account
-            </Link>
-          </>
+          <Link className="site-nav-cta" href="/login">
+            <LogIn size={15} />
+            Sign in
+          </Link>
         ) : null
       }
     />
