@@ -658,8 +658,9 @@ function ManifestFieldsPanel({ manifest }: { manifest: Record<string, unknown> |
 }
 
 export default function ServerDetailPage() {
-  const params = useParams<{ serverName?: string[] }>();
-  const serverName = (params.serverName ?? []).join("/");
+  const params = useParams<{ namespace?: string; serverSlug?: string }>();
+  const serverName =
+    params.namespace && params.serverSlug ? `${params.namespace}/${params.serverSlug}` : "";
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [detail, setDetail] = useState<RegistryServerDetailResponse | null>(null);
@@ -702,7 +703,7 @@ export default function ServerDetailPage() {
   const documentation = selectedVersion?.documentation || server?.documentation || "";
   const websiteUrl = selectedVersion?.websiteUrl || server?.websiteUrl || "";
   const category = selectedVersion?.categories?.[0] ?? server?.categories?.[0];
-  const categoryName = category?.name || "MCP Server";
+  const categoryName = category?.name ?? "";
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
     : server?.partnerSupport ?? [];
@@ -867,21 +868,23 @@ export default function ServerDetailPage() {
                           <dt>Version</dt>
                           <dd>{selectedVersion?.version ?? "Not published"}</dd>
                         </div>
-                        <div>
-                          <dt>Category</dt>
-                          <dd>
-                            {category?.slug ? (
-                              <Link
-                                className="server-detail-inline-link"
-                                href={`/categories/${encodeURIComponent(category.slug)}`}
-                              >
-                                {categoryName}
-                              </Link>
-                            ) : (
-                              categoryName
-                            )}
-                          </dd>
-                        </div>
+                        {categoryName ? (
+                          <div>
+                            <dt>Category</dt>
+                            <dd>
+                              {category?.slug ? (
+                                <Link
+                                  className="server-detail-inline-link"
+                                  href={`/categories/${encodeURIComponent(category.slug)}`}
+                                >
+                                  {categoryName}
+                                </Link>
+                              ) : (
+                                categoryName
+                              )}
+                            </dd>
+                          </div>
+                        ) : null}
                         <div>
                           <dt>Published</dt>
                           <dd>{formatDate(selectedVersion?.publishedAt)}</dd>

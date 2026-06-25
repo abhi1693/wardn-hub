@@ -62,6 +62,11 @@ def test_server_definition_requires_package_or_remote_target() -> None:
         RegistryServerVersionCreate(**registry_payload(packages=[], remotes=[]))
 
 
+def test_server_definition_requires_category() -> None:
+    with pytest.raises(ValueError, match="at least one category"):
+        RegistryServerVersionCreate(**registry_payload(_meta=None))
+
+
 def test_server_name_requires_namespace() -> None:
     with pytest.raises(ValueError):
         RegistryServerVersionCreate(**registry_payload(name="weather"))

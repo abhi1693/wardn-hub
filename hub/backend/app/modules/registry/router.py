@@ -19,6 +19,7 @@ from app.modules.registry.schemas import (
     RegistryCategoryListResponse,
     RegistryCategoryRead,
     RegistryCategoryUpdate,
+    RegistryPublishedServerListResponse,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerVersionCreate,
@@ -35,6 +36,7 @@ from app.modules.registry.service import (
     get_server_detail,
     get_version_detail,
     list_categories,
+    list_published_servers,
     list_servers,
     list_versions,
     set_latest_version,
@@ -44,6 +46,7 @@ from app.modules.registry.service import (
 from app.modules.users.dependencies import require_superuser
 from app.modules.users.models import User
 
+catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
 categories_router = APIRouter(prefix="/mcp/categories", tags=["mcp-categories"])
 admin_router = APIRouter(prefix="/admin/mcp/servers", tags=["admin-mcp"])
@@ -170,6 +173,18 @@ async def list_mcp_servers(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid cursor",
         ) from exc
+
+
+@catalog_router.get(
+    "",
+    response_model=RegistryPublishedServerListResponse,
+    operation_id="mcp_catalog_list",
+)
+async def list_mcp_catalog(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    page: Annotated[int, Query(ge=1)] = 1,
+) -> RegistryPublishedServerListResponse:
+    return await list_published_servers(session, page=page, per_page=20)
 
 
 @public_router.get(

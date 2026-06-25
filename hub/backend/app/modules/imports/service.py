@@ -329,10 +329,11 @@ def server_json_from_metadata(
     remotes = dict_items(metadata.get("remotes"))
     icons = dict_items(metadata.get("icons"))
     icon_url = string_value(metadata.get("iconUrl"))
+    meta = metadata.get("_meta") if isinstance(metadata.get("_meta"), dict) else {}
     if icon_url and not icons:
         icons = [{"src": icon_url}]
 
-    return {
+    server_json = {
         "$schema": string_value(metadata.get("$schema")) or DEFAULT_SCHEMA,
         "name": string_value(metadata.get("name")),
         "title": string_value(metadata.get("title")),
@@ -349,6 +350,9 @@ def server_json_from_metadata(
         "packages": packages,
         "remotes": remotes,
     }
+    if meta:
+        server_json["_meta"] = meta
+    return server_json
 
 
 def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImportResponse:

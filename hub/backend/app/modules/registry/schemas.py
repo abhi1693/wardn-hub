@@ -14,6 +14,23 @@ RegistryServerStatus = Literal["active", "deprecated", "deleted", "quarantined"]
 RegistryVersionStatus = Literal["active", "deprecated", "deleted", "quarantined", "rejected"]
 RegistryVisibility = Literal["public", "unlisted", "private_preview"]
 CATEGORY_SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"
+
+
+def metadata_has_category(metadata: dict[str, Any] | None) -> bool:
+    if not isinstance(metadata, dict):
+        return False
+    for source in (metadata, metadata.get(PUBLISHER_META_KEY, {})):
+        if not isinstance(source, dict):
+            continue
+        if isinstance(source.get("category"), str) and source["category"].strip():
+            return True
+        categories = source.get("categories")
+        if isinstance(categories, list) and any(
+            isinstance(value, str) and value.strip() for value in categories
+        ):
+            return True
+    return False
 
 
 class RegistryRepository(BaseModel):
@@ -147,6 +164,8 @@ class MCPServerDocument(BaseModel):
     def require_package_or_remote(self) -> "MCPServerDocument":
         if not self.packages and not self.remotes:
             raise ValueError("at least one package or remote target is required")
+        if not metadata_has_category(self.meta):
+            raise ValueError("at least one category is required")
         return self
 
 
@@ -262,8 +281,8 @@ class RegistryServerRead(BaseModel):
     description: str
     documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
-    repository: RegistryRepository | None = None
-    icons: list[RegistryIcon] = Field(default_factory=list)
+    repository: dict[str, Any] | None = None
+    icons: list[dict[str, Any]] = Field(default_factory=list)
     status: RegistryServerStatus
     status_message: str = Field(alias="statusMessage")
     visibility: RegistryVisibility
@@ -292,10 +311,10 @@ class RegistryServerVersionRead(BaseModel):
     description: str
     documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
-    repository: RegistryRepository | None = None
-    packages: list[RegistryPackage] = Field(default_factory=list)
-    remotes: list[RegistryRemote] = Field(default_factory=list)
-    icons: list[RegistryIcon] = Field(default_factory=list)
+    repository: dict[str, Any] | None = None
+    packages: list[dict[str, Any]] = Field(default_factory=list)
+    remotes: list[dict[str, Any]] = Field(default_factory=list)
+    icons: list[dict[str, Any]] = Field(default_factory=list)
     server_json: dict[str, Any] = Field(alias="serverJson")
     status: RegistryVersionStatus
     status_message: str = Field(alias="statusMessage")
@@ -317,6 +336,22 @@ class RegistryServerVersionRead(BaseModel):
     updated_at: datetime = Field(alias="updatedAt")
 
 
+class RegistryPublishedServerVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    packages: list[dict[str, Any]] = Field(default_factory=list)
+    remotes: list[dict[str, Any]] = Field(default_factory=list)
+    status: RegistryVersionStatus
+    status_message: str = Field(alias="statusMessage")
+    is_latest: bool = Field(alias="isLatest")
+    published_at: datetime = Field(alias="publishedAt")
+    status_changed_at: datetime = Field(alias="statusChangedAt")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
 class RegistryListMetadata(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -324,9 +359,27 @@ class RegistryListMetadata(BaseModel):
     next_cursor: str = Field(default="", alias="nextCursor")
 
 
+class RegistryPageMetadata(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    page: int
+    per_page: int = Field(alias="perPage")
+    total: int
+    pages: int
+
+
 class RegistryServerListResponse(BaseModel):
     servers: list[RegistryServerRead]
     metadata: RegistryListMetadata
+
+
+class RegistryCatalogServerRead(RegistryServerRead):
+    versions: list[RegistryPublishedServerVersionRead]
+
+
+class RegistryPublishedServerListResponse(BaseModel):
+    servers: list[RegistryCatalogServerRead]
+    metadata: RegistryPageMetadata
 
 
 class RegistryUserRead(BaseModel):

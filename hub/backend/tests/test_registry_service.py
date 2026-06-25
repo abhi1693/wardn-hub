@@ -63,6 +63,7 @@ def registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
                     "transport": {"type": "stdio"},
                 }
             ],
+            "_meta": {"categories": ["weather"]},
         }
     )
 
@@ -126,13 +127,27 @@ def test_parse_cursor() -> None:
 def test_category_values_extracts_publisher_metadata() -> None:
     payload = registry_payload()
     payload.meta = {
+        "category": "Search",
+        "categories": ["AI Tools"],
         service.PUBLISHER_META_KEY: {
             "category": "Development",
             "categories": ["Cloud Service", "Development"],
         }
     }
 
-    assert service.category_values(payload) == ["development", "cloud-service"]
+    assert service.category_values(payload) == [
+        "search",
+        "ai-tools",
+        "development",
+        "cloud-service",
+    ]
+
+
+def test_category_values_extracts_direct_metadata() -> None:
+    payload = registry_payload()
+    payload.meta = {"categories": ["Weather", "Cloud Service"]}
+
+    assert service.category_values(payload) == ["weather", "cloud-service"]
 
 
 def test_next_category_sort_order_uses_ten_step_gaps() -> None:
@@ -301,6 +316,202 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     assert response.server.latest_version.version == "1.0.0"
     assert response.version.is_latest is True
     assert response.version.server_json["name"] == "io.github.example/weather"
+
+
+@pytest.mark.asyncio
+async def test_create_server_version_syncs_declared_categories(monkeypatch) -> None:
+    synced_categories: list[str] | None = None
+
+    async def missing_server(*args, **kwargs):
+        return None
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def sync_categories(*args):
+        nonlocal synced_categories
+        synced_categories = args[2]
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    payload = registry_payload()
+    payload.meta = {"categories": ["Weather"]}
+    monkeypatch.setattr(service.repository, "get_server", missing_server)
+    monkeypatch.setattr(service.repository, "get_server_version", missing_server)
+    monkeypatch.setattr(service.repository, "clear_latest_for_server", noop)
+    monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    await service.create_server_version(FakeSession(), payload)
+
+    assert synced_categories == ["weather"]
+
+
+@pytest.mark.asyncio
+async def test_list_published_servers_returns_full_version_data(monkeypatch) -> None:
+    server = server_model()
+    server.repository = {
+        "type": "git",
+        "url": "https://example.com/repo",
+        "customRepositoryField": {"nested": True},
+    }
+    server.icons = [
+        {
+            "src": "https://example.com/icon.png",
+            "customIconField": ["dark", "light"],
+        }
+    ]
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    version.packages = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "version": "1.0.0",
+            "transport": {
+                "type": "stdio",
+                "command": "npx",
+                "customTransportField": {"preserve": "transport"},
+            },
+            "customPackageField": {"preserve": "package"},
+        }
+    ]
+    version.remotes = [
+        {
+            "type": "streamable-http",
+            "url": "https://weather.example.com/mcp",
+            "headers": [
+                {
+                    "name": "Authorization",
+                    "value": "Bearer ${TOKEN}",
+                    "customHeaderField": "header",
+                }
+            ],
+            "customRemoteField": ["preserve", "remote"],
+        }
+    ]
+    captured: dict[str, int] = {}
+
+    async def published_servers(*args, **kwargs):
+        captured.update(kwargs)
+        return [(server, version)], 21
+
+    async def published_versions(*args, **kwargs):
+        return {server.id: [version]}
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "list_published_servers", published_servers)
+    monkeypatch.setattr(
+        service.repository,
+        "list_published_versions_for_servers",
+        published_versions,
+    )
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    response = await service.list_published_servers(FakeSession(), page=2)
+
+    assert captured == {"offset": 20, "limit": 20}
+    assert response.metadata.page == 2
+    assert response.metadata.per_page == 20
+    assert response.metadata.total == 21
+    assert response.metadata.pages == 2
+    assert response.servers[0].name == server.name
+    assert response.servers[0].repository == server.repository
+    assert response.servers[0].icons == server.icons
+    server_payload = response.servers[0].model_dump(by_alias=True)
+    assert "server" not in server_payload
+    assert "versions" in server_payload
+    assert response.servers[0].versions[0].packages == version.packages
+    assert response.servers[0].versions[0].remotes == version.remotes
+    version_payload = response.servers[0].versions[0].model_dump(by_alias=True)
+    assert set(version_payload) == {
+        "id",
+        "version",
+        "packages",
+        "remotes",
+        "status",
+        "statusMessage",
+        "isLatest",
+        "publishedAt",
+        "statusChangedAt",
+        "createdAt",
+        "updatedAt",
+    }
+    assert "owner" not in version_payload
+    assert "organization" not in version_payload
+    assert "categories" not in version_payload
+    assert "partnerSupport" not in version_payload
+    assert "publishedBy" not in version_payload
+    assert "serverId" not in version_payload
+    assert "name" not in version_payload
+    assert "documentation" not in version_payload
+    assert "title" not in version_payload
+    assert "description" not in version_payload
+    assert "websiteUrl" not in version_payload
+    assert "repository" not in version_payload
+    assert "icons" not in version_payload
+    assert "serverJson" not in version_payload
+
+
+@pytest.mark.asyncio
+async def test_list_published_servers_groups_versions_under_their_server(monkeypatch) -> None:
+    weather = server_model()
+    calendar = server_model()
+    calendar.id = uuid4()
+    calendar.name = "io.github.example/calendar"
+    calendar.title = "Calendar"
+    calendar.description = "Calendar tools"
+
+    weather_v1 = version_model(weather.id, "1.0.0", is_latest=False)
+    weather_v2 = version_model(weather.id, "2.0.0", is_latest=True)
+    calendar_v1 = version_model(calendar.id, "1.0.0", is_latest=True)
+    for version in (weather_v1, weather_v2):
+        version.name = weather.name
+        version.server_json = {**version.server_json, "name": weather.name}
+    calendar_v1.name = calendar.name
+    calendar_v1.server_json = {**calendar_v1.server_json, "name": calendar.name}
+
+    async def published_servers(*args, **kwargs):
+        return [(weather, weather_v2), (calendar, calendar_v1)], 2
+
+    async def published_versions(*args, **kwargs):
+        return {
+            weather.id: [weather_v2, weather_v1],
+            calendar.id: [calendar_v1],
+        }
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "list_published_servers", published_servers)
+    monkeypatch.setattr(
+        service.repository,
+        "list_published_versions_for_servers",
+        published_versions,
+    )
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    response = await service.list_published_servers(FakeSession(), page=1)
+
+    versions_by_server = {
+        item.name: [version.id for version in item.versions]
+        for item in response.servers
+    }
+    assert versions_by_server == {
+        weather.name: [weather_v2.id, weather_v1.id],
+        calendar.name: [calendar_v1.id],
+    }
 
 
 @pytest.mark.asyncio

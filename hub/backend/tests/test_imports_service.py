@@ -22,7 +22,8 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
               "name": "io.github.acme/weather-mcp",
               "description": "Weather forecast MCP tools.",
               "version": "1.0.0",
-              "packages": [{"registryType": "npm", "identifier": "@acme/weather-mcp"}]
+              "packages": [{"registryType": "npm", "identifier": "@acme/weather-mcp"}],
+              "_meta": {"categories": ["weather"]}
             }
             """
         return None
@@ -39,6 +40,7 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
     assert response.server_json.documentation == "# Weather MCP\n\nWeather forecast tools."
     assert response.server_json.packages[0].registry_type == "npm"
     assert response.server_json.packages[0].identifier == "@acme/weather-mcp"
+    assert response.server_json.meta == {"categories": ["weather"]}
     assert response.submission_payload.server_json == response.server_json
     assert response.evidence.files == ["README.md", "server.json"]
     assert response.evidence.missing == [

@@ -43,7 +43,7 @@ const adminItems: HeaderItem[] = [
 
 const partnerManagerItems: HeaderItem[] = [{ href: "/partners", label: "Partners" }];
 
-const superuserItems: HeaderItem[] = [{ href: "/?section=audit", label: "Audit" }];
+const superuserItems: HeaderItem[] = [{ href: "/audit", label: "Audit" }];
 
 function clientAuthProviders() {
   return (process.env.NEXT_PUBLIC_AUTH_PROVIDERS ?? "local")

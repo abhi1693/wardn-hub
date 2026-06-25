@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from pydantic import BaseModel
+
 from app.modules.registry import repository
 from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
@@ -18,12 +20,16 @@ from app.modules.registry.schemas import (
     ActorSummary,
     MCPServerDocument,
     PartnerSupportSummary,
+    RegistryCatalogServerRead,
     RegistryCategoryCreate,
     RegistryCategoryListResponse,
     RegistryCategoryRead,
     RegistryCategoryUpdate,
     RegistryLatestVersionSummary,
     RegistryListMetadata,
+    RegistryPageMetadata,
+    RegistryPublishedServerListResponse,
+    RegistryPublishedServerVersionRead,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerRead,
@@ -70,6 +76,16 @@ def parse_cursor(cursor: str | None) -> int:
     return offset
 
 
+def registry_json(value):
+    if isinstance(value, BaseModel):
+        return registry_json(value.model_dump(by_alias=True))
+    if isinstance(value, list):
+        return [registry_json(item) for item in value]
+    if isinstance(value, dict):
+        return {key: registry_json(item) for key, item in value.items()}
+    return value
+
+
 def document_values(payload: MCPServerDocument) -> dict:
     return {
         "name": payload.name,
@@ -78,10 +94,10 @@ def document_values(payload: MCPServerDocument) -> dict:
         "documentation": payload.documentation,
         "version": payload.version,
         "website_url": payload.website_url,
-        "repository": payload.repository,
-        "packages": payload.packages,
-        "remotes": payload.remotes,
-        "icons": payload.icons,
+        "repository": registry_json(payload.repository),
+        "packages": registry_json(payload.packages),
+        "remotes": registry_json(payload.remotes),
+        "icons": registry_json(payload.icons),
         "server_json": payload.model_dump(by_alias=True, exclude_none=True),
     }
 
@@ -92,17 +108,16 @@ def category_slug(value: str) -> str:
 
 
 def category_values_from_metadata(metadata: dict) -> list[str]:
-    publisher_metadata = metadata.get(PUBLISHER_META_KEY, {})
-    if not isinstance(publisher_metadata, dict):
-        return []
-
     raw_values = []
-    category = publisher_metadata.get("category")
-    categories = publisher_metadata.get("categories")
-    if isinstance(category, str):
-        raw_values.append(category)
-    if isinstance(categories, list):
-        raw_values.extend(value for value in categories if isinstance(value, str))
+    for source in (metadata, metadata.get(PUBLISHER_META_KEY, {})):
+        if not isinstance(source, dict):
+            continue
+        category = source.get("category")
+        categories = source.get("categories")
+        if isinstance(category, str):
+            raw_values.append(category)
+        if isinstance(categories, list):
+            raw_values.extend(value for value in categories if isinstance(value, str))
 
     slugs = []
     seen = set()
@@ -265,6 +280,15 @@ def categories_for_server(
     return [category_summary(category) for category in trust.categories.get(server_id, [])]
 
 
+async def sync_server_categories_if_present(
+    session,
+    server_id: UUID,
+    category_slugs: list[str],
+) -> None:
+    if category_slugs:
+        await repository.sync_server_categories(session, server_id, category_slugs)
+
+
 async def build_trust_context(
     session,
     *,
@@ -405,6 +429,35 @@ def version_summary(
     )
 
 
+def published_version_summary(version: RegistryServerVersion) -> RegistryPublishedServerVersionRead:
+    return RegistryPublishedServerVersionRead(
+        id=version.id,
+        version=version.version,
+        packages=version.packages,
+        remotes=version.remotes,
+        status=version.status,
+        status_message=version.status_message,
+        is_latest=version.is_latest,
+        published_at=version.published_at,
+        status_changed_at=version.status_changed_at,
+        created_at=version.created_at,
+        updated_at=version.updated_at,
+    )
+
+
+def catalog_server_summary(
+    server: RegistryServer,
+    latest_version: RegistryServerVersion,
+    versions: list[RegistryServerVersion],
+    *,
+    trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
+) -> RegistryCatalogServerRead:
+    return RegistryCatalogServerRead(
+        **server_summary(server, latest_version, trust=trust).model_dump(by_alias=True),
+        versions=[published_version_summary(version) for version in versions],
+    )
+
+
 async def server_with_latest(session, server: RegistryServer) -> RegistryServerRead:
     latest = None
     if server.current_version_id:
@@ -514,7 +567,7 @@ async def create_server_version(
     await session.flush()
     await session.refresh(version)
     server.current_version_id = version.id
-    await repository.sync_server_categories(session, server.id, category_values(payload))
+    await sync_server_categories_if_present(session, server.id, category_values(payload))
     await session.flush()
     await session.refresh(server)
     trust = await build_trust_context(session, servers=[server], versions=[version])
@@ -565,7 +618,7 @@ async def update_server_version(
         server.icons = payload.icons
         if updated_by_user_id is not None:
             server.updated_by_user_id = updated_by_user_id
-        await repository.sync_server_categories(session, server.id, category_values(payload))
+        await sync_server_categories_if_present(session, server.id, category_values(payload))
 
     await session.flush()
     await session.refresh(version)
@@ -663,7 +716,7 @@ async def set_latest_version(
     server.website_url = version.website_url
     server.repository = version.repository
     server.icons = version.icons
-    await repository.sync_server_categories(
+    await sync_server_categories_if_present(
         session,
         server.id,
         category_values_from_server_json(version.server_json),
@@ -713,6 +766,52 @@ async def list_servers(
     return RegistryServerListResponse(
         servers=[await server_with_latest(session, server) for server in servers],
         metadata=RegistryListMetadata(count=len(servers), next_cursor=next_cursor),
+    )
+
+
+async def list_published_servers(
+    session,
+    *,
+    page: int,
+    per_page: int = 20,
+) -> RegistryPublishedServerListResponse:
+    offset = (page - 1) * per_page
+    rows, total = await repository.list_published_servers(
+        session,
+        offset=offset,
+        limit=per_page,
+    )
+    servers = [server for server, _version in rows]
+    versions_by_server = await repository.list_published_versions_for_servers(
+        session,
+        {server.id for server in servers},
+    )
+    published_versions = [
+        version
+        for server in servers
+        for version in versions_by_server.get(server.id, [])
+    ]
+    missing_latest_versions = [
+        version for server, version in rows if not versions_by_server.get(server.id)
+    ]
+    versions = published_versions + missing_latest_versions
+    trust = await build_trust_context(session, servers=servers, versions=versions)
+    return RegistryPublishedServerListResponse(
+        servers=[
+            catalog_server_summary(
+                server,
+                version,
+                versions_by_server.get(server.id, [version]),
+                trust=trust,
+            )
+            for server, version in rows
+        ],
+        metadata=RegistryPageMetadata(
+            page=page,
+            perPage=per_page,
+            total=total,
+            pages=(total + per_page - 1) // per_page,
+        ),
     )
 
 

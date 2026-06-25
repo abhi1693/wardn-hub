@@ -73,6 +73,7 @@ def registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
                     "transport": {"type": "stdio"},
                 }
             ],
+            "_meta": {"categories": ["weather"]},
         }
     )
 
@@ -104,6 +105,7 @@ def complete_registry_payload(version: str = "1.0.0") -> RegistryServerVersionCr
                 }
             ],
             "_meta": {
+                "categories": ["weather"],
                 "sourceReview": {
                     "filesRead": ["README.md"],
                     "clientConfigSnippetsFound": True,
@@ -286,6 +288,7 @@ async def test_create_submission_rejects_invalid_remote_target() -> None:
             "description": "Weather tools for forecasts",
             "version": "1.0.0",
             "remotes": [{"type": "streamable-http", "url": "ftp://example.com/mcp"}],
+            "_meta": {"categories": ["weather"]},
         }
     )
 

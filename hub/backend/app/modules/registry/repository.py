@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, delete, func, or_, select, update
+from sqlalchemy import Select, and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.organizations.models import Organization
@@ -162,6 +162,66 @@ async def list_servers(
     rows = list(result.scalars().unique().all())
     next_cursor = str(offset + limit) if len(rows) > limit else ""
     return rows[:limit], next_cursor
+
+
+async def list_published_servers(
+    session: AsyncSession,
+    *,
+    offset: int,
+    limit: int,
+) -> tuple[list[tuple[RegistryServer, RegistryServerVersion]], int]:
+    filters = (
+        RegistryServer.status == "active",
+        RegistryServer.visibility == "public",
+        RegistryServer.current_version_id.is_not(None),
+        RegistryServerVersion.status == "active",
+        RegistryServerVersion.is_latest.is_(True),
+    )
+    join_condition = and_(
+        RegistryServerVersion.id == RegistryServer.current_version_id,
+        RegistryServerVersion.server_id == RegistryServer.id,
+    )
+
+    total = await session.scalar(
+        select(func.count())
+        .select_from(RegistryServer)
+        .join(RegistryServerVersion, join_condition)
+        .where(*filters)
+    )
+    result = await session.execute(
+        select(RegistryServer, RegistryServerVersion)
+        .join(RegistryServerVersion, join_condition)
+        .where(*filters)
+        .order_by(RegistryServer.name.asc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return [(server, version) for server, version in result.all()], total or 0
+
+
+async def list_published_versions_for_servers(
+    session: AsyncSession,
+    server_ids: set[UUID],
+) -> dict[UUID, list[RegistryServerVersion]]:
+    if not server_ids:
+        return {}
+    result = await session.execute(
+        select(RegistryServerVersion)
+        .where(
+            RegistryServerVersion.server_id.in_(server_ids),
+            RegistryServerVersion.status == "active",
+        )
+        .order_by(
+            RegistryServerVersion.server_id.asc(),
+            RegistryServerVersion.is_latest.desc(),
+            RegistryServerVersion.published_at.desc(),
+            RegistryServerVersion.version.desc(),
+        )
+    )
+    versions_by_server: dict[UUID, list[RegistryServerVersion]] = {}
+    for version in result.scalars().all():
+        versions_by_server.setdefault(version.server_id, []).append(version)
+    return versions_by_server
 
 
 async def list_server_versions(

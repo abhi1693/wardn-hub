@@ -10,6 +10,10 @@ from app.modules.registry.exceptions import (
     DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
 )
+from app.modules.registry.schemas import (
+    RegistryPageMetadata,
+    RegistryPublishedServerListResponse,
+)
 from app.modules.users.dependencies import require_superuser
 
 
@@ -18,6 +22,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
 
     assert {
         "/api/v1/mcp/categories",
+        "/api/v1/mcp/catalog",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/versions",
@@ -38,12 +43,46 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         == "mcp_categories_update"
     )
     assert schema["paths"]["/api/v1/mcp/servers"]["get"]["operationId"] == "mcp_servers_list"
+    assert (
+        schema["paths"]["/api/v1/mcp/catalog"]["get"]["operationId"]
+        == "mcp_catalog_list"
+    )
     assert schema["paths"]["/api/v1/users"]["get"]["operationId"] == "users_list"
     assert schema["paths"]["/api/v1/users/{user_id}"]["get"]["operationId"] == "users_get"
     assert (
         schema["paths"]["/api/v1/admin/mcp/servers"]["post"]["operationId"]
         == "admin_mcp_servers_create_version"
     )
+
+
+def test_published_servers_route_is_public_and_fixed_page_size(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, int] = {}
+
+    async def fake_session():
+        class Session:
+            pass
+
+        yield Session()
+
+    async def published_servers(*args, **kwargs):
+        captured.update(kwargs)
+        return RegistryPublishedServerListResponse(
+            servers=[],
+            metadata=RegistryPageMetadata(page=2, perPage=20, total=0, pages=0),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_published_servers", published_servers)
+
+    response = TestClient(app).get("/api/v1/mcp/catalog?page=2")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "servers": [],
+        "metadata": {"page": 2, "perPage": 20, "total": 0, "pages": 0},
+    }
+    assert captured == {"page": 2, "per_page": 20}
 
 
 def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:
@@ -81,6 +120,7 @@ def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:
                     "version": "1.0.0",
                 }
             ],
+            "_meta": {"categories": ["weather"]},
         },
     )
 
@@ -97,6 +137,7 @@ def test_admin_create_requires_authentication() -> None:
             "description": "Weather tools for forecasts",
             "version": "1.0.0",
             "packages": [{"registryType": "mcpb", "identifier": "example.mcpb"}],
+            "_meta": {"categories": ["weather"]},
         },
     )
 

@@ -18,6 +18,7 @@ def test_submissions_create_requires_authentication() -> None:
                 "description": "Weather tools for forecasts",
                 "version": "1.0.0",
                 "packages": [{"registryType": "mcpb", "identifier": "example.mcpb"}],
+                "_meta": {"categories": ["weather"]},
             }
         },
     )
@@ -56,6 +57,7 @@ def test_submission_write_rejects_token_without_write_scope(monkeypatch) -> None
                 "description": "Weather tools for forecasts",
                 "version": "1.0.0",
                 "packages": [{"registryType": "mcpb", "identifier": "example.mcpb"}],
+                "_meta": {"categories": ["weather"]},
             }
         },
     )
