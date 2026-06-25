@@ -25,7 +25,7 @@ import type {
   UserRead,
 } from "@/lib/api/generated/model";
 
-const DEFAULT_API_BASE_URL = "http://localhost:8001/api/v1";
+const DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1";
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 
 export class HubApiError extends Error {
