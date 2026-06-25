@@ -1,0 +1,10 @@
+# Keep this file small and explicit. Prefer fixing secrets over allowlisting.
+
+[extend]
+useDefault = true
+
+[[rules]]
+description = "Ignore common placeholder/example tokens"
+id = "allowlist-placeholders"
+regex = '''(?i)(example_token|changeme|dummy_key)'''
+path = '''.*'''
