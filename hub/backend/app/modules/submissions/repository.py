@@ -27,3 +27,10 @@ async def list_submissions(
         statement = statement.where(ServerSubmission.submitter_user_id == user_id)
     result = await session.execute(statement)
     return list(result.scalars().all())
+
+
+async def delete_submission(
+    session: AsyncSession,
+    submission: ServerSubmission,
+) -> None:
+    await session.delete(submission)

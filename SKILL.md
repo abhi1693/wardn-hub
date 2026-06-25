@@ -32,6 +32,8 @@ Use `submissionPayload` as the starting point. Do not rebuild the submission fro
 
 Only read the source README/docs after import to fill in missing or weak details, especially when `evidence.missing` contains required fields such as `packages or remotes`, or when documentation, configuration, authentication, tools, resources, prompts, or limitations are incomplete. Preserve all correct fields returned by the import API.
 
+Import is not a substitute for README/source review. Treat import output as a draft that may miss launch arguments, environment variables, optional modes, prerequisites, and tool lists. Never submit directly from import output without performing the configuration extraction pass below.
+
 ## Source Inspection
 
 Inspect only the source areas needed to improve the import draft. Prefer local files. If only a repository URL is provided, fetch or browse the repository contents after calling the import API.
@@ -40,11 +42,31 @@ Read these files when present:
 
 - `README.md`, `README.*`, or docs landing page.
 - Existing `server.json`, `mcp.json`, `.mcp/server.json`, or package-provided MCP metadata.
-- Package manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `deno.json`, `uv.lock`, lockfiles, or release metadata.
+- Package manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `deno.json`, `uv.lock`, lockfiles, MCPB `manifest.json`, or release metadata.
 - Documentation files under `docs/`, especially setup, authentication, tools, resources, prompts, transport, examples, and deployment pages.
 - License, changelog, and release notes when they clarify version, stability, or compatibility.
 
 Use `rg --files` to discover files quickly when local source is available. Read the README first, then manifests, then focused docs. Do not rely on package names or repository names alone when README/docs contain better product wording.
+
+## Mandatory Configuration Extraction Pass
+
+After import and README inspection, explicitly search the README/docs/manifests for these strings and sections before editing `submissionPayload`:
+
+- `mcpServers`, `command`, `args`, `env`, `environment`, `Environment Variables`, `.env`, `API_KEY`, `TOKEN`, `SECRET`, `URL`, `HOST`, `PORT`.
+- `stdio`, `streamable`, `http`, `sse`, `websocket`, `transport`, `remote`, `tunnel`, `ngrok`.
+- `CLI Options`, `options`, `flags`, `arguments`, `configuration`, `prerequisites`, `requirements`.
+- Manifest or package fields such as `bin`, `scripts`, `exports`, `mcp`, `server`, `runtime`, `engines`, and MCPB user configuration.
+
+For every documented client configuration snippet or launch command, extract:
+
+- Runtime command, for example `npx`, `uvx`, `python`, `node`, `docker`, or the installed binary name.
+- Full argument list in order. Preserve flags like `--stdio`, `--read-only`, `--port`, `--host`, package names, module paths, and `-y`.
+- Transport type. For local desktop client snippets, this is usually `stdio`. For local HTTP mode, record the HTTP transport only when the source says it is an MCP transport.
+- Environment variables, including required and optional variables, defaults, allowed values, and whether values are secrets.
+- External prerequisites, for example required desktop apps, browser extensions, plugins, local services, databases, cloud accounts, or OAuth setup.
+- Safety and mode flags, for example read-only mode, host allowlists, origin allowlists, tunnel URLs, API versions, timeouts, and media/file restrictions.
+
+Missing command arguments or environment variables is a submission-quality bug. If the README shows them, they must appear in both `serverJson.packages[].transport` or `serverJson.remotes[]` where the schema supports them and in the `documentation` field.
 
 ## Extract Details From README And Source
 
@@ -55,11 +77,12 @@ Build a short evidence-backed summary before editing `submissionPayload`:
 - **Capabilities**: tools, resources, prompts, major operations, supported services/APIs.
 - **Install target**: package manager, package name, binary/entrypoint, command, version, runtime requirements.
 - **Remote target**: HTTP/SSE/WebSocket endpoint, transport type, auth requirements, docs URL.
-- **Configuration**: env vars, headers, command arguments, required secrets, optional settings, scopes/permissions.
+- **Configuration**: exact env var names, headers, command arguments, CLI flags, required secrets, optional settings, scopes/permissions, defaults, and allowed values.
 - **Authentication**: OAuth/API key/personal token/service account flow, required external permissions, rate limits.
 - **Compatibility**: MCP schema/version, supported platforms, Node/Python/etc. versions, known limitations.
 - **Trust metadata**: license, maintainer, organization, support URL, issue tracker, security policy.
 - **Categories**: infer from documented purpose, not from vague keywords.
+- **Prerequisites**: local apps, plugins, APIs, services, ports, accounts, or setup steps required before the MCP server works.
 
 If a detail is absent, leave it empty or omit it if the schema allows. Do not invent endpoints, tools, categories, credentials, or support claims.
 
@@ -92,11 +115,30 @@ Use `packages` for servers installed/run locally by a client. Include only field
 - Registry type, such as npm, PyPI, Cargo, Go, Docker, MCPB, or another package source.
 - Package identifier/name.
 - Package version.
-- Runtime command or binary when documented.
-- Required environment variables, marking secret values as secret metadata.
-- Command arguments and supported transports when documented.
+- Runtime command or binary when documented. Put it in `packages[].transport.command`.
+- Command arguments exactly as documented. Put them in `packages[].transport.args` as an ordered array.
+- Required and optional environment variables. Put names and source-backed defaults/placeholders in `packages[].transport.env`.
+- Supported transports when documented. Put the primary local client transport in `packages[].transport.type`.
+- Runtime requirements such as Node/Python versions and required local services in `documentation` and `_meta` when useful for review.
 
 If the source includes install examples such as `npx`, `uvx`, `pipx`, `docker run`, or `go install`, translate them into package metadata rather than prose only.
+
+For client configuration snippets, map fields directly:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@scope/server", "--stdio"],
+  "env": {
+    "SERVICE_URL": "http://localhost:1234",
+    "SERVICE_API_KEY": "${SERVICE_API_KEY}"
+  }
+}
+```
+
+Use documented default values for non-secret settings. Use `${ENV_VAR_NAME}` placeholders for secrets or user-specific values. Do not put real secret values in the payload. If a variable is optional but useful, include it in documentation even when it is not placed in `transport.env`.
+
+If the source documents several launch modes, capture the best default local MCP client mode in `packages[].transport` and describe the alternatives in `documentation`. Add separate package entries only when the package identifiers or package types differ materially, such as npm plus Docker plus MCPB.
 
 ## Remote Metadata Guidance
 
@@ -108,7 +150,7 @@ Use `remotes` for hosted MCP endpoints. Preserve:
 - Required headers, marking secret values as secret metadata.
 - Public docs/support URL.
 
-Do not create a remote entry for a local stdio server unless the source documents an actual hosted endpoint.
+Do not create a remote entry for a local stdio server, localhost HTTP server, user-started tunnel, or ngrok URL unless the source documents a stable hosted endpoint that users can connect to directly. Local HTTP, tunnel, and ngrok modes belong in package transport metadata and documentation, not `remotes`, unless the endpoint is operated by the server publisher as a permanent service.
 
 ## Documentation Field
 
@@ -123,6 +165,8 @@ The `documentation` field should be useful in the catalog without requiring the 
 
 ## Configuration
 
+## Prerequisites
+
 ## Authentication
 
 ## Example Usage
@@ -133,6 +177,15 @@ The `documentation` field should be useful in the catalog without requiring the 
 ```
 
 Keep it factual. Paraphrase source docs rather than copying long passages. Include exact env var names, package names, commands, and URLs when they are necessary for use.
+
+The `Configuration` or `Installation` sections must include:
+
+- The recommended client configuration or launch command.
+- Required command arguments and their purpose.
+- Required environment variables, defaults, and which values are secrets.
+- Optional environment variables that materially change behavior.
+- Local prerequisites and setup order.
+- Remote/tunnel setup only when documented by the source.
 
 ## Submission Payload
 
@@ -160,12 +213,17 @@ Before submitting:
 
 - Source README/docs were read and used.
 - Import API output was used as the initial draft.
+- README/docs/manifests were searched for `mcpServers`, `args`, `env`, environment variable tables, CLI options, and transport sections.
 - `name` is stable `publisher/server` and matches the required pattern.
 - `version` is semver; new servers use `1.0.0`.
 - `description` is source-backed and non-empty.
 - `documentation` includes setup and usage details from the README/docs.
 - At least one of `packages` or `remotes` is non-empty.
 - Package/remotes metadata matches source install or endpoint documentation.
+- `packages[].transport.command`, `packages[].transport.args`, and `packages[].transport.env` preserve documented client configuration snippets where present.
+- Required env vars and important optional env vars are listed in documentation, with defaults/placeholders and no plaintext secrets.
+- CLI flags and arguments that select transport or safety mode are preserved, for example `--stdio`, `--read-only`, `--port`, `--host`, or equivalent source-specific flags.
+- Local prerequisites and external service dependencies are documented.
 - URLs are valid HTTP(S) URLs where required.
 - Secrets are represented only as required variable/header names, never plaintext values.
 - `_meta.categories` are inferred from documented behavior.

@@ -240,6 +240,12 @@ export function updateSubmission(submissionId: string, payload: SubmissionUpdate
   });
 }
 
+export function deleteSubmission(submissionId: string) {
+  return request<void>(`/submissions/${submissionId}`, {
+    method: "DELETE",
+  });
+}
+
 export function listPartnerOrganizations() {
   return request<PartnerOrganizationListResponse>("/partners");
 }

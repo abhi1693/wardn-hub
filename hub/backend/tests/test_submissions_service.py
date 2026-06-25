@@ -19,11 +19,15 @@ from app.modules.users.models import User
 class FakeSession:
     def __init__(self) -> None:
         self.added: list[object] = []
+        self.deleted: list[object] = []
         self.flushed = False
         self.refreshed: list[object] = []
 
     def add(self, instance: object) -> None:
         self.added.append(instance)
+
+    async def delete(self, instance: object) -> None:
+        self.deleted.append(instance)
 
     async def flush(self) -> None:
         self.flushed = True
@@ -295,3 +299,95 @@ async def test_update_submission_rejects_published(monkeypatch) -> None:
             submission.id,
             SubmissionUpdate(serverJson=registry_payload(version="1.0.1")),
         )
+
+
+@pytest.mark.asyncio
+async def test_delete_submission_removes_own_unpublished_submission(monkeypatch) -> None:
+    submitter = current_user()
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="draft",
+        server_json=registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    session = FakeSession()
+
+    await service.delete_submission(session, submitter, submission.id)
+
+    assert submission in session.deleted
+    assert session.flushed
+    assert any(
+        getattr(event, "event_type", "") == "submission.deleted"
+        for event in session.added
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_submission_rejects_other_submitter(monkeypatch) -> None:
+    submitter = current_user()
+    other_user = current_user()
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="draft",
+        server_json=registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="submission access denied"):
+        await service.delete_submission(FakeSession(), other_user, submission.id)
+
+
+@pytest.mark.asyncio
+async def test_delete_submission_rejects_published(monkeypatch) -> None:
+    submitter = current_user()
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="published",
+        server_json=registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    with pytest.raises(InvalidSubmissionTransitionError, match="published submissions"):
+        await service.delete_submission(FakeSession(), submitter, submission.id)

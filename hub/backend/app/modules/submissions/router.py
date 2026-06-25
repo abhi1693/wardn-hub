@@ -23,6 +23,7 @@ from app.modules.submissions.schemas import (
 from app.modules.submissions.service import (
     approve_submission,
     create_submission,
+    delete_submission,
     get_submission,
     list_submissions,
     publish_submission,
@@ -128,6 +129,32 @@ async def update_submission_record(
         raise bad_request(exc) from exc
     await session.commit()
     return response
+
+
+@router.delete(
+    "/{submission_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="submissions_delete",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse},
+        status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+    },
+)
+async def delete_submission_record(
+    submission_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
+) -> None:
+    try:
+        await delete_submission(session, current_user, submission_id)
+    except SubmissionNotFoundError as exc:
+        raise not_found(exc) from exc
+    except SubmissionAccessDeniedError as exc:
+        raise forbidden(exc) from exc
+    except InvalidSubmissionTransitionError as exc:
+        raise bad_request(exc) from exc
+    await session.commit()
 
 
 @router.post(

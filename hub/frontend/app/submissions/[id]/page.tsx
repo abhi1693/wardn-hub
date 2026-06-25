@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { FileCheck2 } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { FileCheck2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getSubmission } from "@/lib/api/hub";
+import { deleteSubmission, getSubmission } from "@/lib/api/hub";
 import type { SubmissionRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
@@ -53,11 +53,18 @@ function statusClass(status: SubmissionRead["status"]) {
   }
 }
 
+function isDeleteableSubmission(status: SubmissionRead["status"]) {
+  return status !== "published";
+}
+
 export default function SubmissionDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const submissionId = params.id;
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [submission, setSubmission] = useState<SubmissionRead | null>(null);
 
   useEffect(() => {
@@ -89,6 +96,26 @@ export default function SubmissionDetailPage() {
   const remotes = useMemo(() => records(serverJson.remotes), [serverJson.remotes]);
   const packages = useMemo(() => records(serverJson.packages), [serverJson.packages]);
 
+  async function handleDeleteSubmission() {
+    if (!submission || !isDeleteableSubmission(submission.status)) return;
+    const confirmed = window.confirm(
+      `Delete submission ${submission.name} v${submission.version}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setActionError("");
+    try {
+      await deleteSubmission(submission.id);
+      router.push("/submissions");
+      router.refresh();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Unable to delete submission.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <PublicHeader />
@@ -114,8 +141,25 @@ export default function SubmissionDetailPage() {
             <Button asChild variant="outline">
               <Link href="/submit">New submission</Link>
             </Button>
+            {submission && isDeleteableSubmission(submission.status) ? (
+              <Button
+                disabled={deleting}
+                onClick={() => void handleDeleteSubmission()}
+                type="button"
+                variant="destructive"
+              >
+                <Trash2 className="size-4" />
+                {deleting ? "Deleting" : "Delete submission"}
+              </Button>
+            ) : null}
           </div>
         </div>
+
+        {actionError ? (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {actionError}
+          </div>
+        ) : null}
 
         <Card>
           <CardHeader className="flex items-start justify-between gap-4 space-y-0 md:flex-row">

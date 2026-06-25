@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   SearchX,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -21,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PublicHeader } from "@/components/site-header";
 import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
-import { HubApiError, currentUser, listSubmissions } from "@/lib/api/hub";
+import { HubApiError, currentUser, deleteSubmission, listSubmissions } from "@/lib/api/hub";
 import type { SubmissionRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
@@ -98,6 +99,10 @@ function formatDate(value?: string | null) {
 }
 
 function isEditableSubmission(status: SubmissionRead["status"]) {
+  return status !== "published";
+}
+
+function isDeleteableSubmission(status: SubmissionRead["status"]) {
   return status !== "published";
 }
 
@@ -221,8 +226,17 @@ function StatusBadge({ status }: { status: SubmissionRead["status"] }) {
   );
 }
 
-function VersionSubmissionRow({ submission }: { submission: SubmissionRead }) {
+function VersionSubmissionRow({
+  deleting,
+  onDelete,
+  submission,
+}: {
+  deleting: boolean;
+  onDelete: (submission: SubmissionRead) => void;
+  submission: SubmissionRead;
+}) {
   const isEditable = isEditableSubmission(submission.status);
+  const isDeleteable = isDeleteableSubmission(submission.status);
   const typeLabel = submissionTypeLabels[submission.submissionType] ?? submission.submissionType;
   const Icon = submission.submissionType === "new_version" ? GitBranch : FileText;
 
@@ -273,6 +287,19 @@ function VersionSubmissionRow({ submission }: { submission: SubmissionRead }) {
             {isEditable ? "Edit" : "New version"}
           </Link>
         </Button>
+        {isDeleteable ? (
+          <Button
+            aria-label={`Delete ${submission.name} ${submission.version}`}
+            disabled={deleting}
+            onClick={() => onDelete(submission)}
+            size="sm"
+            type="button"
+            variant="destructive"
+          >
+            <Trash2 className="size-4" />
+            {deleting ? "Deleting" : "Delete"}
+          </Button>
+        ) : null}
       </div>
 
       {submission.rejectionMessage ? (
@@ -284,7 +311,15 @@ function VersionSubmissionRow({ submission }: { submission: SubmissionRead }) {
   );
 }
 
-function SubmissionGroupCard({ group }: { group: SubmissionGroup }) {
+function SubmissionGroupCard({
+  deletingId,
+  group,
+  onDelete,
+}: {
+  deletingId: string;
+  group: SubmissionGroup;
+  onDelete: (submission: SubmissionRead) => void;
+}) {
   const versionCount = group.submissions.length;
   const iconUrl =
     submissionIconUrl(group.latest) ||
@@ -323,7 +358,12 @@ function SubmissionGroupCard({ group }: { group: SubmissionGroup }) {
 
       <div className="grid gap-2">
         {group.submissions.map((submission) => (
-          <VersionSubmissionRow key={submission.id} submission={submission} />
+          <VersionSubmissionRow
+            deleting={deletingId === submission.id}
+            key={submission.id}
+            onDelete={onDelete}
+            submission={submission}
+          />
         ))}
       </div>
     </article>
@@ -333,6 +373,8 @@ function SubmissionGroupCard({ group }: { group: SubmissionGroup }) {
 export default function SubmissionsPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [deletingId, setDeletingId] = useState("");
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("all");
 
@@ -373,6 +415,25 @@ export default function SubmissionsPage() {
     return statusOrder.filter((status) => counts[status] > 0 || filter === status);
   }, [counts, filter]);
 
+  async function handleDeleteSubmission(submission: SubmissionRead) {
+    if (!isDeleteableSubmission(submission.status)) return;
+    const confirmed = window.confirm(
+      `Delete submission ${submission.name} v${submission.version}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingId(submission.id);
+    setActionError("");
+    try {
+      await deleteSubmission(submission.id);
+      setSubmissions((current) => current.filter((item) => item.id !== submission.id));
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Unable to delete submission.");
+    } finally {
+      setDeletingId("");
+    }
+  }
+
   return (
     <>
       <PublicHeader />
@@ -405,6 +466,11 @@ export default function SubmissionsPage() {
           </header>
 
           <section className="grid gap-4">
+            {actionError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {actionError}
+              </div>
+            ) : null}
             <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="mr-1 text-sm font-bold text-foreground">
@@ -497,7 +563,12 @@ export default function SubmissionsPage() {
             {state === "ready" && groupedSubmissions.length > 0 ? (
               <div className="grid gap-3">
                 {groupedSubmissions.map((group) => (
-                  <SubmissionGroupCard key={group.name} group={group} />
+                  <SubmissionGroupCard
+                    deletingId={deletingId}
+                    group={group}
+                    key={group.name}
+                    onDelete={handleDeleteSubmission}
+                  />
                 ))}
               </div>
             ) : null}

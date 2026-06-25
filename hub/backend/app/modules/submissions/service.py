@@ -339,6 +339,31 @@ async def update_submission(
     return submission_response(submission)
 
 
+async def delete_submission(
+    session: AsyncSession,
+    user: User,
+    submission_id: uuid.UUID,
+) -> None:
+    submission = await repository.get_submission_by_id(session, submission_id)
+    if submission is None:
+        raise SubmissionNotFoundError("submission not found")
+    ensure_can_mutate_submission(user, submission)
+    await emit_audit_event(
+        session,
+        event_type="submission.deleted",
+        subject_type="server_submission",
+        subject_id=submission.id,
+        actor_user_id=user.id,
+        organization_id=submission.owner_organization_id,
+        metadata={
+            "name": submission.name,
+            "version": submission.version,
+            "status": submission.status,
+        },
+    )
+    await repository.delete_submission(session, submission)
+
+
 async def submit_submission(
     session: AsyncSession,
     user: User,

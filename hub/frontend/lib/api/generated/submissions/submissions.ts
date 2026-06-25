@@ -118,6 +118,70 @@ export const submissionsCreate = async (submissionCreate: SubmissionCreate, opti
 }
 
 
+export type submissionsDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type submissionsDeleteResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type submissionsDeleteResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type submissionsDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type submissionsDeleteResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type submissionsDeleteResponseSuccess = (submissionsDeleteResponse204) & {
+  headers: Headers;
+};
+export type submissionsDeleteResponseError = (submissionsDeleteResponse400 | submissionsDeleteResponse403 | submissionsDeleteResponse404 | submissionsDeleteResponse422) & {
+  headers: Headers;
+};
+
+export type submissionsDeleteResponse = (submissionsDeleteResponseSuccess | submissionsDeleteResponseError)
+
+export const getSubmissionsDeleteUrl = (submissionId: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/submissions/${submissionId}`
+}
+
+/**
+ * @summary Delete Submission Record
+ */
+export const submissionsDelete = async (submissionId: string, options?: RequestInit): Promise<submissionsDeleteResponse> => {
+
+  const res = await fetch(getSubmissionsDeleteUrl(submissionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: submissionsDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as submissionsDeleteResponse
+}
+
+
 export type submissionsGetResponse200 = {
   data: SubmissionRead
   status: 200
