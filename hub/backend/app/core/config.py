@@ -1,13 +1,24 @@
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from typing import ClassVar
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_NAME = "Wardn Hub API"
-APP_VERSION = "0.1.0"
+APP_PACKAGE_NAME = "wardn-hub-api"
 LOCAL_ENVIRONMENTS = {"local", "test"}
 INSECURE_SECRET_VALUES = {"change-me", "changeme", "secret", "password"}
+
+
+def package_version() -> str:
+    try:
+        return version(APP_PACKAGE_NAME)
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
+APP_VERSION = package_version()
 
 
 class Settings(BaseSettings):

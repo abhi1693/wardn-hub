@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.core.config import APP_VERSION
 from app.main import create_app
 
 
@@ -8,7 +9,7 @@ def test_app_metadata() -> None:
 
     assert schema["info"] == {
         "title": "Wardn Hub API",
-        "version": "0.1.0",
+        "version": APP_VERSION,
     }
 
 
@@ -16,4 +17,3 @@ def test_unversioned_openapi_is_not_exposed() -> None:
     client = TestClient(create_app())
 
     assert client.get("/openapi.json").status_code == 404
-
