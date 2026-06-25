@@ -1,12 +1,20 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, FileCheck2, KeyRound, LogIn, LogOut, UserPlus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { currentUser, logout, setApiToken, signOutExternalAuth } from "@/lib/api/hub";
+import {
+  clerkTokenOptions,
+  currentUser,
+  currentUserWithToken,
+  logout,
+  setApiToken,
+  signOutExternalAuth,
+} from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
 
 type HeaderItem = {
@@ -36,6 +44,20 @@ const adminItems: HeaderItem[] = [
 const partnerManagerItems: HeaderItem[] = [{ href: "/partners", label: "Partners" }];
 
 const superuserItems: HeaderItem[] = [{ href: "/?section=audit", label: "Audit" }];
+
+function clientAuthProviders() {
+  return (process.env.NEXT_PUBLIC_AUTH_PROVIDERS ?? "local")
+    .split(",")
+    .map((provider) => provider.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function clerkEnabled() {
+  return (
+    clientAuthProviders().includes("clerk") &&
+    Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+  );
+}
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -261,7 +283,57 @@ export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: Si
   );
 }
 
-export function PublicHeader() {
+function PublicHeaderContent({
+  externalSignedIn = false,
+  loaded,
+  onLogout,
+  user,
+}: {
+  externalSignedIn?: boolean;
+  loaded: boolean;
+  onLogout: () => Promise<void>;
+  user: UserRead | null;
+}) {
+  const navItems = [
+    ...publicItems,
+    ...(isAdminUser(user) ? adminItems : []),
+    ...(canManagePartners(user) ? partnerManagerItems : []),
+    ...(canAccessAudit(user) ? superuserItems : []),
+  ];
+  const isAuthenticated = Boolean(user);
+
+  return (
+    <SiteHeader
+      items={navItems}
+      actions={
+        isAuthenticated ? (
+          <HeaderUserMenu onLogout={onLogout} user={user} />
+        ) : externalSignedIn ? (
+          <>
+            <span className="site-auth-status">Signed in</span>
+            <button className="site-action-link" onClick={() => void onLogout()} type="button">
+              <LogOut size={16} />
+              Sign out
+            </button>
+          </>
+        ) : loaded ? (
+          <>
+            <Link className="site-nav-cta" href="/login">
+              <LogIn size={15} />
+              Sign in
+            </Link>
+            <Link className="site-action-link" href="/register">
+              <UserPlus size={16} />
+              Create account
+            </Link>
+          </>
+        ) : null
+      }
+    />
+  );
+}
+
+function LocalPublicHeader() {
   const router = useRouter();
   const [user, setUser] = useState<UserRead | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -296,33 +368,74 @@ export function PublicHeader() {
     router.refresh();
   }
 
-  const navItems = [
-    ...publicItems,
-    ...(isAdminUser(user) ? adminItems : []),
-    ...(canManagePartners(user) ? partnerManagerItems : []),
-    ...(canAccessAudit(user) ? superuserItems : []),
-  ];
-  const isAuthenticated = Boolean(user);
+  return <PublicHeaderContent loaded={loaded} onLogout={handleLogout} user={user} />;
+}
+
+function ClerkPublicHeader() {
+  const router = useRouter();
+  const { getToken, isLoaded, isSignedIn, signOut } = useAuth();
+  const [user, setUser] = useState<UserRead | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!isLoaded || !isSignedIn) {
+      return () => {
+        active = false;
+      };
+    }
+
+    getToken(clerkTokenOptions())
+      .then((token) => {
+        if (!token) throw new Error("missing Clerk session token");
+        return currentUserWithToken(token);
+      })
+      .then((response) => {
+        if (active) setUser(response);
+      })
+      .catch(() => {
+        if (active) setUser(null);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [getToken, isLoaded, isSignedIn]);
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      // Keep the client state authoritative even if the session is already gone server-side.
+    }
+    setApiToken("");
+    setUser(null);
+    if (isSignedIn) {
+      await signOut({ redirectUrl: "/" });
+      return;
+    }
+    await signOutExternalAuth({ redirectUrl: "/" });
+    router.refresh();
+  }
 
   return (
-    <SiteHeader
-      items={navItems}
-      actions={
-        isAuthenticated ? (
-          <HeaderUserMenu onLogout={handleLogout} user={user} />
-        ) : loaded ? (
-          <>
-            <Link className="site-nav-cta" href="/login">
-              <LogIn size={15} />
-              Sign in
-            </Link>
-            <Link className="site-action-link" href="/register">
-              <UserPlus size={16} />
-              Create account
-            </Link>
-          </>
-        ) : null
-      }
+    <PublicHeaderContent
+      externalSignedIn={Boolean(isSignedIn)}
+      loaded={isLoaded && (!isSignedIn || loaded)}
+      onLogout={handleLogout}
+      user={isSignedIn ? user : null}
     />
   );
+}
+
+export function PublicHeader() {
+  if (clerkEnabled()) {
+    return <ClerkPublicHeader />;
+  }
+
+  return <LocalPublicHeader />;
 }

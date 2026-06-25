@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 import jwt
-from jwt import InvalidTokenError, PyJWKClient
+from jwt import InvalidTokenError, PyJWKClient, PyJWKClientError
 
 from app.core.config import get_settings
 
@@ -62,14 +62,20 @@ async def fetch_clerk_user_email(subject: str) -> str:
     if not settings.clerk_secret_key:
         return ""
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"https://api.clerk.com/v1/users/{subject}",
-            headers={"Authorization": f"Bearer {settings.clerk_secret_key}"},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                f"https://api.clerk.com/v1/users/{subject}",
+                headers={"Authorization": f"Bearer {settings.clerk_secret_key}"},
+            )
+    except httpx.HTTPError:
+        return ""
     if response.status_code >= 400:
         return ""
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
     email_addresses = payload.get("email_addresses")
     primary_email_id = payload.get("primary_email_address_id")
     if not isinstance(email_addresses, list):
@@ -98,7 +104,7 @@ async def verify_clerk_token(token: str) -> ExternalIdentityClaims:
             issuer=settings.clerk_issuer,
             options={"verify_aud": bool(settings.clerk_audience)},
         )
-    except InvalidTokenError as exc:
+    except (InvalidTokenError, PyJWKClientError) as exc:
         raise ExternalAuthError("invalid Clerk token") from exc
 
     subject = string_claim(claims, "sub")

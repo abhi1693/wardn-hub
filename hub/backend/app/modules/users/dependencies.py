@@ -14,6 +14,7 @@ from app.modules.users.schemas import APITokenScope
 from app.modules.users.service import authenticate_api_token, get_or_create_external_user
 
 API_TOKEN_STATE_KEY = "wardn_hub_api_token"
+CLERK_SESSION_COOKIE_NAME = "__session"
 
 
 def get_request_api_token(request: Request) -> UserAPIToken | None:
@@ -32,8 +33,14 @@ async def get_current_user(
 
     if session_token:
         user_id = verify_session_token(session_token)
-    elif authorization and authorization.lower().startswith("bearer "):
+
+    plaintext_token = ""
+    if user_id is None and authorization and authorization.lower().startswith("bearer "):
         plaintext_token = authorization.removeprefix("Bearer ").removeprefix("bearer ").strip()
+    if user_id is None and not plaintext_token:
+        plaintext_token = request.cookies.get(CLERK_SESSION_COOKIE_NAME, "").strip()
+
+    if user_id is None and plaintext_token:
         authenticated = await authenticate_api_token(session, plaintext_token)
         if authenticated:
             user, _api_token = authenticated

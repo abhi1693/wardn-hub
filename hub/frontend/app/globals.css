@@ -231,6 +231,20 @@ button {
   color: #000000;
 }
 
+.site-auth-status {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  border: 1px solid #d8e0ec;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #465569;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .site-nav-cta {
   display: inline-flex;
   min-height: 36px;

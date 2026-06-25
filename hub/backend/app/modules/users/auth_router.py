@@ -9,7 +9,11 @@ from app.core.schemas import ErrorResponse
 from app.core.security import create_session_token
 from app.db.session import get_db_session
 from app.modules.users.auth_providers import is_auth_provider_enabled
-from app.modules.users.dependencies import get_current_user, require_api_token_scopes
+from app.modules.users.dependencies import (
+    CLERK_SESSION_COOKIE_NAME,
+    get_current_user,
+    require_api_token_scopes,
+)
 from app.modules.users.exceptions import (
     DuplicateUserError,
     InvalidLoginError,
@@ -129,6 +133,12 @@ async def logout(response: Response) -> None:
     response.delete_cookie(
         key=settings.session_cookie_name,
         httponly=True,
+        secure=settings.environment != "local",
+        samesite="lax",
+        path="/",
+    )
+    response.delete_cookie(
+        key=CLERK_SESSION_COOKIE_NAME,
         secure=settings.environment != "local",
         samesite="lax",
         path="/",

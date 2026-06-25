@@ -57,10 +57,18 @@ const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 type ClerkWindow = Window & {
   Clerk?: {
     session?: {
-      getToken: () => Promise<string | null>;
+      getToken: (options?: ClerkTokenOptions) => Promise<string | null>;
     } | null;
-    signOut?: () => Promise<void>;
+    signOut?: (options?: ClerkSignOutOptions) => Promise<void>;
   };
+};
+
+type ClerkTokenOptions = {
+  template?: string;
+};
+
+type ClerkSignOutOptions = {
+  redirectUrl?: string;
 };
 
 export class HubApiError extends Error {
@@ -116,7 +124,7 @@ async function clerkSessionToken() {
   if (typeof window === "undefined") return "";
   const clerk = (window as ClerkWindow).Clerk;
   if (!clerk?.session?.getToken) return "";
-  return (await clerk.session.getToken()) ?? "";
+  return (await clerk.session.getToken(clerkTokenOptions())) ?? "";
 }
 
 async function authBearerToken() {
@@ -139,6 +147,11 @@ function query(params: Record<string, string | number | boolean | undefined>) {
 
 function pathValue(value: string) {
   return value.split("/").map(encodeURIComponent).join("/");
+}
+
+export function clerkTokenOptions(): ClerkTokenOptions | undefined {
+  const template = process.env.NEXT_PUBLIC_CLERK_JWT_TEMPLATE?.trim();
+  return template ? { template } : undefined;
 }
 
 export function listServers(params: {
@@ -388,6 +401,12 @@ export function currentUser() {
   return request<UserRead>("/auth/me");
 }
 
+export function currentUserWithToken(token: string) {
+  return request<UserRead>("/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export function bootstrap(payload: BootstrapUserCreate) {
   return request<UserRead>("/users/bootstrap", {
     method: "POST",
@@ -408,9 +427,9 @@ export function logout() {
   return request<void>("/auth/logout", { method: "POST" });
 }
 
-export async function signOutExternalAuth() {
+export async function signOutExternalAuth(options?: ClerkSignOutOptions) {
   if (typeof window === "undefined") return;
-  await (window as ClerkWindow).Clerk?.signOut?.();
+  await (window as ClerkWindow).Clerk?.signOut?.(options);
 }
 
 export function listApiTokens() {

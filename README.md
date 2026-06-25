@@ -146,8 +146,13 @@ The default container command runs that build-and-start flow automatically.
   To enable Clerk alongside local auth, set `WARDN_HUB_AUTH_PROVIDERS=local,clerk`
   and `NEXT_PUBLIC_AUTH_PROVIDERS=local,clerk`.
 - For Clerk, set `WARDN_HUB_CLERK_ISSUER` to the issuer used in Clerk session
-  JWTs. Set `WARDN_HUB_CLERK_AUDIENCE` when your Clerk JWT template emits an
-  audience claim, and set `WARDN_HUB_CLERK_SECRET_KEY` if the backend must fetch
+  JWTs. Leave `WARDN_HUB_CLERK_AUDIENCE` empty when using Clerk's default session
+  token. If you require an audience, configure a Clerk JWT template that emits
+  that `aud` value, set `WARDN_HUB_CLERK_AUDIENCE` to the same value, and set
+  `NEXT_PUBLIC_CLERK_JWT_TEMPLATE` to the template name so the frontend requests
+  the correct token. Set `WARDN_HUB_CLERK_SECRET_KEY` if the backend must fetch
   the user's primary email from Clerk because the token does not include `email`
   or `email_address`.
-- Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` for the frontend when Clerk is enabled.
+- Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and server-side `CLERK_SECRET_KEY` for
+  the frontend when Clerk is enabled. Do not prefix the secret key with
+  `NEXT_PUBLIC_`.

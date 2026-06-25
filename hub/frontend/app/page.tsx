@@ -22,6 +22,7 @@ import {
   logout,
   rejectSubmission,
   setApiToken,
+  signOutExternalAuth,
   submissionAction,
 } from "@/lib/api/hub";
 import type {
@@ -488,6 +489,7 @@ export default function Home() {
 
   async function signOut() {
     await logout().catch(() => undefined);
+    await signOutExternalAuth({ redirectUrl: "/" });
     setApiToken("");
     setUser(null);
     setSection("browse");
