@@ -22,7 +22,7 @@ import {
   listAuditEvents,
   listPartnerOrganizations,
   listPartnerSupport,
-  listServers,
+  listPublishedServers,
   listSubmissions,
   logout,
   rejectSubmission,
@@ -238,7 +238,7 @@ function BrowseView({
     setState("loading");
     setError("");
     try {
-      const response = await listServers({ limit: 60 });
+      const response = await listPublishedServers({ limit: 60 });
       setServers(response.servers);
       setState("ready");
     } catch (caught) {

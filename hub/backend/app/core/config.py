@@ -1,7 +1,11 @@
 from functools import lru_cache
+from typing import ClassVar
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+APP_NAME = "Wardn Hub API"
+APP_VERSION = "0.1.0"
 
 
 class Settings(BaseSettings):
@@ -13,28 +17,19 @@ class Settings(BaseSettings):
         enable_decoding=False,
     )
 
-    app_name: str = "Wardn Hub API"
-    app_version: str = "0.1.0"
-    environment: str = "local"
-    api_prefix: str = "/api/v1"
-    log_level: str = "INFO"
-    api_token_secret: str = "dev-token-secret-change-me"
-    api_token_prefix: str = "wardn_hub"
-    session_cookie_name: str = "wardn_hub_session"
-    session_secret: str = "dev-session-secret-change-me"
-    session_ttl_seconds: int = 60 * 60 * 12
-    registry_public_base_url: str = "http://localhost:3000"
-    database_url: str = Field(
-        default="postgresql+asyncpg://wardn_hub:wardn_hub@localhost:5432/wardn_hub",
-        description="Async SQLAlchemy database URL.",
-    )
-    cors_origins: list[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://192.168.1.101:3001",
-    ]
+    app_name: ClassVar[str] = APP_NAME
+    app_version: ClassVar[str] = APP_VERSION
+    environment: str
+    api_prefix: str
+    log_level: str
+    api_token_secret: str
+    api_token_prefix: str
+    session_cookie_name: str
+    session_secret: str
+    session_ttl_seconds: int
+    registry_public_base_url: str
+    database_url: str
+    cors_origins: list[str] = []
 
     @field_validator("cors_origins", mode="before")
     @classmethod
