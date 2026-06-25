@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 type HeaderItem = {
   active?: boolean;
   href?: string;
-  icon?: ComponentType<{ size?: number; className?: string }>;
   label: string;
   onClick?: () => void;
 };
@@ -56,14 +55,12 @@ export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: Si
       <HeaderBrand href={brandHref} onClick={brandOnClick} />
       <nav className="site-nav" aria-label="Primary">
         {navItems.map((item) => {
-          const Icon = item.icon;
           const active = item.active ?? (item.href ? isActivePath(pathname, item.href) : false);
           const className = `site-nav-item ${active ? "active" : ""}`;
 
           if (item.href) {
             return (
               <Link className={className} href={item.href} key={`${item.label}-${item.href}`}>
-                {Icon ? <Icon size={17} /> : null}
                 <span>{item.label}</span>
               </Link>
             );
@@ -76,7 +73,6 @@ export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: Si
               onClick={item.onClick}
               type="button"
             >
-              {Icon ? <Icon size={17} /> : null}
               <span>{item.label}</span>
             </button>
           );

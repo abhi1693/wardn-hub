@@ -46,19 +46,18 @@ type ShellNavItem = {
   href?: string;
   id?: Section;
   label: string;
-  icon?: typeof Server;
 };
 
 const publicNavItems: ShellNavItem[] = [
-  { id: "browse", label: "Explore", icon: Server },
+  { id: "browse", label: "Explore" },
   { href: "/categories", label: "Categories" },
   { href: "/users", label: "Users" },
 ];
 
 const protectedNavItems: ShellNavItem[] = [
-  { id: "submissions", label: "Submissions", icon: FileCheck2 },
-  { id: "partners", label: "Partners", icon: Building2 },
-  { id: "audit", label: "Audit", icon: History },
+  { id: "submissions", label: "Submissions" },
+  { id: "partners", label: "Partners" },
+  { id: "audit", label: "Audit" },
 ];
 
 const adminSections = new Set<Section>(["submissions", "partners", "audit"]);
@@ -158,7 +157,6 @@ function AppShell({
           return {
             active: sectionId ? section === sectionId : undefined,
             href: item.href,
-            icon: item.icon,
             label: item.label,
             onClick: sectionId ? () => onSectionChange(sectionId) : undefined,
           };
@@ -167,7 +165,7 @@ function AppShell({
           isAuthenticated ? (
             <>
               <button
-                className="text-button"
+                className="site-action-link"
                 onClick={() => {
                   window.location.href = "/submissions";
                 }}
@@ -177,26 +175,26 @@ function AppShell({
                 My submissions
               </button>
               <button
-                className="text-button"
+                className="site-nav-cta"
                 onClick={() => {
                   window.location.href = "/submit";
                 }}
                 type="button"
               >
                 <Plus size={16} />
-                Submit server
+                List Server
               </button>
-              <button className="small-button" onClick={onLogout} type="button">
+              <button className="site-action-link" onClick={onLogout} type="button">
                 Sign out
               </button>
             </>
           ) : (
             <>
-              <button className="small-button" onClick={onLogin} type="button">
+              <button className="site-nav-cta" onClick={onLogin} type="button">
                 <LogIn size={15} />
                 Sign in
               </button>
-              <button className="text-button" onClick={onRegister} type="button">
+              <button className="site-action-link" onClick={onRegister} type="button">
                 <UserPlus size={16} />
                 Create account
               </button>
