@@ -126,6 +126,10 @@ function canReviewSubmissions(user: UserRead | null) {
 }
 
 function canUseReviewActions(user: UserRead | null) {
+  return Boolean(user?.is_superuser || user?.is_global_moderator);
+}
+
+function canPublishSubmissions(user: UserRead | null) {
   return Boolean(user?.is_superuser);
 }
 
@@ -337,6 +341,8 @@ function AddSubmissionMenu() {
 }
 
 function VersionSubmissionRow({
+  canMutate,
+  canPublish,
   canValidate,
   canReview,
   deleting,
@@ -347,6 +353,8 @@ function VersionSubmissionRow({
   reviewingActionId,
   submission,
 }: {
+  canMutate: boolean;
+  canPublish: boolean;
   canValidate: boolean;
   canReview: boolean;
   deleting: boolean;
@@ -355,7 +363,7 @@ function VersionSubmissionRow({
   onOpenValidationPrompt: (submission: SubmissionRead) => void;
   onReviewAction: (
     submission: SubmissionRead,
-    action: "approve_publish" | "reject" | "publish",
+    action: "approve" | "approve_publish" | "reject" | "publish",
   ) => void;
   reviewingActionId: string;
   submission: SubmissionRead;
@@ -365,7 +373,7 @@ function VersionSubmissionRow({
   const typeLabel = submissionTypeLabels[submission.submissionType] ?? submission.submissionType;
   const Icon = submission.submissionType === "new_version" ? GitBranch : FileText;
   const isReviewing = reviewingActionId.startsWith(`${submission.id}:`);
-  const hideEditAction = canReview && submission.status === "published";
+  const hideEditAction = !canMutate || (canReview && submission.status === "published");
 
   return (
     <div className="grid gap-3 rounded-md border border-slate-100 bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -413,7 +421,7 @@ function VersionSubmissionRow({
             Validate version
           </Button>
         ) : null}
-        {submission.status === "rejected" ? (
+        {canMutate && submission.status === "rejected" ? (
           <Button
             onClick={() => onOpenFixPrompt(submission)}
             size="sm"
@@ -428,12 +436,14 @@ function VersionSubmissionRow({
           <>
             <Button
               disabled={isReviewing}
-              onClick={() => onReviewAction(submission, "approve_publish")}
+              onClick={() =>
+                onReviewAction(submission, canPublish ? "approve_publish" : "approve")
+              }
               size="sm"
               type="button"
             >
               <CheckCircle2 className="size-4" />
-              Approve & publish
+              {canPublish ? "Approve & publish" : "Approve"}
             </Button>
             <Button
               disabled={isReviewing}
@@ -447,7 +457,7 @@ function VersionSubmissionRow({
             </Button>
           </>
         ) : null}
-        {canReview && submission.status === "approved" ? (
+        {canPublish && submission.status === "approved" ? (
           <Button
             disabled={isReviewing}
             onClick={() => onReviewAction(submission, "publish")}
@@ -472,7 +482,7 @@ function VersionSubmissionRow({
             </Link>
           </Button>
         ) : null}
-        {isDeleteable ? (
+        {canMutate && isDeleteable ? (
           <Button
             aria-label={`Delete ${submission.name} ${submission.version}`}
             disabled={deleting || isReviewing}
@@ -498,8 +508,11 @@ function VersionSubmissionRow({
 
 function SubmissionGroupCard({
   archivingName,
+  canManageSubmissions,
+  canPublish,
   canValidate,
   canReview,
+  currentUserId,
   deletingId,
   group,
   onArchive,
@@ -510,8 +523,11 @@ function SubmissionGroupCard({
   reviewingActionId,
 }: {
   archivingName: string;
+  canManageSubmissions: boolean;
+  canPublish: boolean;
   canValidate: boolean;
   canReview: boolean;
+  currentUserId: string;
   deletingId: string;
   group: SubmissionGroup;
   onArchive: (serverName: string) => void;
@@ -520,12 +536,12 @@ function SubmissionGroupCard({
   onOpenValidationPrompt: (submission: SubmissionRead) => void;
   onReviewAction: (
     submission: SubmissionRead,
-    action: "approve_publish" | "reject" | "publish",
+    action: "approve" | "approve_publish" | "reject" | "publish",
   ) => void;
   reviewingActionId: string;
 }) {
   const versionCount = group.submissions.length;
-  const canArchiveServer = canReview && group.submissions.some((item) => item.status === "published");
+  const canArchiveServer = canPublish && group.submissions.some((item) => item.status === "published");
   const iconUrl =
     submissionIconUrl(group.latest) ||
     group.submissions.map(submissionIconUrl).find(Boolean) ||
@@ -578,20 +594,25 @@ function SubmissionGroupCard({
       </div>
 
       <div className="grid gap-2">
-        {group.submissions.map((submission) => (
-          <VersionSubmissionRow
-            canValidate={canValidate}
-            canReview={canReview}
-            deleting={deletingId === submission.id}
-            key={submission.id}
-            onDelete={onDelete}
-            onOpenFixPrompt={onOpenFixPrompt}
-            onOpenValidationPrompt={onOpenValidationPrompt}
-            onReviewAction={onReviewAction}
-            reviewingActionId={reviewingActionId}
-            submission={submission}
-          />
-        ))}
+        {group.submissions.map((submission) => {
+          const canMutate = canManageSubmissions || submission.submitterUserId === currentUserId;
+          return (
+            <VersionSubmissionRow
+              canMutate={canMutate}
+              canPublish={canPublish}
+              canValidate={canValidate}
+              canReview={canReview}
+              deleting={deletingId === submission.id}
+              key={submission.id}
+              onDelete={onDelete}
+              onOpenFixPrompt={onOpenFixPrompt}
+              onOpenValidationPrompt={onOpenValidationPrompt}
+              onReviewAction={onReviewAction}
+              reviewingActionId={reviewingActionId}
+              submission={submission}
+            />
+          );
+        })}
       </div>
     </article>
   );
@@ -669,7 +690,7 @@ export default function SubmissionsPage() {
   }
 
   async function handleArchiveServer(serverName: string) {
-    if (!canUseReviewActions(user)) return;
+    if (!canPublishSubmissions(user)) return;
     const confirmed = window.confirm(
       `Archive published server ${serverName}? It will be removed from the public catalog.`,
     );
@@ -693,7 +714,7 @@ export default function SubmissionsPage() {
 
   async function handleReviewAction(
     submission: SubmissionRead,
-    action: "approve_publish" | "reject" | "publish",
+    action: "approve" | "approve_publish" | "reject" | "publish",
   ) {
     if (!canUseReviewActions(user)) return;
 
@@ -844,8 +865,11 @@ export default function SubmissionsPage() {
                 {groupedSubmissions.map((group) => (
                   <SubmissionGroupCard
                     archivingName={archivingName}
+                    canManageSubmissions={Boolean(user?.is_superuser)}
+                    canPublish={canPublishSubmissions(user)}
                     canValidate={canReviewSubmissions(user)}
                     canReview={canUseReviewActions(user)}
+                    currentUserId={user?.id ?? ""}
                     deletingId={deletingId}
                     group={group}
                     key={group.name}

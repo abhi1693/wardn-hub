@@ -79,10 +79,11 @@ Report format:
 - Suggested approval note if the submission passes
 
 After the report:
-- Ask the user exactly what action to take: approve and publish, reject with the suggested message, or leave unchanged.
+- Ask the user exactly what action to take: approve, approve and publish, reject with the suggested message, or leave unchanged.
 - Do not take action from your own recommendation alone.
 - Only after the user explicitly approves one action, call the corresponding Wardn Hub API endpoint.
-- If the user chooses approve and publish, first call POST /submissions/{id}/approve, then call POST /submissions/{id}/publish on the approved submission.
+- If the user chooses approve, call POST /submissions/{id}/approve.
+- If the user chooses approve and publish, first call POST /submissions/{id}/approve, then call POST /submissions/{id}/publish on the approved submission. Only do this when the token has superuser publishing access.
 - If the user chooses reject, call POST /submissions/{id}/reject with a clear message.
 - Do not publish unless the user explicitly chose approve and publish.
 - After performing an approved action, return the endpoints called, final submission status, and any API error.

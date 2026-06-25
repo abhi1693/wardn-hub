@@ -32,7 +32,11 @@ from app.modules.submissions.service import (
     update_submission,
     withdraw_submission,
 )
-from app.modules.users.dependencies import require_api_token_scopes, require_superuser
+from app.modules.users.dependencies import (
+    require_api_token_scopes,
+    require_global_moderator,
+    require_superuser,
+)
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -214,7 +218,7 @@ async def withdraw_submission_record(
 async def approve_submission_record(
     submission_id: UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_global_moderator)],
 ) -> SubmissionRead:
     try:
         response = await approve_submission(session, current_user, submission_id)
@@ -235,7 +239,7 @@ async def reject_submission_record(
     submission_id: UUID,
     payload: SubmissionRejectRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_global_moderator)],
 ) -> SubmissionRead:
     try:
         response = await reject_submission(session, current_user, submission_id, payload.message)

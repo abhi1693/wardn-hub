@@ -59,6 +59,18 @@ function isAdminUser(user: UserRead | null) {
   );
 }
 
+function canReviewSubmissions(user: UserRead | null) {
+  return Boolean(user?.is_superuser || user?.is_global_moderator);
+}
+
+function canPublishSubmissions(user: UserRead | null) {
+  return Boolean(user?.is_superuser);
+}
+
+function canMutateSubmission(user: UserRead | null, submission: SubmissionRead) {
+  return Boolean(user?.is_superuser || submission.submitterUserId === user?.id);
+}
+
 function statusFromError(error: unknown): LoadState {
   return error instanceof HubApiError && error.status === 401 ? "auth" : "error";
 }
@@ -235,7 +247,7 @@ function BrowseView() {
   );
 }
 
-function SubmissionsView() {
+function SubmissionsView({ user }: { user: UserRead | null }) {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
@@ -258,7 +270,7 @@ function SubmissionsView() {
 
   async function mutateSubmission(
     submission: SubmissionRead,
-    action: "submit" | "withdraw" | "approve_publish" | "publish" | "reject",
+    action: "submit" | "withdraw" | "approve" | "approve_publish" | "publish" | "reject",
   ) {
     const message =
       action === "reject" ? window.prompt("Rejection message", submission.rejectionMessage) : "";
@@ -308,25 +320,39 @@ function SubmissionsView() {
                   <Eye size={14} />
                   Details
                 </Link>
-                {submission.status === "draft" || submission.status === "rejected" ? (
+                {canMutateSubmission(user, submission) &&
+                (submission.status === "draft" || submission.status === "rejected") ? (
                   <ActionButton onClick={() => void mutateSubmission(submission, "submit")}>
                     Submit
                   </ActionButton>
                 ) : null}
                 {submission.status === "submitted" ? (
                   <>
-                    <ActionButton onClick={() => void mutateSubmission(submission, "approve_publish")}>
-                      Approve & publish
-                    </ActionButton>
-                    <ActionButton onClick={() => void mutateSubmission(submission, "reject")}>
-                      Reject
-                    </ActionButton>
-                    <ActionButton onClick={() => void mutateSubmission(submission, "withdraw")}>
-                      Withdraw
-                    </ActionButton>
+                    {canReviewSubmissions(user) ? (
+                      <>
+                        <ActionButton
+                          onClick={() =>
+                            void mutateSubmission(
+                              submission,
+                              canPublishSubmissions(user) ? "approve_publish" : "approve",
+                            )
+                          }
+                        >
+                          {canPublishSubmissions(user) ? "Approve & publish" : "Approve"}
+                        </ActionButton>
+                        <ActionButton onClick={() => void mutateSubmission(submission, "reject")}>
+                          Reject
+                        </ActionButton>
+                      </>
+                    ) : null}
+                    {canMutateSubmission(user, submission) ? (
+                      <ActionButton onClick={() => void mutateSubmission(submission, "withdraw")}>
+                        Withdraw
+                      </ActionButton>
+                    ) : null}
                   </>
                 ) : null}
-                {submission.status === "approved" ? (
+                {canPublishSubmissions(user) && submission.status === "approved" ? (
                   <ActionButton onClick={() => void mutateSubmission(submission, "publish")}>
                     Publish
                   </ActionButton>
@@ -462,7 +488,7 @@ export default function Home() {
       user={user}
     >
       {section === "browse" && <BrowseView />}
-      {isAdmin && section === "submissions" && <SubmissionsView />}
+      {isAdmin && section === "submissions" && <SubmissionsView user={user} />}
       {isAdmin && section === "audit" && <AuditView />}
     </AppShell>
   );

@@ -413,6 +413,10 @@ def ensure_ready_for_review(validation_result: dict) -> None:
         )
 
 
+def can_review_submissions(user: User) -> bool:
+    return user.is_superuser or user.is_global_moderator
+
+
 async def resolve_submission_owner(
     session: AsyncSession,
     user: User,
@@ -458,12 +462,17 @@ def submission_response(submission: ServerSubmission) -> SubmissionRead:
 
 
 def ensure_can_read_submission(user: User, submission: ServerSubmission) -> None:
+    if not can_review_submissions(user) and submission.submitter_user_id != user.id:
+        raise SubmissionAccessDeniedError("submission access denied")
+
+
+def ensure_can_own_or_manage_submission(user: User, submission: ServerSubmission) -> None:
     if not user.is_superuser and submission.submitter_user_id != user.id:
         raise SubmissionAccessDeniedError("submission access denied")
 
 
 def ensure_can_mutate_submission(user: User, submission: ServerSubmission) -> None:
-    ensure_can_read_submission(user, submission)
+    ensure_can_own_or_manage_submission(user, submission)
     if submission.status == "published":
         raise InvalidSubmissionTransitionError("published submissions cannot be edited")
 
@@ -515,7 +524,7 @@ async def list_submissions(
     submissions = await repository.list_submissions(
         session,
         user_id=user.id,
-        include_all=user.is_superuser,
+        include_all=can_review_submissions(user),
     )
     return SubmissionListResponse(
         submissions=[submission_response(submission) for submission in submissions]
@@ -663,7 +672,7 @@ async def submit_submission(
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
-    ensure_can_read_submission(user, submission)
+    ensure_can_own_or_manage_submission(user, submission)
     if submission.status not in {"draft", "rejected"}:
         raise InvalidSubmissionTransitionError("submission cannot be submitted")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
@@ -696,7 +705,7 @@ async def withdraw_submission(
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
-    ensure_can_read_submission(user, submission)
+    ensure_can_own_or_manage_submission(user, submission)
     if submission.status != "submitted":
         raise InvalidSubmissionTransitionError("only submitted submissions can be withdrawn")
     submission.status = "withdrawn"

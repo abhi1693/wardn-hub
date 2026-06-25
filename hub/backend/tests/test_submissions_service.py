@@ -45,7 +45,7 @@ class FakeSession:
         self.refreshed.append(instance)
 
 
-def current_user(*, is_superuser: bool = False) -> User:
+def current_user(*, is_superuser: bool = False, is_global_moderator: bool = False) -> User:
     return User(
         id=uuid4(),
         email=f"{uuid4()}@example.com",
@@ -53,6 +53,7 @@ def current_user(*, is_superuser: bool = False) -> User:
         last_name="User",
         is_active=True,
         is_superuser=is_superuser,
+        is_global_moderator=is_global_moderator,
     )
 
 
@@ -312,6 +313,82 @@ async def test_create_submission_requires_organization_publish_permission(monkey
                 serverJson=registry_payload(),
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_global_moderator_lists_all_submissions(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    response = await service.list_submissions(
+        FakeSession(),
+        current_user(is_global_moderator=True),
+    )
+
+    assert response.submissions == []
+    assert captured["include_all"] is True
+
+
+@pytest.mark.asyncio
+async def test_global_moderator_can_read_any_submission(monkeypatch) -> None:
+    moderator = current_user(is_global_moderator=True)
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=uuid4(),
+        owner_user_id=uuid4(),
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="submitted",
+        server_json=complete_registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    response = await service.get_submission(FakeSession(), moderator, submission.id)
+
+    assert response.id == submission.id
+
+
+@pytest.mark.asyncio
+async def test_global_moderator_cannot_submit_other_user_draft(monkeypatch) -> None:
+    moderator = current_user(is_global_moderator=True)
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=uuid4(),
+        owner_user_id=uuid4(),
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="draft",
+        server_json=complete_registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    with pytest.raises(SubmissionAccessDeniedError):
+        await service.submit_submission(FakeSession(), moderator, submission.id)
 
 
 @pytest.mark.asyncio

@@ -101,8 +101,14 @@ function isDeleteableSubmission(status: SubmissionRead["status"]) {
   return status !== "published";
 }
 
-function canUseReviewActions(user: UserRead | null) {
+function canPublishSubmissions(user: UserRead | null) {
   return Boolean(user?.is_superuser);
+}
+
+function canMutateSubmission(user: UserRead | null, submission: SubmissionRead | null) {
+  return Boolean(
+    user?.is_superuser || (user && submission && submission.submitterUserId === user.id),
+  );
 }
 
 export default function SubmissionDetailPage() {
@@ -165,7 +171,13 @@ export default function SubmissionDetailPage() {
   const reviewedEnvironmentVariables = records(sourceReview.environmentVariables);
 
   async function handleDeleteSubmission() {
-    if (!submission || !isDeleteableSubmission(submission.status)) return;
+    if (
+      !submission ||
+      !canMutateSubmission(user, submission) ||
+      !isDeleteableSubmission(submission.status)
+    ) {
+      return;
+    }
     const confirmed = window.confirm(
       `Delete submission ${submission.name} v${submission.version}? This cannot be undone.`,
     );
@@ -185,7 +197,7 @@ export default function SubmissionDetailPage() {
   }
 
   async function handleArchiveServer() {
-    if (!submission || submission.status !== "published" || !canUseReviewActions(user)) return;
+    if (!submission || submission.status !== "published" || !canPublishSubmissions(user)) return;
     const confirmed = window.confirm(
       `Archive published server ${submission.name}? It will be removed from the public catalog.`,
     );
@@ -212,7 +224,7 @@ export default function SubmissionDetailPage() {
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {submission ? (
-              submission.status === "published" && canUseReviewActions(user) ? (
+              submission.status === "published" && canPublishSubmissions(user) ? (
                 <Button
                   disabled={archiving}
                   onClick={() => void handleArchiveServer()}
@@ -222,7 +234,7 @@ export default function SubmissionDetailPage() {
                   <Archive className="size-4" />
                   {archiving ? "Archiving" : "Archive server"}
                 </Button>
-              ) : submission.status === "published" ? (
+              ) : submission.status === "published" || !canMutateSubmission(user, submission) ? (
                 null
               ) : (
                 <Button asChild>
@@ -235,7 +247,9 @@ export default function SubmissionDetailPage() {
             <Button asChild variant="outline">
               <Link href="/submit">New submission</Link>
             </Button>
-            {submission && isDeleteableSubmission(submission.status) ? (
+            {submission &&
+            canMutateSubmission(user, submission) &&
+            isDeleteableSubmission(submission.status) ? (
               <Button
                 disabled={deleting}
                 onClick={() => void handleDeleteSubmission()}

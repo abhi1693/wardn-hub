@@ -85,3 +85,14 @@ async def require_superuser(
             detail="superuser access required",
         )
     return current_user
+
+
+async def require_global_moderator(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.is_superuser and not current_user.is_global_moderator:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="moderator access required",
+        )
+    return current_user
