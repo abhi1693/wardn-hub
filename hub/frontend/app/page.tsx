@@ -12,7 +12,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { ServerCard } from "@/components/server-card";
-import { SiteHeader } from "@/components/site-header";
+import { HeaderUserMenu, SiteHeader } from "@/components/site-header";
 import {
   HubApiError,
   currentUser,
@@ -122,6 +122,7 @@ function AppShell({
   section,
   isAuthenticated,
   isAdmin,
+  user,
   onSectionChange,
   onLogin,
   onRegister,
@@ -131,6 +132,7 @@ function AppShell({
   section: Section;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  user: UserRead | null;
   onSectionChange: (section: Section) => void;
   onLogin: () => void;
   onRegister: () => void;
@@ -154,21 +156,7 @@ function AppShell({
         })}
         actions={
           isAuthenticated ? (
-            <>
-              <button
-                className="site-action-link"
-                onClick={() => {
-                  window.location.href = "/submissions";
-                }}
-                type="button"
-              >
-                <FileCheck2 size={16} />
-                My submissions
-              </button>
-              <button className="site-action-link" onClick={onLogout} type="button">
-                Sign out
-              </button>
-            </>
+            <HeaderUserMenu onLogout={onLogout} user={user} />
           ) : (
             <>
               <button className="site-nav-cta" onClick={onLogin} type="button">
@@ -468,6 +456,7 @@ export default function Home() {
       onRegister={() => goToAuth("register")}
       onSectionChange={selectSection}
       section={section}
+      user={user}
     >
       {section === "browse" && <BrowseView />}
       {isAdmin && section === "submissions" && <SubmissionsView />}
