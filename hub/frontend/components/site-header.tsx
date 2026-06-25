@@ -308,7 +308,7 @@ function PublicHeaderContent({
       actions={
         isAuthenticated ? (
           <HeaderUserMenu onLogout={onLogout} user={user} />
-        ) : externalSignedIn ? (
+        ) : externalSignedIn && loaded ? (
           <>
             <span className="site-auth-status">Signed in</span>
             <button className="site-action-link" onClick={() => void onLogout()} type="button">
@@ -316,6 +316,8 @@ function PublicHeaderContent({
               Sign out
             </button>
           </>
+        ) : !loaded ? (
+          <span className="site-auth-placeholder" aria-hidden="true" />
         ) : loaded ? (
           <Link className="site-nav-cta" href="/login">
             <LogIn size={15} />
@@ -370,6 +372,7 @@ function ClerkPublicHeader() {
   const { getToken, isLoaded, isSignedIn, signOut } = useAuth();
   const [user, setUser] = useState<UserRead | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -401,6 +404,8 @@ function ClerkPublicHeader() {
   }, [getToken, isLoaded, isSignedIn]);
 
   async function handleLogout() {
+    setSigningOut(true);
+    setLoaded(false);
     try {
       await logout();
     } catch {
@@ -418,10 +423,10 @@ function ClerkPublicHeader() {
 
   return (
     <PublicHeaderContent
-      externalSignedIn={Boolean(isSignedIn)}
-      loaded={isLoaded && (!isSignedIn || loaded)}
+      externalSignedIn={Boolean(isSignedIn && !signingOut)}
+      loaded={!signingOut && isLoaded && (!isSignedIn || loaded)}
       onLogout={handleLogout}
-      user={isSignedIn ? user : null}
+      user={isSignedIn && !signingOut ? user : null}
     />
   );
 }

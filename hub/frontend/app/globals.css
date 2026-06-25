@@ -245,6 +245,12 @@ button {
   white-space: nowrap;
 }
 
+.site-auth-placeholder {
+  display: inline-flex;
+  min-height: 36px;
+  width: 58px;
+}
+
 .site-nav-cta {
   display: inline-flex;
   min-height: 36px;
