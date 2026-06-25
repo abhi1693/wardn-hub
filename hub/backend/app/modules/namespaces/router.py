@@ -26,7 +26,7 @@ from app.modules.namespaces.service import (
     revoke_namespace_claim,
     verify_namespace_claim,
 )
-from app.modules.users.dependencies import get_current_user, require_superuser
+from app.modules.users.dependencies import get_current_user, require_superuser_scopes
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
@@ -112,7 +112,7 @@ async def verify_namespace_claim_record(
     claim_id: UUID,
     payload: NamespaceClaimDecision,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser_scopes("namespaces:write"))],
 ) -> NamespaceClaimRead:
     try:
         response = await verify_namespace_claim(session, current_user, claim_id, payload)
@@ -133,7 +133,7 @@ async def fail_namespace_claim_record(
     claim_id: UUID,
     payload: NamespaceClaimDecision,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser_scopes("namespaces:write"))],
 ) -> NamespaceClaimRead:
     try:
         response = await fail_namespace_claim(session, current_user, claim_id, payload)

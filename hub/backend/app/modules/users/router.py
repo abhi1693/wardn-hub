@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.schemas import ErrorResponse
@@ -13,7 +13,11 @@ from app.modules.registry.service import (
     public_user_login,
     public_user_name,
 )
-from app.modules.users.dependencies import get_optional_current_user, require_superuser
+from app.modules.users.dependencies import (
+    get_optional_current_user,
+    require_request_api_token_scopes,
+    require_superuser_scopes,
+)
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     InvalidUserRoleUpdateError,
@@ -86,10 +90,12 @@ async def bootstrap_user(
     operation_id="users_list",
 )
 async def list_user_records(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User | None, Depends(get_optional_current_user)],
 ) -> UserDirectoryListResponse:
     if current_user is not None and current_user.is_superuser:
+        require_request_api_token_scopes(request, "users:read")
         users = await list_users(session)
         return UserDirectoryListResponse(
             users=[user_directory_record(user, include_admin=True) for user in users]
@@ -149,7 +155,7 @@ async def update_user_record_admin_flags(
     user_id: UUID,
     payload: UserAdminUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser_scopes("users:write"))],
 ) -> UserDirectoryRead:
     try:
         user = await update_user_admin_flags(session, current_user, user_id, payload)

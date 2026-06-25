@@ -1,5 +1,7 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import (
@@ -55,4 +57,101 @@ def test_api_token_management_requires_token_scope(monkeypatch) -> None:
     assert response.status_code == 403
     assert response.json() == {
         "detail": "API token missing required scope: tokens:read",
+    }
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "json_body", "user_flags", "required_scope"),
+    [
+        (
+            "GET",
+            "/api/v1/audit/events",
+            None,
+            {"is_superuser": True},
+            "audit:read",
+        ),
+        (
+            "POST",
+            "/api/v1/mcp/categories",
+            {"slug": "automation", "name": "Automation"},
+            {"is_superuser": True},
+            "registry:write",
+        ),
+        (
+            "POST",
+            f"/api/v1/submissions/{uuid4()}/approve",
+            None,
+            {"is_global_moderator": True},
+            "submissions:moderate",
+        ),
+        (
+            "POST",
+            f"/api/v1/submissions/{uuid4()}/publish",
+            None,
+            {"is_superuser": True},
+            "submissions:publish",
+        ),
+        (
+            "PATCH",
+            f"/api/v1/partners/organizations/{uuid4()}",
+            {},
+            {"is_global_partner_manager": True},
+            "partners:write",
+        ),
+        (
+            "GET",
+            "/api/v1/users",
+            None,
+            {"is_superuser": True},
+            "users:read",
+        ),
+        (
+            "PATCH",
+            f"/api/v1/users/{uuid4()}",
+            {"isGlobalModerator": True},
+            {"is_superuser": True},
+            "users:write",
+        ),
+    ],
+)
+def test_privileged_routes_require_matching_api_token_scope(
+    monkeypatch,
+    method: str,
+    path: str,
+    json_body: dict | None,
+    user_flags: dict[str, bool],
+    required_scope: str,
+) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    async def authenticate_api_token(*args, **kwargs):
+        user_attrs = {
+            "is_active": True,
+            "is_superuser": False,
+            "is_global_moderator": False,
+            "is_global_partner_manager": False,
+        }
+        user_attrs.update(user_flags)
+        user = SimpleNamespace(
+            **user_attrs,
+        )
+        token = SimpleNamespace(scopes=["catalog:read", "submissions:read", "submissions:write"])
+        return user, token
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_api_token)
+
+    response = TestClient(app).request(
+        method,
+        path,
+        headers={"Authorization": "Bearer wardn_hub_key.secret"},
+        json=json_body,
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": f"API token missing required scope: {required_scope}",
     }

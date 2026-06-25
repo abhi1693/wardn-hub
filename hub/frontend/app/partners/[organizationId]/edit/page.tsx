@@ -7,13 +7,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
 import {
+  createPartnerSupport,
   listOrganizationMemberships,
   listOrganizationRoles,
   listPartnerOrganizations,
+  listPartnerSupport,
   listRegistryUsers,
   type RegistryUserRead,
   currentUser,
   updatePartnerOrganization,
+  updatePartnerSupport,
   updateOrganizationMembership,
   upsertOrganizationMembership,
 } from "@/lib/api/hub";
@@ -22,12 +25,25 @@ import type {
   OrganizationRoleRead,
   PartnerOrganizationRead,
   PartnerOrganizationUpdate,
+  PartnerServerSupportCreate,
+  PartnerServerSupportRead,
+  PartnerServerSupportUpdate,
 } from "@/lib/api/generated/model";
 
 type LoadState = "loading" | "ready" | "error";
 type PartnerStatus = NonNullable<PartnerOrganizationUpdate["partnerStatus"]>;
 type PartnerTier = NonNullable<PartnerOrganizationUpdate["partnerTier"]>;
 type PartnerSupportLevel = NonNullable<PartnerOrganizationUpdate["partnerSupportLevel"]>;
+type ServerSupportLevel = NonNullable<PartnerServerSupportCreate["supportLevel"]>;
+type ServerSupportStatus = NonNullable<PartnerServerSupportCreate["supportStatus"]>;
+type SupportDraft = {
+  supportLevel: ServerSupportLevel;
+  supportStatus: ServerSupportStatus;
+  supportUrl: string;
+  docsUrl: string;
+  startsAt: string;
+  endsAt: string;
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "Not available";
@@ -35,6 +51,30 @@ function formatDate(value?: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function toDateTimeInputValue(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 16);
+}
+
+function fromDateTimeInputValue(value: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function supportDraftFromRecord(record: PartnerServerSupportRead): SupportDraft {
+  return {
+    supportLevel: record.supportLevel,
+    supportStatus: record.supportStatus,
+    supportUrl: record.supportUrl,
+    docsUrl: record.docsUrl,
+    startsAt: toDateTimeInputValue(record.startsAt),
+    endsAt: toDateTimeInputValue(record.endsAt),
+  };
 }
 
 function canManagePartners(user: { is_superuser: boolean; is_global_partner_manager: boolean }) {
@@ -52,10 +92,14 @@ export default function EditPartnerPage() {
   const [memberships, setMemberships] = useState<OrganizationMembershipRead[]>([]);
   const [roles, setRoles] = useState<OrganizationRoleRead[]>([]);
   const [registryUsers, setRegistryUsers] = useState<RegistryUserRead[]>([]);
+  const [supportRecords, setSupportRecords] = useState<PartnerServerSupportRead[]>([]);
+  const [supportDrafts, setSupportDrafts] = useState<Record<string, SupportDraft>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAssigningMember, setIsAssigningMember] = useState(false);
+  const [isCreatingSupport, setIsCreatingSupport] = useState(false);
   const [updatingMemberId, setUpdatingMemberId] = useState("");
+  const [updatingSupportId, setUpdatingSupportId] = useState("");
 
   const [partnerStatus, setPartnerStatus] = useState<PartnerStatus>("active");
   const [partnerTier, setPartnerTier] = useState<PartnerTier>("verified");
@@ -66,6 +110,14 @@ export default function EditPartnerPage() {
 
   const [memberUserId, setMemberUserId] = useState("");
   const [memberRoleSlug, setMemberRoleSlug] = useState("publisher");
+  const [supportServerName, setSupportServerName] = useState("");
+  const [supportLevel, setSupportLevel] = useState<ServerSupportLevel>("compatible");
+  const [supportStatus, setSupportStatus] = useState<ServerSupportStatus>("pending");
+  const [supportUrl, setSupportUrl] = useState("");
+  const [supportDocsUrl, setSupportDocsUrl] = useState("");
+  const [supportStartsAt, setSupportStartsAt] = useState("");
+  const [supportEndsAt, setSupportEndsAt] = useState("");
+  const [supportInternalNotes, setSupportInternalNotes] = useState("");
 
   const refresh = useCallback(async () => {
     if (!organizationId) return;
@@ -80,11 +132,13 @@ export default function EditPartnerPage() {
       membershipResponse,
       roleResponse,
       userResponse,
+      supportResponse,
     ] = await Promise.all([
       listPartnerOrganizations(),
       listOrganizationMemberships(organizationId),
       listOrganizationRoles(organizationId),
       listRegistryUsers().catch(() => ({ users: [] })),
+      listPartnerSupport(organizationId),
     ]);
     const current = partnerResponse.organizations.find((item) => item.id === organizationId) ?? null;
     if (!current) throw new Error("Partner organization not found.");
@@ -98,6 +152,12 @@ export default function EditPartnerPage() {
     setMemberships(membershipResponse.memberships);
     setRoles(roleResponse.roles);
     setRegistryUsers(userResponse.users);
+    setSupportRecords(supportResponse.support);
+    setSupportDrafts(
+      Object.fromEntries(
+        supportResponse.support.map((record) => [record.id, supportDraftFromRecord(record)]),
+      ),
+    );
     setMemberRoleSlug((currentRole) => {
       if (currentRole && roleResponse.roles.some((role) => role.slug === currentRole)) {
         return currentRole;
@@ -126,6 +186,10 @@ export default function EditPartnerPage() {
   const sortedMemberships = useMemo(
     () => [...memberships].sort((left, right) => Number(right.isActive) - Number(left.isActive)),
     [memberships],
+  );
+  const sortedSupportRecords = useMemo(
+    () => [...supportRecords].sort((left, right) => left.serverName.localeCompare(right.serverName)),
+    [supportRecords],
   );
 
   async function savePartner(event: FormEvent<HTMLFormElement>) {
@@ -189,6 +253,85 @@ export default function EditPartnerPage() {
       setError(caught instanceof Error ? caught.message : "Unable to assign partner user.");
     } finally {
       setIsAssigningMember(false);
+    }
+  }
+
+  async function createSupportRecord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    setIsCreatingSupport(true);
+    try {
+      const payload: PartnerServerSupportCreate = {
+        serverName: supportServerName.trim(),
+        supportLevel,
+        supportStatus,
+        supportUrl: supportUrl.trim(),
+        docsUrl: supportDocsUrl.trim(),
+        startsAt: fromDateTimeInputValue(supportStartsAt),
+        endsAt: fromDateTimeInputValue(supportEndsAt),
+        internalNotes: supportInternalNotes.trim(),
+      };
+      const created = await createPartnerSupport(organizationId, payload);
+      setSupportRecords((current) => [...current, created]);
+      setSupportDrafts((current) => ({
+        ...current,
+        [created.id]: supportDraftFromRecord(created),
+      }));
+      setSupportServerName("");
+      setSupportLevel("compatible");
+      setSupportStatus("pending");
+      setSupportUrl("");
+      setSupportDocsUrl("");
+      setSupportStartsAt("");
+      setSupportEndsAt("");
+      setSupportInternalNotes("");
+      setNotice("Server support mapping created.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create support mapping.");
+    } finally {
+      setIsCreatingSupport(false);
+    }
+  }
+
+  function updateSupportDraft(supportId: string, payload: Partial<SupportDraft>) {
+    setSupportDrafts((current) => ({
+      ...current,
+      [supportId]: {
+        ...current[supportId],
+        ...payload,
+      },
+    }));
+  }
+
+  async function saveSupport(record: PartnerServerSupportRead) {
+    const draft = supportDrafts[record.id];
+    if (!draft) return;
+    setError("");
+    setNotice("");
+    setUpdatingSupportId(record.id);
+    try {
+      const payload: PartnerServerSupportUpdate = {
+        supportLevel: draft.supportLevel,
+        supportStatus: draft.supportStatus,
+        supportUrl: draft.supportUrl.trim() || null,
+        docsUrl: draft.docsUrl.trim() || null,
+        startsAt: fromDateTimeInputValue(draft.startsAt),
+        endsAt: fromDateTimeInputValue(draft.endsAt),
+      };
+      const updated = await updatePartnerSupport(record.id, payload);
+      setSupportRecords((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setSupportDrafts((current) => ({
+        ...current,
+        [updated.id]: supportDraftFromRecord(updated),
+      }));
+      setNotice("Server support mapping updated.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update support mapping.");
+    } finally {
+      setUpdatingSupportId("");
     }
   }
 
@@ -417,6 +560,215 @@ export default function EditPartnerPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="partner-form">
+                <h2>Server Support</h2>
+                <form
+                  className="partner-support-create-form"
+                  onSubmit={(event) => void createSupportRecord(event)}
+                >
+                  <label>
+                    <span>Server Name</span>
+                    <input
+                      onChange={(event) => setSupportServerName(event.target.value)}
+                      placeholder="publisher/server"
+                      required
+                      value={supportServerName}
+                    />
+                  </label>
+                  <label>
+                    <span>Level</span>
+                    <select
+                      onChange={(event) => setSupportLevel(event.target.value as ServerSupportLevel)}
+                      value={supportLevel}
+                    >
+                      <option value="official">official</option>
+                      <option value="verified">verified</option>
+                      <option value="compatible">compatible</option>
+                      <option value="deprecated">deprecated</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Status</span>
+                    <select
+                      onChange={(event) =>
+                        setSupportStatus(event.target.value as ServerSupportStatus)
+                      }
+                      value={supportStatus}
+                    >
+                      <option value="pending">pending</option>
+                      <option value="active">active</option>
+                      <option value="suspended">suspended</option>
+                      <option value="ended">ended</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Support URL</span>
+                    <input
+                      onChange={(event) => setSupportUrl(event.target.value)}
+                      value={supportUrl}
+                    />
+                  </label>
+                  <label>
+                    <span>Docs URL</span>
+                    <input
+                      onChange={(event) => setSupportDocsUrl(event.target.value)}
+                      value={supportDocsUrl}
+                    />
+                  </label>
+                  <label>
+                    <span>Starts At</span>
+                    <input
+                      onChange={(event) => setSupportStartsAt(event.target.value)}
+                      type="datetime-local"
+                      value={supportStartsAt}
+                    />
+                  </label>
+                  <label>
+                    <span>Ends At</span>
+                    <input
+                      onChange={(event) => setSupportEndsAt(event.target.value)}
+                      type="datetime-local"
+                      value={supportEndsAt}
+                    />
+                  </label>
+                  <label className="partner-support-notes">
+                    <span>Internal Notes</span>
+                    <textarea
+                      onChange={(event) => setSupportInternalNotes(event.target.value)}
+                      rows={3}
+                      value={supportInternalNotes}
+                    />
+                  </label>
+                  <div className="partner-form-actions partner-support-actions">
+                    <button className="site-nav-cta" disabled={isCreatingSupport} type="submit">
+                      {isCreatingSupport ? "Creating" : "Add Support"}
+                    </button>
+                  </div>
+                </form>
+
+                {sortedSupportRecords.length === 0 ? (
+                  <div className="empty-state compact">
+                    <div className="empty-title">No server support</div>
+                    <div className="empty-detail">
+                      Add server mappings to show this partner support relationship in registry views.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="partner-support-table">
+                    <div className="partner-support-table-header">
+                      <span>Server</span>
+                      <span>Level</span>
+                      <span>Status</span>
+                      <span>URLs</span>
+                      <span>Dates</span>
+                      <span />
+                    </div>
+                    {sortedSupportRecords.map((record) => {
+                      const draft = supportDrafts[record.id] ?? supportDraftFromRecord(record);
+                      const isUpdating = updatingSupportId === record.id;
+                      return (
+                        <div className="partner-support-row" key={record.id}>
+                          <div className="partner-support-server">
+                            <strong>{record.serverName}</strong>
+                            <small>Updated {formatDate(record.updatedAt)}</small>
+                          </div>
+                          <label className="partner-support-field">
+                            <span>Level</span>
+                            <select
+                              disabled={isUpdating}
+                              onChange={(event) =>
+                                updateSupportDraft(record.id, {
+                                  supportLevel: event.target.value as ServerSupportLevel,
+                                })
+                              }
+                              value={draft.supportLevel}
+                            >
+                              <option value="official">official</option>
+                              <option value="verified">verified</option>
+                              <option value="compatible">compatible</option>
+                              <option value="deprecated">deprecated</option>
+                            </select>
+                          </label>
+                          <label className="partner-support-field">
+                            <span>Status</span>
+                            <select
+                              disabled={isUpdating}
+                              onChange={(event) =>
+                                updateSupportDraft(record.id, {
+                                  supportStatus: event.target.value as ServerSupportStatus,
+                                })
+                              }
+                              value={draft.supportStatus}
+                            >
+                              <option value="pending">pending</option>
+                              <option value="active">active</option>
+                              <option value="suspended">suspended</option>
+                              <option value="ended">ended</option>
+                            </select>
+                          </label>
+                          <div className="partner-support-url-fields">
+                            <label className="partner-support-field">
+                              <span>Support URL</span>
+                              <input
+                                disabled={isUpdating}
+                                onChange={(event) =>
+                                  updateSupportDraft(record.id, { supportUrl: event.target.value })
+                                }
+                                value={draft.supportUrl}
+                              />
+                            </label>
+                            <label className="partner-support-field">
+                              <span>Docs URL</span>
+                              <input
+                                disabled={isUpdating}
+                                onChange={(event) =>
+                                  updateSupportDraft(record.id, { docsUrl: event.target.value })
+                                }
+                                value={draft.docsUrl}
+                              />
+                            </label>
+                          </div>
+                          <div className="partner-support-date-fields">
+                            <label className="partner-support-field">
+                              <span>Starts At</span>
+                              <input
+                                disabled={isUpdating}
+                                onChange={(event) =>
+                                  updateSupportDraft(record.id, { startsAt: event.target.value })
+                                }
+                                type="datetime-local"
+                                value={draft.startsAt}
+                              />
+                            </label>
+                            <label className="partner-support-field">
+                              <span>Ends At</span>
+                              <input
+                                disabled={isUpdating}
+                                onChange={(event) =>
+                                  updateSupportDraft(record.id, { endsAt: event.target.value })
+                                }
+                                type="datetime-local"
+                                value={draft.endsAt}
+                              />
+                            </label>
+                          </div>
+                          <div className="partner-support-actions-cell">
+                            <button
+                              className="partner-row-action"
+                              disabled={isUpdating}
+                              onClick={() => void saveSupport(record)}
+                              type="button"
+                            >
+                              {isUpdating ? "Saving" : "Save"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </section>

@@ -15,10 +15,30 @@ from app.modules.users.service import authenticate_api_token, get_or_create_exte
 
 API_TOKEN_STATE_KEY = "wardn_hub_api_token"
 CLERK_SESSION_COOKIE_NAME = "__session"
+DEFAULT_SUPERUSER_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = ("admin:write",)
+DEFAULT_MODERATOR_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = ("submissions:moderate",)
+DEFAULT_PARTNER_MANAGER_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = ("partners:write",)
 
 
 def get_request_api_token(request: Request) -> UserAPIToken | None:
     return getattr(request.state, API_TOKEN_STATE_KEY, None)
+
+
+def require_request_api_token_scopes(
+    request: Request,
+    *required_scopes: APITokenScope,
+) -> None:
+    api_token = get_request_api_token(request)
+    if api_token is None:
+        return
+
+    token_scopes = set(api_token.scopes)
+    missing_scopes = [scope for scope in required_scopes if scope not in token_scopes]
+    if missing_scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"API token missing required scope: {', '.join(missing_scopes)}",
+        )
 
 
 async def get_current_user(
@@ -96,50 +116,100 @@ def require_api_token_scopes(
         request: Request,
         current_user: Annotated[User, Depends(get_current_user)],
     ) -> User:
-        api_token = get_request_api_token(request)
-        if api_token is None:
-            return current_user
+        require_request_api_token_scopes(request, *required_scopes)
+        return current_user
 
-        token_scopes = set(api_token.scopes)
-        missing_scopes = [scope for scope in required_scopes if scope not in token_scopes]
-        if missing_scopes:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"API token missing required scope: {', '.join(missing_scopes)}",
-            )
+    return dependency
+
+
+def ensure_superuser(current_user: User) -> None:
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="superuser access required",
+        )
+
+
+def ensure_global_moderator(current_user: User) -> None:
+    if not current_user.is_superuser and not current_user.is_global_moderator:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="moderator access required",
+        )
+
+
+def ensure_global_partner_manager(current_user: User) -> None:
+    if not current_user.is_superuser and not current_user.is_global_partner_manager:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="partner manager access required",
+        )
+
+
+def require_superuser_scopes(
+    *required_scopes: APITokenScope,
+):
+    async def dependency(
+        request: Request,
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        ensure_superuser(current_user)
+        require_request_api_token_scopes(request, *required_scopes)
+        return current_user
+
+    return dependency
+
+
+def require_global_moderator_scopes(
+    *required_scopes: APITokenScope,
+):
+    async def dependency(
+        request: Request,
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        ensure_global_moderator(current_user)
+        require_request_api_token_scopes(request, *required_scopes)
+        return current_user
+
+    return dependency
+
+
+def require_global_partner_manager_scopes(
+    *required_scopes: APITokenScope,
+):
+    async def dependency(
+        request: Request,
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        ensure_global_partner_manager(current_user)
+        require_request_api_token_scopes(request, *required_scopes)
         return current_user
 
     return dependency
 
 
 async def require_superuser(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="superuser access required",
-        )
+    ensure_superuser(current_user)
+    require_request_api_token_scopes(request, *DEFAULT_SUPERUSER_API_TOKEN_SCOPES)
     return current_user
 
 
 async def require_global_moderator(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    if not current_user.is_superuser and not current_user.is_global_moderator:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="moderator access required",
-        )
+    ensure_global_moderator(current_user)
+    require_request_api_token_scopes(request, *DEFAULT_MODERATOR_API_TOKEN_SCOPES)
     return current_user
 
 
 async def require_global_partner_manager(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    if not current_user.is_superuser and not current_user.is_global_partner_manager:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="partner manager access required",
-        )
+    ensure_global_partner_manager(current_user)
+    require_request_api_token_scopes(request, *DEFAULT_PARTNER_MANAGER_API_TOKEN_SCOPES)
     return current_user

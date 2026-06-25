@@ -14,7 +14,24 @@ from app.modules.registry.schemas import (
     RegistryPageMetadata,
     RegistryPublishedServerListResponse,
 )
-from app.modules.users.dependencies import require_superuser
+from app.modules.users import dependencies
+
+
+def auth_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer wardn_hub_key.secret"}
+
+
+async def authenticate_registry_admin_api_token(*args, **kwargs):
+    return (
+        SimpleNamespace(
+            id=uuid4(),
+            is_active=True,
+            is_superuser=True,
+            is_global_moderator=False,
+            is_global_partner_manager=False,
+        ),
+        SimpleNamespace(scopes=["registry:write"]),
+    )
 
 
 def test_registry_openapi_exposes_phase_one_paths() -> None:
@@ -98,15 +115,17 @@ def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:
     async def duplicate(*args, **kwargs):
         raise DuplicateRegistryVersionError("duplicate")
 
-    async def superuser():
-        return SimpleNamespace(id=uuid4())
-
     app.dependency_overrides[get_db_session] = fake_session
-    app.dependency_overrides[require_superuser] = superuser
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_admin_api_token,
+    )
     monkeypatch.setattr(router, "create_server_version", duplicate)
 
     response = TestClient(app).post(
         "/api/v1/admin/mcp/servers",
+        headers=auth_headers(),
         json={
             "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
             "name": "io.github.example/weather",
@@ -157,15 +176,17 @@ def test_category_create_maps_duplicate_to_conflict(monkeypatch) -> None:
     async def duplicate(*args, **kwargs):
         raise DuplicateRegistryCategoryError("duplicate")
 
-    async def superuser():
-        return SimpleNamespace(id=uuid4())
-
     app.dependency_overrides[get_db_session] = fake_session
-    app.dependency_overrides[require_superuser] = superuser
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_admin_api_token,
+    )
     monkeypatch.setattr(router, "create_category", duplicate)
 
     response = TestClient(app).post(
         "/api/v1/mcp/categories",
+        headers=auth_headers(),
         json={
             "slug": "automation",
             "name": "Automation",

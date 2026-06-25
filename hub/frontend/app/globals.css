@@ -1048,6 +1048,93 @@ button {
   padding: 8px 10px;
 }
 
+.partner-support-create-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) 150px 150px minmax(180px, 1fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.partner-support-notes {
+  grid-column: span 2;
+}
+
+.partner-support-actions {
+  align-self: end;
+}
+
+.partner-support-table {
+  display: grid;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+}
+
+.partner-support-table-header,
+.partner-support-row {
+  display: grid;
+  min-width: 1120px;
+  grid-template-columns: minmax(190px, 1fr) 135px 135px minmax(240px, 1.1fr) minmax(240px, 1.1fr) 70px;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+}
+
+.partner-support-table-header {
+  background: #f3f3f4;
+  color: #555f6d;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.partner-support-row:last-child {
+  border-bottom: 0;
+}
+
+.partner-support-server strong {
+  display: block;
+  color: #000000;
+  line-height: 20px;
+}
+
+.partner-support-server small {
+  display: block;
+  color: #64748b;
+  line-height: 18px;
+}
+
+.partner-support-field,
+.partner-support-url-fields,
+.partner-support-date-fields {
+  display: grid;
+  gap: 6px;
+}
+
+.partner-support-url-fields,
+.partner-support-date-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.partner-support-field span {
+  display: none;
+}
+
+.partner-support-row input,
+.partner-support-row select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--foreground);
+  padding: 8px 10px;
+}
+
+.partner-support-actions-cell {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .partner-danger-zone {
   display: flex;
   align-items: center;
@@ -2846,6 +2933,7 @@ button {
 	  .partner-form-grid,
 	  .partner-form-grid.compact,
 	  .partner-member-form,
+	  .partner-support-create-form,
 	  .split-layout,
 	  .inline-form {
 	    grid-template-columns: 1fr;
@@ -2895,33 +2983,44 @@ button {
   .partner-table-header,
   .partner-table-row,
   .partner-member-table-header,
-  .partner-member-row {
+  .partner-member-row,
+  .partner-support-table-header,
+  .partner-support-row {
     grid-template-columns: 1fr;
     align-items: start;
   }
 
   .partner-row-actions,
   .partner-danger-zone,
-  .partner-member-actions {
+  .partner-member-actions,
+  .partner-support-actions-cell {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .partner-member-table-header {
+  .partner-member-table-header,
+  .partner-support-table-header {
     display: none;
   }
 
-  .partner-member-row {
+  .partner-member-row,
+  .partner-support-row {
+    min-width: 0;
     gap: 14px;
   }
 
   .partner-member-role span,
-  .partner-member-status span {
+  .partner-member-status span,
+  .partner-support-field span {
     display: block;
     color: #555f6d;
     font-size: 12px;
     font-weight: 800;
     text-transform: uppercase;
+  }
+
+  .partner-support-notes {
+    grid-column: auto;
   }
 
   .partner-member-status strong {

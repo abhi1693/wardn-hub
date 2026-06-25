@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.schemas import ErrorResponse
@@ -33,9 +33,10 @@ from app.modules.submissions.service import (
     withdraw_submission,
 )
 from app.modules.users.dependencies import (
+    get_request_api_token,
     require_api_token_scopes,
-    require_global_moderator,
-    require_superuser,
+    require_global_moderator_scopes,
+    require_superuser_scopes,
 )
 from app.modules.users.models import User
 
@@ -56,10 +57,11 @@ def bad_request(exc: Exception) -> HTTPException:
 
 @router.get("", response_model=SubmissionListResponse, operation_id="submissions_list")
 async def list_submission_records(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:read"))],
 ) -> SubmissionListResponse:
-    return await list_submissions(session, current_user)
+    return await list_submissions(session, current_user, api_token=get_request_api_token(request))
 
 
 @router.post(
@@ -70,12 +72,18 @@ async def list_submission_records(
     responses={status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
 )
 async def create_submission_record(
+    request: Request,
     payload: SubmissionCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
-        response = await create_submission(session, current_user, payload)
+        response = await create_submission(
+            session,
+            current_user,
+            payload,
+            api_token=get_request_api_token(request),
+        )
     except DuplicatePublishedVersionError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except SubmissionAccessDeniedError as exc:
@@ -97,11 +105,17 @@ async def create_submission_record(
 )
 async def get_submission_record(
     submission_id: UUID,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:read"))],
 ) -> SubmissionRead:
     try:
-        return await get_submission(session, current_user, submission_id)
+        return await get_submission(
+            session,
+            current_user,
+            submission_id,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except SubmissionAccessDeniedError as exc:
@@ -115,12 +129,19 @@ async def get_submission_record(
 )
 async def update_submission_record(
     submission_id: UUID,
+    request: Request,
     payload: SubmissionUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
-        response = await update_submission(session, current_user, submission_id, payload)
+        response = await update_submission(
+            session,
+            current_user,
+            submission_id,
+            payload,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except SubmissionAccessDeniedError as exc:
@@ -147,11 +168,17 @@ async def update_submission_record(
 )
 async def delete_submission_record(
     submission_id: UUID,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> None:
     try:
-        await delete_submission(session, current_user, submission_id)
+        await delete_submission(
+            session,
+            current_user,
+            submission_id,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except SubmissionAccessDeniedError as exc:
@@ -169,11 +196,17 @@ async def delete_submission_record(
 )
 async def submit_submission_record(
     submission_id: UUID,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
-        response = await submit_submission(session, current_user, submission_id)
+        response = await submit_submission(
+            session,
+            current_user,
+            submission_id,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except SubmissionAccessDeniedError as exc:
@@ -195,11 +228,17 @@ async def submit_submission_record(
 )
 async def withdraw_submission_record(
     submission_id: UUID,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
-        response = await withdraw_submission(session, current_user, submission_id)
+        response = await withdraw_submission(
+            session,
+            current_user,
+            submission_id,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except SubmissionAccessDeniedError as exc:
@@ -217,11 +256,17 @@ async def withdraw_submission_record(
 )
 async def approve_submission_record(
     submission_id: UUID,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_global_moderator)],
+    current_user: Annotated[User, Depends(require_global_moderator_scopes("submissions:moderate"))],
 ) -> SubmissionRead:
     try:
-        response = await approve_submission(session, current_user, submission_id)
+        response = await approve_submission(
+            session,
+            current_user,
+            submission_id,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:
@@ -237,12 +282,19 @@ async def approve_submission_record(
 )
 async def reject_submission_record(
     submission_id: UUID,
+    request: Request,
     payload: SubmissionRejectRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_global_moderator)],
+    current_user: Annotated[User, Depends(require_global_moderator_scopes("submissions:moderate"))],
 ) -> SubmissionRead:
     try:
-        response = await reject_submission(session, current_user, submission_id, payload.message)
+        response = await reject_submission(
+            session,
+            current_user,
+            submission_id,
+            payload.message,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except InvalidSubmissionTransitionError as exc:
@@ -258,11 +310,17 @@ async def reject_submission_record(
 )
 async def publish_submission_record(
     submission_id: UUID,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser_scopes("submissions:publish"))],
 ) -> SubmissionRead:
     try:
-        response = await publish_submission(session, current_user, submission_id)
+        response = await publish_submission(
+            session,
+            current_user,
+            submission_id,
+            api_token=get_request_api_token(request),
+        )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:

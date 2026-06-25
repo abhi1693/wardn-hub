@@ -13,7 +13,7 @@ from app.modules.submissions.exceptions import (
     SubmissionValidationError,
 )
 from app.modules.submissions.schemas import SubmissionCreate, SubmissionUpdate
-from app.modules.users.models import User
+from app.modules.users.models import User, UserAPIToken
 
 
 class FakeSession:
@@ -54,6 +54,38 @@ def current_user(*, is_superuser: bool = False, is_global_moderator: bool = Fals
         is_active=True,
         is_superuser=is_superuser,
         is_global_moderator=is_global_moderator,
+    )
+
+
+def restricted_api_token(*organization_ids) -> UserAPIToken:
+    return UserAPIToken(
+        organization_ids=[str(organization_id) for organization_id in organization_ids],
+        scopes=["submissions:read", "submissions:write"],
+    )
+
+
+def submission_record(
+    *,
+    submitter_user_id,
+    owner_user_id=None,
+    owner_organization_id=None,
+    status: str = "draft",
+):
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+    return service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter_user_id,
+        owner_user_id=owner_user_id,
+        owner_organization_id=owner_organization_id,
+        submission_type="new_server",
+        status=status,
+        server_json=complete_registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -315,6 +347,99 @@ async def test_create_submission_requires_organization_publish_permission(monkey
                 ownerOrganizationId=uuid4(),
                 serverJson=registry_payload(),
             ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_submission_rejects_api_token_outside_organization_allowlist(
+    monkeypatch,
+) -> None:
+    allowed_organization_id = uuid4()
+    denied_organization_id = uuid4()
+
+    async def allow_permission(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service, "require_organization_permission", allow_permission)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="API token organization"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(
+                ownerOrganizationId=denied_organization_id,
+                serverJson=registry_payload(),
+            ),
+            api_token=restricted_api_token(allowed_organization_id),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_submission_rejects_restricted_api_token_personal_owner() -> None:
+    with pytest.raises(SubmissionAccessDeniedError, match="API token organization"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(serverJson=registry_payload()),
+            api_token=restricted_api_token(uuid4()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_restricted_api_token_filters_listed_submissions(monkeypatch) -> None:
+    user = current_user(is_global_moderator=True)
+    allowed_organization_id = uuid4()
+    denied_organization_id = uuid4()
+    allowed_submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_organization_id=allowed_organization_id,
+    )
+    denied_submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_organization_id=denied_organization_id,
+    )
+    personal_submission = submission_record(
+        submitter_user_id=user.id,
+        owner_user_id=user.id,
+        owner_organization_id=None,
+    )
+
+    async def list_submission_records(*args, **kwargs):
+        return [allowed_submission, denied_submission, personal_submission]
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    response = await service.list_submissions(
+        FakeSession(),
+        user,
+        api_token=restricted_api_token(allowed_organization_id),
+    )
+
+    assert [submission.id for submission in response.submissions] == [allowed_submission.id]
+
+
+@pytest.mark.asyncio
+async def test_restricted_api_token_cannot_read_submission_outside_allowlist(
+    monkeypatch,
+) -> None:
+    user = current_user(is_global_moderator=True)
+    submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_organization_id=uuid4(),
+        status="submitted",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="API token organization"):
+        await service.get_submission(
+            FakeSession(),
+            user,
+            submission.id,
+            api_token=restricted_api_token(uuid4()),
         )
 
 

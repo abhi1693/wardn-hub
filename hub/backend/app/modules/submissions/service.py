@@ -30,7 +30,7 @@ from app.modules.submissions.schemas import (
     SubmissionRead,
     SubmissionUpdate,
 )
-from app.modules.users.models import User
+from app.modules.users.models import User, UserAPIToken
 
 
 def validation_check(name: str, status: str, message: str = "") -> dict[str, str]:
@@ -417,6 +417,45 @@ def can_review_submissions(user: User) -> bool:
     return user.is_superuser or user.is_global_moderator
 
 
+def api_token_organization_ids(api_token: UserAPIToken | None) -> set[str]:
+    if api_token is None:
+        return set()
+    return {str(organization_id) for organization_id in api_token.organization_ids}
+
+
+def ensure_api_token_organization_access(
+    api_token: UserAPIToken | None,
+    owner_organization_id: uuid.UUID | None,
+) -> None:
+    allowed_organization_ids = api_token_organization_ids(api_token)
+    if not allowed_organization_ids:
+        return
+    if owner_organization_id is None or str(owner_organization_id) not in allowed_organization_ids:
+        raise SubmissionAccessDeniedError("API token organization access denied")
+
+
+def ensure_api_token_submission_access(
+    api_token: UserAPIToken | None,
+    submission: ServerSubmission,
+) -> None:
+    ensure_api_token_organization_access(api_token, submission.owner_organization_id)
+
+
+def filter_submissions_for_api_token(
+    api_token: UserAPIToken | None,
+    submissions: list[ServerSubmission],
+) -> list[ServerSubmission]:
+    allowed_organization_ids = api_token_organization_ids(api_token)
+    if not allowed_organization_ids:
+        return submissions
+    return [
+        submission
+        for submission in submissions
+        if submission.owner_organization_id is not None
+        and str(submission.owner_organization_id) in allowed_organization_ids
+    ]
+
+
 async def resolve_submission_owner(
     session: AsyncSession,
     user: User,
@@ -424,6 +463,7 @@ async def resolve_submission_owner(
     owner_user_id: uuid.UUID | None,
     owner_organization_id: uuid.UUID | None,
     permission: str,
+    api_token: UserAPIToken | None = None,
 ) -> tuple[uuid.UUID | None, uuid.UUID | None]:
     if owner_user_id is None and owner_organization_id is None:
         owner_user_id = user.id
@@ -436,6 +476,7 @@ async def resolve_submission_owner(
             raise SubmissionValidationError("owner organization not found") from exc
         except OrganizationAccessDeniedError as exc:
             raise SubmissionAccessDeniedError("owner organization access denied") from exc
+    ensure_api_token_organization_access(api_token, owner_organization_id)
     return owner_user_id, owner_organization_id
 
 
@@ -509,23 +550,29 @@ async def get_submission(
     session: AsyncSession,
     user: User,
     submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
     ensure_can_read_submission(user, submission)
+    ensure_api_token_submission_access(api_token, submission)
     return submission_response(submission)
 
 
 async def list_submissions(
     session: AsyncSession,
     user: User,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionListResponse:
     submissions = await repository.list_submissions(
         session,
         user_id=user.id,
         include_all=can_review_submissions(user),
     )
+    submissions = filter_submissions_for_api_token(api_token, submissions)
     return SubmissionListResponse(
         submissions=[submission_response(submission) for submission in submissions]
     )
@@ -535,6 +582,8 @@ async def create_submission(
     session: AsyncSession,
     user: User,
     payload: SubmissionCreate,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     validation_result = validation_result_for(payload.server_json)
     ensure_validation_passed(validation_result)
@@ -544,6 +593,7 @@ async def create_submission(
         owner_user_id=payload.owner_user_id,
         owner_organization_id=payload.owner_organization_id,
         permission="servers.create",
+        api_token=api_token,
     )
     await ensure_submission_type_allowed(
         session,
@@ -586,11 +636,14 @@ async def update_submission(
     user: User,
     submission_id: uuid.UUID,
     payload: SubmissionUpdate,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
     ensure_can_mutate_submission(user, submission)
+    ensure_api_token_submission_access(api_token, submission)
 
     server_json = payload.server_json
     if server_json is not None:
@@ -620,6 +673,7 @@ async def update_submission(
         owner_user_id=next_owner_user_id,
         owner_organization_id=next_owner_organization_id,
         permission="servers.update",
+        api_token=api_token,
     )
     submission.owner_user_id = next_owner_user_id
     submission.owner_organization_id = next_owner_organization_id
@@ -643,11 +697,14 @@ async def delete_submission(
     session: AsyncSession,
     user: User,
     submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> None:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
     ensure_can_mutate_submission(user, submission)
+    ensure_api_token_submission_access(api_token, submission)
     await emit_audit_event(
         session,
         event_type="submission.deleted",
@@ -668,11 +725,14 @@ async def submit_submission(
     session: AsyncSession,
     user: User,
     submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
     ensure_can_own_or_manage_submission(user, submission)
+    ensure_api_token_submission_access(api_token, submission)
     if submission.status not in {"draft", "rejected"}:
         raise InvalidSubmissionTransitionError("submission cannot be submitted")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
@@ -701,11 +761,14 @@ async def withdraw_submission(
     session: AsyncSession,
     user: User,
     submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
     ensure_can_own_or_manage_submission(user, submission)
+    ensure_api_token_submission_access(api_token, submission)
     if submission.status != "submitted":
         raise InvalidSubmissionTransitionError("only submitted submissions can be withdrawn")
     submission.status = "withdrawn"
@@ -727,10 +790,13 @@ async def approve_submission(
     session: AsyncSession,
     approver: User,
     submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
+    ensure_api_token_submission_access(api_token, submission)
     if submission.status != "submitted":
         raise InvalidSubmissionTransitionError("only submitted submissions can be approved")
     await ensure_version_not_published(session, submission.name, submission.version)
@@ -757,10 +823,13 @@ async def reject_submission(
     approver: User,
     submission_id: uuid.UUID,
     message: str,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
+    ensure_api_token_submission_access(api_token, submission)
     if submission.status != "submitted":
         raise InvalidSubmissionTransitionError("only submitted submissions can be rejected")
     submission.status = "rejected"
@@ -784,10 +853,13 @@ async def publish_submission(
     session: AsyncSession,
     publisher: User,
     submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
+    ensure_api_token_submission_access(api_token, submission)
     if submission.status != "approved":
         raise InvalidSubmissionTransitionError("only approved submissions can be published")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)

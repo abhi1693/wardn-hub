@@ -5,11 +5,20 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
 APITokenScope = Literal[
+    "admin:write",
+    "audit:read",
     "catalog:read",
+    "namespaces:write",
+    "partners:write",
+    "registry:write",
     "submissions:read",
     "submissions:write",
+    "submissions:moderate",
+    "submissions:publish",
     "tokens:read",
     "tokens:write",
+    "users:read",
+    "users:write",
 ]
 AuthProviderKey = Literal["local", "clerk"]
 

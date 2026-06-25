@@ -43,7 +43,7 @@ from app.modules.registry.service import (
     update_category,
     update_server_version,
 )
-from app.modules.users.dependencies import require_superuser
+from app.modules.users.dependencies import require_superuser_scopes
 from app.modules.users.models import User
 
 catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
@@ -73,7 +73,7 @@ async def list_mcp_categories(
 async def create_mcp_category(
     payload: RegistryCategoryCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> RegistryCategoryRead:
     try:
         response = await create_category(session, payload)
@@ -99,7 +99,7 @@ async def update_mcp_category(
     category_slug: str,
     payload: RegistryCategoryUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> RegistryCategoryRead:
     try:
         response = await update_category(session, category_slug, payload)
@@ -123,7 +123,7 @@ async def update_mcp_category(
 async def delete_mcp_category(
     category_slug: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> None:
     try:
         await delete_category(session, category_slug)
@@ -263,7 +263,7 @@ async def get_mcp_server(
 async def admin_create_mcp_server_version(
     payload: RegistryServerVersionCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await create_server_version(
@@ -294,7 +294,7 @@ async def admin_update_mcp_server_version(
     version: str,
     payload: RegistryServerVersionUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await update_server_version(
@@ -320,7 +320,7 @@ async def admin_set_latest_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await set_latest_version(session, server_name, version)
@@ -340,7 +340,7 @@ async def admin_delete_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> None:
     try:
         await delete_server_version(session, server_name, version)
@@ -358,7 +358,7 @@ async def admin_delete_mcp_server_version(
 async def admin_delete_mcp_server(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> None:
     try:
         await delete_server(session, server_name)
