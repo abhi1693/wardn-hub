@@ -1,40 +1,51 @@
-FROM node:24-bookworm-slim AS deps
+# syntax=docker/dockerfile:1
 
+FROM node:24-bookworm-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
+
+FROM base AS deps
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 COPY hub/frontend/package.json ./hub/frontend/package.json
-RUN npm ci
+RUN npm ci --ignore-scripts
 
-FROM deps AS builder
+FROM base AS runner
 
-ARG NEXT_PUBLIC_API_BASE_URL=""
-ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
-
-COPY hub/frontend ./hub/frontend
-WORKDIR /app/hub/frontend
-RUN npm run build
-
-FROM node:24-bookworm-slim AS runner
-
-WORKDIR /app/hub/frontend
 ENV HOSTNAME=0.0.0.0 \
     NODE_ENV=production \
+    NODE_OPTIONS=--max-old-space-size=2048 \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000
+    PORT=3000 \
+    WARDN_HUB_API_INTERNAL_BASE_URL=http://localhost:8000
 
-RUN groupadd --system --gid 1001 nodejs && \
-    useradd --system --uid 1001 --gid nodejs --home /app nextjs
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid 1001 nodejs \
+  && useradd --system --uid 1001 --gid nodejs --home /app nextjs
 
-COPY --from=builder --chown=nextjs:nodejs /app/hub/frontend/.next/standalone /app/
-COPY --from=builder --chown=nextjs:nodejs /app/hub/frontend/.next/static ./.next/static
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=deps --chown=nextjs:nodejs /app/package.json /app/package-lock.json ./
+COPY --chown=nextjs:nodejs hub/frontend ./hub/frontend
+
+RUN mkdir -p /app/hub/frontend/.next \
+  && chown -R nextjs:nodejs /app \
+  && chmod +x /app/hub/frontend/docker-build-next.sh /app/hub/frontend/docker-entrypoint.sh
 
 ARG APP_VERSION=0.0.0
 ENV APP_VERSION=$APP_VERSION
 LABEL org.opencontainers.image.version=$APP_VERSION
 
 USER nextjs
+WORKDIR /app/hub/frontend
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["web"]

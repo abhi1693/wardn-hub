@@ -83,7 +83,7 @@ Phase 7 adds the first usable browser experience:
 - Operational app shell with registry, submissions, partners, and audit views
 - Registry browse/detail workflow with trust and partner support badges
 - Protected data views for moderation queues, partner support, and audit records
-- Runtime API base URL support through `NEXT_PUBLIC_API_BASE_URL`
+- Same-origin frontend API proxy with optional direct `NEXT_PUBLIC_API_BASE_URL`
 
 ## Phase 8 Frontend Auth And Operator Actions
 
@@ -114,6 +114,18 @@ docker build -t wardn-hub-backend -f hub/backend/Dockerfile hub/backend
 docker build -t wardn-hub-frontend -f hub/frontend/Dockerfile .
 ```
 
+The frontend image follows the Shipyard-style deployment pattern: it ships the
+source tree and installed dependencies, then builds `.next` with the runtime
+environment before starting. In Kubernetes, run `hub/frontend/docker-build-next.sh`
+from the image in a prebuild/init job with `.next` mounted on a shared volume,
+then start the web container with:
+
+```sh
+node .next/standalone/hub/frontend/server.js
+```
+
+The default container command runs that build-and-start flow automatically.
+
 ## Public Release Checklist
 
 - Use PostgreSQL and run Alembic migrations before serving traffic.
@@ -123,5 +135,8 @@ docker build -t wardn-hub-frontend -f hub/frontend/Dockerfile .
 - Set `WARDN_HUB_CORS_ORIGINS` to the deployed frontend origin. Wildcard CORS is
   rejected outside local/test environments.
 - Set `WARDN_HUB_REGISTRY_PUBLIC_BASE_URL` to the public frontend base URL.
-- Set `NEXT_PUBLIC_API_BASE_URL` for split frontend/backend deployments. If it is
-  omitted on a deployed frontend, the browser client uses same-origin `/api/v1`.
+- Set `WARDN_HUB_API_INTERNAL_BASE_URL` for frontend deployments where the
+  backend is not reachable at `http://localhost:8000` from the Next.js server.
+- Set `NEXT_PUBLIC_API_BASE_URL` only when browser clients should call the
+  backend directly. If omitted, the browser client uses same-origin `/api/v1`
+  and the Next.js rewrite proxies those requests to `WARDN_HUB_API_INTERNAL_BASE_URL`.

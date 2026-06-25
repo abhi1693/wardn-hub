@@ -55,7 +55,6 @@ export interface RegistryUserDetailResponse {
 }
 
 const API_PREFIX = "/api/v1";
-const DEFAULT_API_BASE_URL = `http://localhost:8000${API_PREFIX}`;
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 
 export class HubApiError extends Error {
@@ -71,13 +70,7 @@ export class HubApiError extends Error {
 function apiBaseUrl() {
   const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
   if (configured) return configured;
-
-  if (typeof window === "undefined") return DEFAULT_API_BASE_URL;
-
-  const pageHost = window.location.hostname;
-  if (pageHost === "localhost" || pageHost === "127.0.0.1") return DEFAULT_API_BASE_URL;
-
-  return `${window.location.origin}${API_PREFIX}`;
+  return API_PREFIX;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -93,12 +86,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   const body = await response.text();
-  const data = body ? JSON.parse(body) : {};
+  const contentType = response.headers.get("content-type") ?? "";
+  const data = body && contentType.includes("application/json") ? JSON.parse(body) : {};
 
   if (!response.ok) {
     const message =
-      typeof data.detail === "string" ? data.detail : `Request failed with ${response.status}`;
+      typeof data.detail === "string"
+        ? data.detail
+        : `Request failed with ${response.status} from ${response.url}`;
     throw new HubApiError(response.status, message);
+  }
+
+  if (body && !contentType.includes("application/json")) {
+    throw new HubApiError(
+      response.status,
+      `Expected JSON from ${response.url}, received ${contentType || "unknown content type"}`,
+    );
   }
 
   return data as T;
@@ -386,4 +389,4 @@ export function updatePartnerSupport(supportId: string, payload: PartnerServerSu
   });
 }
 
-export { DEFAULT_API_BASE_URL };
+export { API_PREFIX as DEFAULT_API_BASE_URL };
