@@ -31,6 +31,9 @@ const publicItems: HeaderItem[] = [
 
 const adminItems: HeaderItem[] = [
   { href: "/submissions", label: "Submissions" },
+];
+
+const superuserItems: HeaderItem[] = [
   { href: "/partners", label: "Partners" },
   { href: "/?section=audit", label: "Audit" },
 ];
@@ -45,6 +48,10 @@ function isAdminUser(user: UserRead | null) {
   return Boolean(
     user?.is_superuser || user?.is_global_moderator || user?.is_global_partner_manager,
   );
+}
+
+function canAccessAudit(user: UserRead | null) {
+  return Boolean(user?.is_superuser);
 }
 
 function BrandMark() {
@@ -285,7 +292,11 @@ export function PublicHeader() {
     router.refresh();
   }
 
-  const navItems = isAdminUser(user) ? [...publicItems, ...adminItems] : publicItems;
+  const navItems = [
+    ...publicItems,
+    ...(isAdminUser(user) ? adminItems : []),
+    ...(canAccessAudit(user) ? superuserItems : []),
+  ];
   const isAuthenticated = Boolean(user);
 
   return (

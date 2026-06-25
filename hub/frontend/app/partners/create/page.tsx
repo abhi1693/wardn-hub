@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
-import { createOrganization, updatePartnerOrganization } from "@/lib/api/hub";
+import { createOrganization, currentUser, updatePartnerOrganization } from "@/lib/api/hub";
 import type { PartnerOrganizationUpdate } from "@/lib/api/generated/model";
 
 type PartnerStatus = NonNullable<PartnerOrganizationUpdate["partnerStatus"]>;
 type PartnerTier = NonNullable<PartnerOrganizationUpdate["partnerTier"]>;
 type PartnerSupportLevel = NonNullable<PartnerOrganizationUpdate["partnerSupportLevel"]>;
+type AccessState = "loading" | "allowed" | "denied";
 
 function slugFromName(value: string) {
   return value
@@ -34,6 +35,23 @@ export default function CreatePartnerPage() {
   const [internalNotes, setInternalNotes] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [accessState, setAccessState] = useState<AccessState>("loading");
+
+  useEffect(() => {
+    currentUser()
+      .then((user) => {
+        if (!user.is_superuser) {
+          setError("Partner management requires superuser access.");
+          setAccessState("denied");
+          return;
+        }
+        setAccessState("allowed");
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "Authentication required.");
+        setAccessState("denied");
+      });
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,6 +96,21 @@ export default function CreatePartnerPage() {
           </Link>
         </section>
 
+        {accessState === "loading" ? (
+          <div className="empty-state">
+            <div className="empty-title">Loading</div>
+            <div className="empty-detail">Checking partner management access.</div>
+          </div>
+        ) : null}
+
+        {accessState === "denied" ? (
+          <div className="empty-state">
+            <div className="empty-title">Access denied</div>
+            <div className="empty-detail">{error}</div>
+          </div>
+        ) : null}
+
+        {accessState === "allowed" ? (
         <form className="partner-form" onSubmit={(event) => void handleSubmit(event)}>
           {error ? <div className="error-banner">{error}</div> : null}
 
@@ -174,6 +207,7 @@ export default function CreatePartnerPage() {
             </button>
           </div>
         </form>
+        ) : null}
       </main>
     </div>
   );

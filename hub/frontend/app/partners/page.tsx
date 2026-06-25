@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
-import { listPartnerOrganizations, updatePartnerOrganization } from "@/lib/api/hub";
+import { currentUser, listPartnerOrganizations, updatePartnerOrganization } from "@/lib/api/hub";
 import type { PartnerOrganizationRead } from "@/lib/api/generated/model";
 
 type LoadState = "loading" | "ready" | "error";
@@ -27,7 +27,13 @@ export default function PartnersPage() {
     const timeoutId = window.setTimeout(() => {
       setState("loading");
       setError("");
-      listPartnerOrganizations()
+      currentUser()
+        .then(async (user) => {
+          if (!user.is_superuser) {
+            throw new Error("Partner management requires superuser access.");
+          }
+          return listPartnerOrganizations();
+        })
         .then((response) => {
           setPartners(response.organizations);
           setState("ready");

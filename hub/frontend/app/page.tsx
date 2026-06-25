@@ -47,8 +47,6 @@ const publicNavItems: ShellNavItem[] = [
 
 const protectedNavItems: ShellNavItem[] = [
   { id: "submissions", label: "Submissions" },
-  { href: "/partners", label: "Partners" },
-  { id: "audit", label: "Audit" },
 ];
 
 const adminSections = new Set<Section>(["submissions", "audit"]);
@@ -61,6 +59,20 @@ function isAdminUser(user: UserRead | null) {
 
 function canReviewSubmissions(user: UserRead | null) {
   return Boolean(user?.is_superuser || user?.is_global_moderator);
+}
+
+function canAccessAudit(user: UserRead | null) {
+  return Boolean(user?.is_superuser);
+}
+
+function canManagePartners(user: UserRead | null) {
+  return Boolean(user?.is_superuser);
+}
+
+function canAccessSection(user: UserRead | null, section: Section) {
+  if (section === "audit") return canAccessAudit(user);
+  if (section === "submissions") return isAdminUser(user);
+  return true;
 }
 
 function canPublishSubmissions(user: UserRead | null) {
@@ -151,7 +163,12 @@ function AppShell({
   onLogout: () => void;
   children: React.ReactNode;
 }) {
-  const navItems = isAdmin ? [...publicNavItems, ...protectedNavItems] : publicNavItems;
+  const navItems = [
+    ...publicNavItems,
+    ...(isAdmin ? protectedNavItems : []),
+    ...(canManagePartners(user) ? [{ href: "/partners", label: "Partners" }] : []),
+    ...(canAccessAudit(user) ? [{ id: "audit" as const, label: "Audit" }] : []),
+  ];
 
   return (
     <main className="site-shell">
@@ -444,7 +461,7 @@ export default function Home() {
       .then((response) => {
         setUser(response);
         const nextSection = new URLSearchParams(window.location.search).get("section");
-        if (isSection(nextSection) && adminSections.has(nextSection) && isAdminUser(response)) {
+        if (isSection(nextSection) && canAccessSection(response, nextSection)) {
           setSection(nextSection);
         }
       })
@@ -462,7 +479,7 @@ export default function Home() {
       goToAuth("login", nextSection);
       return;
     }
-    if (adminSections.has(nextSection) && !isAdmin) {
+    if (!canAccessSection(user, nextSection)) {
       setSection("browse");
       return;
     }
@@ -489,7 +506,7 @@ export default function Home() {
     >
       {section === "browse" && <BrowseView />}
       {isAdmin && section === "submissions" && <SubmissionsView user={user} />}
-      {isAdmin && section === "audit" && <AuditView />}
+      {canAccessAudit(user) && section === "audit" && <AuditView />}
     </AppShell>
   );
 }

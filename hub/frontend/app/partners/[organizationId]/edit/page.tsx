@@ -12,6 +12,7 @@ import {
   listPartnerOrganizations,
   listRegistryUsers,
   type RegistryUserRead,
+  currentUser,
   updatePartnerOrganization,
   updateOrganizationMembership,
   upsertOrganizationMembership,
@@ -66,6 +67,10 @@ export default function EditPartnerPage() {
     if (!organizationId) return;
     setState("loading");
     setError("");
+    const user = await currentUser();
+    if (!user.is_superuser) {
+      throw new Error("Partner management requires superuser access.");
+    }
     const [
       partnerResponse,
       membershipResponse,
