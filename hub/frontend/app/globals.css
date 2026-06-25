@@ -54,6 +54,8 @@
   --danger-bg: #fde8e7;
   --neutral-bg: #eef1f5;
   --shadow-card: 0 1px 2px rgb(15 23 42 / 4%);
+  --content-max-width: 1536px;
+  --content-gutter: 16px;
 }
 
 * {
@@ -101,7 +103,11 @@ button {
   gap: 18px;
   border-bottom: 1px solid #e5e7eb;
   background: #ffffff;
-  padding: 0 max(32px, calc((100% - 1180px) / 2));
+  padding: 0
+    max(
+      var(--content-gutter),
+      calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter))
+    );
 }
 
 .site-brand {
@@ -202,7 +208,12 @@ button {
 
 .workspace {
   min-width: 0;
-  padding: 0 max(22px, calc((100vw - 1180px) / 2)) 72px;
+  padding: 0
+    max(
+      var(--content-gutter),
+      calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter))
+    )
+    72px;
 }
 
 .view {
@@ -1114,9 +1125,9 @@ button {
 .server-detail-main {
   display: grid;
   gap: 32px;
-  max-width: 1180px;
+  max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: 32px 16px 72px;
+  padding: 32px var(--content-gutter) 72px;
 }
 
 .server-detail-hero {

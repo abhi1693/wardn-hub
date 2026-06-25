@@ -1055,7 +1055,7 @@ export default function SubmitServerPage() {
     <>
       <PublicHeader />
       <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
-      <div className="mx-auto grid w-full max-w-[1100px] gap-5">
+      <div className="mx-auto grid w-full max-w-[var(--content-max-width)] gap-5">
         <section className="grid gap-1 border-b border-border pb-4">
           <p className="eyebrow">MCP Registry</p>
           <h1 className="text-balance text-2xl leading-8 font-semibold">{pageTitle}</h1>

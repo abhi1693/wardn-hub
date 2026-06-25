@@ -6,7 +6,6 @@ import {
   FileCheck2,
   History,
   LogIn,
-  Plus,
   Server,
   UserPlus,
 } from "lucide-react";
@@ -165,16 +164,6 @@ function AppShell({
               >
                 <FileCheck2 size={16} />
                 My submissions
-              </button>
-              <button
-                className="site-nav-cta"
-                onClick={() => {
-                  window.location.href = "/submit";
-                }}
-                type="button"
-              >
-                <Plus size={16} />
-                List Server
               </button>
               <button className="site-action-link" onClick={onLogout} type="button">
                 Sign out

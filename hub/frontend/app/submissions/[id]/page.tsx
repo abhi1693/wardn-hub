@@ -93,7 +93,7 @@ export default function SubmissionDetailPage() {
     <>
       <PublicHeader />
       <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
-      <div className="mx-auto grid w-full max-w-5xl gap-5">
+      <div className="mx-auto grid w-full max-w-[var(--content-max-width)] gap-5">
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {submission ? (

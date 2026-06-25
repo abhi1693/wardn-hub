@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileCheck2, LogIn, Plus, UserPlus } from "lucide-react";
+import { FileCheck2, LogIn, UserPlus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -146,10 +146,6 @@ export function PublicHeader() {
             <Link className="site-action-link" href="/submissions">
               <FileCheck2 size={16} />
               My submissions
-            </Link>
-            <Link className="site-nav-cta" href="/submit">
-              <Plus size={16} />
-              List Server
             </Link>
             <button className="site-action-link" onClick={() => void handleLogout()} type="button">
               Sign out

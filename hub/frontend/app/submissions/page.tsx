@@ -74,15 +74,23 @@ export default function SubmissionsPage() {
     <>
       <PublicHeader />
       <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
-      <div className="mx-auto grid w-full max-w-5xl gap-5">
+      <div className="mx-auto grid w-full max-w-[var(--content-max-width)] gap-5">
         <Card>
           <CardHeader>
-            <div className="grid gap-1.5">
-              <CardDescription className="flex items-center gap-2 uppercase">
-                <FileCheck2 className="size-4" />
-                My submissions
-              </CardDescription>
-              <CardTitle className="text-2xl">Submission review</CardTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="grid gap-1.5">
+                <CardDescription className="flex items-center gap-2 uppercase">
+                  <FileCheck2 className="size-4" />
+                  My submissions
+                </CardDescription>
+                <CardTitle className="text-2xl">Submission review</CardTitle>
+              </div>
+              <Button asChild size="sm">
+                <Link href="/submit">
+                  <Plus className="size-4" />
+                  Add
+                </Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="grid gap-4">
