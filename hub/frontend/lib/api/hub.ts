@@ -95,6 +95,10 @@ function query(params: Record<string, string | number | boolean | undefined>) {
   return value ? `?${value}` : "";
 }
 
+function pathValue(value: string) {
+  return value.split("/").map(encodeURIComponent).join("/");
+}
+
 export function listServers(params: {
   search?: string;
   supportLevel?: string;
@@ -135,7 +139,7 @@ export function listCategories() {
 
 export function getServer(serverName: string) {
   return request<RegistryServerDetailResponse>(
-    `/mcp/servers/${encodeURIComponent(serverName)}`,
+    `/mcp/servers/${pathValue(serverName)}`,
   );
 }
 
@@ -153,7 +157,7 @@ export function updateServerVersion(
   payload: RegistryServerVersionUpdate,
 ) {
   return request<RegistryServerVersionDetailResponse>(
-    `/admin/mcp/servers/${encodeURIComponent(serverName)}/versions/${encodeURIComponent(version)}`,
+    `/admin/mcp/servers/${pathValue(serverName)}/versions/${encodeURIComponent(version)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -163,7 +167,7 @@ export function updateServerVersion(
 }
 
 export function deleteServer(serverName: string) {
-  return request<void>(`/admin/mcp/servers/${encodeURIComponent(serverName)}`, {
+  return request<void>(`/admin/mcp/servers/${pathValue(serverName)}`, {
     method: "DELETE",
   });
 }

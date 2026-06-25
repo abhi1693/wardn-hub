@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import {
   Building2,
   Database,
+  Eye,
   FileCheck2,
   History,
   LogIn,
@@ -12,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { ServerIcon, serverIconUrl } from "@/components/server-icon";
 import {
   HubApiError,
   createPartnerSupport,
@@ -115,6 +118,10 @@ function ActionButton({
       {children}
     </button>
   );
+}
+
+function serverDetailHref(serverName: string) {
+  return `/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function AppShell({
@@ -258,18 +265,16 @@ function BrowseView() {
       {servers.length > 0 && (
         <div className="server-grid">
           {servers.map((server) => (
-            <article className="server-card" key={server.id}>
+            <Link className="server-card" href={serverDetailHref(server.name)} key={server.id}>
               <span className="server-card-head">
-                <span className="server-card-icon">
-                  <Server size={22} />
-                </span>
+                <ServerIcon src={serverIconUrl(server)} title={server.title || server.name} />
                 <span>
                   <strong>{server.title || server.name}</strong>
                   <small>{server.categories?.[0]?.name || "MCP Server"}</small>
                 </span>
               </span>
               <span className="server-card-description">{server.description}</span>
-            </article>
+            </Link>
           ))}
         </div>
       )}
@@ -343,6 +348,10 @@ function SubmissionsView() {
               </div>
               <Pill tone={toneFor(submission.status)}>{submission.status}</Pill>
               <div className="action-strip">
+                <Link className="small-button" href={`/submissions/${submission.id}`}>
+                  <Eye size={14} />
+                  Details
+                </Link>
                 {submission.status === "draft" || submission.status === "rejected" ? (
                   <ActionButton onClick={() => void mutateSubmission(submission, "submit")}>
                     Submit
