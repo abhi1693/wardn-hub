@@ -247,7 +247,7 @@ async def list_public_registry_users(session: AsyncSession) -> list[User]:
                 User.id.in_(version_user_ids),
             ),
         )
-        .order_by(User.display_name.asc(), User.email.asc())
+        .order_by(User.first_name.asc(), User.last_name.asc(), User.email.asc())
     )
     return list(result.scalars().unique().all())
 
