@@ -6,6 +6,7 @@
  */
 import type { PartnerOrganizationUpdatePartnerProfile } from './partnerOrganizationUpdatePartnerProfile';
 import type { PartnerOrganizationUpdatePartnerStatus } from './partnerOrganizationUpdatePartnerStatus';
+import type { PartnerOrganizationUpdatePartnerSupportLevel } from './partnerOrganizationUpdatePartnerSupportLevel';
 import type { PartnerOrganizationUpdatePartnerTier } from './partnerOrganizationUpdatePartnerTier';
 
 export interface PartnerOrganizationUpdate {
@@ -13,7 +14,7 @@ export interface PartnerOrganizationUpdate {
   partnerInternalNotes?: string | null;
   partnerProfile?: PartnerOrganizationUpdatePartnerProfile;
   partnerStatus?: PartnerOrganizationUpdatePartnerStatus;
-  partnerSupportLevel?: 'official' | 'verified' | 'compatible' | 'deprecated' | null;
+  partnerSupportLevel?: PartnerOrganizationUpdatePartnerSupportLevel;
   partnerTier?: PartnerOrganizationUpdatePartnerTier;
   supportEmail?: string | null;
   websiteUrl?: string | null;

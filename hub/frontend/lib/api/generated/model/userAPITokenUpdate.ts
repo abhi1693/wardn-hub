@@ -11,4 +11,5 @@ export interface UserAPITokenUpdate {
   is_active?: boolean | null;
   name?: string | null;
   organizationIds?: string[] | null;
+  scopes?: ('catalog:read' | 'submissions:read' | 'submissions:write' | 'tokens:read' | 'tokens:write')[] | null;
 }

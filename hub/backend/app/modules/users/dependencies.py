@@ -7,8 +7,15 @@ from app.core.config import get_settings
 from app.core.security import verify_session_token
 from app.db.session import get_db_session
 from app.modules.users import repository
-from app.modules.users.models import User
+from app.modules.users.models import User, UserAPIToken
+from app.modules.users.schemas import APITokenScope
 from app.modules.users.service import authenticate_api_token
+
+API_TOKEN_STATE_KEY = "wardn_hub_api_token"
+
+
+def get_request_api_token(request: Request) -> UserAPIToken | None:
+    return getattr(request.state, API_TOKEN_STATE_KEY, None)
 
 
 async def get_current_user(
@@ -18,6 +25,7 @@ async def get_current_user(
 ) -> User:
     user_id = None
     settings = get_settings()
+    setattr(request.state, API_TOKEN_STATE_KEY, None)
     session_token = request.cookies.get(settings.session_cookie_name)
 
     if session_token:
@@ -27,6 +35,7 @@ async def get_current_user(
         authenticated = await authenticate_api_token(session, plaintext_token)
         if authenticated:
             user, _api_token = authenticated
+            setattr(request.state, API_TOKEN_STATE_KEY, _api_token)
             return user
 
     if user_id is None:
@@ -44,6 +53,29 @@ async def get_current_user(
     return user
 
 
+def require_api_token_scopes(
+    *required_scopes: APITokenScope,
+):
+    async def dependency(
+        request: Request,
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        api_token = get_request_api_token(request)
+        if api_token is None:
+            return current_user
+
+        token_scopes = set(api_token.scopes)
+        missing_scopes = [scope for scope in required_scopes if scope not in token_scopes]
+        if missing_scopes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"API token missing required scope: {', '.join(missing_scopes)}",
+            )
+        return current_user
+
+    return dependency
+
+
 async def require_superuser(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
@@ -53,4 +85,3 @@ async def require_superuser(
             detail="superuser access required",
         )
     return current_user
-

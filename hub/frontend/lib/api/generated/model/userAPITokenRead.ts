@@ -4,6 +4,7 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.1.0
  */
+import type { UserAPITokenReadScopesItem } from './userAPITokenReadScopesItem';
 
 export interface UserAPITokenRead {
   created_at: string;
@@ -14,6 +15,7 @@ export interface UserAPITokenRead {
   last_used_at: string | null;
   name: string;
   organizationIds: string[];
+  scopes: UserAPITokenReadScopesItem[];
   token_prefix: string;
   updated_at: string;
   user_id: string;

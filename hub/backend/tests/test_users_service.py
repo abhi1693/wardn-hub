@@ -10,7 +10,8 @@ from app.modules.users.exceptions import (
     DuplicateUserError,
     InvalidLoginError,
 )
-from app.modules.users.schemas import LoginRequest, UserCreate
+from app.modules.users.models import User
+from app.modules.users.schemas import LoginRequest, UserAPITokenCreate, UserCreate
 
 
 class FakeSession:
@@ -108,3 +109,45 @@ async def test_authenticate_local_user_rejects_bad_password(monkeypatch) -> None
             FakeSession(),
             LoginRequest(email="admin@example.com", password="wrong-password"),
         )
+
+
+@pytest.mark.asyncio
+async def test_create_user_api_token_defaults_to_submission_scopes(monkeypatch) -> None:
+    user = User(email="admin@example.com")
+    user.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return user
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    record, token = await service.create_user_api_token(
+        FakeSession(),
+        user.id,
+        UserAPITokenCreate(name="Automation"),
+    )
+
+    assert token.startswith("wardn_hub_")
+    assert record.scopes == ["catalog:read", "submissions:read", "submissions:write"]
+
+
+@pytest.mark.asyncio
+async def test_create_user_api_token_deduplicates_custom_scopes(monkeypatch) -> None:
+    user = User(email="admin@example.com")
+    user.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return user
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    record, _token = await service.create_user_api_token(
+        FakeSession(),
+        user.id,
+        UserAPITokenCreate(
+            name="Catalog",
+            scopes=["catalog:read", "catalog:read", "submissions:read"],
+        ),
+    )
+
+    assert record.scopes == ["catalog:read", "submissions:read"]

@@ -21,6 +21,7 @@ from app.modules.users.exceptions import (
 )
 from app.modules.users.models import LocalAuthCredential, User, UserAPIToken
 from app.modules.users.schemas import (
+    APITokenScope,
     LoginRequest,
     UserAPITokenCreate,
     UserAPITokenUpdate,
@@ -34,6 +35,10 @@ def normalize_email(email: str) -> str:
 
 def unique_uuid_strings(values: list[uuid.UUID]) -> list[str]:
     return sorted({str(value) for value in values})
+
+
+def unique_scope_strings(values: list[APITokenScope]) -> list[str]:
+    return sorted(set(values))
 
 
 async def create_user(
@@ -101,6 +106,7 @@ async def create_user_api_token(
         description=payload.description.strip(),
         token_prefix=token_prefix,
         token_hash=hash_api_token(token),
+        scopes=unique_scope_strings(payload.scopes),
         organization_ids=unique_uuid_strings(payload.organization_ids),
         is_active=True,
         expires_at=payload.expires_at,
@@ -127,6 +133,8 @@ async def update_user_api_token(
         token.name = payload.name.strip()
     if payload.description is not None:
         token.description = payload.description.strip()
+    if payload.scopes is not None:
+        token.scopes = unique_scope_strings(payload.scopes)
     if "expires_at" in payload.model_fields_set:
         token.expires_at = payload.expires_at
     if payload.organization_ids is not None:

@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.core.schemas import ErrorResponse
 from app.core.security import create_session_token
 from app.db.session import get_db_session
-from app.modules.users.dependencies import get_current_user
+from app.modules.users.dependencies import get_current_user, require_api_token_scopes
 from app.modules.users.exceptions import (
     DuplicateUserError,
     InvalidLoginError,
@@ -127,7 +127,7 @@ async def me(current_user: Annotated[User, Depends(get_current_user)]) -> UserRe
 async def create_api_token(
     payload: UserAPITokenCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("tokens:write"))],
 ) -> UserAPITokenCreated:
     record, token = await create_user_api_token(session, current_user.id, payload)
     await session.commit()
@@ -145,7 +145,7 @@ async def create_api_token(
 )
 async def list_api_tokens(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("tokens:read"))],
 ) -> UserAPITokenListResponse:
     records = await list_user_api_tokens(session, current_user.id)
     return UserAPITokenListResponse(
@@ -163,7 +163,7 @@ async def update_api_token(
     token_id: UUID,
     payload: UserAPITokenUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("tokens:write"))],
 ) -> UserAPITokenRead:
     try:
         record = await update_user_api_token(session, current_user.id, token_id, payload)
@@ -183,7 +183,7 @@ async def update_api_token(
 async def delete_api_token(
     token_id: UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("tokens:write"))],
 ) -> None:
     try:
         await delete_user_api_token(session, current_user.id, token_id)

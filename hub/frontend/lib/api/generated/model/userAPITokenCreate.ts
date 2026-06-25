@@ -4,6 +4,7 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.1.0
  */
+import type { UserAPITokenCreateScopesItem } from './userAPITokenCreateScopesItem';
 
 export interface UserAPITokenCreate {
   /** @maxLength 200 */
@@ -15,4 +16,5 @@ export interface UserAPITokenCreate {
      */
   name: string;
   organizationIds?: string[];
+  scopes?: UserAPITokenCreateScopesItem[];
 }

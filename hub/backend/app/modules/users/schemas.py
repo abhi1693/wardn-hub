@@ -1,7 +1,22 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
+
+APITokenScope = Literal[
+    "catalog:read",
+    "submissions:read",
+    "submissions:write",
+    "tokens:read",
+    "tokens:write",
+]
+
+DEFAULT_API_TOKEN_SCOPES: list[APITokenScope] = [
+    "catalog:read",
+    "submissions:read",
+    "submissions:write",
+]
 
 
 class UserRead(BaseModel):
@@ -42,6 +57,7 @@ class UserAPITokenCreate(BaseModel):
 
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=200)
+    scopes: list[APITokenScope] = Field(default_factory=lambda: DEFAULT_API_TOKEN_SCOPES.copy())
     expires_at: datetime | None = None
     organization_ids: list[uuid.UUID] = Field(default_factory=list, alias="organizationIds")
 
@@ -51,6 +67,7 @@ class UserAPITokenUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=200)
+    scopes: list[APITokenScope] | None = None
     expires_at: datetime | None = None
     organization_ids: list[uuid.UUID] | None = Field(default=None, alias="organizationIds")
     is_active: bool | None = None
@@ -64,6 +81,7 @@ class UserAPITokenRead(BaseModel):
     name: str
     description: str
     token_prefix: str
+    scopes: list[APITokenScope]
     organization_ids: list[uuid.UUID] = Field(alias="organizationIds")
     is_active: bool
     expires_at: datetime | None
@@ -79,4 +97,3 @@ class UserAPITokenCreated(BaseModel):
 
 class UserAPITokenListResponse(BaseModel):
     tokens: list[UserAPITokenRead]
-

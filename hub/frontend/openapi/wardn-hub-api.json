@@ -638,6 +638,16 @@
             "title": "Partnerstatus",
             "type": "string"
           },
+          "partnerSupportLevel": {
+            "enum": [
+              "official",
+              "verified",
+              "compatible",
+              "deprecated"
+            ],
+            "title": "Partnersupportlevel",
+            "type": "string"
+          },
           "partnerTier": {
             "enum": [
               "official",
@@ -678,6 +688,7 @@
           "isPartner",
           "partnerStatus",
           "partnerTier",
+          "partnerSupportLevel",
           "websiteUrl",
           "supportEmail",
           "partnerProfile",
@@ -741,6 +752,23 @@
               }
             ],
             "title": "Partnerstatus"
+          },
+          "partnerSupportLevel": {
+            "anyOf": [
+              {
+                "enum": [
+                  "official",
+                  "verified",
+                  "compatible",
+                  "deprecated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partnersupportlevel"
           },
           "partnerTier": {
             "anyOf": [
@@ -1963,6 +1991,80 @@
         "title": "RegistryServerVersionUpdate",
         "type": "object"
       },
+      "RegistryUserDetailResponse": {
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/RegistryListMetadata"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerRead"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/RegistryUserRead"
+          }
+        },
+        "required": [
+          "user",
+          "servers",
+          "metadata"
+        ],
+        "title": "RegistryUserDetailResponse",
+        "type": "object"
+      },
+      "RegistryUserListResponse": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryUserRead"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "title": "RegistryUserListResponse",
+        "type": "object"
+      },
+      "RegistryUserRead": {
+        "properties": {
+          "avatarUrl": {
+            "default": "",
+            "title": "Avatarurl",
+            "type": "string"
+          },
+          "htmlUrl": {
+            "default": "",
+            "title": "Htmlurl",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "login": {
+            "title": "Login",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "login"
+        ],
+        "title": "RegistryUserRead",
+        "type": "object"
+      },
       "SubmissionCreate": {
         "properties": {
           "ownerOrganizationId": {
@@ -2286,6 +2388,20 @@
             },
             "title": "Organizationids",
             "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "enum": [
+                "catalog:read",
+                "submissions:read",
+                "submissions:write",
+                "tokens:read",
+                "tokens:write"
+              ],
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
           }
         },
         "required": [
@@ -2383,6 +2499,20 @@
             "title": "Organizationids",
             "type": "array"
           },
+          "scopes": {
+            "items": {
+              "enum": [
+                "catalog:read",
+                "submissions:read",
+                "submissions:write",
+                "tokens:read",
+                "tokens:write"
+              ],
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
           "token_prefix": {
             "title": "Token Prefix",
             "type": "string"
@@ -2404,6 +2534,7 @@
           "name",
           "description",
           "token_prefix",
+          "scopes",
           "organizationIds",
           "is_active",
           "expires_at",
@@ -2478,6 +2609,27 @@
               }
             ],
             "title": "Organizationids"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "catalog:read",
+                    "submissions:read",
+                    "submissions:write",
+                    "tokens:read",
+                    "tokens:write"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
           }
         },
         "title": "UserAPITokenUpdate",
@@ -3950,6 +4102,108 @@
         "summary": "Get Mcp Server Version",
         "tags": [
           "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/users": {
+      "get": {
+        "operationId": "mcp_users_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryUserListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Mcp Users",
+        "tags": [
+          "mcp-users"
+        ]
+      }
+    },
+    "/api/v1/mcp/users/{user_id}": {
+      "get": {
+        "operationId": "mcp_users_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryUserDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp User",
+        "tags": [
+          "mcp-users"
         ]
       }
     },

@@ -6,6 +6,7 @@
  */
 import type { PartnerOrganizationReadPartnerProfile } from './partnerOrganizationReadPartnerProfile';
 import type { PartnerOrganizationReadPartnerStatus } from './partnerOrganizationReadPartnerStatus';
+import type { PartnerOrganizationReadPartnerSupportLevel } from './partnerOrganizationReadPartnerSupportLevel';
 import type { PartnerOrganizationReadPartnerTier } from './partnerOrganizationReadPartnerTier';
 
 export interface PartnerOrganizationRead {
@@ -15,7 +16,7 @@ export interface PartnerOrganizationRead {
   name: string;
   partnerProfile: PartnerOrganizationReadPartnerProfile;
   partnerStatus: PartnerOrganizationReadPartnerStatus;
-  partnerSupportLevel: 'official' | 'verified' | 'compatible' | 'deprecated';
+  partnerSupportLevel: PartnerOrganizationReadPartnerSupportLevel;
   partnerTier: PartnerOrganizationReadPartnerTier;
   slug: string;
   status: string;

@@ -31,7 +31,7 @@ from app.modules.submissions.service import (
     update_submission,
     withdraw_submission,
 )
-from app.modules.users.dependencies import get_current_user, require_superuser
+from app.modules.users.dependencies import require_api_token_scopes, require_superuser
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -52,7 +52,7 @@ def bad_request(exc: Exception) -> HTTPException:
 @router.get("", response_model=SubmissionListResponse, operation_id="submissions_list")
 async def list_submission_records(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:read"))],
 ) -> SubmissionListResponse:
     return await list_submissions(session, current_user)
 
@@ -67,7 +67,7 @@ async def list_submission_records(
 async def create_submission_record(
     payload: SubmissionCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
         response = await create_submission(session, current_user, payload)
@@ -93,7 +93,7 @@ async def create_submission_record(
 async def get_submission_record(
     submission_id: UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:read"))],
 ) -> SubmissionRead:
     try:
         return await get_submission(session, current_user, submission_id)
@@ -112,7 +112,7 @@ async def update_submission_record(
     submission_id: UUID,
     payload: SubmissionUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
         response = await update_submission(session, current_user, submission_id, payload)
@@ -138,7 +138,7 @@ async def update_submission_record(
 async def submit_submission_record(
     submission_id: UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
         response = await submit_submission(session, current_user, submission_id)
@@ -160,7 +160,7 @@ async def submit_submission_record(
 async def withdraw_submission_record(
     submission_id: UUID,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
 ) -> SubmissionRead:
     try:
         response = await withdraw_submission(session, current_user, submission_id)
