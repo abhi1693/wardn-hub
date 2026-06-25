@@ -1,7 +1,6 @@
 "use client";
 
 import { ClerkProvider } from "@clerk/nextjs";
-import { shadcn } from "@clerk/ui/themes";
 import type { ReactNode } from "react";
 
 function clientAuthProviders() {
@@ -20,8 +19,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ClerkProvider appearance={{ theme: shadcn }} publishableKey={publishableKey}>
-      {children}
-    </ClerkProvider>
+    <ClerkProvider publishableKey={publishableKey}>{children}</ClerkProvider>
   );
 }
