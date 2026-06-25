@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, FileCheck2, LogIn, LogOut, UserPlus } from "lucide-react";
+import { ChevronDown, FileCheck2, KeyRound, LogIn, LogOut, UserPlus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -154,6 +154,15 @@ export function HeaderUserMenu({
             >
               <FileCheck2 size={18} />
               <span>My submissions</span>
+            </Link>
+            <Link
+              className="site-user-menu-item"
+              href="/account/api-tokens"
+              onClick={() => setOpen(false)}
+              role="menuitem"
+            >
+              <KeyRound size={18} />
+              <span>API tokens</span>
             </Link>
           </div>
 

@@ -32,6 +32,11 @@ import type {
   SubmissionRead,
   SubmissionListResponse,
   SubmissionUpdate,
+  UserAPITokenCreate,
+  UserAPITokenCreated,
+  UserAPITokenListResponse,
+  UserAPITokenRead,
+  UserAPITokenUpdate,
   UserCreate,
   UserRead,
 } from "@/lib/api/generated/model";
@@ -339,6 +344,32 @@ export function bootstrap(payload: BootstrapUserCreate) {
 
 export function logout() {
   return request<void>("/auth/logout", { method: "POST" });
+}
+
+export function listApiTokens() {
+  return request<UserAPITokenListResponse>("/auth/api-tokens");
+}
+
+export function createApiToken(payload: UserAPITokenCreate) {
+  return request<UserAPITokenCreated>("/auth/api-tokens", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateApiToken(tokenId: string, payload: UserAPITokenUpdate) {
+  return request<UserAPITokenRead>(`/auth/api-tokens/${encodeURIComponent(tokenId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteApiToken(tokenId: string) {
+  return request<void>(`/auth/api-tokens/${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
+  });
 }
 
 export function submissionAction(
