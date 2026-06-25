@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { ServerCard } from "@/components/server-card";
+import { PublicHeader } from "@/components/site-header";
 import { listCategories, listPublishedServers } from "@/lib/api/hub";
 import type { RegistryCategoryRead, RegistryServerRead } from "@/lib/api/generated/model";
 
@@ -50,20 +50,7 @@ export default function CategoryDetailPage() {
 
   return (
     <div className="server-detail-page">
-      <header className="server-detail-topbar">
-        <Link className="server-detail-brand" href="/">
-          Wardn Hub
-        </Link>
-        <nav>
-          <Link href="/">Explore</Link>
-          <Link href="/categories">Categories</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/submissions">Submissions</Link>
-          <Link className="server-detail-nav-cta" href="/submit">
-            List Server
-          </Link>
-        </nav>
-      </header>
+      <PublicHeader />
 
       <main className="server-detail-main">
         <section className="category-page-header">

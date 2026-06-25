@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FileCheck2, Pencil, Plus } from "lucide-react";
+import { FileCheck2, Pencil, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -70,23 +71,10 @@ export default function SubmissionsPage() {
   }, []);
 
   return (
-    <main className="min-h-dvh bg-background px-5 py-6">
+    <>
+      <PublicHeader />
+      <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
       <div className="mx-auto grid w-full max-w-5xl gap-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button asChild variant="ghost">
-            <Link href="/">
-              <ArrowLeft className="size-4" />
-              Back to registry
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/submit">
-              <Plus className="size-4" />
-              Submit server
-            </Link>
-          </Button>
-        </div>
-
         <Card>
           <CardHeader>
             <div className="grid gap-1.5">
@@ -175,7 +163,8 @@ export default function SubmissionsPage() {
             ) : null}
           </CardContent>
         </Card>
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }

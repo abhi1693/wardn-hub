@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   Building2,
-  Database,
   Eye,
   FileCheck2,
   History,
@@ -15,6 +14,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { ServerCard } from "@/components/server-card";
+import { SiteHeader } from "@/components/site-header";
 import {
   HubApiError,
   createPartnerSupport,
@@ -42,12 +42,20 @@ import type {
 type Section = "browse" | "submissions" | "partners" | "audit";
 type LoadState = "idle" | "loading" | "ready" | "error" | "auth";
 type SupportLevel = "official" | "verified" | "compatible" | "deprecated";
+type ShellNavItem = {
+  href?: string;
+  id?: Section;
+  label: string;
+  icon?: typeof Server;
+};
 
-const publicNavItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
-  { id: "browse", label: "Home", icon: Server },
+const publicNavItems: ShellNavItem[] = [
+  { id: "browse", label: "Explore", icon: Server },
+  { href: "/categories", label: "Categories" },
+  { href: "/users", label: "Users" },
 ];
 
-const protectedNavItems: Array<{ id: Section; label: string; icon: typeof Server }> = [
+const protectedNavItems: ShellNavItem[] = [
   { id: "submissions", label: "Submissions", icon: FileCheck2 },
   { id: "partners", label: "Partners", icon: Building2 },
   { id: "audit", label: "Audit", icon: History },
@@ -143,29 +151,20 @@ function AppShell({
 
   return (
     <main className="site-shell">
-      <header className="site-header">
-        <button className="brand-button" onClick={() => onSectionChange("browse")} type="button">
-          <Database size={18} />
-          <span>Wardn Hub</span>
-        </button>
-        <nav className="site-nav" aria-label="Primary">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                className={`site-nav-item ${section === item.id ? "active" : ""}`}
-                key={item.id}
-                onClick={() => onSectionChange(item.id)}
-                type="button"
-              >
-                <Icon size={17} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-        <div className="site-actions">
-          {isAuthenticated ? (
+      <SiteHeader
+        brandOnClick={() => onSectionChange("browse")}
+        items={navItems.map((item) => {
+          const sectionId = item.id;
+          return {
+            active: sectionId ? section === sectionId : undefined,
+            href: item.href,
+            icon: item.icon,
+            label: item.label,
+            onClick: sectionId ? () => onSectionChange(sectionId) : undefined,
+          };
+        })}
+        actions={
+          isAuthenticated ? (
             <>
               <button
                 className="text-button"
@@ -202,9 +201,9 @@ function AppShell({
                 Create account
               </button>
             </>
-          )}
-        </div>
-      </header>
+          )
+        }
+      />
       <section className="workspace">
         {children}
       </section>

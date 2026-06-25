@@ -4,6 +4,7 @@ import Link from "next/link";
 import { User } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PublicHeader } from "@/components/site-header";
 import {
   getServer,
   HubApiError,
@@ -65,20 +66,7 @@ export default function UsersPage() {
 
   return (
     <div className="server-detail-page">
-      <header className="server-detail-topbar">
-        <Link className="server-detail-brand" href="/">
-          Wardn Hub
-        </Link>
-        <nav>
-          <Link href="/">Explore</Link>
-          <Link href="/categories">Categories</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/submissions">Submissions</Link>
-          <Link className="server-detail-nav-cta" href="/submit">
-            List Server
-          </Link>
-        </nav>
-      </header>
+      <PublicHeader />
 
       <main className="server-detail-main">
         <section className="category-page-header">

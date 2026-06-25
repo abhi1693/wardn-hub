@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileCheck2 } from "lucide-react";
+import { FileCheck2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -89,15 +90,11 @@ export default function SubmissionDetailPage() {
   const packages = useMemo(() => records(serverJson.packages), [serverJson.packages]);
 
   return (
-    <main className="min-h-dvh bg-background px-5 py-6">
+    <>
+      <PublicHeader />
+      <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
       <div className="mx-auto grid w-full max-w-5xl gap-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button asChild variant="ghost">
-            <Link href="/">
-              <ArrowLeft className="size-4" />
-              Back to registry
-            </Link>
-          </Button>
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {submission ? (
               submission.status === "published" ? (
@@ -215,7 +212,8 @@ export default function SubmissionDetailPage() {
             ) : null}
           </CardContent>
         </Card>
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }

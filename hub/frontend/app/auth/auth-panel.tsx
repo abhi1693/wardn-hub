@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PublicHeader } from "@/components/site-header";
 import {
   Card,
   CardContent,
@@ -82,7 +83,9 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background p-5">
+    <>
+      <PublicHeader />
+      <main className="flex min-h-[calc(100dvh-64px)] items-center justify-center bg-background p-5">
       <Card className="w-full max-w-[420px]">
         <CardHeader className="space-y-6">
           <div className="flex items-center gap-3">
@@ -177,7 +180,8 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
           </form>
         </CardContent>
       </Card>
-    </main>
+      </main>
+    </>
   );
 }
 

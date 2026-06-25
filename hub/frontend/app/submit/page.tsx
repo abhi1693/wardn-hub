@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ClipboardEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Database, Plus, Save, Trash2 } from "lucide-react";
+import { Plus, Save, Trash2 } from "lucide-react";
 
+import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -1207,19 +1208,10 @@ export default function SubmitServerPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-background px-5 py-6">
+    <>
+      <PublicHeader />
+      <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
       <div className="mx-auto grid w-full max-w-[1100px] gap-5">
-        <header className="flex min-h-10 items-center justify-between gap-4">
-          <Link className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground" href="/">
-            <ArrowLeft size={16} />
-            Back to registry
-          </Link>
-          <div className="inline-flex items-center gap-2 text-sm font-semibold">
-            <Database size={18} />
-            Wardn Hub
-          </div>
-        </header>
-
         <section className="grid gap-1 border-b border-border pb-4">
           <p className="eyebrow">MCP Registry</p>
           <h1 className="text-balance text-2xl leading-8 font-semibold">{pageTitle}</h1>
@@ -1974,7 +1966,8 @@ export default function SubmitServerPage() {
             </div>
           </form>
         )}
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }

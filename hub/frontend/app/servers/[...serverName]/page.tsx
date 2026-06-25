@@ -9,6 +9,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { ServerIcon, serverIconUrl } from "@/components/server-icon";
+import { PublicHeader } from "@/components/site-header";
 import { getServer } from "@/lib/api/hub";
 import type {
   RegistryServerDetailResponse,
@@ -402,36 +403,34 @@ function PackageEnvironmentTable({
 }
 
 function PackageArgumentsTable({
-  packages,
+  packageArguments,
 }: {
-  packages: Record<string, unknown>[];
+  packageArguments: Record<string, unknown>[];
 }) {
-  const rows = packages.flatMap((packageTarget) =>
-    records(packageTarget.packageArguments).map((argument) => ({
+  const rows = packageArguments
+    .map((argument) => ({
       defaultValue: stringValue(argument.default),
       description: stringValue(argument.description),
       flag: stringValue(argument.flag),
       format: stringValue(argument.format) || "string",
-      identifier: targetValue(packageTarget, "Package"),
       name: stringValue(argument.name),
       options: Array.isArray(argument.options) ? argument.options.map(String).join(", ") : "",
       required: argument.isRequired,
       secret: argument.isSecret,
       value: stringValue(argument.value),
-    })),
-  ).filter((argument) => argument.name || argument.flag);
+    }))
+    .filter((argument) => argument.name || argument.flag);
 
   if (rows.length === 0) return null;
 
   return (
-    <section className="technical-card">
-      <TechnicalHeader count={`${rows.length} defined`} title="Package Arguments" />
+    <div className="technical-subtable">
+      <label>Package Arguments</label>
       <div className="technical-table-wrap">
-        <table className="technical-table">
+        <table className="technical-table compact">
           <thead>
             <tr>
               <th>Name</th>
-              <th>Package</th>
               <th>Flag</th>
               <th>Format</th>
               <th>Required</th>
@@ -439,14 +438,13 @@ function PackageArgumentsTable({
           </thead>
           <tbody>
             {rows.map((argument, index) => (
-              <tr key={`${argument.identifier}-${argument.name}-${argument.flag}-${index}`}>
+              <tr key={`${argument.name}-${argument.flag}-${index}`}>
                 <td>
                   <strong>{argument.name || argument.flag}</strong>
                   {argument.description ? <span>{argument.description}</span> : null}
                   {argument.defaultValue ? <em>Default: {argument.defaultValue}</em> : null}
                   {argument.options ? <em>Options: {argument.options}</em> : null}
                 </td>
-                <td>{argument.identifier}</td>
                 <td>{argument.flag || "Not specified"}</td>
                 <td>
                   <FormatBadge value={argument.format} />
@@ -459,7 +457,7 @@ function PackageArgumentsTable({
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -552,6 +550,7 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
           const transport = nestedRecord(packageTarget, "transport");
           const transportType = stringValue(transport.type) || "stdio";
           const environmentVariables = records(packageTarget.environmentVariables);
+          const packageArguments = records(packageTarget.packageArguments);
           return (
             <details className="technical-package-item" key={`${identifier}-${index}`} open={index === 0}>
               <summary>
@@ -593,6 +592,7 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                   value={packageTarget}
                 />
                 <PackageEnvironmentTable environmentVariables={environmentVariables} />
+                <PackageArgumentsTable packageArguments={packageArguments} />
               </div>
             </details>
         );
@@ -728,20 +728,7 @@ export default function ServerDetailPage() {
 
   return (
     <div className="server-detail-page">
-      <header className="server-detail-topbar">
-        <Link className="server-detail-brand" href="/">
-          Wardn Hub
-        </Link>
-        <nav>
-          <Link href="/">Explore</Link>
-          <Link href="/categories">Categories</Link>
-          <Link href="/users">Users</Link>
-          <Link href="/submissions">Submissions</Link>
-          <Link className="server-detail-nav-cta" href="/submit">
-            List Server
-          </Link>
-        </nav>
-      </header>
+      <PublicHeader />
 
       <main className="server-detail-main">
         {state === "loading" ? (
@@ -918,7 +905,6 @@ export default function ServerDetailPage() {
                 <>
                   <div className="technical-main">
                     <PackageDefinitionPanel packages={targets.packages} />
-                    <PackageArgumentsTable packages={targets.packages} />
                     <RemotesPanel remotes={targets.remotes} />
                     <ManifestFieldsPanel manifest={manifest} />
                   </div>
