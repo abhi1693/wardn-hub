@@ -66,7 +66,7 @@ function canAccessAudit(user: UserRead | null) {
 }
 
 function canManagePartners(user: UserRead | null) {
-  return Boolean(user?.is_superuser);
+  return Boolean(user?.is_superuser || user?.is_global_partner_manager);
 }
 
 function canAccessSection(user: UserRead | null, section: Section) {

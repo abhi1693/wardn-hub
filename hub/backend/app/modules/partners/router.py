@@ -28,7 +28,7 @@ from app.modules.partners.service import (
     update_partner_organization,
     update_server_support,
 )
-from app.modules.users.dependencies import get_current_user, require_superuser
+from app.modules.users.dependencies import get_current_user, require_global_partner_manager
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/partners", tags=["partners"])
@@ -64,7 +64,7 @@ async def update_partner_organization_record(
     organization_id: UUID,
     payload: PartnerOrganizationUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_global_partner_manager)],
 ) -> PartnerOrganizationRead:
     try:
         response = await update_partner_organization(
@@ -111,7 +111,7 @@ async def create_partner_server_support_record(
     organization_id: UUID,
     payload: PartnerServerSupportCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_global_partner_manager)],
 ) -> PartnerServerSupportRead:
     try:
         response = await create_server_support(session, current_user, organization_id, payload)
@@ -135,7 +135,7 @@ async def update_partner_server_support_record(
     support_id: UUID,
     payload: PartnerServerSupportUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_global_partner_manager)],
 ) -> PartnerServerSupportRead:
     try:
         response = await update_server_support(session, current_user, support_id, payload)

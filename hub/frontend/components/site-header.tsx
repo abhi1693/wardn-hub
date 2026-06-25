@@ -33,10 +33,9 @@ const adminItems: HeaderItem[] = [
   { href: "/submissions", label: "Submissions" },
 ];
 
-const superuserItems: HeaderItem[] = [
-  { href: "/partners", label: "Partners" },
-  { href: "/?section=audit", label: "Audit" },
-];
+const partnerManagerItems: HeaderItem[] = [{ href: "/partners", label: "Partners" }];
+
+const superuserItems: HeaderItem[] = [{ href: "/?section=audit", label: "Audit" }];
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -52,6 +51,10 @@ function isAdminUser(user: UserRead | null) {
 
 function canAccessAudit(user: UserRead | null) {
   return Boolean(user?.is_superuser);
+}
+
+function canManagePartners(user: UserRead | null) {
+  return Boolean(user?.is_superuser || user?.is_global_partner_manager);
 }
 
 function BrandMark() {
@@ -295,6 +298,7 @@ export function PublicHeader() {
   const navItems = [
     ...publicItems,
     ...(isAdminUser(user) ? adminItems : []),
+    ...(canManagePartners(user) ? partnerManagerItems : []),
     ...(canAccessAudit(user) ? superuserItems : []),
   ];
   const isAuthenticated = Boolean(user);

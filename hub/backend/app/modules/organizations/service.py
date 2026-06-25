@@ -35,6 +35,14 @@ from app.modules.users.models import User
 ORG_ADMIN_PERMISSIONS = {"organization.manage", "organization.members.manage"}
 
 
+def can_manage_partners(user: User) -> bool:
+    return user.is_superuser or user.is_global_partner_manager
+
+
+def can_manage_partner_organization(user: User, organization: Organization) -> bool:
+    return user.is_superuser or (user.is_global_partner_manager and organization.is_partner)
+
+
 def normalize_slug(value: str) -> str:
     return value.strip().casefold()
 
@@ -148,7 +156,7 @@ async def require_organization_member(
     if organization is None or organization.status == "archived":
         raise OrganizationNotFoundError("organization not found")
     membership = await repository.get_organization_membership(session, organization_id, user.id)
-    if not user.is_superuser and membership is None:
+    if not can_manage_partner_organization(user, organization) and membership is None:
         raise OrganizationAccessDeniedError("organization access denied")
     return organization, membership
 
@@ -162,6 +170,12 @@ async def require_organization_permission(
     organization, membership = await require_organization_member(session, user, organization_id)
     if organization.status != "active":
         raise OrganizationAccessDeniedError("organization is not active")
+    if (
+        user.is_global_partner_manager
+        and organization.is_partner
+        and permission in ORG_ADMIN_PERMISSIONS
+    ):
+        return organization, membership
     if permission not in permissions_for_user(user, membership):
         raise OrganizationAccessDeniedError(f"{permission} permission required")
     return organization, membership
@@ -185,8 +199,8 @@ async def create_organization(
     user: User,
     payload: OrganizationCreate,
 ) -> OrganizationRead:
-    if not user.is_superuser:
-        raise OrganizationAccessDeniedError("only superusers can create organizations")
+    if not can_manage_partners(user):
+        raise OrganizationAccessDeniedError("partner manager access required")
     slug = normalize_slug(payload.slug)
     if await repository.get_organization_by_slug(session, slug):
         raise DuplicateOrganizationError("organization slug already exists")

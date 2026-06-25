@@ -37,6 +37,10 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
+function canManagePartners(user: { is_superuser: boolean; is_global_partner_manager: boolean }) {
+  return user.is_superuser || user.is_global_partner_manager;
+}
+
 export default function EditPartnerPage() {
   const params = useParams<{ organizationId?: string }>();
   const router = useRouter();
@@ -68,8 +72,8 @@ export default function EditPartnerPage() {
     setState("loading");
     setError("");
     const user = await currentUser();
-    if (!user.is_superuser) {
-      throw new Error("Partner management requires superuser access.");
+    if (!canManagePartners(user)) {
+      throw new Error("Partner management requires partner manager access.");
     }
     const [
       partnerResponse,

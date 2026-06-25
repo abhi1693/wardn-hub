@@ -22,6 +22,10 @@ function slugFromName(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function canManagePartners(user: { is_superuser: boolean; is_global_partner_manager: boolean }) {
+  return user.is_superuser || user.is_global_partner_manager;
+}
+
 export default function CreatePartnerPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -40,8 +44,8 @@ export default function CreatePartnerPage() {
   useEffect(() => {
     currentUser()
       .then((user) => {
-        if (!user.is_superuser) {
-          setError("Partner management requires superuser access.");
+        if (!canManagePartners(user)) {
+          setError("Partner management requires partner manager access.");
           setAccessState("denied");
           return;
         }
