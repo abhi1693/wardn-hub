@@ -57,6 +57,44 @@ def model_or_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
+def has_env_placeholder(value: Any) -> bool:
+    return isinstance(value, str) and "${" in value and "}" in value
+
+
+def collect_env_placeholders(value: Any, path: str = "serverJson") -> list[str]:
+    if has_env_placeholder(value):
+        return [path]
+    if isinstance(value, dict):
+        placeholders: list[str] = []
+        for key, child_value in value.items():
+            if key == "documentation":
+                continue
+            placeholders.extend(collect_env_placeholders(child_value, f"{path}.{key}"))
+        return placeholders
+    if isinstance(value, list):
+        placeholders: list[str] = []
+        for index, child_value in enumerate(value):
+            placeholders.extend(collect_env_placeholders(child_value, f"{path}[{index}]"))
+        return placeholders
+    return []
+
+
+def package_identifier_version_separator(identifier: str) -> str:
+    value = identifier.strip()
+    last_colon = value.rfind(":")
+    last_slash = value.rfind("/")
+    if last_colon > last_slash and last_colon < len(value) - 1:
+        return ":"
+    if "==" in value:
+        name, _, version = value.partition("==")
+        if name and version:
+            return "=="
+    at_index = value.rfind("@")
+    if at_index > 0 and at_index < len(value) - 1:
+        return "@"
+    return ""
+
+
 def package_targets_check(packages: list[Any]) -> dict[str, str]:
     if not packages:
         return validation_check("packages", "passed", "No package targets provided.")
@@ -66,6 +104,15 @@ def package_targets_check(packages: list[Any]) -> dict[str, str]:
             return validation_check("packages", "failed", "Package registryType is required.")
         if not is_non_empty_string(package.get("identifier")):
             return validation_check("packages", "failed", "Package identifier is required.")
+        identifier = str(package.get("identifier") or "")
+        separator = package_identifier_version_separator(identifier)
+        if separator:
+            return validation_check(
+                "packages",
+                "failed",
+                "Package identifier must not include a version. Move the "
+                f"`{separator}` version suffix from {identifier} into the package version field.",
+            )
         transport = package.get("transport")
         if transport is not None:
             if not isinstance(transport, dict):
@@ -91,6 +138,137 @@ def remote_targets_check(remotes: list[Any]) -> dict[str, str]:
     return validation_check("remotes", "passed", "Remote targets are structurally valid.")
 
 
+def env_placeholder_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    placeholders = collect_env_placeholders(payload.model_dump(by_alias=True, exclude_none=True))
+    if placeholders:
+        return validation_check(
+            "envPlaceholders",
+            "failed",
+            "Environment placeholders are not allowed in submitted metadata: "
+            + ", ".join(placeholders[:5]),
+        )
+    return validation_check("envPlaceholders", "passed", "No environment placeholders found.")
+
+
+def package_transport_detail_check(packages: list[Any]) -> dict[str, str]:
+    if not packages:
+        return validation_check("packageTransportDetails", "passed", "No package targets provided.")
+
+    incomplete: list[str] = []
+    for package_value in packages:
+        package = model_or_dict(package_value)
+        registry_type = str(package.get("registryType") or "").lower()
+        if registry_type == "mcpb":
+            continue
+
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        transport_type = str(transport_value.get("type") or "").lower()
+        if transport_type and transport_type not in {"stdio", "local"}:
+            continue
+
+        identifier = str(package.get("identifier") or "package")
+        missing: list[str] = []
+        if not is_non_empty_string(transport_value.get("command")):
+            missing.append("command")
+        if not transport_value.get("args"):
+            missing.append("args")
+        if missing:
+            incomplete.append(f"{identifier} missing {'/'.join(missing)}")
+
+    if incomplete:
+        return validation_check(
+            "packageTransportDetails",
+            "warning",
+            "Package transport details may be incomplete: " + "; ".join(incomplete),
+        )
+    return validation_check(
+        "packageTransportDetails",
+        "passed",
+        "Package transport command and args are present where expected.",
+    )
+
+
+def has_local_package_target(packages: list[Any]) -> bool:
+    for package_value in packages:
+        package = model_or_dict(package_value)
+        registry_type = str(package.get("registryType") or "").lower()
+        if registry_type == "mcpb":
+            continue
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        transport_type = str(transport_value.get("type") or "").lower()
+        if not transport_type or transport_type in {"stdio", "local"}:
+            return True
+    return False
+
+
+def documentation_detail_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    documentation = payload.documentation.lower()
+    if not documentation.strip():
+        return validation_check("documentationDetails", "warning", "Documentation is empty.")
+
+    missing_sections = [
+        label
+        for label, needles in {
+            "installation": ("installation", "install", "mcpservers", "command"),
+            "configuration": ("configuration", "environment", "env", "args", "variables"),
+            "capabilities": ("capabilities", "tools", "resources", "prompts"),
+        }.items()
+        if not any(needle in documentation for needle in needles)
+    ]
+    if missing_sections:
+        return validation_check(
+            "documentationDetails",
+            "warning",
+            "Documentation may be missing: " + ", ".join(missing_sections),
+        )
+    return validation_check(
+        "documentationDetails",
+        "passed",
+        "Documentation includes setup, configuration, and capability details.",
+    )
+
+
+def source_review_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    meta = payload.meta if isinstance(payload.meta, dict) else {}
+    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
+    files_read = (
+        source_review.get("filesRead")
+        if isinstance(source_review.get("filesRead"), list)
+        else []
+    )
+    unknowns = (
+        source_review.get("unknowns")
+        if isinstance(source_review.get("unknowns"), list)
+        else []
+    )
+    missing: list[str] = []
+    if not files_read:
+        missing.append("filesRead")
+    if source_review.get("capabilitiesReviewed") is not True:
+        missing.append("capabilitiesReviewed")
+    if source_review.get("limitationsReviewed") is not True:
+        missing.append("limitationsReviewed")
+    if unknowns:
+        missing.append("unknowns must be resolved")
+    if has_local_package_target(payload.packages):
+        install_commands = source_review.get("installCommands")
+        command_arguments = source_review.get("commandArguments")
+        if not isinstance(install_commands, list) or not install_commands:
+            missing.append("installCommands")
+        if not isinstance(command_arguments, list) or not command_arguments:
+            missing.append("commandArguments")
+
+    if missing:
+        return validation_check(
+            "sourceReview",
+            "warning",
+            "Source review evidence is incomplete: " + ", ".join(missing),
+        )
+    return validation_check("sourceReview", "passed", "Source review evidence is complete.")
+
+
 def documentation_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
     if payload.documentation.strip():
         return validation_check("documentation", "passed", "Documentation is present.")
@@ -101,9 +279,13 @@ def validation_result_for(payload: RegistryServerVersionCreate) -> dict:
     checks = [
         validation_check("schema", "passed", "Registry schema fields are valid."),
         validation_check("target", "passed", "At least one package or remote target is present."),
+        env_placeholder_check(payload),
         package_targets_check(payload.packages),
+        package_transport_detail_check(payload.packages),
         remote_targets_check(payload.remotes),
         documentation_check(payload),
+        documentation_detail_check(payload),
+        source_review_check(payload),
     ]
     statuses = {check["status"] for check in checks}
     status = "failed" if "failed" in statuses else "warning" if "warning" in statuses else "passed"
@@ -120,6 +302,19 @@ def ensure_validation_passed(validation_result: dict) -> None:
     ]
     message = failed[0] if failed else "submission payload validation failed"
     raise SubmissionValidationError(message)
+
+
+def ensure_ready_for_review(validation_result: dict) -> None:
+    ensure_validation_passed(validation_result)
+    warnings = [
+        check["message"]
+        for check in validation_result.get("checks", [])
+        if check.get("status") == "warning" and check.get("message")
+    ]
+    if warnings:
+        raise SubmissionValidationError(
+            "submission is not ready for review: " + "; ".join(warnings)
+        )
 
 
 async def resolve_submission_owner(
@@ -375,6 +570,10 @@ async def submit_submission(
     ensure_can_read_submission(user, submission)
     if submission.status not in {"draft", "rejected"}:
         raise InvalidSubmissionTransitionError("submission cannot be submitted")
+    payload = RegistryServerVersionCreate.model_validate(submission.server_json)
+    validation_result = validation_result_for(payload)
+    ensure_ready_for_review(validation_result)
+    submission.validation_result = validation_result
     await ensure_version_not_published(session, submission.name, submission.version)
     submission.status = "submitted"
     submission.submitted_at = datetime.now(UTC)

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FileCheck2, Trash2 } from "lucide-react";
+import { AlertTriangle, FileCheck2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
@@ -28,6 +28,24 @@ function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
     : [];
+}
+
+function nestedRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function transportEnvironment(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value as Record<string, unknown>).map(([name, defaultValue]) => ({
+    name,
+    defaultValue: String(defaultValue ?? ""),
+  }));
 }
 
 function formatDate(value?: string | null) {
@@ -90,11 +108,23 @@ export default function SubmissionDetailPage() {
   const description = stringValue(serverJson.description);
   const documentation = stringValue(serverJson.documentation);
   const websiteUrl = stringValue(serverJson.websiteUrl);
+  const validationResult = (submission?.validationResult ?? {}) as Record<string, unknown>;
+  const validationStatus = stringValue(validationResult.status);
+  const validationChecks = records(validationResult.checks).filter(
+    (check) => stringValue(check.status) !== "passed",
+  );
   const repository = serverJson.repository && typeof serverJson.repository === "object"
     ? (serverJson.repository as Record<string, unknown>)
     : null;
+  const meta = nestedRecord(serverJson._meta);
+  const sourceReview = nestedRecord(meta.sourceReview);
   const remotes = useMemo(() => records(serverJson.remotes), [serverJson.remotes]);
   const packages = useMemo(() => records(serverJson.packages), [serverJson.packages]);
+  const filesRead = stringList(sourceReview.filesRead);
+  const installCommands = stringList(sourceReview.installCommands);
+  const commandArguments = stringList(sourceReview.commandArguments);
+  const prerequisites = stringList(sourceReview.prerequisites);
+  const reviewedEnvironmentVariables = records(sourceReview.environmentVariables);
 
   async function handleDeleteSubmission() {
     if (!submission || !isDeleteableSubmission(submission.status)) return;
@@ -215,6 +245,28 @@ export default function SubmissionDetailPage() {
                   </div>
                 </div>
 
+                {validationChecks.length > 0 ? (
+                  <div className="grid gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <AlertTriangle className="size-4" />
+                      <span>
+                        Validation {validationStatus || "warning"}
+                      </span>
+                    </div>
+                    <div className="grid gap-2">
+                      {validationChecks.map((check) => (
+                        <div
+                          className="rounded-md border border-amber-200 bg-white/60 px-3 py-2"
+                          key={`${stringValue(check.name)}-${stringValue(check.message)}`}
+                        >
+                          <div className="font-semibold">{stringValue(check.name) || "Check"}</div>
+                          <div>{stringValue(check.message) || stringValue(check.status)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="grid gap-2">
                     <div className="text-sm font-medium">Title</div>
@@ -252,6 +304,118 @@ export default function SubmissionDetailPage() {
                     </div>
                   </div>
                 </div>
+
+                {packages.length > 0 ? (
+                  <div className="grid gap-3">
+                    <div className="text-sm font-medium">Package details</div>
+                    {packages.map((packageTarget, index) => {
+                      const transport = nestedRecord(packageTarget.transport);
+                      const transportArgs = stringList(transport.args);
+                      const transportEnv = transportEnvironment(transport.env);
+                      return (
+                        <div
+                          className="grid gap-3 rounded-md border bg-card p-3 text-sm"
+                          key={`${stringValue(packageTarget.identifier)}-${index}`}
+                        >
+                          <div className="grid gap-3 md:grid-cols-4">
+                            <div>
+                              <div className="text-xs text-muted-foreground">Package</div>
+                              <div className="font-medium">{stringValue(packageTarget.identifier) || "Not provided"}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Runtime</div>
+                              <div className="font-medium">{stringValue(packageTarget.registryType) || "Not provided"}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Version</div>
+                              <div className="font-medium">{stringValue(packageTarget.version) || "Not provided"}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Transport</div>
+                              <div className="font-medium">{stringValue(transport.type) || "Not provided"}</div>
+                            </div>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div>
+                              <div className="text-xs text-muted-foreground">Command</div>
+                              <code className="block overflow-x-auto rounded border bg-muted/40 px-2 py-1">
+                                {stringValue(transport.command) || "Not provided"}
+                              </code>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Arguments</div>
+                              <code className="block overflow-x-auto rounded border bg-muted/40 px-2 py-1">
+                                {transportArgs.length > 0 ? transportArgs.join(" ") : "Not provided"}
+                              </code>
+                            </div>
+                          </div>
+                          {transportEnv.length > 0 ? (
+                            <div className="grid gap-2">
+                              <div className="text-xs text-muted-foreground">Environment</div>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                {transportEnv.map((envVar) => (
+                                  <div className="rounded border bg-muted/20 px-2 py-1" key={envVar.name}>
+                                    <div className="font-medium">{envVar.name}</div>
+                                    <div className="text-xs text-muted-foreground">{envVar.defaultValue || "No default"}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {filesRead.length > 0 || installCommands.length > 0 || commandArguments.length > 0 ? (
+                  <div className="grid gap-3 rounded-md border bg-card p-3 text-sm">
+                    <div className="text-sm font-medium">Source review evidence</div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Files read</div>
+                        <div>{filesRead.join(", ") || "Not provided"}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Command arguments reviewed</div>
+                        <div>{commandArguments.join(" ") || "Not provided"}</div>
+                      </div>
+                    </div>
+                    {installCommands.length > 0 ? (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Install commands</div>
+                        <pre className="overflow-auto whitespace-pre-wrap rounded border bg-muted/40 p-2">
+                          {installCommands.join("\n")}
+                        </pre>
+                      </div>
+                    ) : null}
+                    {reviewedEnvironmentVariables.length > 0 ? (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Reviewed environment variables</div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {reviewedEnvironmentVariables.map((envVar) => (
+                            <div className="rounded border bg-muted/20 px-2 py-1" key={stringValue(envVar.name)}>
+                              <div className="font-medium">{stringValue(envVar.name)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Default: {stringValue(envVar.default) || "none"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {prerequisites.length > 0 ? (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Prerequisites</div>
+                        <ul className="list-disc space-y-1 pl-5">
+                          {prerequisites.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </CardContent>

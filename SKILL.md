@@ -7,6 +7,38 @@ description: Use this skill when preparing a Wardn Hub MCP server submission fro
 
 Use this skill to turn a source MCP server project into a complete Wardn Hub submission. Wardn Hub is a registry and submission product, not a runtime. Do not add runtime installs, MCP tool invocation routes, Kubernetes management, or gateway execution-plane details.
 
+## Non-Negotiable Rule
+
+Do not submit a server from import output alone. A valid submission must include evidence that the source README/docs/manifests were reviewed for install commands, client configuration snippets, command arguments, environment variables, prerequisites, tools/resources/prompts, authentication, and limitations.
+
+Before calling `POST /api/v1/submissions`, add this object to `serverJson._meta.sourceReview`:
+
+```json
+{
+  "filesRead": ["README.md"],
+  "clientConfigSnippetsFound": true,
+  "installCommands": ["npx -y @scope/server --stdio"],
+  "commandArguments": ["-y", "@scope/server", "--stdio"],
+  "environmentVariables": [
+    {
+      "name": "SERVICE_URL",
+      "required": true,
+      "secret": false,
+      "default": "http://localhost:1234",
+      "source": "README.md"
+    }
+  ],
+  "prerequisites": ["Required local app or external service"],
+  "capabilitiesReviewed": true,
+  "limitationsReviewed": true,
+  "unknowns": []
+}
+```
+
+Use empty arrays only after checking the source. If a required install target, transport, command argument, env var, prerequisite, or authentication detail is unclear, put it in `unknowns` and ask before submitting.
+
+Wardn Hub allows incomplete drafts to be saved, but `POST /api/v1/submissions/{id}/submit` rejects drafts with validation warnings. Resolve every warning in `validationResult.checks` before submitting for review.
+
 ## Submission Flow
 
 - Import source metadata with `POST /api/v1/imports/server-source`.
@@ -113,11 +145,11 @@ Recommended fields:
 Use `packages` for servers installed/run locally by a client. Include only fields supported or clearly implied by source metadata. Common details to preserve:
 
 - Registry type, such as npm, PyPI, Cargo, Go, Docker, MCPB, or another package source.
-- Package identifier/name.
-- Package version.
+- Package identifier/name without an embedded version or tag.
+- Package version in the package `version` field. If source text shows `@scope/pkg:1.2.3`, `pkg==1.2.3`, `pkg@1.2.3`, or `image:tag`, split it into `identifier`/`version`.
 - Runtime command or binary when documented. Put it in `packages[].transport.command`.
 - Command arguments exactly as documented. Put them in `packages[].transport.args` as an ordered array.
-- Required and optional environment variables. Put names and source-backed defaults/placeholders in `packages[].transport.env`.
+- Required and optional environment variables. Put names and source-backed non-secret defaults in `packages[].transport.env`.
 - Supported transports when documented. Put the primary local client transport in `packages[].transport.type`.
 - Runtime requirements such as Node/Python versions and required local services in `documentation` and `_meta` when useful for review.
 
@@ -131,12 +163,12 @@ For client configuration snippets, map fields directly:
   "args": ["-y", "@scope/server", "--stdio"],
   "env": {
     "SERVICE_URL": "http://localhost:1234",
-    "SERVICE_API_KEY": "${SERVICE_API_KEY}"
+    "SERVICE_API_KEY": ""
   }
 }
 ```
 
-Use documented default values for non-secret settings. Use `${ENV_VAR_NAME}` placeholders for secrets or user-specific values. Do not put real secret values in the payload. If a variable is optional but useful, include it in documentation even when it is not placed in `transport.env`.
+Use documented default values only for non-secret settings. Do not use `${ENV_VAR_NAME}` placeholders for secrets or user-specific values. For secrets, include the variable name with an empty value in `transport.env`, mark it secret in structured metadata when available, and describe how the user supplies it in documentation. Do not put real secret values in the payload.
 
 If the source documents several launch modes, capture the best default local MCP client mode in `packages[].transport` and describe the alternatives in `documentation`. Add separate package entries only when the package identifiers or package types differ materially, such as npm plus Docker plus MCPB.
 
@@ -221,7 +253,7 @@ Before submitting:
 - At least one of `packages` or `remotes` is non-empty.
 - Package/remotes metadata matches source install or endpoint documentation.
 - `packages[].transport.command`, `packages[].transport.args`, and `packages[].transport.env` preserve documented client configuration snippets where present.
-- Required env vars and important optional env vars are listed in documentation, with defaults/placeholders and no plaintext secrets.
+- Required env vars and important optional env vars are listed in documentation, with real non-secret defaults where documented and no plaintext secrets or `${...}` placeholders.
 - CLI flags and arguments that select transport or safety mode are preserved, for example `--stdio`, `--read-only`, `--port`, `--host`, or equivalent source-specific flags.
 - Local prerequisites and external service dependencies are documented.
 - URLs are valid HTTP(S) URLs where required.

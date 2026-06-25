@@ -76,9 +76,139 @@ def registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
     )
 
 
+def complete_registry_payload(version: str = "1.0.0") -> RegistryServerVersionCreate:
+    return RegistryServerVersionCreate(
+        **{
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "name": "io.github.example/weather",
+            "title": "Weather",
+            "description": "Weather tools for forecasts",
+            "documentation": (
+                "## Installation\nUse `npx -y @example/weather-mcp` in an MCP client.\n\n"
+                "## Configuration\nNo environment variables are required.\n\n"
+                "## Capabilities\nProvides weather tools.\n\n"
+                "## Limitations\nForecast availability depends on the upstream service."
+            ),
+            "version": version,
+            "packages": [
+                {
+                    "registryType": "npm",
+                    "identifier": "@example/weather-mcp",
+                    "version": version,
+                    "transport": {
+                        "type": "stdio",
+                        "command": "npx",
+                        "args": ["-y", "@example/weather-mcp"],
+                    },
+                }
+            ],
+            "_meta": {
+                "sourceReview": {
+                    "filesRead": ["README.md"],
+                    "clientConfigSnippetsFound": True,
+                    "installCommands": ["npx -y @example/weather-mcp"],
+                    "commandArguments": ["-y", "@example/weather-mcp"],
+                    "environmentVariables": [],
+                    "prerequisites": [],
+                    "capabilitiesReviewed": True,
+                    "limitationsReviewed": True,
+                    "unknowns": [],
+                }
+            },
+        }
+    )
+
+
 def test_new_server_submission_starts_at_one_zero_zero() -> None:
     with pytest.raises(ValueError, match="new server submissions must start"):
         SubmissionCreate(serverJson=registry_payload(version="1.1.0"))
+
+
+def test_validation_warns_when_source_review_and_transport_details_are_missing() -> None:
+    result = service.validation_result_for(registry_payload())
+
+    assert result["status"] == "warning"
+    assert {
+        check["name"]
+        for check in result["checks"]
+        if check["status"] == "warning"
+    } >= {"packageTransportDetails", "documentation", "sourceReview"}
+
+
+def test_validation_passes_with_source_review_and_transport_details() -> None:
+    assert service.validation_result_for(complete_registry_payload())["status"] == "passed"
+
+
+@pytest.mark.parametrize(
+    ("registry_type", "identifier"),
+    [
+        ("npm", "@ankimcp/anki-mcp-server:0.21.0"),
+        ("npm", "@ankimcp/anki-mcp-server@0.21.0"),
+        ("uvx", "anki-mcp-server==0.21.0"),
+        ("docker", "ghcr.io/ankimcp/anki-mcp-server:0.21.0"),
+        ("oci", "registry.example.com:5000/ankimcp/server:0.21.0"),
+    ],
+)
+def test_validation_rejects_package_identifier_embedded_version(
+    registry_type: str,
+    identifier: str,
+) -> None:
+    payload = complete_registry_payload()
+    payload.packages[0].registry_type = registry_type
+    payload.packages[0].identifier = identifier
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "packages" and "must not include a version" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_allows_docker_registry_port_without_tag() -> None:
+    payload = complete_registry_payload()
+    payload.packages[0].registry_type = "docker"
+    payload.packages[0].identifier = "registry.example.com:5000/ankimcp/server"
+
+    assert service.validation_result_for(payload)["status"] == "passed"
+
+
+def test_validation_rejects_env_placeholder_values() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    assert package.transport is not None
+    package.transport.env = {"WEATHER_API_KEY": "${WEATHER_API_KEY}"}
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "envPlaceholders" and check["status"] == "failed"
+        for check in result["checks"]
+    )
+
+
+def test_validation_rejects_source_review_placeholder_values() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["environmentVariables"] = [
+        {
+            "name": "WEATHER_API_KEY",
+            "default": "${WEATHER_API_KEY}",
+            "secret": True,
+        }
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "envPlaceholders" and check["status"] == "failed"
+        for check in result["checks"]
+    )
 
 
 @pytest.mark.asyncio
@@ -163,7 +293,7 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
     response = await service.create_submission(
         FakeSession(),
         submitter,
-        SubmissionCreate(serverJson=registry_payload()),
+        SubmissionCreate(serverJson=complete_registry_payload()),
     )
     created_submission = service.repository.ServerSubmission(
         id=response.id,
@@ -199,6 +329,34 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
         "updated_by_user_id": moderator.id,
         "publisher_user_id": moderator.id,
     }
+
+
+@pytest.mark.asyncio
+async def test_submit_submission_rejects_incomplete_source_review(monkeypatch) -> None:
+    submitter = current_user()
+    submission = service.repository.ServerSubmission(
+        id=uuid4(),
+        name="io.github.example/weather",
+        version="1.0.0",
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        owner_organization_id=None,
+        submission_type="new_server",
+        status="draft",
+        server_json=registry_payload().model_dump(by_alias=True),
+        validation_result={},
+        rejection_message="",
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+
+    with pytest.raises(SubmissionValidationError, match="not ready for review"):
+        await service.submit_submission(FakeSession(), submitter, submission.id)
 
 
 @pytest.mark.asyncio

@@ -444,6 +444,11 @@ export type submissionsSubmitResponse200 = {
   status: 200
 }
 
+export type submissionsSubmitResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
 export type submissionsSubmitResponse422 = {
   data: HTTPValidationError
   status: 422
@@ -452,7 +457,7 @@ export type submissionsSubmitResponse422 = {
 export type submissionsSubmitResponseSuccess = (submissionsSubmitResponse200) & {
   headers: Headers;
 };
-export type submissionsSubmitResponseError = (submissionsSubmitResponse422) & {
+export type submissionsSubmitResponseError = (submissionsSubmitResponse400 | submissionsSubmitResponse422) & {
   headers: Headers;
 };
 

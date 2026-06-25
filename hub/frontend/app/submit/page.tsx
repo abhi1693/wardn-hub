@@ -90,6 +90,7 @@ type PackageTarget = {
   registryType: string;
   identifier: string;
   version: string;
+  command: string;
   transportType: string;
   environmentVariables: EnvironmentField[];
   packageArguments: PackageArgumentField[];
@@ -135,6 +136,40 @@ function stringValue(value: unknown) {
 
 function booleanValue(value: unknown) {
   return value === true;
+}
+
+function hasEnvironmentPlaceholder(value: string) {
+  return value.includes("${") && value.includes("}");
+}
+
+function splitPackageIdentifierVersion(value: string) {
+  const trimmed = value.trim();
+  const lastColon = trimmed.lastIndexOf(":");
+  const lastSlash = trimmed.lastIndexOf("/");
+  if (lastColon > lastSlash && lastColon < trimmed.length - 1) {
+    return {
+      identifier: trimmed.slice(0, lastColon),
+      version: trimmed.slice(lastColon + 1),
+    };
+  }
+
+  const equalityIndex = trimmed.indexOf("==");
+  if (equalityIndex > 0 && equalityIndex < trimmed.length - 2) {
+    return {
+      identifier: trimmed.slice(0, equalityIndex),
+      version: trimmed.slice(equalityIndex + 2),
+    };
+  }
+
+  const atIndex = trimmed.lastIndexOf("@");
+  if (atIndex > 0 && atIndex < trimmed.length - 1) {
+    return {
+      identifier: trimmed.slice(0, atIndex),
+      version: trimmed.slice(atIndex + 1),
+    };
+  }
+
+  return { identifier: value, version: "" };
 }
 
 function records(value: unknown): Record<string, unknown>[] {
@@ -189,6 +224,7 @@ function emptyPackage(): PackageTarget {
     registryType: "npm",
     identifier: "",
     version: "",
+    command: "",
     transportType: "stdio",
     environmentVariables: [],
     packageArguments: [],
@@ -378,6 +414,19 @@ function initialEnvironment(value: unknown): EnvironmentField[] {
   }));
 }
 
+function initialTransportEnvironment(value: unknown): EnvironmentField[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value as Record<string, unknown>).map(([name, defaultValue]) => ({
+    id: createId("env"),
+    name,
+    description: "",
+    defaultValue: String(defaultValue ?? ""),
+    format: "string",
+    required: false,
+    secret: /\b(TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL)\b/i.test(name),
+  }));
+}
+
 function initialPackageArguments(value: unknown): PackageArgumentField[] {
   return records(value).map((argument) => ({
     id: createId("arg"),
@@ -393,6 +442,22 @@ function initialPackageArguments(value: unknown): PackageArgumentField[] {
   }));
 }
 
+function initialTransportArguments(value: unknown): PackageArgumentField[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((argument, index) => ({
+    id: createId("arg"),
+    name: "",
+    description: "",
+    defaultValue: "",
+    flag: "",
+    format: "string",
+    options: "",
+    required: index === 0,
+    secret: false,
+    value: String(argument),
+  }));
+}
+
 function importedRemotes(value: unknown): RemoteTarget[] {
   return records(value).map((remote) => ({
     id: createId("remote"),
@@ -405,14 +470,23 @@ function importedRemotes(value: unknown): RemoteTarget[] {
 function importedPackages(value: unknown): PackageTarget[] {
   return records(value).map((packageTarget) => {
     const transport = packageTarget.transport as Record<string, unknown> | undefined;
+    const parsedPackage = splitPackageIdentifierVersion(stringValue(packageTarget.identifier));
+    const importedVersion = stringValue(packageTarget.version).replaceAll("$VERSION", "latest");
     return {
       id: createId("package"),
       registryType: stringValue(packageTarget.registryType) || "npm",
-      identifier: stringValue(packageTarget.identifier).replaceAll("$VERSION", "latest"),
-      version: stringValue(packageTarget.version).replaceAll("$VERSION", "latest"),
+      identifier: parsedPackage.identifier.replaceAll("$VERSION", "latest"),
+      version: importedVersion || parsedPackage.version.replaceAll("$VERSION", "latest"),
+      command: stringValue(transport?.command),
       transportType: stringValue(transport?.type) || "stdio",
-      environmentVariables: initialEnvironment(packageTarget.environmentVariables),
-      packageArguments: initialPackageArguments(packageTarget.packageArguments),
+      environmentVariables: [
+        ...initialTransportEnvironment(transport?.env),
+        ...initialEnvironment(packageTarget.environmentVariables),
+      ],
+      packageArguments: [
+        ...initialTransportArguments(transport?.args),
+        ...initialPackageArguments(packageTarget.packageArguments),
+      ],
     };
   });
 }
@@ -817,6 +891,21 @@ export default function SubmitServerPage() {
     );
   }
 
+  function updatePackageIdentifier(id: string, value: string) {
+    const parsedPackage = splitPackageIdentifierVersion(value);
+    setPackages((current) =>
+      current.map((packageTarget) =>
+        packageTarget.id === id
+          ? {
+              ...packageTarget,
+              identifier: parsedPackage.identifier,
+              ...(parsedPackage.version ? { version: parsedPackage.version } : {}),
+            }
+          : packageTarget,
+      ),
+    );
+  }
+
   function updatePackageEnvironment(
     packageId: string,
     environmentId: string,
@@ -942,12 +1031,44 @@ export default function SubmitServerPage() {
       const packagePayload = packages
         .filter((packageTarget) => packageTarget.identifier.trim())
         .map((packageTarget) => {
+          const parsedPackage = splitPackageIdentifierVersion(packageTarget.identifier);
+          if (parsedPackage.version) {
+            throw new Error("Move package versions into the Version field.");
+          }
           const packageVersion = packageTarget.version.trim();
+          const command = packageTarget.command.trim();
+          const placeholderEnvVar = packageTarget.environmentVariables.find((envVar) =>
+            hasEnvironmentPlaceholder(envVar.defaultValue),
+          );
+          if (placeholderEnvVar) {
+            throw new Error(
+              `Do not use ${placeholderEnvVar.defaultValue} as a value. Leave ${placeholderEnvVar.name || "the variable"} empty for user-supplied secrets.`,
+            );
+          }
+          const placeholderArgument = packageTarget.packageArguments.find((argument) =>
+            hasEnvironmentPlaceholder(argument.value) || hasEnvironmentPlaceholder(argument.defaultValue),
+          );
+          if (placeholderArgument) {
+            throw new Error("Do not use ${...} placeholders in runtime argument values.");
+          }
+          const transportEnv = Object.fromEntries(
+            packageTarget.environmentVariables
+              .filter((envVar) => envVar.name.trim())
+              .map((envVar) => [envVar.name.trim(), envVar.defaultValue.trim()]),
+          );
+          const transportArgs = packageTarget.packageArguments
+            .map((argument) => argument.value.trim() || argument.flag.trim())
+            .filter(Boolean);
           return {
             registryType: packageTarget.registryType.trim() || "npm",
             identifier: packageTarget.identifier.trim(),
             ...(packageVersion ? { version: packageVersion } : {}),
-            transport: { type: packageTarget.transportType.trim() || "stdio" },
+            transport: {
+              type: packageTarget.transportType.trim() || "stdio",
+              ...(command ? { command } : {}),
+              ...(transportArgs.length > 0 ? { args: transportArgs } : {}),
+              ...(Object.keys(transportEnv).length > 0 ? { env: transportEnv } : {}),
+            },
             environmentVariables: publicEnvironment(packageTarget.environmentVariables),
             packageArguments: publicPackageArguments(packageTarget.packageArguments),
           };
@@ -1540,7 +1661,7 @@ export default function SubmitServerPage() {
                         <Input
                           id={`${packageTarget.id}-identifier`}
                           onChange={(event) =>
-                            updatePackage(packageTarget.id, { identifier: event.target.value })
+                            updatePackageIdentifier(packageTarget.id, event.target.value)
                           }
                           placeholder="@scope/package"
                           value={packageTarget.identifier}
@@ -1574,6 +1695,27 @@ export default function SubmitServerPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                      <div className="grid gap-2">
+                        <Label htmlFor={`${packageTarget.id}-command`}>Command</Label>
+                        <Input
+                          id={`${packageTarget.id}-command`}
+                          onChange={(event) =>
+                            updatePackage(packageTarget.id, { command: event.target.value })
+                          }
+                          placeholder="npx"
+                          value={packageTarget.command}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Resolved launch</Label>
+                        <div className="min-h-9 overflow-x-auto whitespace-nowrap rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                          {[packageTarget.command, ...packageTarget.packageArguments.map((argument) => argument.value || argument.flag)]
+                            .filter(Boolean)
+                            .join(" ") || "Not configured"}
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-3">

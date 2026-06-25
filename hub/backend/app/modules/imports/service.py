@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -11,6 +12,7 @@ from app.modules.imports.schemas import ServerSourceImportRequest, ServerSourceI
 DEFAULT_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 GITHUB_HOST = "github.com"
 MAX_IMPORT_BYTES = 512_000
+FENCED_CODE_PATTERN = re.compile(r"```(?:json|jsonc)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,7 @@ def metadata_from_mcp_json(value: dict[str, Any], repository: GitHubRepository) 
         if isinstance(config.get("args"), list)
         else []
     )
+    env = config.get("env") if isinstance(config.get("env"), dict) else {}
     package_identifier = next((argument for argument in args if not argument.startswith("-")), "")
 
     return {
@@ -179,11 +182,125 @@ def metadata_from_mcp_json(value: dict[str, Any], repository: GitHubRepository) 
             {
                 "registryType": "uvx" if "uv" in command else "npm",
                 "identifier": package_identifier,
-                "transport": {"type": "stdio"},
+                "transport": {
+                    "type": "stdio",
+                    "command": command,
+                    "args": args,
+                    "env": env,
+                },
             }
         ]
         if command and package_identifier
         else [],
+    }
+
+
+def strip_json_comments(value: str) -> str:
+    without_block_comments = re.sub(r"/\*.*?\*/", "", value, flags=re.DOTALL)
+    without_line_comments = re.sub(r"(?m)^\s*//.*$", "", without_block_comments)
+    return re.sub(r",(\s*[}\]])", r"\1", without_line_comments)
+
+
+def extract_readme_mcp_json(readme: str) -> dict[str, Any]:
+    if "mcpServers" not in readme:
+        return {}
+
+    for match in FENCED_CODE_PATTERN.finditer(readme):
+        snippet = match.group(1).strip()
+        if "mcpServers" not in snippet:
+            continue
+        try:
+            value = json.loads(strip_json_comments(snippet))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and isinstance(value.get("mcpServers"), dict):
+            return value
+
+    return {}
+
+
+def merge_readme_package_config(
+    server_json: dict[str, Any],
+    readme_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    readme_packages = dict_items(readme_metadata.get("packages"))
+    if not readme_packages:
+        return server_json
+
+    packages = dict_items(server_json.get("packages"))
+    if not packages:
+        return {**server_json, "packages": readme_packages}
+
+    readme_package = readme_packages[0]
+    readme_transport = readme_package.get("transport")
+    readme_transport_value = readme_transport if isinstance(readme_transport, dict) else {}
+    readme_identifier = string_value(readme_package.get("identifier"))
+    merged_packages: list[dict[str, Any]] = []
+
+    for package in packages:
+        package_identifier = string_value(package.get("identifier"))
+        should_merge = (
+            len(packages) == 1
+            or not readme_identifier
+            or package_identifier == readme_identifier
+        )
+        if not should_merge:
+            merged_packages.append(package)
+            continue
+
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        merged_transport = {
+            **readme_transport_value,
+            **transport_value,
+        }
+        for key in ("command", "args", "env", "type"):
+            if not merged_transport.get(key) and readme_transport_value.get(key):
+                merged_transport[key] = readme_transport_value[key]
+        merged_packages.append(
+            {
+                **readme_package,
+                **package,
+                "transport": merged_transport,
+            }
+        )
+
+    return {**server_json, "packages": merged_packages}
+
+
+def import_missing_fields(server_json: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    if not dict_items(server_json.get("packages")) and not dict_items(server_json.get("remotes")):
+        missing.append("packages or remotes")
+
+    for package in dict_items(server_json.get("packages")):
+        registry_type = string_value(package.get("registryType")).lower()
+        if registry_type == "mcpb":
+            continue
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        transport_type = string_value(transport_value.get("type")).lower()
+        if transport_type and transport_type not in {"stdio", "local"}:
+            continue
+        if not string_value(transport_value.get("command")):
+            missing.append("package transport command")
+        if not transport_value.get("args"):
+            missing.append("package transport args")
+
+    meta = server_json.get("_meta") if isinstance(server_json.get("_meta"), dict) else {}
+    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
+    if not source_review:
+        missing.append("source review evidence")
+
+    return list(dict.fromkeys(missing))
+
+
+def with_server_targets(metadata: dict[str, Any], server_json: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **metadata,
+        "packages": dict_items(server_json.get("packages")),
+        "remotes": dict_items(server_json.get("remotes")),
+        "icons": dict_items(server_json.get("icons")),
     }
 
 
@@ -241,6 +358,10 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
     readme = fetch_github_readme(repository, subfolder)
     fallback = {**metadata, "documentation": readme}
     files = ["README.md"] if readme else []
+    readme_mcp_json = extract_readme_mcp_json(readme)
+    readme_mcp_metadata = (
+        metadata_from_mcp_json(readme_mcp_json, repository) if readme_mcp_json else {}
+    )
 
     for path, candidate_url in raw_metadata_candidates(repository, subfolder):
         text = fetch_text(candidate_url)
@@ -268,22 +389,36 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
                 fallback,
             )
             server_json = server_json_from_metadata(metadata, repository, subfolder)
+            server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
+            metadata = with_server_targets(metadata, server_json)
             return ServerSourceImportResponse(
                 **metadata,
                 serverJson=server_json,
                 submissionPayload={"submissionType": "new_server", "serverJson": server_json},
-                evidence={"files": files, "missing": []},
+                evidence={"files": files, "missing": import_missing_fields(server_json)},
             )
 
         if raw_payload.get("mcpServers"):
             metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
             server_json = server_json_from_metadata(metadata, repository, subfolder)
+            metadata = with_server_targets(metadata, server_json)
             return ServerSourceImportResponse(
                 **metadata,
                 serverJson=server_json,
                 submissionPayload={"submissionType": "new_server", "serverJson": server_json},
-                evidence={"files": files, "missing": []},
+                evidence={"files": files, "missing": import_missing_fields(server_json)},
             )
+
+    if readme_mcp_json:
+        metadata = with_fallback(readme_mcp_metadata, fallback)
+        server_json = server_json_from_metadata(metadata, repository, subfolder)
+        metadata = with_server_targets(metadata, server_json)
+        return ServerSourceImportResponse(
+            **metadata,
+            serverJson=server_json,
+            submissionPayload={"submissionType": "new_server", "serverJson": server_json},
+            evidence={"files": files, "missing": import_missing_fields(server_json)},
+        )
 
     server_json = server_json_from_metadata(
         {
@@ -298,7 +433,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
         repository,
         subfolder,
     )
-    missing = ["packages or remotes"]
+    missing = import_missing_fields(server_json)
     return ServerSourceImportResponse(
         source="github",
         title=string_value(fallback.get("title")),

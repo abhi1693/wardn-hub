@@ -161,6 +161,7 @@ async def delete_submission_record(
     "/{submission_id}/submit",
     response_model=SubmissionRead,
     operation_id="submissions_submit",
+    responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse}},
 )
 async def submit_submission_record(
     submission_id: UUID,
@@ -173,7 +174,11 @@ async def submit_submission_record(
         raise not_found(exc) from exc
     except SubmissionAccessDeniedError as exc:
         raise forbidden(exc) from exc
-    except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:
+    except (
+        InvalidSubmissionTransitionError,
+        DuplicatePublishedVersionError,
+        SubmissionValidationError,
+    ) as exc:
         raise bad_request(exc) from exc
     await session.commit()
     return response
