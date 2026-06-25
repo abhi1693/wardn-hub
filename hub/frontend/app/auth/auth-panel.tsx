@@ -41,8 +41,60 @@ function isClerkConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 }
 
-function AuthPanelContent({ mode }: { mode: AuthMode }) {
+function ClerkRedirect({
+  isRegister,
+  nextPath,
+}: {
+  isRegister: boolean;
+  nextPath: string;
+}) {
   const clerk = useClerk();
+
+  useEffect(() => {
+    setApiToken("");
+    if (isRegister) {
+      void clerk.redirectToSignUp({
+        redirectUrl: nextPath,
+      });
+      return;
+    }
+    void clerk.redirectToSignIn({
+      redirectUrl: nextPath,
+    });
+  }, [clerk, isRegister, nextPath]);
+
+  return null;
+}
+
+function ClerkAuthButton({
+  isRegister,
+  nextPath,
+  showLocalForm,
+}: {
+  isRegister: boolean;
+  nextPath: string;
+  showLocalForm: boolean;
+}) {
+  if (isRegister) {
+    return (
+      <SignUpButton fallbackRedirectUrl={nextPath} forceRedirectUrl={nextPath} mode="redirect">
+        <Button className="w-full" type="button" variant={showLocalForm ? "outline" : "default"}>
+          Continue with account
+        </Button>
+      </SignUpButton>
+    );
+  }
+
+  return (
+    <SignInButton fallbackRedirectUrl={nextPath} forceRedirectUrl={nextPath} mode="redirect">
+      <Button className="w-full" type="button" variant={showLocalForm ? "outline" : "default"}>
+        Continue with account
+      </Button>
+    </SignInButton>
+  );
+}
+
+function AuthPanelContent({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
@@ -78,20 +130,6 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
       .catch(() => setProviders(fallbackProviders))
       .finally(() => setProvidersLoaded(true));
   }, []);
-
-  useEffect(() => {
-    if (!providersLoaded || showLocalForm || !showClerk) return;
-    setApiToken("");
-    if (isRegister) {
-      void clerk.redirectToSignUp({
-        redirectUrl: nextPath,
-      });
-      return;
-    }
-    void clerk.redirectToSignIn({
-      redirectUrl: nextPath,
-    });
-  }, [clerk, isRegister, nextPath, providersLoaded, showClerk, showLocalForm]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -146,6 +184,7 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
       <>
         <PublicHeader />
         <main className="flex min-h-[calc(100dvh-64px)] items-center justify-center bg-background p-5">
+          <ClerkRedirect isRegister={isRegister} nextPath={nextPath} />
           <div className="empty-state">
             <div className="empty-title">Redirecting</div>
             <div className="empty-detail">Opening account sign-in.</div>
@@ -179,35 +218,11 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
           <CardContent>
             <div className="grid gap-4">
               {showClerk ? (
-                isRegister ? (
-                  <SignUpButton
-                    fallbackRedirectUrl={nextPath}
-                    forceRedirectUrl={nextPath}
-                    mode="redirect"
-                  >
-                    <Button
-                      className="w-full"
-                      type="button"
-                      variant={showLocalForm ? "outline" : "default"}
-                    >
-                      Continue with account
-                    </Button>
-                  </SignUpButton>
-                ) : (
-                  <SignInButton
-                    fallbackRedirectUrl={nextPath}
-                    forceRedirectUrl={nextPath}
-                    mode="redirect"
-                  >
-                    <Button
-                      className="w-full"
-                      type="button"
-                      variant={showLocalForm ? "outline" : "default"}
-                    >
-                      Continue with account
-                    </Button>
-                  </SignInButton>
-                )
+                <ClerkAuthButton
+                  isRegister={isRegister}
+                  nextPath={nextPath}
+                  showLocalForm={showLocalForm}
+                />
               ) : null}
 
               {!showLocalForm && providersLoaded && !showClerk ? (
