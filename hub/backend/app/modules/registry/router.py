@@ -7,13 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.registry.exceptions import (
+    DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryCategoryNotFoundError,
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
 from app.modules.registry.schemas import (
+    RegistryCategoryCreate,
     RegistryCategoryListResponse,
+    RegistryCategoryRead,
+    RegistryCategoryUpdate,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerVersionCreate,
@@ -22,7 +27,9 @@ from app.modules.registry.schemas import (
     RegistryServerVersionUpdate,
 )
 from app.modules.registry.service import (
+    create_category,
     create_server_version,
+    delete_category,
     delete_server,
     delete_server_version,
     get_server_detail,
@@ -31,6 +38,7 @@ from app.modules.registry.service import (
     list_servers,
     list_versions,
     set_latest_version,
+    update_category,
     update_server_version,
 )
 from app.modules.users.dependencies import require_superuser
@@ -50,6 +58,75 @@ async def list_mcp_categories(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RegistryCategoryListResponse:
     return await list_categories(session)
+
+
+@categories_router.post(
+    "",
+    response_model=RegistryCategoryRead,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="mcp_categories_create",
+    responses={status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
+)
+async def create_mcp_category(
+    payload: RegistryCategoryCreate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
+) -> RegistryCategoryRead:
+    try:
+        response = await create_category(session, payload)
+    except DuplicateRegistryCategoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="category slug already exists",
+        ) from exc
+    await session.commit()
+    return response
+
+
+@categories_router.patch(
+    "/{category_slug}",
+    response_model=RegistryCategoryRead,
+    operation_id="mcp_categories_update",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+    },
+)
+async def update_mcp_category(
+    category_slug: str,
+    payload: RegistryCategoryUpdate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
+) -> RegistryCategoryRead:
+    try:
+        response = await update_category(session, category_slug, payload)
+    except RegistryCategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except DuplicateRegistryCategoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="category slug already exists",
+        ) from exc
+    await session.commit()
+    return response
+
+
+@categories_router.delete(
+    "/{category_slug}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="mcp_categories_delete",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def delete_mcp_category(
+    category_slug: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser)],
+) -> None:
+    try:
+        await delete_category(session, category_slug)
+    except RegistryCategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    await session.commit()
 
 
 @public_router.get(

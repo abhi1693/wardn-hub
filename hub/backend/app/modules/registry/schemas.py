@@ -13,6 +13,7 @@ SEMVER_PATTERN = (
 RegistryServerStatus = Literal["active", "deprecated", "deleted", "quarantined"]
 RegistryVersionStatus = Literal["active", "deprecated", "deleted", "quarantined", "rejected"]
 RegistryVisibility = Literal["public", "unlisted", "private_preview"]
+CATEGORY_SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 
 
 class RegistryRepository(BaseModel):
@@ -155,6 +156,53 @@ class RegistryServerVersionCreate(MCPServerDocument):
 
 class RegistryServerVersionUpdate(MCPServerDocument):
     pass
+
+
+class RegistryCategoryCreate(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "slug": "automation",
+                    "name": "Automation",
+                    "description": "MCP servers for workflow automation.",
+                    "sortOrder": 120,
+                }
+            ]
+        },
+    )
+
+    slug: str = Field(min_length=1, max_length=80, pattern=CATEGORY_SLUG_PATTERN)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    sort_order: int | None = Field(default=None, ge=0, le=100000, alias="sortOrder")
+
+
+class RegistryCategoryUpdate(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "slug": "automation",
+                    "name": "Automation",
+                    "description": "MCP servers for workflow automation and jobs.",
+                    "sortOrder": 125,
+                }
+            ]
+        },
+    )
+
+    slug: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        pattern=CATEGORY_SLUG_PATTERN,
+    )
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=100000, alias="sortOrder")
 
 
 class ActorSummary(BaseModel):

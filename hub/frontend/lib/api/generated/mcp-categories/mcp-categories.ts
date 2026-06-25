@@ -5,7 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
-  RegistryCategoryListResponse
+  ErrorResponse,
+  HTTPValidationError,
+  RegistryCategoryCreate,
+  RegistryCategoryListResponse,
+  RegistryCategoryRead,
+  RegistryCategoryUpdate
 } from '../model';
 
 
@@ -48,6 +53,174 @@ export const mcpCategoriesList = async ( options?: RequestInit): Promise<mcpCate
 
   const data: mcpCategoriesListResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as mcpCategoriesListResponse
+}
+
+
+export type mcpCategoriesCreateResponse201 = {
+  data: RegistryCategoryRead
+  status: 201
+}
+
+export type mcpCategoriesCreateResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type mcpCategoriesCreateResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpCategoriesCreateResponseSuccess = (mcpCategoriesCreateResponse201) & {
+  headers: Headers;
+};
+export type mcpCategoriesCreateResponseError = (mcpCategoriesCreateResponse409 | mcpCategoriesCreateResponse422) & {
+  headers: Headers;
+};
+
+export type mcpCategoriesCreateResponse = (mcpCategoriesCreateResponseSuccess | mcpCategoriesCreateResponseError)
+
+export const getMcpCategoriesCreateUrl = () => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/categories`
+}
+
+/**
+ * @summary Create Mcp Category
+ */
+export const mcpCategoriesCreate = async (registryCategoryCreate: RegistryCategoryCreate, options?: RequestInit): Promise<mcpCategoriesCreateResponse> => {
+
+  const res = await fetch(getMcpCategoriesCreateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(registryCategoryCreate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpCategoriesCreateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpCategoriesCreateResponse
+}
+
+
+export type mcpCategoriesDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type mcpCategoriesDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpCategoriesDeleteResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpCategoriesDeleteResponseSuccess = (mcpCategoriesDeleteResponse204) & {
+  headers: Headers;
+};
+export type mcpCategoriesDeleteResponseError = (mcpCategoriesDeleteResponse404 | mcpCategoriesDeleteResponse422) & {
+  headers: Headers;
+};
+
+export type mcpCategoriesDeleteResponse = (mcpCategoriesDeleteResponseSuccess | mcpCategoriesDeleteResponseError)
+
+export const getMcpCategoriesDeleteUrl = (categorySlug: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/categories/${categorySlug}`
+}
+
+/**
+ * @summary Delete Mcp Category
+ */
+export const mcpCategoriesDelete = async (categorySlug: string, options?: RequestInit): Promise<mcpCategoriesDeleteResponse> => {
+
+  const res = await fetch(getMcpCategoriesDeleteUrl(categorySlug),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpCategoriesDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as mcpCategoriesDeleteResponse
+}
+
+
+export type mcpCategoriesUpdateResponse200 = {
+  data: RegistryCategoryRead
+  status: 200
+}
+
+export type mcpCategoriesUpdateResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpCategoriesUpdateResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type mcpCategoriesUpdateResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpCategoriesUpdateResponseSuccess = (mcpCategoriesUpdateResponse200) & {
+  headers: Headers;
+};
+export type mcpCategoriesUpdateResponseError = (mcpCategoriesUpdateResponse404 | mcpCategoriesUpdateResponse409 | mcpCategoriesUpdateResponse422) & {
+  headers: Headers;
+};
+
+export type mcpCategoriesUpdateResponse = (mcpCategoriesUpdateResponseSuccess | mcpCategoriesUpdateResponseError)
+
+export const getMcpCategoriesUpdateUrl = (categorySlug: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/categories/${categorySlug}`
+}
+
+/**
+ * @summary Update Mcp Category
+ */
+export const mcpCategoriesUpdate = async (categorySlug: string,
+    registryCategoryUpdate: RegistryCategoryUpdate, options?: RequestInit): Promise<mcpCategoriesUpdateResponse> => {
+
+  const res = await fetch(getMcpCategoriesUpdateUrl(categorySlug),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(registryCategoryUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpCategoriesUpdateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpCategoriesUpdateResponse
 }
 
 

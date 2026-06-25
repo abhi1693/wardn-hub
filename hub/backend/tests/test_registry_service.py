@@ -13,7 +13,7 @@ from app.modules.registry.exceptions import (
     RegistryVersionNotFoundError,
 )
 from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
-from app.modules.registry.schemas import RegistryServerVersionCreate
+from app.modules.registry.schemas import RegistryCategoryCreate, RegistryServerVersionCreate
 
 
 class FakeSession:
@@ -133,6 +133,85 @@ def test_category_values_extracts_publisher_metadata() -> None:
     }
 
     assert service.category_values(payload) == ["development", "cloud-service"]
+
+
+def test_next_category_sort_order_uses_ten_step_gaps() -> None:
+    assert service.next_category_sort_order([]) == 10
+    assert service.next_category_sort_order([10, 20, 30]) == 40
+    assert service.next_category_sort_order([10, 20, 30], 20) == 40
+    assert service.next_category_sort_order([10, 20, 30], 25) == 25
+
+
+@pytest.mark.asyncio
+async def test_create_category_assigns_next_sort_order(monkeypatch) -> None:
+    captured_sort_order = None
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+
+    async def missing_category(*args, **kwargs):
+        return None
+
+    async def sort_orders(*args, **kwargs):
+        return [10, 20, 30]
+
+    async def create_category(*args, **kwargs):
+        nonlocal captured_sort_order
+        captured_sort_order = kwargs["sort_order"]
+        return RegistryCategory(
+            id=uuid4(),
+            slug=kwargs["slug"],
+            name=kwargs["name"],
+            description=kwargs["description"],
+            sort_order=kwargs["sort_order"],
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr(service.repository, "get_category_by_slug", missing_category)
+    monkeypatch.setattr(service.repository, "list_category_sort_orders", sort_orders)
+    monkeypatch.setattr(service.repository, "create_category", create_category)
+
+    response = await service.create_category(
+        FakeSession(),
+        RegistryCategoryCreate(slug="automation", name="Automation"),
+    )
+
+    assert captured_sort_order == 40
+    assert response.sort_order == 40
+
+
+@pytest.mark.asyncio
+async def test_create_category_advances_duplicate_requested_sort_order(monkeypatch) -> None:
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+
+    async def missing_category(*args, **kwargs):
+        return None
+
+    async def sort_orders(*args, **kwargs):
+        return [10, 20, 30]
+
+    async def create_category(*args, **kwargs):
+        return RegistryCategory(
+            id=uuid4(),
+            slug=kwargs["slug"],
+            name=kwargs["name"],
+            description=kwargs["description"],
+            sort_order=kwargs["sort_order"],
+            status="active",
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr(service.repository, "get_category_by_slug", missing_category)
+    monkeypatch.setattr(service.repository, "list_category_sort_orders", sort_orders)
+    monkeypatch.setattr(service.repository, "create_category", create_category)
+
+    response = await service.create_category(
+        FakeSession(),
+        RegistryCategoryCreate(slug="automation", name="Automation", sortOrder=20),
+    )
+
+    assert response.sort_order == 40
 
 
 def test_seed_categories_match_mcpservers_taxonomy() -> None:

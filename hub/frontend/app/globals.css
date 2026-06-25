@@ -513,16 +513,16 @@ button {
 
 .category-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 126px;
   align-content: start;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--foreground);
   box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
   padding: 18px 16px;
-  text-decoration: none;
 }
 
 .category-card:hover,
@@ -532,13 +532,26 @@ button {
   box-shadow: 0 6px 18px rgb(15 23 42 / 9%);
 }
 
+.category-card-main {
+  display: grid;
+  gap: 10px;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.category-card-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .category-card strong {
   color: #0f172a;
   font-size: 16px;
   line-height: 22px;
 }
 
-.category-card span {
+.category-card-main span {
   display: -webkit-box;
   overflow: hidden;
   color: #334155;
@@ -546,6 +559,54 @@ button {
   line-height: 22px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.category-form {
+  display: grid;
+  max-width: 920px;
+  gap: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  padding: 20px;
+}
+
+.category-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 160px;
+  gap: 14px;
+}
+
+.category-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.category-form label span {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.category-form input,
+.category-form textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--foreground);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.category-form textarea {
+  resize: vertical;
+}
+
+.category-form-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .user-card {
@@ -2749,10 +2810,11 @@ button {
     line-height: 24px;
   }
 
-	  .toolbar,
-	  .hero-search,
-	  .category-grid,
-		  .user-grid,
+		  .toolbar,
+		  .hero-search,
+		  .category-grid,
+		  .category-form-grid,
+			  .user-grid,
 		  .user-card-access,
 		  .catalog-grid,
 	  .registry-layout,

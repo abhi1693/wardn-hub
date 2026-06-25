@@ -6,7 +6,15 @@ class DuplicateRegistryVersionError(RegistryError):
     pass
 
 
+class DuplicateRegistryCategoryError(RegistryError):
+    pass
+
+
 class InvalidRegistryCursorError(RegistryError):
+    pass
+
+
+class RegistryCategoryNotFoundError(RegistryError):
     pass
 
 
@@ -16,4 +24,3 @@ class RegistryServerNotFoundError(RegistryError):
 
 class RegistryVersionNotFoundError(RegistryError):
     pass
-

@@ -6,8 +6,10 @@ from uuid import UUID
 from app.modules.registry import repository
 from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
+    DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryCategoryNotFoundError,
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
@@ -16,8 +18,10 @@ from app.modules.registry.schemas import (
     ActorSummary,
     MCPServerDocument,
     PartnerSupportSummary,
+    RegistryCategoryCreate,
     RegistryCategoryListResponse,
     RegistryCategoryRead,
+    RegistryCategoryUpdate,
     RegistryLatestVersionSummary,
     RegistryListMetadata,
     RegistryServerDetailResponse,
@@ -239,6 +243,19 @@ def category_summary(category: RegistryCategory) -> RegistryCategoryRead:
         description=category.description,
         sortOrder=category.sort_order,
     )
+
+
+def next_category_sort_order(
+    existing_orders: list[int],
+    requested_order: int | None = None,
+) -> int:
+    used_orders = set(existing_orders)
+    candidate = (
+        requested_order if requested_order is not None else (max(used_orders, default=0) + 10)
+    )
+    while candidate in used_orders:
+        candidate += 10
+    return candidate
 
 
 def categories_for_server(
@@ -704,6 +721,69 @@ async def list_categories(session) -> RegistryCategoryListResponse:
     return RegistryCategoryListResponse(
         categories=[category_summary(category) for category in categories]
     )
+
+
+async def create_category(
+    session,
+    payload: RegistryCategoryCreate,
+) -> RegistryCategoryRead:
+    slug = category_slug(payload.slug)
+    existing = await repository.get_category_by_slug(session, slug, include_deleted=True)
+    if existing is not None:
+        raise DuplicateRegistryCategoryError("category slug already exists")
+
+    existing_orders = await repository.list_category_sort_orders(session)
+    category = await repository.create_category(
+        session,
+        slug=slug,
+        name=payload.name.strip(),
+        description=payload.description.strip(),
+        sort_order=next_category_sort_order(existing_orders, payload.sort_order),
+    )
+    return category_summary(category)
+
+
+async def update_category(
+    session,
+    category_slug_value: str,
+    payload: RegistryCategoryUpdate,
+) -> RegistryCategoryRead:
+    current_slug = category_slug(category_slug_value)
+    category = await repository.get_category_by_slug(session, current_slug)
+    if category is None:
+        raise RegistryCategoryNotFoundError("category not found")
+
+    next_slug = category_slug(payload.slug) if payload.slug is not None else None
+    if next_slug is not None and next_slug != current_slug:
+        existing = await repository.get_category_by_slug(session, next_slug, include_deleted=True)
+        if existing is not None:
+            raise DuplicateRegistryCategoryError("category slug already exists")
+
+    sort_order = None
+    if payload.sort_order is not None:
+        existing_orders = await repository.list_category_sort_orders(
+            session,
+            exclude_category_id=category.id,
+        )
+        sort_order = next_category_sort_order(existing_orders, payload.sort_order)
+
+    category = await repository.update_category(
+        session,
+        category,
+        slug=next_slug,
+        name=payload.name.strip() if payload.name is not None else None,
+        description=payload.description.strip() if payload.description is not None else None,
+        sort_order=sort_order,
+    )
+    return category_summary(category)
+
+
+async def delete_category(session, category_slug_value: str) -> None:
+    slug = category_slug(category_slug_value)
+    category = await repository.get_category_by_slug(session, slug)
+    if category is None:
+        raise RegistryCategoryNotFoundError("category not found")
+    await repository.delete_category(session, category)
 
 
 async def list_registry_users(session) -> RegistryUserListResponse:

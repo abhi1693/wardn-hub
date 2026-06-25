@@ -334,6 +334,81 @@ async def list_categories(session: AsyncSession) -> list[RegistryCategory]:
     return list(result.scalars().all())
 
 
+async def get_category_by_slug(
+    session: AsyncSession,
+    slug: str,
+    *,
+    include_deleted: bool = False,
+) -> RegistryCategory | None:
+    statement = select(RegistryCategory).where(RegistryCategory.slug == slug)
+    if not include_deleted:
+        statement = statement.where(RegistryCategory.status == "active")
+    return await session.scalar(statement)
+
+
+async def list_category_sort_orders(
+    session: AsyncSession,
+    *,
+    exclude_category_id: UUID | None = None,
+) -> list[int]:
+    statement = select(RegistryCategory.sort_order).where(RegistryCategory.status == "active")
+    if exclude_category_id is not None:
+        statement = statement.where(RegistryCategory.id != exclude_category_id)
+    result = await session.execute(statement)
+    return list(result.scalars().all())
+
+
+async def create_category(
+    session: AsyncSession,
+    *,
+    slug: str,
+    name: str,
+    description: str,
+    sort_order: int,
+) -> RegistryCategory:
+    category = RegistryCategory(
+        slug=slug,
+        name=name,
+        description=description,
+        sort_order=sort_order,
+        status="active",
+    )
+    session.add(category)
+    await session.flush()
+    await session.refresh(category)
+    return category
+
+
+async def update_category(
+    session: AsyncSession,
+    category: RegistryCategory,
+    *,
+    slug: str | None = None,
+    name: str | None = None,
+    description: str | None = None,
+    sort_order: int | None = None,
+) -> RegistryCategory:
+    if slug is not None:
+        category.slug = slug
+    if name is not None:
+        category.name = name
+    if description is not None:
+        category.description = description
+    if sort_order is not None:
+        category.sort_order = sort_order
+    await session.flush()
+    await session.refresh(category)
+    return category
+
+
+async def delete_category(session: AsyncSession, category: RegistryCategory) -> None:
+    await session.execute(
+        delete(RegistryServerCategory).where(RegistryServerCategory.category_id == category.id)
+    )
+    await session.delete(category)
+    await session.flush()
+
+
 async def seed_categories(
     session: AsyncSession,
     category_seeds: tuple[CategorySeed, ...],

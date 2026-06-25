@@ -19,7 +19,10 @@ import type {
   PartnerServerSupportListResponse,
   PartnerServerSupportRead,
   PartnerServerSupportUpdate,
+  RegistryCategoryCreate,
   RegistryCategoryListResponse,
+  RegistryCategoryRead,
+  RegistryCategoryUpdate,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerVersionCreate,
@@ -151,6 +154,28 @@ export async function listPublishedServers(params: {
 
 export function listCategories() {
   return request<RegistryCategoryListResponse>("/mcp/categories");
+}
+
+export function createCategory(payload: RegistryCategoryCreate) {
+  return request<RegistryCategoryRead>("/mcp/categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCategory(categorySlug: string, payload: RegistryCategoryUpdate) {
+  return request<RegistryCategoryRead>(`/mcp/categories/${encodeURIComponent(categorySlug)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteCategory(categorySlug: string) {
+  return request<void>(`/mcp/categories/${encodeURIComponent(categorySlug)}`, {
+    method: "DELETE",
+  });
 }
 
 export function listUsers() {
