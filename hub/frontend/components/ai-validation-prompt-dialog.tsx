@@ -34,6 +34,7 @@ Required API access:
 - If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
 - Do not call the Wardn Hub API until a token is available.
 - The token must belong to an admin or moderator account with review-system access and must be able to read the submitted queue.
+- Moderator tokens may approve or reject submitted versions. Publishing and archiving require a superuser token.
 - If GET /submissions does not expose submitted records for review, stop and report that the token does not have review access.
 - Do not approve, reject, publish, update, or delete anything before presenting your validation report and receiving explicit user approval for the exact action.
 
@@ -79,11 +80,11 @@ Report format:
 - Suggested approval note if the submission passes
 
 After the report:
-- Ask the user exactly what action to take: approve, approve and publish, reject with the suggested message, or leave unchanged.
+- Ask the user exactly what action to take. If the token has moderator-only access, offer approve, reject with the suggested message, or leave unchanged. If the token has superuser publishing access, also offer approve and publish.
 - Do not take action from your own recommendation alone.
 - Only after the user explicitly approves one action, call the corresponding Wardn Hub API endpoint.
 - If the user chooses approve, call POST /submissions/{id}/approve.
-- If the user chooses approve and publish, first call POST /submissions/{id}/approve, then call POST /submissions/{id}/publish on the approved submission. Only do this when the token has superuser publishing access.
+- If the user chooses approve and publish, first call POST /submissions/{id}/approve, then call POST /submissions/{id}/publish on the approved submission. Only offer and perform this when the token has superuser publishing access.
 - If the user chooses reject, call POST /submissions/{id}/reject with a clear message.
 - Do not publish unless the user explicitly chose approve and publish.
 - After performing an approved action, return the endpoints called, final submission status, and any API error.

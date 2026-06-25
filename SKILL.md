@@ -41,6 +41,7 @@ Wardn Hub allows incomplete drafts to be saved, but `POST /api/v1/submissions/{i
 
 ## Submission Flow
 
+- Use `WARDN_HUB_TOKEN` as the Wardn Hub bearer token. If it is not available in the environment or context, stop and ask the user for a Wardn Hub API token before calling the API.
 - Import source metadata with `POST /api/v1/imports/server-source`.
 - Create a draft submission with `POST /api/v1/submissions`.
 - Submit the draft for review with `POST /api/v1/submissions/{id}/submit`.
@@ -48,6 +49,8 @@ Wardn Hub allows incomplete drafts to be saved, but `POST /api/v1/submissions/{i
 - **New version**: use `submissionType: "new_version"`, keep the existing `name`, and set the new semver.
 
 Use only this submission flow. Do not prepare direct admin-publish payloads.
+
+Do not approve, reject, publish, archive, update, or delete existing submissions unless the user explicitly asks for a review/moderation action. Moderation is separate from submission creation: moderators may review submitted drafts, but publishing and archiving require superuser access.
 
 ## Import First
 
@@ -100,6 +103,8 @@ For every documented client configuration snippet or launch command, extract:
 
 Missing command arguments or environment variables is a submission-quality bug. If the README shows them, they must appear in both `serverJson.packages[].transport` or `serverJson.remotes[]` where the schema supports them and in the `documentation` field.
 
+Deduplicate configuration entries before creating or updating a draft. If a variable or argument appears in an import response, README table, and client snippet, merge those references into one source-backed entry with the best description, default, required/optional status, secret status, and source evidence. Never add duplicate `sourceReview.environmentVariables` entries with the same name.
+
 ## Extract Details From README And Source
 
 Build a short evidence-backed summary before editing `submissionPayload`:
@@ -139,6 +144,19 @@ Recommended fields:
 - `icons`: only include real icon URLs or package icons found in source metadata.
 - `_meta`: include categories, source evidence notes, package metadata, and review hints.
 - `ownerUserId` or `ownerOrganizationId`: include only when the requester provides a known owner ID.
+
+`serverJson._meta.sourceReview` is required for review submission. It must be complete enough for Wardn Hub validation:
+
+- `filesRead`: every README, manifest, docs page, package metadata file, or source file inspected.
+- `installCommands`: exact install or launch commands found in the source.
+- `commandArguments`: readable strings or small objects for every documented CLI argument/configurable flag.
+- `environmentVariables`: one object per unique env var, including optional variables that affect runtime behavior.
+- `prerequisites`: required local apps, plugins, accounts, services, browser profiles, ports, databases, or external APIs.
+- `capabilitiesReviewed: true` only after tools/resources/prompts/features were reviewed.
+- `limitationsReviewed: true` only after limitations, caveats, security notes, unsupported modes, or operational risks were reviewed.
+- `unknowns: []` only when all required source-review questions are resolved. Otherwise list specific unknowns and do not submit.
+
+Do not put arbitrary nested objects in `commandArguments`, `installCommands`, `filesRead`, or `prerequisites`. They must be readable strings or objects with fields such as `flag`, `name`, `value`, `default`, `description`, or `source`.
 
 ## Package Metadata Guidance
 
@@ -254,6 +272,8 @@ Before submitting:
 - Package/remotes metadata matches source install or endpoint documentation.
 - `packages[].transport.command`, `packages[].transport.args`, and `packages[].transport.env` preserve documented client configuration snippets where present.
 - Required env vars and important optional env vars are listed in documentation, with real non-secret defaults where documented and no plaintext secrets or `${...}` placeholders.
+- `sourceReview.environmentVariables` contains no duplicate names and does not use placeholder defaults such as `${TOKEN}`.
+- `sourceReview.filesRead`, `sourceReview.installCommands`, `sourceReview.commandArguments`, `sourceReview.environmentVariables`, `sourceReview.prerequisites`, `sourceReview.capabilitiesReviewed`, `sourceReview.limitationsReviewed`, and `sourceReview.unknowns` are complete and readable.
 - CLI flags and arguments that select transport or safety mode are preserved, for example `--stdio`, `--read-only`, `--port`, `--host`, or equivalent source-specific flags.
 - Local prerequisites and external service dependencies are documented.
 - URLs are valid HTTP(S) URLs where required.
