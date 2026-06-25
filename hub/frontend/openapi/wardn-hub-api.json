@@ -2065,6 +2065,137 @@
         "title": "RegistryUserRead",
         "type": "object"
       },
+      "ServerSourceImportEvidence": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          }
+        },
+        "title": "ServerSourceImportEvidence",
+        "type": "object"
+      },
+      "ServerSourceImportRequest": {
+        "properties": {
+          "repositoryUrl": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Repositoryurl",
+            "type": "string"
+          },
+          "subfolder": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Subfolder",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repositoryUrl"
+        ],
+        "title": "ServerSourceImportRequest",
+        "type": "object"
+      },
+      "ServerSourceImportResponse": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ServerSourceImportEvidence"
+          },
+          "iconUrl": {
+            "default": "",
+            "title": "Iconurl",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "packages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "remotes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Remotes",
+            "type": "array"
+          },
+          "repository": {
+            "additionalProperties": true,
+            "title": "Repository",
+            "type": "object"
+          },
+          "serverJson": {
+            "additionalProperties": true,
+            "title": "Serverjson",
+            "type": "object"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "submissionPayload": {
+            "additionalProperties": true,
+            "title": "Submissionpayload",
+            "type": "object"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "default": "",
+            "title": "Version",
+            "type": "string"
+          },
+          "websiteUrl": {
+            "default": "",
+            "title": "Websiteurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ServerSourceImportResponse",
+        "type": "object"
+      },
       "SubmissionCreate": {
         "properties": {
           "ownerOrganizationId": {
@@ -3669,6 +3800,85 @@
         "summary": "Ready",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/imports/server-source": {
+      "post": {
+        "operationId": "imports_server_source",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerSourceImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSourceImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Server Source Endpoint",
+        "tags": [
+          "imports"
         ]
       }
     },

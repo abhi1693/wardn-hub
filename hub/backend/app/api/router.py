@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.modules.audit.router import router as audit_router
 from app.modules.health.router import router as health_router
+from app.modules.imports.router import router as imports_router
 from app.modules.organizations.router import router as organizations_router
 from app.modules.partners.router import router as partners_router
 from app.modules.registry.router import admin_router as registry_admin_router
@@ -18,6 +19,7 @@ api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(organizations_router)
 api_router.include_router(partners_router)
+api_router.include_router(imports_router)
 api_router.include_router(submissions_router)
 api_router.include_router(audit_router)
 api_router.include_router(registry_categories_router)

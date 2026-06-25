@@ -31,6 +31,7 @@ import {
   currentUser,
   getServer,
   getSubmission,
+  importServerSource,
   listCategories,
   listOrganizations,
   listPartnerOrganizations,
@@ -96,35 +97,6 @@ type PackageTarget = {
 
 type SourceMode = "manual" | "repository";
 type SubmissionMode = "new" | "edit" | "new_version" | "server_edit" | "server_new_version";
-
-type SourceMetadata = {
-  source?: string;
-  name?: string;
-  title?: string;
-  description?: string;
-  documentation?: string;
-  version?: string;
-  websiteUrl?: string;
-  repository?: {
-    source?: string;
-    url?: string;
-    subfolder?: string;
-  };
-  iconUrl?: string;
-  icons?: unknown;
-  remotes?: unknown;
-  packages?: unknown;
-};
-
-type GitHubRepositoryMetadata = {
-  name?: unknown;
-  description?: unknown;
-  homepage?: unknown;
-  html_url?: unknown;
-  owner?: {
-    avatar_url?: unknown;
-  };
-};
 
 const PACKAGE_RUNTIME_OPTIONS = [
   { value: "uvx", label: "UVX package" },
@@ -363,86 +335,6 @@ function repositoryWebUrl(value: string) {
   return `https://${GITHUB_HOST}/${repository.owner}/${repository.repo}`;
 }
 
-async function fetchGitHubRepositoryMetadata(repositoryReference: string): Promise<SourceMetadata> {
-  const repository = parseRepositoryReference(repositoryReference);
-  if (!repository) {
-    return {};
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}`,
-      {
-        cache: "no-store",
-        headers: {
-          Accept: "application/vnd.github+json",
-        },
-      },
-    );
-    if (!response.ok) {
-      return {};
-    }
-
-    const payload = (await response.json()) as GitHubRepositoryMetadata;
-    const homepage = stringValue(payload.homepage);
-    const htmlUrl = stringValue(payload.html_url);
-
-    return {
-      title: stringValue(payload.name),
-      description: stringValue(payload.description),
-      iconUrl: stringValue(payload.owner?.avatar_url),
-      websiteUrl: homepage || htmlUrl,
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function fetchGitHubReadmeDocumentation(
-  repositoryReference: string,
-  subfolder: string,
-): Promise<SourceMetadata> {
-  const repository = parseRepositoryReference(repositoryReference);
-  if (!repository) {
-    return {};
-  }
-
-  const folder = subfolder.trim().replace(/^\/+|\/+$/g, "");
-  const readmePath = folder
-    ? `/${folder.split("/").map(encodeURIComponent).join("/")}`
-    : "";
-
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/readme${readmePath}`,
-      {
-        cache: "no-store",
-        headers: {
-          Accept: "application/vnd.github.raw",
-        },
-      },
-    );
-    if (!response.ok) {
-      return {};
-    }
-
-    return { documentation: await response.text() };
-  } catch {
-    return {};
-  }
-}
-
-function metadataWithFallback(metadata: SourceMetadata, fallback: SourceMetadata): SourceMetadata {
-  return {
-    ...metadata,
-    title: metadata.title || fallback.title,
-    description: metadata.description || fallback.description,
-    documentation: metadata.documentation || fallback.documentation,
-    iconUrl: metadata.iconUrl || fallback.iconUrl,
-    websiteUrl: metadata.websiteUrl || fallback.websiteUrl,
-  };
-}
-
 function generatedServerName(repositoryUrl: string, packages: PackageTarget[]) {
   const repository = parseRepositoryReference(repositoryUrl);
   if (repository) {
@@ -606,102 +498,6 @@ function publicPackageArguments(packageArguments: PackageArgumentField[]): Recor
       };
     })
     .filter((argument): argument is Record<string, unknown> => Boolean(argument));
-}
-
-function githubRawCandidates(repositoryReference: string, subfolder: string) {
-  const repository = parseRepositoryReference(repositoryReference);
-  if (!repository) {
-    return [];
-  }
-
-  const folder = subfolder.trim().replace(/^\/+|\/+$/g, "");
-  const paths = ["server.json", "mcp.json"];
-  const branches = ["main", "master"];
-
-  return branches.flatMap((branch) =>
-    paths.map((path) => {
-      const filePath = [folder, path].filter(Boolean).join("/");
-      return `https://raw.githubusercontent.com/${repository.owner}/${repository.repo}/${branch}/${filePath}`;
-    }),
-  );
-}
-
-function metadataFromMcpJson(
-  value: Record<string, unknown>,
-  repositoryReference: string,
-): SourceMetadata {
-  const servers = value.mcpServers as Record<string, unknown> | undefined;
-  const [serverTitle, rawConfig] = Object.entries(servers ?? {})[0] ?? [];
-  const config = rawConfig && typeof rawConfig === "object" ? (rawConfig as Record<string, unknown>) : {};
-  const url = stringValue(config.url);
-  const command = stringValue(config.command);
-  const args = Array.isArray(config.args) ? config.args.map(String) : [];
-  const packageIdentifier = args.find((argument) => !argument.startsWith("-")) ?? "";
-
-  return {
-    source: "mcp.json",
-    title: serverTitle || "",
-    version: "1.0.0",
-    websiteUrl: repositoryWebUrl(repositoryReference),
-    repository: {
-      source: GITHUB_REPOSITORY_SOURCE,
-      url: repositoryReference,
-    },
-    remotes: url ? [{ type: "streamable-http", url }] : [],
-    packages:
-      command && packageIdentifier
-        ? [
-            {
-              registryType: command.includes("uv") ? "uvx" : "npm",
-              identifier: packageIdentifier,
-              transport: { type: "stdio" },
-            },
-          ]
-        : [],
-  };
-}
-
-async function importSourceMetadata(
-  repositoryReference: string,
-  subfolder: string,
-): Promise<SourceMetadata> {
-  const candidates = githubRawCandidates(repositoryReference, subfolder);
-  if (candidates.length === 0) {
-    throw new Error("Source import currently supports GitHub repositories.");
-  }
-  const [githubMetadata, githubReadme] = await Promise.all([
-    fetchGitHubRepositoryMetadata(repositoryReference),
-    fetchGitHubReadmeDocumentation(repositoryReference, subfolder),
-  ]);
-  const githubFallback = { ...githubMetadata, ...githubReadme };
-
-  for (const candidate of candidates) {
-    const response = await fetch(candidate, { cache: "no-store" });
-    if (!response.ok) {
-      continue;
-    }
-
-    const payload = (await response.json()) as Record<string, unknown>;
-    if (payload.$schema || payload.packages || payload.remotes) {
-      return metadataWithFallback({
-        ...(payload as SourceMetadata),
-        source: "server.json",
-        repository: {
-          source: GITHUB_REPOSITORY_SOURCE,
-          url: repositoryReference,
-          subfolder,
-        },
-      }, githubFallback);
-    }
-    if (payload.mcpServers) {
-      return metadataWithFallback(
-        metadataFromMcpJson(payload, repositoryReference),
-        githubFallback,
-      );
-    }
-  }
-
-  throw new Error("No server.json or mcp.json file was found in the repository root.");
 }
 
 export default function SubmitServerPage() {
@@ -1067,13 +863,13 @@ export default function SubmitServerPage() {
     try {
       const repositoryReference = normalizeRepositoryReference(repositoryUrl);
       setRepositoryUrl(repositoryReference);
-      const metadata = await importSourceMetadata(
-        repositoryReference,
-        repositorySubfolder,
-      );
+      const metadata = await importServerSource({
+        repositoryUrl: repositoryReference,
+        subfolder: repositorySubfolder,
+      });
       const metadataRepository = metadata.repository ?? {};
       const metadataRepositoryReference = normalizeRepositoryReference(
-        metadataRepository.url || repositoryReference,
+        stringValue(metadataRepository.url) || repositoryReference,
       );
       const metadataPackages = importedPackages(metadata.packages);
       const metadataRemotes = importedRemotes(metadata.remotes);
@@ -1081,7 +877,7 @@ export default function SubmitServerPage() {
 
       setSourceMode("repository");
       setRepositoryUrl(metadataRepositoryReference);
-      setRepositorySubfolder(metadataRepository.subfolder || repositorySubfolder);
+      setRepositorySubfolder(stringValue(metadataRepository.subfolder) || repositorySubfolder);
       setName(metadata.name || "");
       setTitle(metadata.title || "");
       setVersion("1.0.0");

@@ -9,6 +9,7 @@ Use this skill to turn a source MCP server project into a complete Wardn Hub sub
 
 ## Submission Flow
 
+- Import source metadata with `POST /api/v1/imports/server-source`.
 - Create a draft submission with `POST /api/v1/submissions`.
 - Submit the draft for review with `POST /api/v1/submissions/{id}/submit`.
 - **New server**: use `submissionType: "new_server"` and version `1.0.0`.
@@ -16,9 +17,31 @@ Use this skill to turn a source MCP server project into a complete Wardn Hub sub
 
 Use only this submission flow. Do not prepare direct admin-publish payloads.
 
+## Import First
+
+Before reading the source manually, call the import API with the repository source. The request requires an authenticated Wardn Hub user or API token with `submissions:write`.
+
+```json
+{
+  "repositoryUrl": "https://github.com/example/server",
+  "subfolder": ""
+}
+```
+
+The import API fetches repository metadata, README content, and supported `server.json`/`mcp.json` metadata when available. It returns:
+
+- `serverJson`: the system-generated registry document draft.
+- `submissionPayload`: a ready-to-edit `POST /api/v1/submissions` payload.
+- `evidence.files`: source files the system used.
+- `evidence.missing`: required or important fields the system could not infer.
+
+Use `submissionPayload` as the starting point. Do not rebuild the submission from scratch unless the import response is unusable.
+
+Only read the source README/docs after import to fill in missing or weak details, especially when `evidence.missing` contains required fields such as `packages or remotes`, or when documentation, configuration, authentication, tools, resources, prompts, or limitations are incomplete. Preserve all correct fields returned by the import API.
+
 ## Source Inspection
 
-Always inspect the source before building the payload. Prefer local files. If only a repository URL is provided, fetch or browse the repository contents before drafting the submission.
+Inspect only the source areas needed to improve the import draft. Prefer local files. If only a repository URL is provided, fetch or browse the repository contents after calling the import API.
 
 Read these files when present:
 
@@ -28,11 +51,11 @@ Read these files when present:
 - Documentation files under `docs/`, especially setup, authentication, tools, resources, prompts, transport, examples, and deployment pages.
 - License, changelog, and release notes when they clarify version, stability, or compatibility.
 
-Use `rg --files` to discover files quickly. Read the README first, then manifests, then focused docs. Do not rely on package names or repository names alone when README/docs contain better product wording.
+Use `rg --files` to discover files quickly when local source is available. Read the README first, then manifests, then focused docs. Do not rely on package names or repository names alone when README/docs contain better product wording.
 
 ## Extract Details From README And Source
 
-Build a short evidence-backed summary before writing JSON:
+Build a short evidence-backed summary before editing `submissionPayload`:
 
 - **Identity**: project name, display title, publisher/namespace, repository URL, website/docs URL.
 - **Purpose**: what the server does, which domain it serves, and who it is for.
@@ -46,6 +69,8 @@ Build a short evidence-backed summary before writing JSON:
 - **Categories**: infer from documented purpose, not from vague keywords.
 
 If a detail is absent, leave it empty or omit it if the schema allows. Do not invent endpoints, tools, categories, credentials, or support claims.
+
+Merge manual findings into the import API draft instead of starting from scratch. Treat `evidence.missing` as the highest-priority checklist.
 
 ## Map Source Details To `serverJson`
 
@@ -118,7 +143,7 @@ Keep it factual. Paraphrase source docs rather than copying long passages. Inclu
 
 ## Submission Payload
 
-Use this shape for `POST /api/v1/submissions`:
+Start from the import API's `submissionPayload`. If constructing a payload manually is unavoidable, use this shape for `POST /api/v1/submissions`:
 
 ```json
 {
@@ -177,6 +202,7 @@ Do not block on optional metadata. Submit a complete-but-honest payload with emp
 Before submitting:
 
 - Source README/docs were read and used.
+- Import API output was used as the initial draft.
 - `name` is stable `publisher/server` and matches the required pattern.
 - `version` is semver; new servers use `1.0.0`.
 - `description` is source-backed and non-empty.

@@ -28,6 +28,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/auth/register",
         "/api/v1/health/live",
         "/api/v1/health/ready",
+        "/api/v1/imports/server-source",
         "/api/v1/mcp/categories",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",

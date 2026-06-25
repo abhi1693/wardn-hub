@@ -25,6 +25,8 @@ import type {
   RegistryServerVersionCreate,
   RegistryServerVersionDetailResponse,
   RegistryServerVersionUpdate,
+  ServerSourceImportRequest,
+  ServerSourceImportResponse,
   SubmissionCreate,
   SubmissionRejectRequest,
   SubmissionRead,
@@ -208,6 +210,14 @@ export function getSubmission(submissionId: string) {
 
 export function createSubmission(payload: SubmissionCreate) {
   return request<SubmissionRead>("/submissions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function importServerSource(payload: ServerSourceImportRequest) {
+  return request<ServerSourceImportResponse>("/imports/server-source", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
