@@ -19,14 +19,7 @@ Use only this submission flow. Do not prepare direct admin-publish payloads.
 
 ## Import First
 
-Before reading the source manually, call the import API with the repository source. The request requires an authenticated Wardn Hub user or API token with `submissions:write`.
-
-```json
-{
-  "repositoryUrl": "https://github.com/example/server",
-  "subfolder": ""
-}
-```
+Before reading the source manually, call the import API with the repository source. The request requires an authenticated Wardn Hub user or API token with `submissions:write`. Use the OpenAPI schema at `/api/v1/openapi.json` as the source of truth for the exact request fields, response fields, validation constraints, and examples for `POST /api/v1/imports/server-source`.
 
 The import API fetches repository metadata, README content, and supported `server.json`/`mcp.json` metadata when available. It returns:
 
@@ -143,47 +136,11 @@ Keep it factual. Paraphrase source docs rather than copying long passages. Inclu
 
 ## Submission Payload
 
-Start from the import API's `submissionPayload`. If constructing a payload manually is unavoidable, use this shape for `POST /api/v1/submissions`:
-
-```json
-{
-  "submissionType": "new_server",
-  "ownerUserId": null,
-  "ownerOrganizationId": null,
-  "serverJson": {
-    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-    "name": "publisher/server",
-    "title": "Server Display Name",
-    "description": "Short source-backed description of the MCP server.",
-    "documentation": "Markdown documentation synthesized from source README and docs.",
-    "repository": {
-      "type": "git",
-      "url": "https://github.com/example/server"
-    },
-    "version": "1.0.0",
-    "websiteUrl": "https://example.com/docs",
-    "icons": [],
-    "packages": [],
-    "remotes": [],
-    "_meta": {
-      "categories": [],
-      "source": {
-        "readme": "README.md",
-        "repository": "https://github.com/example/server"
-      }
-    }
-  }
-}
-```
+Start from the import API's `submissionPayload`. If constructing a payload manually is unavoidable, consult `/api/v1/openapi.json` for the `SubmissionCreate` schema, required fields, nested `serverJson` model, validation constraints, and canonical examples for `POST /api/v1/submissions`.
 
 For a new version, change `submissionType` to `new_version`, keep the same `name`, and set `version` to the new semver.
 
-After creating the draft, submit it:
-
-```sh
-curl -X POST "$WARDN_HUB_API_BASE_URL/submissions/$SUBMISSION_ID/submit" \
-  -H "Authorization: Bearer $WARDN_HUB_API_TOKEN"
-```
+After creating the draft, submit it with `POST /api/v1/submissions/{id}/submit`.
 
 ## Missing Information Rules
 

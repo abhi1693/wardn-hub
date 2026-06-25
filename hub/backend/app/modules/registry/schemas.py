@@ -15,8 +15,108 @@ RegistryVersionStatus = Literal["active", "deprecated", "deleted", "quarantined"
 RegistryVisibility = Literal["public", "unlisted", "private_preview"]
 
 
-class MCPServerDocument(BaseModel):
+class RegistryRepository(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    source: str = Field(default="", examples=["github"])
+    type_: str = Field(default="", alias="type", examples=["git"])
+    url: str = Field(default="", max_length=2048, examples=["https://github.com/acme/weather-mcp"])
+    subfolder: str = Field(default="", max_length=500, examples=["packages/server"])
+    branch: str = Field(default="", examples=["main"])
+    tag: str = Field(default="", examples=["v1.0.0"])
+
+
+class RegistryIcon(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    src: str = Field(default="", max_length=2048, examples=["https://github.com/acme.png"])
+    type_: str = Field(default="", alias="type", examples=["image/png"])
+    sizes: str | list[str] = Field(default="", examples=["512x512"])
+
+
+class RegistryTransport(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str = Field(default="", alias="type", examples=["stdio"])
+    command: str = Field(default="", examples=["npx"])
+    args: list[str] = Field(default_factory=list, examples=[["-y", "@acme/weather-mcp"]])
+    env: dict[str, Any] = Field(default_factory=dict)
+
+
+class RegistryPackage(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    registry_type: str = Field(default="", alias="registryType", examples=["npm"])
+    identifier: str = Field(default="", examples=["@acme/weather-mcp"])
+    version: str = Field(default="", examples=["1.0.0"])
+    transport: RegistryTransport | None = None
+
+
+class RegistryRemoteHeader(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = Field(default="", examples=["Authorization"])
+    value: str = Field(default="", examples=["Bearer ${WEATHER_API_TOKEN}"])
+    required: bool = True
+    secret: bool = True
+
+
+class RegistryRemote(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type_: str = Field(default="", alias="type", examples=["streamable-http"])
+    url: str = Field(default="", max_length=2048, examples=["https://weather.example.com/mcp"])
+    headers: list[RegistryRemoteHeader] = Field(default_factory=list)
+    authentication: dict[str, Any] = Field(default_factory=dict)
+
+
+class MCPServerDocument(BaseModel):
+    model_config = ConfigDict(
+        extra="allow",
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "$schema": (
+                        "https://static.modelcontextprotocol.io/schemas/2025-12-11/"
+                        "server.schema.json"
+                    ),
+                    "name": "io.github.acme/weather-mcp",
+                    "title": "Weather MCP",
+                    "description": "Weather forecast tools for MCP clients.",
+                    "documentation": (
+                        "## Overview\nWeather MCP provides forecast and alert tools.\n\n"
+                        "## Configuration\nSet WEATHER_API_TOKEN before starting the server."
+                    ),
+                    "repository": {
+                        "type": "git",
+                        "source": "github",
+                        "url": "https://github.com/acme/weather-mcp",
+                    },
+                    "version": "1.0.0",
+                    "websiteUrl": "https://github.com/acme/weather-mcp#readme",
+                    "icons": [{"src": "https://github.com/acme.png", "type": "image/png"}],
+                    "packages": [
+                        {
+                            "registryType": "npm",
+                            "identifier": "@acme/weather-mcp",
+                            "version": "1.0.0",
+                            "transport": {
+                                "type": "stdio",
+                                "command": "npx",
+                                "args": ["-y", "@acme/weather-mcp"],
+                            },
+                        }
+                    ],
+                    "remotes": [],
+                    "_meta": {
+                        "categories": ["weather"],
+                        "source": {"readme": "README.md"},
+                    },
+                }
+            ]
+        },
+    )
 
     schema_uri: str = Field(
         alias="$schema",
@@ -27,12 +127,12 @@ class MCPServerDocument(BaseModel):
     description: str = Field(min_length=1)
     documentation: str = ""
     title: str = Field(default="", max_length=100)
-    repository: dict[str, Any] | None = None
+    repository: RegistryRepository | None = None
     version: str = Field(min_length=1, max_length=255, pattern=SEMVER_PATTERN)
     website_url: str = Field(default="", alias="websiteUrl", max_length=2048)
-    icons: list[dict[str, Any]] = Field(default_factory=list)
-    packages: list[dict[str, Any]] = Field(default_factory=list)
-    remotes: list[dict[str, Any]] = Field(default_factory=list)
+    icons: list[RegistryIcon] = Field(default_factory=list)
+    packages: list[RegistryPackage] = Field(default_factory=list)
+    remotes: list[RegistryRemote] = Field(default_factory=list)
     meta: dict[str, Any] | None = Field(default=None, alias="_meta")
 
     @field_validator("website_url")
@@ -114,8 +214,8 @@ class RegistryServerRead(BaseModel):
     description: str
     documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
-    repository: dict[str, Any] | None = None
-    icons: list[dict[str, Any]] = Field(default_factory=list)
+    repository: RegistryRepository | None = None
+    icons: list[RegistryIcon] = Field(default_factory=list)
     status: RegistryServerStatus
     status_message: str = Field(alias="statusMessage")
     visibility: RegistryVisibility
@@ -144,10 +244,10 @@ class RegistryServerVersionRead(BaseModel):
     description: str
     documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
-    repository: dict[str, Any] | None = None
-    packages: list[dict[str, Any]] = Field(default_factory=list)
-    remotes: list[dict[str, Any]] = Field(default_factory=list)
-    icons: list[dict[str, Any]] = Field(default_factory=list)
+    repository: RegistryRepository | None = None
+    packages: list[RegistryPackage] = Field(default_factory=list)
+    remotes: list[RegistryRemote] = Field(default_factory=list)
+    icons: list[RegistryIcon] = Field(default_factory=list)
     server_json: dict[str, Any] = Field(alias="serverJson")
     status: RegistryVersionStatus
     status_message: str = Field(alias="statusMessage")

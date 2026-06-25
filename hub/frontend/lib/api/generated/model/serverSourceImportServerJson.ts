@@ -4,37 +4,27 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.1.0
  */
-import type { _RegistryServerVersionCreateMeta } from './_registryServerVersionCreateMeta';
+import type { _ServerSourceImportServerJsonMeta } from './_serverSourceImportServerJsonMeta';
 import type { RegistryIcon } from './registryIcon';
 import type { RegistryPackage } from './registryPackage';
 import type { RegistryRemote } from './registryRemote';
 import type { RegistryRepository } from './registryRepository';
 
-export interface RegistryServerVersionCreate {
-  /** @minLength 1 */
-  $schema: string;
-  _meta?: _RegistryServerVersionCreateMeta;
-  /** @minLength 1 */
-  description: string;
+export interface ServerSourceImportServerJson {
+  $schema?: string;
+  _meta?: _ServerSourceImportServerJsonMeta;
+  description?: string;
   documentation?: string;
   icons?: RegistryIcon[];
-  /**
-     * @minLength 3
-     * @maxLength 200
-     * @pattern ^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$
-     */
-  name: string;
+  /** @maxLength 200 */
+  name?: string;
   packages?: RegistryPackage[];
   remotes?: RegistryRemote[];
   repository?: RegistryRepository | null;
   /** @maxLength 100 */
   title?: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     * @pattern ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$
-     */
-  version: string;
+  /** @maxLength 255 */
+  version?: string;
   /** @maxLength 2048 */
   websiteUrl?: string;
   [key: string]: unknown;

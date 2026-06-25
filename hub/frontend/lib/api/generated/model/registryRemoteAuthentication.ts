@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RegistryServerVersionCreateRepository = { [key: string]: unknown } | null;
+export type RegistryRemoteAuthentication = { [key: string]: unknown };

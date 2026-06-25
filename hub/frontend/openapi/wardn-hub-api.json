@@ -1244,6 +1244,48 @@
         "title": "RegistryCategoryRead",
         "type": "object"
       },
+      "RegistryIcon": {
+        "additionalProperties": true,
+        "properties": {
+          "sizes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "default": "",
+            "examples": [
+              "512x512"
+            ],
+            "title": "Sizes"
+          },
+          "src": {
+            "default": "",
+            "examples": [
+              "https://github.com/acme.png"
+            ],
+            "maxLength": 2048,
+            "title": "Src",
+            "type": "string"
+          },
+          "type": {
+            "default": "",
+            "examples": [
+              "image/png"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "RegistryIcon",
+        "type": "object"
+      },
       "RegistryLatestVersionSummary": {
         "properties": {
           "id": {
@@ -1307,6 +1349,173 @@
           "count"
         ],
         "title": "RegistryListMetadata",
+        "type": "object"
+      },
+      "RegistryPackage": {
+        "additionalProperties": true,
+        "properties": {
+          "identifier": {
+            "default": "",
+            "examples": [
+              "@acme/weather-mcp"
+            ],
+            "title": "Identifier",
+            "type": "string"
+          },
+          "registryType": {
+            "default": "",
+            "examples": [
+              "npm"
+            ],
+            "title": "Registrytype",
+            "type": "string"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTransport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "default": "",
+            "examples": [
+              "1.0.0"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "title": "RegistryPackage",
+        "type": "object"
+      },
+      "RegistryRemote": {
+        "additionalProperties": true,
+        "properties": {
+          "authentication": {
+            "additionalProperties": true,
+            "title": "Authentication",
+            "type": "object"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryRemoteHeader"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "type": {
+            "default": "",
+            "examples": [
+              "streamable-http"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "examples": [
+              "https://weather.example.com/mcp"
+            ],
+            "maxLength": 2048,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "title": "RegistryRemote",
+        "type": "object"
+      },
+      "RegistryRemoteHeader": {
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "default": "",
+            "examples": [
+              "Authorization"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "secret": {
+            "default": true,
+            "title": "Secret",
+            "type": "boolean"
+          },
+          "value": {
+            "default": "",
+            "examples": [
+              "Bearer ${WEATHER_API_TOKEN}"
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "title": "RegistryRemoteHeader",
+        "type": "object"
+      },
+      "RegistryRepository": {
+        "additionalProperties": true,
+        "properties": {
+          "branch": {
+            "default": "",
+            "examples": [
+              "main"
+            ],
+            "title": "Branch",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "examples": [
+              "github"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "subfolder": {
+            "default": "",
+            "examples": [
+              "packages/server"
+            ],
+            "maxLength": 500,
+            "title": "Subfolder",
+            "type": "string"
+          },
+          "tag": {
+            "default": "",
+            "examples": [
+              "v1.0.0"
+            ],
+            "title": "Tag",
+            "type": "string"
+          },
+          "type": {
+            "default": "",
+            "examples": [
+              "git"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "examples": [
+              "https://github.com/acme/weather-mcp"
+            ],
+            "maxLength": 2048,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "title": "RegistryRepository",
         "type": "object"
       },
       "RegistryServerDetailResponse": {
@@ -1383,8 +1592,7 @@
           },
           "icons": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryIcon"
             },
             "title": "Icons",
             "type": "array"
@@ -1438,14 +1646,12 @@
           "repository": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/RegistryRepository"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Repository"
+            ]
           },
           "status": {
             "enum": [
@@ -1511,6 +1717,52 @@
       },
       "RegistryServerVersionCreate": {
         "additionalProperties": true,
+        "examples": [
+          {
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "_meta": {
+              "categories": [
+                "weather"
+              ],
+              "source": {
+                "readme": "README.md"
+              }
+            },
+            "description": "Weather forecast tools for MCP clients.",
+            "documentation": "## Overview\nWeather MCP provides forecast and alert tools.\n\n## Configuration\nSet WEATHER_API_TOKEN before starting the server.",
+            "icons": [
+              {
+                "src": "https://github.com/acme.png",
+                "type": "image/png"
+              }
+            ],
+            "name": "io.github.acme/weather-mcp",
+            "packages": [
+              {
+                "identifier": "@acme/weather-mcp",
+                "registryType": "npm",
+                "transport": {
+                  "args": [
+                    "-y",
+                    "@acme/weather-mcp"
+                  ],
+                  "command": "npx",
+                  "type": "stdio"
+                },
+                "version": "1.0.0"
+              }
+            ],
+            "remotes": [],
+            "repository": {
+              "source": "github",
+              "type": "git",
+              "url": "https://github.com/acme/weather-mcp"
+            },
+            "title": "Weather MCP",
+            "version": "1.0.0",
+            "websiteUrl": "https://github.com/acme/weather-mcp#readme"
+          }
+        ],
         "properties": {
           "$schema": {
             "examples": [
@@ -1544,8 +1796,7 @@
           },
           "icons": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryIcon"
             },
             "title": "Icons",
             "type": "array"
@@ -1559,16 +1810,14 @@
           },
           "packages": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryPackage"
             },
             "title": "Packages",
             "type": "array"
           },
           "remotes": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryRemote"
             },
             "title": "Remotes",
             "type": "array"
@@ -1576,14 +1825,12 @@
           "repository": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/RegistryRepository"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Repository"
+            ]
           },
           "title": {
             "default": "",
@@ -1719,8 +1966,7 @@
           },
           "icons": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryIcon"
             },
             "title": "Icons",
             "type": "array"
@@ -1760,8 +2006,7 @@
           },
           "packages": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryPackage"
             },
             "title": "Packages",
             "type": "array"
@@ -1790,8 +2035,7 @@
           },
           "remotes": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryRemote"
             },
             "title": "Remotes",
             "type": "array"
@@ -1799,14 +2043,12 @@
           "repository": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/RegistryRepository"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Repository"
+            ]
           },
           "serverId": {
             "format": "uuid",
@@ -1888,6 +2130,52 @@
       },
       "RegistryServerVersionUpdate": {
         "additionalProperties": true,
+        "examples": [
+          {
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "_meta": {
+              "categories": [
+                "weather"
+              ],
+              "source": {
+                "readme": "README.md"
+              }
+            },
+            "description": "Weather forecast tools for MCP clients.",
+            "documentation": "## Overview\nWeather MCP provides forecast and alert tools.\n\n## Configuration\nSet WEATHER_API_TOKEN before starting the server.",
+            "icons": [
+              {
+                "src": "https://github.com/acme.png",
+                "type": "image/png"
+              }
+            ],
+            "name": "io.github.acme/weather-mcp",
+            "packages": [
+              {
+                "identifier": "@acme/weather-mcp",
+                "registryType": "npm",
+                "transport": {
+                  "args": [
+                    "-y",
+                    "@acme/weather-mcp"
+                  ],
+                  "command": "npx",
+                  "type": "stdio"
+                },
+                "version": "1.0.0"
+              }
+            ],
+            "remotes": [],
+            "repository": {
+              "source": "github",
+              "type": "git",
+              "url": "https://github.com/acme/weather-mcp"
+            },
+            "title": "Weather MCP",
+            "version": "1.0.0",
+            "websiteUrl": "https://github.com/acme/weather-mcp#readme"
+          }
+        ],
         "properties": {
           "$schema": {
             "examples": [
@@ -1921,8 +2209,7 @@
           },
           "icons": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryIcon"
             },
             "title": "Icons",
             "type": "array"
@@ -1936,16 +2223,14 @@
           },
           "packages": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryPackage"
             },
             "title": "Packages",
             "type": "array"
           },
           "remotes": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryRemote"
             },
             "title": "Remotes",
             "type": "array"
@@ -1953,14 +2238,12 @@
           "repository": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/RegistryRepository"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Repository"
+            ]
           },
           "title": {
             "default": "",
@@ -1989,6 +2272,47 @@
           "version"
         ],
         "title": "RegistryServerVersionUpdate",
+        "type": "object"
+      },
+      "RegistryTransport": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "examples": [
+              [
+                "-y",
+                "@acme/weather-mcp"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "command": {
+            "default": "",
+            "examples": [
+              "npx"
+            ],
+            "title": "Command",
+            "type": "string"
+          },
+          "env": {
+            "additionalProperties": true,
+            "title": "Env",
+            "type": "object"
+          },
+          "type": {
+            "default": "",
+            "examples": [
+              "stdio"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "RegistryTransport",
         "type": "object"
       },
       "RegistryUserDetailResponse": {
@@ -2068,6 +2392,13 @@
       "ServerSourceImportEvidence": {
         "properties": {
           "files": {
+            "description": "Repository files used to build the import draft.",
+            "examples": [
+              [
+                "README.md",
+                "server.json"
+              ]
+            ],
             "items": {
               "type": "string"
             },
@@ -2075,6 +2406,12 @@
             "type": "array"
           },
           "missing": {
+            "description": "Required or important fields that could not be inferred.",
+            "examples": [
+              [
+                "packages or remotes"
+              ]
+            ],
             "items": {
               "type": "string"
             },
@@ -2086,8 +2423,22 @@
         "type": "object"
       },
       "ServerSourceImportRequest": {
+        "examples": [
+          {
+            "repositoryUrl": "https://github.com/acme/weather-mcp",
+            "subfolder": ""
+          },
+          {
+            "repositoryUrl": "acme/monorepo",
+            "subfolder": "packages/weather-mcp"
+          }
+        ],
         "properties": {
           "repositoryUrl": {
+            "description": "GitHub repository URL, SSH URL, or owner/repo shorthand to import.",
+            "examples": [
+              "https://github.com/acme/weather-mcp"
+            ],
             "maxLength": 500,
             "minLength": 1,
             "title": "Repositoryurl",
@@ -2095,6 +2446,10 @@
           },
           "subfolder": {
             "default": "",
+            "description": "Optional repository subfolder that contains the MCP server metadata.",
+            "examples": [
+              "packages/weather-mcp"
+            ],
             "maxLength": 500,
             "title": "Subfolder",
             "type": "string"
@@ -2107,6 +2462,80 @@
         "type": "object"
       },
       "ServerSourceImportResponse": {
+        "examples": [
+          {
+            "description": "Weather forecast tools for MCP clients.",
+            "documentation": "# Weather MCP\n\nWeather forecast tools.",
+            "evidence": {
+              "files": [
+                "README.md",
+                "server.json"
+              ],
+              "missing": []
+            },
+            "iconUrl": "https://github.com/acme.png",
+            "icons": [
+              {
+                "src": "https://github.com/acme.png"
+              }
+            ],
+            "name": "io.github.acme/weather-mcp",
+            "packages": [
+              {
+                "identifier": "@acme/weather-mcp",
+                "registryType": "npm",
+                "transport": {
+                  "type": "stdio"
+                }
+              }
+            ],
+            "remotes": [],
+            "repository": {
+              "source": "github",
+              "url": "acme/weather-mcp"
+            },
+            "serverJson": {
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              "description": "Weather forecast tools for MCP clients.",
+              "name": "io.github.acme/weather-mcp",
+              "packages": [
+                {
+                  "identifier": "@acme/weather-mcp",
+                  "registryType": "npm",
+                  "transport": {
+                    "type": "stdio"
+                  }
+                }
+              ],
+              "remotes": [],
+              "title": "Weather MCP",
+              "version": "1.0.0"
+            },
+            "source": "server.json",
+            "submissionPayload": {
+              "serverJson": {
+                "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+                "description": "Weather forecast tools for MCP clients.",
+                "name": "io.github.acme/weather-mcp",
+                "packages": [
+                  {
+                    "identifier": "@acme/weather-mcp",
+                    "registryType": "npm",
+                    "transport": {
+                      "type": "stdio"
+                    }
+                  }
+                ],
+                "remotes": [],
+                "version": "1.0.0"
+              },
+              "submissionType": "new_server"
+            },
+            "title": "Weather MCP",
+            "version": "1.0.0",
+            "websiteUrl": "https://github.com/acme/weather-mcp#readme"
+          }
+        ],
         "properties": {
           "description": {
             "default": "",
@@ -2128,8 +2557,7 @@
           },
           "icons": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryIcon"
             },
             "title": "Icons",
             "type": "array"
@@ -2141,38 +2569,42 @@
           },
           "packages": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryPackage"
             },
             "title": "Packages",
             "type": "array"
           },
           "remotes": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/RegistryRemote"
             },
             "title": "Remotes",
             "type": "array"
           },
           "repository": {
-            "additionalProperties": true,
-            "title": "Repository",
-            "type": "object"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryRepository"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "serverJson": {
-            "additionalProperties": true,
-            "title": "Serverjson",
-            "type": "object"
+            "$ref": "#/components/schemas/ServerSourceImportServerJson"
           },
           "source": {
+            "enum": [
+              "github",
+              "server.json",
+              "mcp.json"
+            ],
             "title": "Source",
             "type": "string"
           },
           "submissionPayload": {
-            "additionalProperties": true,
-            "title": "Submissionpayload",
-            "type": "object"
+            "$ref": "#/components/schemas/ServerSourceImportSubmissionPayload"
           },
           "title": {
             "default": "",
@@ -2191,12 +2623,250 @@
           }
         },
         "required": [
-          "source"
+          "source",
+          "submissionPayload"
         ],
         "title": "ServerSourceImportResponse",
         "type": "object"
       },
+      "ServerSourceImportServerJson": {
+        "additionalProperties": true,
+        "examples": [
+          {
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "description": "Weather forecast tools for MCP clients.",
+            "documentation": "# Weather MCP\n\nWeather forecast tools.\n\n## Configuration\nSet WEATHER_API_TOKEN before starting the server.",
+            "icons": [
+              {
+                "src": "https://github.com/acme.png"
+              }
+            ],
+            "name": "io.github.acme/weather-mcp",
+            "packages": [
+              {
+                "identifier": "@acme/weather-mcp",
+                "registryType": "npm",
+                "transport": {
+                  "type": "stdio"
+                }
+              }
+            ],
+            "remotes": [],
+            "repository": {
+              "source": "github",
+              "url": "acme/weather-mcp"
+            },
+            "title": "Weather MCP",
+            "version": "1.0.0",
+            "websiteUrl": "https://github.com/acme/weather-mcp#readme"
+          }
+        ],
+        "properties": {
+          "$schema": {
+            "default": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "title": "$Schema",
+            "type": "string"
+          },
+          "_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryIcon"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryPackage"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "remotes": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryRemote"
+            },
+            "title": "Remotes",
+            "type": "array"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryRepository"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "default": "1.0.0",
+            "maxLength": 255,
+            "title": "Version",
+            "type": "string"
+          },
+          "websiteUrl": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Websiteurl",
+            "type": "string"
+          }
+        },
+        "title": "ServerSourceImportServerJson",
+        "type": "object"
+      },
+      "ServerSourceImportSubmissionPayload": {
+        "examples": [
+          {
+            "serverJson": {
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              "description": "Weather forecast tools for MCP clients.",
+              "name": "io.github.acme/weather-mcp",
+              "packages": [
+                {
+                  "identifier": "@acme/weather-mcp",
+                  "registryType": "npm",
+                  "transport": {
+                    "type": "stdio"
+                  }
+                }
+              ],
+              "remotes": [],
+              "title": "Weather MCP",
+              "version": "1.0.0"
+            },
+            "submissionType": "new_server"
+          }
+        ],
+        "properties": {
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          },
+          "serverJson": {
+            "$ref": "#/components/schemas/ServerSourceImportServerJson"
+          },
+          "submissionType": {
+            "default": "new_server",
+            "enum": [
+              "new_server",
+              "new_version",
+              "metadata_edit",
+              "takedown_appeal"
+            ],
+            "title": "Submissiontype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverJson"
+        ],
+        "title": "ServerSourceImportSubmissionPayload",
+        "type": "object"
+      },
       "SubmissionCreate": {
+        "examples": [
+          {
+            "serverJson": {
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              "_meta": {
+                "categories": [
+                  "weather"
+                ],
+                "source": {
+                  "readme": "README.md"
+                }
+              },
+              "description": "Weather forecast tools for MCP clients.",
+              "documentation": "## Overview\nWeather MCP provides forecast and alert tools.\n\n## Configuration\nSet WEATHER_API_TOKEN before starting the server.",
+              "icons": [
+                {
+                  "src": "https://github.com/acme.png",
+                  "type": "image/png"
+                }
+              ],
+              "name": "io.github.acme/weather-mcp",
+              "packages": [
+                {
+                  "identifier": "@acme/weather-mcp",
+                  "registryType": "npm",
+                  "transport": {
+                    "args": [
+                      "-y",
+                      "@acme/weather-mcp"
+                    ],
+                    "command": "npx",
+                    "type": "stdio"
+                  },
+                  "version": "1.0.0"
+                }
+              ],
+              "remotes": [],
+              "repository": {
+                "source": "github",
+                "type": "git",
+                "url": "https://github.com/acme/weather-mcp"
+              },
+              "title": "Weather MCP",
+              "version": "1.0.0",
+              "websiteUrl": "https://github.com/acme/weather-mcp#readme"
+            },
+            "submissionType": "new_server"
+          }
+        ],
         "properties": {
           "ownerOrganizationId": {
             "anyOf": [

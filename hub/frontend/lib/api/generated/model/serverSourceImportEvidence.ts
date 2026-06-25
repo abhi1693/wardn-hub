@@ -6,6 +6,8 @@
  */
 
 export interface ServerSourceImportEvidence {
+  /** Repository files used to build the import draft. */
   files?: string[];
+  /** Required or important fields that could not be inferred. */
   missing?: string[];
 }

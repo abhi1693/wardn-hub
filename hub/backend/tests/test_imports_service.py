@@ -35,12 +35,11 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
     )
 
     assert response.source == "server.json"
-    assert response.server_json["name"] == "io.github.acme/weather-mcp"
-    assert response.server_json["documentation"] == "# Weather MCP\n\nWeather forecast tools."
-    assert response.server_json["packages"] == [
-        {"registryType": "npm", "identifier": "@acme/weather-mcp"}
-    ]
-    assert response.submission_payload["serverJson"] == response.server_json
+    assert response.server_json.name == "io.github.acme/weather-mcp"
+    assert response.server_json.documentation == "# Weather MCP\n\nWeather forecast tools."
+    assert response.server_json.packages[0].registry_type == "npm"
+    assert response.server_json.packages[0].identifier == "@acme/weather-mcp"
+    assert response.submission_payload.server_json == response.server_json
     assert response.evidence.files == ["README.md", "server.json"]
 
 
@@ -67,5 +66,5 @@ def test_import_server_source_returns_readme_fallback_when_metadata_missing(monk
 
     assert response.source == "github"
     assert response.title == "weather-mcp"
-    assert response.server_json["documentation"] == "# Weather MCP\n\nWeather forecast tools."
+    assert response.server_json.documentation == "# Weather MCP\n\nWeather forecast tools."
     assert response.evidence.missing == ["packages or remotes"]

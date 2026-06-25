@@ -48,10 +48,20 @@ def has_http_url(value: Any) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def package_targets_check(packages: list[dict[str, Any]]) -> dict[str, str]:
+def model_or_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        payload = value.model_dump(by_alias=True, exclude_none=True)
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def package_targets_check(packages: list[Any]) -> dict[str, str]:
     if not packages:
         return validation_check("packages", "passed", "No package targets provided.")
-    for package in packages:
+    for package_value in packages:
+        package = model_or_dict(package_value)
         if not is_non_empty_string(package.get("registryType")):
             return validation_check("packages", "failed", "Package registryType is required.")
         if not is_non_empty_string(package.get("identifier")):
@@ -69,10 +79,11 @@ def package_targets_check(packages: list[dict[str, Any]]) -> dict[str, str]:
     return validation_check("packages", "passed", "Package targets are structurally valid.")
 
 
-def remote_targets_check(remotes: list[dict[str, Any]]) -> dict[str, str]:
+def remote_targets_check(remotes: list[Any]) -> dict[str, str]:
     if not remotes:
         return validation_check("remotes", "passed", "No remote targets provided.")
-    for remote in remotes:
+    for remote_value in remotes:
+        remote = model_or_dict(remote_value)
         if not has_http_url(remote.get("url")):
             return validation_check("remotes", "failed", "Remote target URL must be http or https.")
         if "type" in remote and not is_non_empty_string(remote.get("type")):

@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RegistryServerReadRepository = { [key: string]: unknown } | null;
+export type RegistryTransportEnv = { [key: string]: unknown };

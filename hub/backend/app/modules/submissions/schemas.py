@@ -11,7 +11,56 @@ SubmissionType = Literal["new_server", "new_version", "metadata_edit", "takedown
 
 
 class SubmissionCreate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "submissionType": "new_server",
+                    "ownerUserId": None,
+                    "ownerOrganizationId": None,
+                    "serverJson": {
+                        "$schema": (
+                            "https://static.modelcontextprotocol.io/schemas/2025-12-11/"
+                            "server.schema.json"
+                        ),
+                        "name": "io.github.acme/weather-mcp",
+                        "title": "Weather MCP",
+                        "description": "Weather forecast tools for MCP clients.",
+                        "documentation": (
+                            "## Overview\nWeather MCP provides forecast and alert tools.\n\n"
+                            "## Configuration\nSet WEATHER_API_TOKEN before starting the server."
+                        ),
+                        "repository": {
+                            "type": "git",
+                            "source": "github",
+                            "url": "https://github.com/acme/weather-mcp",
+                        },
+                        "version": "1.0.0",
+                        "websiteUrl": "https://github.com/acme/weather-mcp#readme",
+                        "icons": [{"src": "https://github.com/acme.png", "type": "image/png"}],
+                        "packages": [
+                            {
+                                "registryType": "npm",
+                                "identifier": "@acme/weather-mcp",
+                                "version": "1.0.0",
+                                "transport": {
+                                    "type": "stdio",
+                                    "command": "npx",
+                                    "args": ["-y", "@acme/weather-mcp"],
+                                },
+                            }
+                        ],
+                        "remotes": [],
+                        "_meta": {
+                            "categories": ["weather"],
+                            "source": {"readme": "README.md"},
+                        },
+                    },
+                }
+            ]
+        },
+    )
 
     submission_type: SubmissionType = Field(default="new_server", alias="submissionType")
     owner_user_id: UUID | None = Field(default=None, alias="ownerUserId")

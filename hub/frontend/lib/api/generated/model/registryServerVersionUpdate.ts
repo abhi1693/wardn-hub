@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { _RegistryServerVersionUpdateMeta } from './_registryServerVersionUpdateMeta';
-import type { RegistryServerVersionUpdateIconsItem } from './registryServerVersionUpdateIconsItem';
-import type { RegistryServerVersionUpdatePackagesItem } from './registryServerVersionUpdatePackagesItem';
-import type { RegistryServerVersionUpdateRemotesItem } from './registryServerVersionUpdateRemotesItem';
-import type { RegistryServerVersionUpdateRepository } from './registryServerVersionUpdateRepository';
+import type { RegistryIcon } from './registryIcon';
+import type { RegistryPackage } from './registryPackage';
+import type { RegistryRemote } from './registryRemote';
+import type { RegistryRepository } from './registryRepository';
 
 export interface RegistryServerVersionUpdate {
   /** @minLength 1 */
@@ -17,16 +17,16 @@ export interface RegistryServerVersionUpdate {
   /** @minLength 1 */
   description: string;
   documentation?: string;
-  icons?: RegistryServerVersionUpdateIconsItem[];
+  icons?: RegistryIcon[];
   /**
      * @minLength 3
      * @maxLength 200
      * @pattern ^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$
      */
   name: string;
-  packages?: RegistryServerVersionUpdatePackagesItem[];
-  remotes?: RegistryServerVersionUpdateRemotesItem[];
-  repository?: RegistryServerVersionUpdateRepository;
+  packages?: RegistryPackage[];
+  remotes?: RegistryRemote[];
+  repository?: RegistryRepository | null;
   /** @maxLength 100 */
   title?: string;
   /**

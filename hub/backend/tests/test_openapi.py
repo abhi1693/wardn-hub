@@ -71,6 +71,27 @@ def test_health_openapi_schema_is_specific() -> None:
     }
 
 
+def test_submission_openapi_has_typed_import_examples() -> None:
+    schema = TestClient(create_app()).get("/api/v1/openapi.json").json()
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["ServerSourceImportRequest"]["examples"][0]["repositoryUrl"].startswith(
+        "https://github.com/"
+    )
+    assert schemas["ServerSourceImportResponse"]["properties"]["packages"]["items"] == {
+        "$ref": "#/components/schemas/RegistryPackage"
+    }
+    assert schemas["ServerSourceImportResponse"]["properties"]["remotes"]["items"] == {
+        "$ref": "#/components/schemas/RegistryRemote"
+    }
+    assert schemas["ServerSourceImportResponse"]["properties"]["serverJson"] == {
+        "$ref": "#/components/schemas/ServerSourceImportServerJson"
+    }
+    assert schemas["SubmissionCreate"]["examples"][0]["serverJson"]["packages"][0][
+        "registryType"
+    ] == "npm"
+
+
 def test_export_openapi_writes_schema(tmp_path: Path) -> None:
     output_path = tmp_path / "openapi" / "wardn-hub-api.json"
 

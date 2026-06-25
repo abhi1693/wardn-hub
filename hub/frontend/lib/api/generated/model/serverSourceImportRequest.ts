@@ -7,10 +7,14 @@
 
 export interface ServerSourceImportRequest {
   /**
+     * GitHub repository URL, SSH URL, or owner/repo shorthand to import.
      * @minLength 1
      * @maxLength 500
      */
   repositoryUrl: string;
-  /** @maxLength 500 */
+  /**
+     * Optional repository subfolder that contains the MCP server metadata.
+     * @maxLength 500
+     */
   subfolder?: string;
 }

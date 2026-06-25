@@ -23,6 +23,12 @@ def string_value(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
+def dict_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def strip_git_suffix(value: str) -> str:
     return value.strip().removesuffix(".git")
 
@@ -202,9 +208,9 @@ def server_json_from_metadata(
 ) -> dict[str, Any]:
     repository_payload = metadata.get("repository")
     repository_value = repository_payload if isinstance(repository_payload, dict) else {}
-    packages = metadata.get("packages") if isinstance(metadata.get("packages"), list) else []
-    remotes = metadata.get("remotes") if isinstance(metadata.get("remotes"), list) else []
-    icons = metadata.get("icons") if isinstance(metadata.get("icons"), list) else []
+    packages = dict_items(metadata.get("packages"))
+    remotes = dict_items(metadata.get("remotes"))
+    icons = dict_items(metadata.get("icons"))
     icon_url = string_value(metadata.get("iconUrl"))
     if icon_url and not icons:
         icons = [{"src": icon_url}]

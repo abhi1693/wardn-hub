@@ -4,27 +4,28 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.1.0
  */
+import type { RegistryIcon } from './registryIcon';
+import type { RegistryPackage } from './registryPackage';
+import type { RegistryRemote } from './registryRemote';
+import type { RegistryRepository } from './registryRepository';
 import type { ServerSourceImportEvidence } from './serverSourceImportEvidence';
-import type { ServerSourceImportResponseIconsItem } from './serverSourceImportResponseIconsItem';
-import type { ServerSourceImportResponsePackagesItem } from './serverSourceImportResponsePackagesItem';
-import type { ServerSourceImportResponseRemotesItem } from './serverSourceImportResponseRemotesItem';
-import type { ServerSourceImportResponseRepository } from './serverSourceImportResponseRepository';
-import type { ServerSourceImportResponseServerJson } from './serverSourceImportResponseServerJson';
-import type { ServerSourceImportResponseSubmissionPayload } from './serverSourceImportResponseSubmissionPayload';
+import type { ServerSourceImportResponseSource } from './serverSourceImportResponseSource';
+import type { ServerSourceImportServerJson } from './serverSourceImportServerJson';
+import type { ServerSourceImportSubmissionPayload } from './serverSourceImportSubmissionPayload';
 
 export interface ServerSourceImportResponse {
   description?: string;
   documentation?: string;
   evidence?: ServerSourceImportEvidence;
   iconUrl?: string;
-  icons?: ServerSourceImportResponseIconsItem[];
+  icons?: RegistryIcon[];
   name?: string;
-  packages?: ServerSourceImportResponsePackagesItem[];
-  remotes?: ServerSourceImportResponseRemotesItem[];
-  repository?: ServerSourceImportResponseRepository;
-  serverJson?: ServerSourceImportResponseServerJson;
-  source: string;
-  submissionPayload?: ServerSourceImportResponseSubmissionPayload;
+  packages?: RegistryPackage[];
+  remotes?: RegistryRemote[];
+  repository?: RegistryRepository | null;
+  serverJson?: ServerSourceImportServerJson;
+  source: ServerSourceImportResponseSource;
+  submissionPayload: ServerSourceImportSubmissionPayload;
   title?: string;
   version?: string;
   websiteUrl?: string;

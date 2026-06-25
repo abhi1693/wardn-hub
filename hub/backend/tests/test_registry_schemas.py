@@ -54,7 +54,7 @@ def test_mcpb_packages_are_allowed_in_hub() -> None:
         )
     )
 
-    assert payload.packages[0]["registryType"] == "mcpb"
+    assert payload.packages[0].registry_type == "mcpb"
 
 
 def test_server_definition_requires_package_or_remote_target() -> None:

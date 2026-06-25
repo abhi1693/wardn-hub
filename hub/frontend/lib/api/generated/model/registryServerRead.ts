@@ -7,9 +7,9 @@
 import type { ActorSummary } from './actorSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
 import type { RegistryCategoryRead } from './registryCategoryRead';
+import type { RegistryIcon } from './registryIcon';
 import type { RegistryLatestVersionSummary } from './registryLatestVersionSummary';
-import type { RegistryServerReadIconsItem } from './registryServerReadIconsItem';
-import type { RegistryServerReadRepository } from './registryServerReadRepository';
+import type { RegistryRepository } from './registryRepository';
 import type { RegistryServerReadStatus } from './registryServerReadStatus';
 import type { RegistryServerReadVisibility } from './registryServerReadVisibility';
 
@@ -19,14 +19,14 @@ export interface RegistryServerRead {
   createdBy?: ActorSummary | null;
   description: string;
   documentation?: string;
-  icons?: RegistryServerReadIconsItem[];
+  icons?: RegistryIcon[];
   id: string;
   latestVersion?: RegistryLatestVersionSummary | null;
   name: string;
   organization?: ActorSummary | null;
   owner?: ActorSummary | null;
   partnerSupport?: PartnerSupportSummary[];
-  repository?: RegistryServerReadRepository;
+  repository?: RegistryRepository | null;
   status: RegistryServerReadStatus;
   statusMessage: string;
   title: string;
