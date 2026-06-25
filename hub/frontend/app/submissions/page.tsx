@@ -5,6 +5,7 @@ import {
   AlertCircle,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
   Clock3,
   FileCheck2,
@@ -14,11 +15,13 @@ import {
   Plus,
   RefreshCw,
   SearchX,
+  Sparkles,
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AiSubmissionPromptDialog } from "@/components/ai-submission-prompt-dialog";
 import { PublicHeader } from "@/components/site-header";
 import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
@@ -223,6 +226,76 @@ function StatusBadge({ status }: { status: SubmissionRead["status"] }) {
       <Icon className="size-3.5" />
       {meta.label}
     </span>
+  );
+}
+
+function AddSubmissionMenu() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+
+    window.addEventListener("mousedown", closeOnOutsideClick);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("mousedown", closeOnOutsideClick);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  return (
+    <>
+      <div className="relative" ref={menuRef}>
+        <div className="inline-flex rounded-[var(--radius)] shadow-[var(--shadow-card)]">
+          <Button asChild className="rounded-r-none shadow-none">
+            <Link href="/submit">
+              <Plus className="size-4" />
+              Add submission
+            </Link>
+          </Button>
+          <Button
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            aria-label="More submission options"
+            className="rounded-l-none border-l border-white/20 px-2 shadow-none"
+            onClick={() => setMenuOpen((current) => !current)}
+            type="button"
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </div>
+        {menuOpen ? (
+          <div
+            className="absolute right-0 top-11 z-20 grid w-56 overflow-hidden rounded-lg border border-border bg-white p-1 shadow-xl"
+            role="menu"
+          >
+            <button
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                setMenuOpen(false);
+                setPromptOpen(true);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <Sparkles className="size-4 text-muted-foreground" />
+              AI prompt
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <AiSubmissionPromptDialog onOpenChange={setPromptOpen} open={promptOpen} />
+    </>
   );
 }
 
@@ -457,12 +530,7 @@ export default function SubmissionsPage() {
                 Track MCP server drafts, reviews, and published versions.
               </p>
             </div>
-            <Button asChild>
-              <Link href="/submit">
-                <Plus className="size-4" />
-                Add submission
-              </Link>
-            </Button>
+            <AddSubmissionMenu />
           </header>
 
           <section className="grid gap-4">
@@ -540,14 +608,7 @@ export default function SubmissionsPage() {
             ) : null}
             {state === "ready" && submissions.length === 0 ? (
               <StatePanel
-                action={
-                  <Button asChild size="sm">
-                    <Link href="/submit">
-                      <Plus className="size-4" />
-                      Add submission
-                    </Link>
-                  </Button>
-                }
+                action={<AddSubmissionMenu />}
                 detail="Create the first registry submission for a server or version."
                 icon={FileCheck2}
                 title="No submissions yet"
