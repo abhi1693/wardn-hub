@@ -156,3 +156,5 @@ The default container command runs that build-and-start flow automatically.
 - Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and server-side `CLERK_SECRET_KEY` for
   the frontend when Clerk is enabled. Do not prefix the secret key with
   `NEXT_PUBLIC_`.
+- Google Analytics loads only in production. The frontend defaults to
+  `G-GYYSYTBZTD`; set `GOOGLE_ANALYTICS_ID` to override the measurement ID.
