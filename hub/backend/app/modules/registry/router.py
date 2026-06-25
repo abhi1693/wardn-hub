@@ -171,10 +171,17 @@ async def get_mcp_server(
 async def admin_create_mcp_server_version(
     payload: RegistryServerVersionCreate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser)],
 ) -> RegistryServerVersionDetailResponse:
     try:
-        response = await create_server_version(session, payload)
+        response = await create_server_version(
+            session,
+            payload,
+            owner_user_id=current_user.id,
+            created_by_user_id=current_user.id,
+            updated_by_user_id=current_user.id,
+            publisher_user_id=current_user.id,
+        )
     except DuplicateRegistryVersionError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -195,10 +202,16 @@ async def admin_update_mcp_server_version(
     version: str,
     payload: RegistryServerVersionUpdate,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser)],
+    current_user: Annotated[User, Depends(require_superuser)],
 ) -> RegistryServerVersionDetailResponse:
     try:
-        response = await update_server_version(session, server_name, version, payload)
+        response = await update_server_version(
+            session,
+            server_name,
+            version,
+            payload,
+            updated_by_user_id=current_user.id,
+        )
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     await session.commit()

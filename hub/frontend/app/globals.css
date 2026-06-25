@@ -526,28 +526,39 @@ button {
 
 .server-card {
   display: grid;
-  min-height: 190px;
+  min-height: 188px;
   align-content: start;
-  gap: 14px;
+  gap: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--foreground);
-  padding: 16px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  padding: 18px 16px;
   text-align: left;
 }
 
-.server-card:hover,
-.server-card.selected {
-  border-color: #9ccfd4;
-  box-shadow: 0 12px 34px rgb(23 32 42 / 8%);
+.server-card:hover {
+  border-color: var(--border);
 }
 
 .server-card-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
+}
+
+.server-card-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
 }
 
 .server-card-status,
@@ -579,22 +590,27 @@ button {
 .server-card strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 15px;
-  line-height: 21px;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 22px;
 }
 
 .server-card small,
 .latest-row small {
   display: block;
-  margin-top: 3px;
-  color: var(--muted-foreground);
+  margin-top: 1px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .server-card-description {
   display: -webkit-box;
   overflow: hidden;
-  min-height: 60px;
-  color: #536070;
+  min-height: 66px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 24px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }

@@ -54,7 +54,9 @@ Phase 3 adds the moderation workflow around registry publishing:
 
 Phase 4 namespace claims are currently deferred. Server identifiers still use
 stable `publisher/server` names, but namespace ownership workflows are not part
-of the active product surface.
+of the active product surface. Namespace models, migration, and service code are
+retained for future activation, while namespace routes are intentionally not
+mounted.
 
 ## Phase 5 Partner Support
 
@@ -78,7 +80,7 @@ Phase 6 exposes trust-plane data through registry read APIs:
 
 Phase 7 adds the first usable browser experience:
 
-- Operational app shell with registry, submissions, partners, audit, and settings views
+- Operational app shell with registry, submissions, partners, and audit views
 - Registry browse/detail workflow with trust and partner support badges
 - Protected data views for moderation queues, partner support, and audit records
 - Runtime API base URL support through `NEXT_PUBLIC_API_BASE_URL`
@@ -87,7 +89,7 @@ Phase 7 adds the first usable browser experience:
 
 Phase 8 makes the console operable:
 
-- Login, logout, first-user bootstrap, and bearer token fallback controls
+- Login, logout, and bearer token fallback controls
 - Submission submit, withdraw, approve, reject, and publish actions
 - Partner activation and server support creation controls
 
@@ -95,6 +97,7 @@ Phase 8 makes the console operable:
 
 ```sh
 cd hub/backend
+cp .env.example .env
 uv run --extra dev python -m app.openapi --output ../frontend/openapi/wardn-hub-api.json
 uv run --extra dev python -m app.manage seed-categories
 uv run --extra dev pytest

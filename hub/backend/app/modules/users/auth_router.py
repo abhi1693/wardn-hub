@@ -17,12 +17,12 @@ from app.modules.users.exceptions import (
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     LoginRequest,
-    UserCreate,
     UserAPITokenCreate,
     UserAPITokenCreated,
     UserAPITokenListResponse,
     UserAPITokenRead,
     UserAPITokenUpdate,
+    UserCreate,
     UserRead,
 )
 from app.modules.users.service import (

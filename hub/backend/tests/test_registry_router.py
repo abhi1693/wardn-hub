@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from app.db.session import get_db_session
@@ -44,7 +47,7 @@ def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:
         raise DuplicateRegistryVersionError("duplicate")
 
     async def superuser():
-        return object()
+        return SimpleNamespace(id=uuid4())
 
     app.dependency_overrides[get_db_session] = fake_session
     app.dependency_overrides[require_superuser] = superuser

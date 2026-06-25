@@ -6,10 +6,8 @@ import {
   FileCheck2,
   History,
   LogIn,
-  Pencil,
   Plus,
   Server,
-  Trash2,
   UserPlus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,7 +16,6 @@ import {
   HubApiError,
   createPartnerSupport,
   currentUser,
-  deleteServer,
   listAuditEvents,
   listPartnerOrganizations,
   listPartnerSupport,
@@ -212,27 +209,10 @@ function AppShell({
   );
 }
 
-function serverSubmitUrl(serverName: string, version: string, intent?: "edit" | "version") {
-  const params = new URLSearchParams({ server: serverName, version });
-  if (intent) {
-    params.set("intent", intent);
-  }
-  return `/submit?${params}`;
-}
-
-function BrowseView({
-  isAdmin,
-  isAuthenticated,
-}: {
-  isAdmin: boolean;
-  isAuthenticated: boolean;
-}) {
+function BrowseView() {
   const [servers, setServers] = useState<RegistryServerRead[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busyServer, setBusyServer] = useState("");
-  const canShowServerActions = isAuthenticated || isAdmin;
 
   async function refresh() {
     setState("loading");
@@ -247,27 +227,6 @@ function BrowseView({
     }
   }
 
-  async function deleteMcpServer(server: RegistryServerRead) {
-    const isConfirmed = window.confirm(
-      `Delete ${server.name} and all published versions? This cannot be undone from the UI.`,
-    );
-    if (!isConfirmed) return;
-
-    setBusyServer(server.name);
-    setNotice("");
-    setError("");
-    try {
-      await deleteServer(server.name);
-      setNotice(`${server.name} deleted.`);
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to delete server.");
-      setState(statusFromError(caught));
-    } finally {
-      setBusyServer("");
-    }
-  }
-
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timeoutId);
@@ -277,16 +236,17 @@ function BrowseView({
     <div className="home-view simple-home">
       {state === "loading" && <EmptyState title="Loading" detail="Fetching MCP servers." />}
       {state === "error" && <EmptyState title="Registry unavailable" detail={error} />}
-      {notice && <div className="notice">{notice}</div>}
       {state === "ready" && servers.length === 0 && (
         <div className="server-grid">
           <article className="server-card empty-server-card">
             <span className="server-card-head">
+              <span className="server-card-icon">
+                <Server size={22} />
+              </span>
               <span>
                 <strong>No MCP servers published yet</strong>
-                <small>Published servers will appear here as cards.</small>
+                <small>Registry</small>
               </span>
-              <Pill tone="neutral">empty</Pill>
             </span>
             <span className="server-card-description">
               Once submissions are approved and published, this page will show one card per MCP
@@ -300,75 +260,15 @@ function BrowseView({
           {servers.map((server) => (
             <article className="server-card" key={server.id}>
               <span className="server-card-head">
+                <span className="server-card-icon">
+                  <Server size={22} />
+                </span>
                 <span>
                   <strong>{server.title || server.name}</strong>
-                  <small>{server.name}</small>
-                </span>
-                <span className="server-card-status">
-                  <Pill tone={toneFor(server.status)}>{server.status}</Pill>
-                  {canShowServerActions ? (
-                    <span className="server-card-actions">
-                      {server.latestVersion?.version ? (
-                        <button
-                          aria-label={`Edit ${server.name}`}
-                          className="icon-button"
-                          onClick={() => {
-                            window.location.href = serverSubmitUrl(
-                              server.name,
-                              isAdmin ? server.latestVersion?.version ?? "" : "new",
-                              "edit",
-                            );
-                          }}
-                          title={isAdmin ? "Edit latest version" : "Submit edit for review"}
-                          type="button"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                      ) : null}
-                      <button
-                        aria-label={`Add version for ${server.name}`}
-                        className="icon-button"
-                        onClick={() => {
-                          window.location.href = serverSubmitUrl(server.name, "new", "version");
-                        }}
-                        title="Add version"
-                        type="button"
-                      >
-                        <Plus size={16} />
-                      </button>
-                      {isAdmin ? (
-                        <button
-                          aria-label={`Delete ${server.name}`}
-                          className="icon-button danger"
-                          disabled={busyServer === server.name}
-                          onClick={() => void deleteMcpServer(server)}
-                          title="Delete server and all versions"
-                          type="button"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      ) : null}
-                    </span>
-                  ) : null}
+                  <small>{server.categories?.[0]?.name || "MCP Server"}</small>
                 </span>
               </span>
               <span className="server-card-description">{server.description}</span>
-              <span className="pill-stack">
-                {(server.categories ?? []).slice(0, 2).map((item) => (
-                  <Pill key={item.slug} tone="neutral">
-                    {item.name}
-                  </Pill>
-                ))}
-                {(server.partnerSupport ?? []).slice(0, 2).map((support) => (
-                  <Pill key={`${support.organization.id}-${support.supportLevel}`} tone="success">
-                    {support.supportLevel}
-                  </Pill>
-                ))}
-                {server.latestVersion?.version && (
-                  <Pill tone="neutral">{server.latestVersion.version}</Pill>
-                )}
-                <Pill tone="neutral">{formatDate(server.updatedAt)}</Pill>
-              </span>
             </article>
           ))}
         </div>
@@ -747,7 +647,7 @@ export default function Home() {
       onSectionChange={selectSection}
       section={section}
     >
-      {section === "browse" && <BrowseView isAdmin={isAdmin} isAuthenticated={isAuthenticated} />}
+      {section === "browse" && <BrowseView />}
       {isAdmin && section === "submissions" && <SubmissionsView />}
       {isAdmin && section === "partners" && <PartnersView />}
       {isAdmin && section === "audit" && <AuditView />}

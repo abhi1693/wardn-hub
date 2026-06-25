@@ -4,10 +4,12 @@ from uuid import uuid4
 
 import pytest
 
+from app.modules.organizations.exceptions import OrganizationAccessDeniedError
 from app.modules.registry.schemas import RegistryServerVersionCreate
 from app.modules.submissions import service
 from app.modules.submissions.exceptions import (
     InvalidSubmissionTransitionError,
+    SubmissionAccessDeniedError,
     SubmissionValidationError,
 )
 from app.modules.submissions.schemas import SubmissionCreate, SubmissionUpdate
@@ -94,11 +96,51 @@ async def test_new_version_submission_requires_published_server(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_create_submission_rejects_invalid_remote_target() -> None:
+    invalid_payload = RegistryServerVersionCreate(
+        **{
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "name": "io.github.example/weather",
+            "title": "Weather",
+            "description": "Weather tools for forecasts",
+            "version": "1.0.0",
+            "remotes": [{"type": "streamable-http", "url": "ftp://example.com/mcp"}],
+        }
+    )
+
+    with pytest.raises(SubmissionValidationError, match="Remote target URL"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(serverJson=invalid_payload),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_submission_requires_organization_publish_permission(monkeypatch) -> None:
+    async def deny_permission(*args, **kwargs):
+        raise OrganizationAccessDeniedError("permission denied")
+
+    monkeypatch.setattr(service, "require_organization_permission", deny_permission)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="owner organization"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(
+                ownerOrganizationId=uuid4(),
+                serverJson=registry_payload(),
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> None:
     submitter = current_user()
     moderator = current_user(is_superuser=True)
     created_submission = None
     published_version_id = uuid4()
+    publish_kwargs = {}
 
     async def no_published_version(*args, **kwargs):
         return None
@@ -107,6 +149,7 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
         return created_submission
 
     async def publish_version(*args, **kwargs):
+        publish_kwargs.update(kwargs)
         return SimpleNamespace(version=SimpleNamespace(id=published_version_id))
 
     monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
@@ -145,6 +188,13 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
     published = await service.publish_submission(FakeSession(), moderator, response.id)
     assert published.status == "published"
     assert published.published_server_version_id == published_version_id
+    assert publish_kwargs == {
+        "owner_user_id": submitter.id,
+        "owner_organization_id": None,
+        "created_by_user_id": submitter.id,
+        "updated_by_user_id": moderator.id,
+        "publisher_user_id": moderator.id,
+    }
 
 
 @pytest.mark.asyncio

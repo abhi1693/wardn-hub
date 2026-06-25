@@ -21,8 +21,18 @@ depends_on: str | Sequence[str] | None = None
 DEFAULT_CATEGORIES = [
     ("search", "Search", "Search, retrieval, and discovery MCP servers.", 100),
     ("web-scraping", "Web Scraping", "Browser automation, scraping, and extraction servers.", 110),
-    ("communication", "Communication", "Messaging, meetings, email, and collaboration servers.", 120),
-    ("productivity", "Productivity", "Task, calendar, notes, and workflow productivity servers.", 130),
+    (
+        "communication",
+        "Communication",
+        "Messaging, meetings, email, and collaboration servers.",
+        120,
+    ),
+    (
+        "productivity",
+        "Productivity",
+        "Task, calendar, notes, and workflow productivity servers.",
+        130,
+    ),
     ("marketing", "Marketing", "Marketing, growth, and brand operation servers.", 140),
     ("design", "Design", "Design, creative, media, and asset workflow servers.", 150),
     ("memory", "Memory", "Memory, context, and long-term knowledge servers.", 160),
@@ -32,7 +42,12 @@ DEFAULT_CATEGORIES = [
     ("cloud-service", "Cloud Service", "Cloud provider and infrastructure operation servers.", 200),
     ("file-system", "File System", "Local and remote file system access servers.", 210),
     ("cloud-storage", "Cloud Storage", "Object storage, document storage, and drive servers.", 220),
-    ("version-control", "Version Control", "Repository, issue, pull request, and source control servers.", 230),
+    (
+        "version-control",
+        "Version Control",
+        "Repository, issue, pull request, and source control servers.",
+        230,
+    ),
     ("other", "Other", "Servers that do not fit an existing primary category.", 1000),
 ]
 

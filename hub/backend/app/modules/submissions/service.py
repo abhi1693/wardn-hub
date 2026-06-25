@@ -1,9 +1,16 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.service import emit_audit_event
+from app.modules.organizations.exceptions import (
+    OrganizationAccessDeniedError,
+    OrganizationNotFoundError,
+)
+from app.modules.organizations.service import require_organization_permission
 from app.modules.registry import repository as registry_repository
 from app.modules.registry import service as registry_service
 from app.modules.registry.exceptions import DuplicateRegistryVersionError
@@ -26,12 +33,104 @@ from app.modules.submissions.schemas import (
 from app.modules.users.models import User
 
 
+def validation_check(name: str, status: str, message: str = "") -> dict[str, str]:
+    return {"name": name, "status": status, "message": message}
+
+
+def is_non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def has_http_url(value: Any) -> bool:
+    if not is_non_empty_string(value):
+        return False
+    parsed = urlparse(value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def package_targets_check(packages: list[dict[str, Any]]) -> dict[str, str]:
+    if not packages:
+        return validation_check("packages", "passed", "No package targets provided.")
+    for package in packages:
+        if not is_non_empty_string(package.get("registryType")):
+            return validation_check("packages", "failed", "Package registryType is required.")
+        if not is_non_empty_string(package.get("identifier")):
+            return validation_check("packages", "failed", "Package identifier is required.")
+        transport = package.get("transport")
+        if transport is not None:
+            if not isinstance(transport, dict):
+                return validation_check(
+                    "packages",
+                    "failed",
+                    "Package transport must be an object.",
+                )
+            if "type" in transport and not is_non_empty_string(transport.get("type")):
+                return validation_check("packages", "failed", "Package transport type is required.")
+    return validation_check("packages", "passed", "Package targets are structurally valid.")
+
+
+def remote_targets_check(remotes: list[dict[str, Any]]) -> dict[str, str]:
+    if not remotes:
+        return validation_check("remotes", "passed", "No remote targets provided.")
+    for remote in remotes:
+        if not has_http_url(remote.get("url")):
+            return validation_check("remotes", "failed", "Remote target URL must be http or https.")
+        if "type" in remote and not is_non_empty_string(remote.get("type")):
+            return validation_check("remotes", "failed", "Remote target type is required.")
+    return validation_check("remotes", "passed", "Remote targets are structurally valid.")
+
+
+def documentation_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    if payload.documentation.strip():
+        return validation_check("documentation", "passed", "Documentation is present.")
+    return validation_check("documentation", "warning", "Documentation is empty.")
+
+
 def validation_result_for(payload: RegistryServerVersionCreate) -> dict:
     checks = [
-        {"name": "schema", "status": "passed"},
-        {"name": "target", "status": "passed"},
+        validation_check("schema", "passed", "Registry schema fields are valid."),
+        validation_check("target", "passed", "At least one package or remote target is present."),
+        package_targets_check(payload.packages),
+        remote_targets_check(payload.remotes),
+        documentation_check(payload),
     ]
-    return {"status": "warning", "checks": checks}
+    statuses = {check["status"] for check in checks}
+    status = "failed" if "failed" in statuses else "warning" if "warning" in statuses else "passed"
+    return {"status": status, "checks": checks}
+
+
+def ensure_validation_passed(validation_result: dict) -> None:
+    if validation_result["status"] != "failed":
+        return
+    failed = [
+        check["message"]
+        for check in validation_result["checks"]
+        if check["status"] == "failed" and check.get("message")
+    ]
+    message = failed[0] if failed else "submission payload validation failed"
+    raise SubmissionValidationError(message)
+
+
+async def resolve_submission_owner(
+    session: AsyncSession,
+    user: User,
+    *,
+    owner_user_id: uuid.UUID | None,
+    owner_organization_id: uuid.UUID | None,
+    permission: str,
+) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+    if owner_user_id is None and owner_organization_id is None:
+        owner_user_id = user.id
+    if owner_user_id is not None and not user.is_superuser and owner_user_id != user.id:
+        raise SubmissionAccessDeniedError("submission owner user access denied")
+    if owner_organization_id is not None:
+        try:
+            await require_organization_permission(session, user, owner_organization_id, permission)
+        except OrganizationNotFoundError as exc:
+            raise SubmissionValidationError("owner organization not found") from exc
+        except OrganizationAccessDeniedError as exc:
+            raise SubmissionAccessDeniedError("owner organization access denied") from exc
+    return owner_user_id, owner_organization_id
 
 
 def submission_response(submission: ServerSubmission) -> SubmissionRead:
@@ -126,6 +225,15 @@ async def create_submission(
     user: User,
     payload: SubmissionCreate,
 ) -> SubmissionRead:
+    validation_result = validation_result_for(payload.server_json)
+    ensure_validation_passed(validation_result)
+    owner_user_id, owner_organization_id = await resolve_submission_owner(
+        session,
+        user,
+        owner_user_id=payload.owner_user_id,
+        owner_organization_id=payload.owner_organization_id,
+        permission="servers.create",
+    )
     await ensure_submission_type_allowed(
         session,
         payload.submission_type,
@@ -140,12 +248,12 @@ async def create_submission(
         name=payload.server_json.name,
         version=payload.server_json.version,
         submitter_user_id=user.id,
-        owner_user_id=payload.owner_user_id or user.id,
-        owner_organization_id=payload.owner_organization_id,
+        owner_user_id=owner_user_id,
+        owner_organization_id=owner_organization_id,
         submission_type=payload.submission_type,
         status="draft",
         server_json=payload.server_json.model_dump(by_alias=True, exclude_none=True),
-        validation_result=validation_result_for(payload.server_json),
+        validation_result=validation_result,
     )
     session.add(submission)
     await session.flush()
@@ -175,18 +283,35 @@ async def update_submission(
 
     server_json = payload.server_json
     if server_json is not None:
+        validation_result = validation_result_for(server_json)
+        ensure_validation_passed(validation_result)
         await ensure_version_not_published(session, server_json.name, server_json.version)
         submission.name = server_json.name
         submission.version = server_json.version
         submission.server_json = server_json.model_dump(by_alias=True, exclude_none=True)
-        submission.validation_result = validation_result_for(server_json)
+        submission.validation_result = validation_result
     if payload.submission_type is not None:
         submission.submission_type = payload.submission_type
     await ensure_submission_type_allowed(session, submission.submission_type, submission.name)
-    if "owner_user_id" in payload.model_fields_set:
-        submission.owner_user_id = payload.owner_user_id
-    if "owner_organization_id" in payload.model_fields_set:
-        submission.owner_organization_id = payload.owner_organization_id
+    next_owner_user_id = (
+        payload.owner_user_id
+        if "owner_user_id" in payload.model_fields_set
+        else submission.owner_user_id
+    )
+    next_owner_organization_id = (
+        payload.owner_organization_id
+        if "owner_organization_id" in payload.model_fields_set
+        else submission.owner_organization_id
+    )
+    next_owner_user_id, next_owner_organization_id = await resolve_submission_owner(
+        session,
+        user,
+        owner_user_id=next_owner_user_id,
+        owner_organization_id=next_owner_organization_id,
+        permission="servers.update",
+    )
+    submission.owner_user_id = next_owner_user_id
+    submission.owner_organization_id = next_owner_organization_id
     submission.status = "draft"
     submission.rejection_message = ""
     await session.flush()
@@ -327,7 +452,15 @@ async def publish_submission(
         raise InvalidSubmissionTransitionError("only approved submissions can be published")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
     try:
-        published = await registry_service.create_server_version(session, payload)
+        published = await registry_service.create_server_version(
+            session,
+            payload,
+            owner_user_id=submission.owner_user_id,
+            owner_organization_id=submission.owner_organization_id,
+            created_by_user_id=submission.submitter_user_id,
+            updated_by_user_id=publisher.id,
+            publisher_user_id=publisher.id,
+        )
     except DuplicateRegistryVersionError as exc:
         raise DuplicatePublishedVersionError("server version already published") from exc
     submission.status = "published"

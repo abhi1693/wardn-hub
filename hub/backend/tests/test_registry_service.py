@@ -225,6 +225,56 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_create_server_version_sets_owner_and_actor_metadata(monkeypatch) -> None:
+    owner_user_id = uuid4()
+    organization_id = uuid4()
+    creator_id = uuid4()
+    updater_id = uuid4()
+    publisher_id = uuid4()
+
+    async def missing_server(*args, **kwargs):
+        return None
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    session = FakeSession()
+    monkeypatch.setattr(service.repository, "get_server", missing_server)
+    monkeypatch.setattr(service.repository, "get_server_version", missing_server)
+    monkeypatch.setattr(service.repository, "clear_latest_for_server", noop)
+    monkeypatch.setattr(service.repository, "sync_server_categories", noop)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    await service.create_server_version(
+        session,
+        registry_payload(),
+        owner_user_id=owner_user_id,
+        owner_organization_id=organization_id,
+        created_by_user_id=creator_id,
+        updated_by_user_id=updater_id,
+        publisher_user_id=publisher_id,
+    )
+
+    server = next(item for item in session.added if isinstance(item, RegistryServer))
+    version = next(item for item in session.added if isinstance(item, RegistryServerVersion))
+    assert server.owner_user_id == owner_user_id
+    assert server.owner_organization_id == organization_id
+    assert server.created_by_user_id == creator_id
+    assert server.updated_by_user_id == updater_id
+    assert version.owner_user_id == owner_user_id
+    assert version.owner_organization_id == organization_id
+    assert version.created_by_user_id == creator_id
+    assert version.updated_by_user_id == updater_id
+    assert version.publisher_user_id == publisher_id
+
+
+@pytest.mark.asyncio
 async def test_create_server_version_rejects_duplicate(monkeypatch) -> None:
     server = server_model()
     existing = version_model(server.id, "1.0.0", is_latest=True)

@@ -347,6 +347,12 @@ async def server_with_latest(session, server: RegistryServer) -> RegistryServerR
 async def create_server_version(
     session,
     payload: RegistryServerVersionCreate,
+    *,
+    owner_user_id: UUID | None = None,
+    owner_organization_id: UUID | None = None,
+    created_by_user_id: UUID | None = None,
+    updated_by_user_id: UUID | None = None,
+    publisher_user_id: UUID | None = None,
 ) -> RegistryServerVersionDetailResponse:
     existing_version = await repository.get_server_version(
         session,
@@ -364,6 +370,10 @@ async def create_server_version(
     if server is None:
         server = RegistryServer(
             name=payload.name,
+            owner_user_id=owner_user_id,
+            owner_organization_id=owner_organization_id,
+            created_by_user_id=created_by_user_id,
+            updated_by_user_id=updated_by_user_id,
             title=payload.title,
             description=payload.description,
             documentation=payload.documentation,
@@ -378,6 +388,11 @@ async def create_server_version(
         await session.flush()
         await session.refresh(server)
     else:
+        if owner_user_id is not None or owner_organization_id is not None:
+            server.owner_user_id = owner_user_id
+            server.owner_organization_id = owner_organization_id
+        if updated_by_user_id is not None:
+            server.updated_by_user_id = updated_by_user_id
         server.title = payload.title
         server.description = payload.description
         server.documentation = payload.documentation
@@ -397,12 +412,24 @@ async def create_server_version(
         existing_version.status = "active"
         existing_version.status_message = ""
         existing_version.is_latest = True
+        if owner_user_id is not None or owner_organization_id is not None:
+            existing_version.owner_user_id = owner_user_id
+            existing_version.owner_organization_id = owner_organization_id
+        if updated_by_user_id is not None:
+            existing_version.updated_by_user_id = updated_by_user_id
+        if publisher_user_id is not None:
+            existing_version.publisher_user_id = publisher_user_id
         existing_version.status_changed_at = now
         version = existing_version
     else:
         version = RegistryServerVersion(
             server_id=server.id,
             **values,
+            owner_user_id=owner_user_id,
+            owner_organization_id=owner_organization_id,
+            created_by_user_id=created_by_user_id,
+            updated_by_user_id=updated_by_user_id,
+            publisher_user_id=publisher_user_id,
             status="active",
             status_message="",
             is_latest=True,
@@ -429,6 +456,8 @@ async def update_server_version(
     name: str,
     version_name: str,
     payload: RegistryServerVersionUpdate,
+    *,
+    updated_by_user_id: UUID | None = None,
 ) -> RegistryServerVersionDetailResponse:
     if payload.name != name or payload.version != version_name:
         raise RegistryVersionNotFoundError("server version does not match request path")
@@ -448,6 +477,8 @@ async def update_server_version(
 
     for key, value in document_values(payload).items():
         setattr(version, key, value)
+    if updated_by_user_id is not None:
+        version.updated_by_user_id = updated_by_user_id
     if version.status == "deleted":
         version.status = "active"
         version.status_message = ""
@@ -459,6 +490,8 @@ async def update_server_version(
         server.website_url = payload.website_url
         server.repository = payload.repository
         server.icons = payload.icons
+        if updated_by_user_id is not None:
+            server.updated_by_user_id = updated_by_user_id
         await repository.sync_server_categories(session, server.id, category_values(payload))
 
     await session.flush()

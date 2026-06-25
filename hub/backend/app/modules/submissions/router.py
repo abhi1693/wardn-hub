@@ -73,6 +73,8 @@ async def create_submission_record(
         response = await create_submission(session, current_user, payload)
     except DuplicatePublishedVersionError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except SubmissionAccessDeniedError as exc:
+        raise forbidden(exc) from exc
     except SubmissionValidationError as exc:
         raise bad_request(exc) from exc
     await session.commit()
