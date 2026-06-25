@@ -50,6 +50,50 @@ def test_cors_origins_default_empty_without_env(monkeypatch) -> None:
     assert settings.cors_origins == []
 
 
+def test_auth_providers_parse_comma_separated_env(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_AUTH_PROVIDERS": "local, clerk",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "clerk",
+        },
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.auth_providers == ["local", "clerk"]
+    assert settings.auth_default_provider == "clerk"
+
+
+def test_auth_default_provider_must_be_enabled(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_AUTH_PROVIDERS": "local",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "clerk",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="auth_default_provider"):
+        Settings(_env_file=None)
+
+
+def test_production_clerk_auth_requires_issuer(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_AUTH_PROVIDERS": "clerk",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "clerk",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="clerk_issuer"):
+        Settings(_env_file=None)
+
+
 def test_database_url_is_required_without_env(monkeypatch) -> None:
     required_without_database = {
         key: value for key, value in REQUIRED_SETTINGS.items() if key != "WARDN_HUB_DATABASE_URL"

@@ -6,7 +6,7 @@ import { ChevronDown, FileCheck2, KeyRound, LogIn, LogOut, UserPlus } from "luci
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { currentUser, logout, setApiToken } from "@/lib/api/hub";
+import { currentUser, logout, setApiToken, signOutExternalAuth } from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
 
 type HeaderItem = {
@@ -290,6 +290,7 @@ export function PublicHeader() {
     } catch {
       // Keep the client state authoritative even if the session is already gone server-side.
     }
+    await signOutExternalAuth();
     setApiToken("");
     setUser(null);
     router.refresh();

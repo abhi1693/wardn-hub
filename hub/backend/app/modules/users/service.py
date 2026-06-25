@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import (
     extract_api_token_key,
     generate_api_token,
@@ -12,6 +13,7 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.users import repository
+from app.modules.users.auth_providers import ExternalIdentityClaims, enabled_auth_providers
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
@@ -20,9 +22,11 @@ from app.modules.users.exceptions import (
     UserAPITokenNotFoundError,
     UserNotFoundError,
 )
-from app.modules.users.models import LocalAuthCredential, User, UserAPIToken
+from app.modules.users.models import LocalAuthCredential, User, UserAPIToken, UserExternalIdentity
 from app.modules.users.schemas import (
     APITokenScope,
+    AuthProviderListResponse,
+    AuthProviderRead,
     LoginRequest,
     UserAdminUpdate,
     UserAPITokenCreate,
@@ -41,6 +45,29 @@ def unique_uuid_strings(values: list[uuid.UUID]) -> list[str]:
 
 def unique_scope_strings(values: list[APITokenScope]) -> list[str]:
     return sorted(set(values))
+
+
+def auth_provider_label(provider: str) -> str:
+    if provider == "clerk":
+        return "Clerk"
+    return "Email and password"
+
+
+def list_auth_providers() -> AuthProviderListResponse:
+    settings = get_settings()
+    providers = enabled_auth_providers()
+    return AuthProviderListResponse(
+        defaultProvider=settings.auth_default_provider,
+        providers=[
+            AuthProviderRead(
+                provider=provider,
+                label=auth_provider_label(provider),
+                signInEnabled=True,
+                signUpEnabled=True,
+            )
+            for provider in providers
+        ],
+    )
 
 
 async def create_user(
@@ -65,6 +92,47 @@ async def create_user(
         password_updated_at=datetime.now(UTC),
     )
     session.add(user)
+    await session.flush()
+    return user
+
+
+async def get_or_create_external_user(
+    session: AsyncSession,
+    claims: ExternalIdentityClaims,
+) -> User:
+    identity = await repository.get_external_identity(session, claims.provider, claims.subject)
+    if identity is not None:
+        user = identity.user
+        if not user.is_active:
+            raise InvalidLoginError("inactive external user")
+        identity.email = normalize_email(claims.email)
+        user.last_login_at = datetime.now(UTC)
+        await session.flush()
+        return user
+
+    email = normalize_email(claims.email)
+    user = await repository.get_user_by_email(session, email)
+    if user is None:
+        user = User(
+            email=email,
+            first_name=claims.first_name.strip(),
+            last_name=claims.last_name.strip(),
+            is_active=True,
+            is_superuser=False,
+        )
+        session.add(user)
+        await session.flush()
+    elif not user.is_active:
+        raise InvalidLoginError("inactive external user")
+
+    identity = UserExternalIdentity(
+        user_id=user.id,
+        provider=claims.provider,
+        subject=claims.subject,
+        email=email,
+    )
+    session.add(identity)
+    user.last_login_at = datetime.now(UTC)
     await session.flush()
     return user
 

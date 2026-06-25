@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,
+    )
+    external_identities: Mapped[list["UserExternalIdentity"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     tokens: Mapped[list["UserAPIToken"]] = relationship(
         back_populates="user",
@@ -52,6 +56,29 @@ class LocalAuthCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     user: Mapped[User] = relationship(back_populates="local_credentials")
+
+
+class UserExternalIdentity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "user_external_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "subject",
+            name="uq_user_external_identities_provider_subject",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="external_identities")
 
 
 class UserAPIToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):

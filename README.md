@@ -35,6 +35,7 @@ Phase 2 adds the identity and organization foundation:
 
 - Bootstrap first local superuser at `/api/v1/users/bootstrap`
 - Login/logout session cookie flow under `/api/v1/auth`
+- Pluggable auth provider metadata under `/api/v1/auth/providers`
 - User API token CRUD under `/api/v1/auth/api-tokens`
 - Organizations, roles, and memberships under `/api/v1/organizations`
 - System organization roles with explicit permission strings
@@ -84,6 +85,7 @@ Phase 7 adds the first usable browser experience:
 - Registry browse/detail workflow with trust and partner support badges
 - Protected data views for moderation queues, partner support, and audit records
 - Same-origin frontend API proxy with optional direct `NEXT_PUBLIC_API_BASE_URL`
+- Provider-aware sign-in/sign-up UI for local auth and Clerk
 
 ## Phase 8 Frontend Auth And Operator Actions
 
@@ -140,3 +142,12 @@ The default container command runs that build-and-start flow automatically.
 - Set `NEXT_PUBLIC_API_BASE_URL` only when browser clients should call the
   backend directly. If omitted, the browser client uses same-origin `/api/v1`
   and the Next.js rewrite proxies those requests to `WARDN_HUB_API_INTERNAL_BASE_URL`.
+- Keep local email/password auth enabled with `WARDN_HUB_AUTH_PROVIDERS=local`.
+  To enable Clerk alongside local auth, set `WARDN_HUB_AUTH_PROVIDERS=local,clerk`
+  and `NEXT_PUBLIC_AUTH_PROVIDERS=local,clerk`.
+- For Clerk, set `WARDN_HUB_CLERK_ISSUER` to the issuer used in Clerk session
+  JWTs. Set `WARDN_HUB_CLERK_AUDIENCE` when your Clerk JWT template emits an
+  audience claim, and set `WARDN_HUB_CLERK_SECRET_KEY` if the backend must fetch
+  the user's primary email from Clerk because the token does not include `email`
+  or `email_address`.
+- Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` for the frontend when Clerk is enabled.

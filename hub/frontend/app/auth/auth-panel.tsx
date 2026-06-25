@@ -3,7 +3,8 @@
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { SignInButton, SignUpButton, useClerk } from "@clerk/nextjs";
+import { Suspense, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { PublicHeader } from "@/components/site-header";
@@ -16,15 +17,38 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { HubApiError, login, registerUser, setApiToken } from "@/lib/api/hub";
+import {
+  HubApiError,
+  listAuthProviders,
+  login,
+  registerUser,
+  setApiToken,
+} from "@/lib/api/hub";
+import type { AuthProviderRead } from "@/lib/api/generated/model";
 
 type AuthMode = "login" | "register";
 
+const fallbackProviders: AuthProviderRead[] = [
+  {
+    provider: "local",
+    label: "Email and password",
+    signInEnabled: true,
+    signUpEnabled: true,
+  },
+];
+
+function isClerkConfigured() {
+  return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+}
+
 function AuthPanelContent({ mode }: { mode: AuthMode }) {
+  const clerk = useClerk();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [providers, setProviders] = useState<AuthProviderRead[]>(fallbackProviders);
+  const [providersLoaded, setProvidersLoaded] = useState(false);
 
   const isRegister = mode === "register";
   const next = searchParams.get("next");
@@ -37,6 +61,37 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
           ? `/?section=${encodeURIComponent(next)}`
           : "/";
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+  const localProvider = providers.find((provider) => provider.provider === "local");
+  const clerkProvider = providers.find((provider) => provider.provider === "clerk");
+  const showLocalForm = Boolean(
+    localProvider && (isRegister ? localProvider.signUpEnabled : localProvider.signInEnabled),
+  );
+  const showClerk = Boolean(
+    clerkProvider &&
+      isClerkConfigured() &&
+      (isRegister ? clerkProvider.signUpEnabled : clerkProvider.signInEnabled),
+  );
+
+  useEffect(() => {
+    listAuthProviders()
+      .then((response) => setProviders(response.providers))
+      .catch(() => setProviders(fallbackProviders))
+      .finally(() => setProvidersLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    if (!providersLoaded || showLocalForm || !showClerk) return;
+    setApiToken("");
+    if (isRegister) {
+      void clerk.redirectToSignUp({
+        redirectUrl: nextPath,
+      });
+      return;
+    }
+    void clerk.redirectToSignIn({
+      redirectUrl: nextPath,
+    });
+  }, [clerk, isRegister, nextPath, providersLoaded, showClerk, showLocalForm]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +128,11 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
       } else if (caught instanceof HubApiError && caught.status === 401) {
         setError("The email or password is incorrect.");
       } else {
-        setError(isRegister ? "Registration is currently unavailable." : "Sign in is currently unavailable.");
+        setError(
+          isRegister
+            ? "Registration is currently unavailable."
+            : "Sign in is currently unavailable.",
+        );
       }
       return;
     }
@@ -82,104 +141,170 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
     router.refresh();
   }
 
+  if (providersLoaded && showClerk && !showLocalForm) {
+    return (
+      <>
+        <PublicHeader />
+        <main className="flex min-h-[calc(100dvh-64px)] items-center justify-center bg-background p-5">
+          <div className="empty-state">
+            <div className="empty-title">Redirecting</div>
+            <div className="empty-detail">Opening account sign-in.</div>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <PublicHeader />
       <main className="flex min-h-[calc(100dvh-64px)] items-center justify-center bg-background p-5">
-      <Card className="w-full max-w-[420px]">
-        <CardHeader className="space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-              W
-            </div>
-            <div className="text-sm font-semibold">Wardn Hub</div>
-          </div>
-          <div>
-            <CardTitle className="text-2xl">{isRegister ? "Create account" : "Sign in"}</CardTitle>
-            <CardDescription>
-              {isRegister ? "Create access to the MCP registry." : "Access your MCP registry workspace."}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-4" method="post" onSubmit={(event) => void handleSubmit(event)}>
-            {isRegister ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="firstName">First name</Label>
-                  <Input autoComplete="given-name" id="firstName" name="firstName" placeholder="First" />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="lastName">Last name</Label>
-                  <Input autoComplete="family-name" id="lastName" name="lastName" placeholder="Last" />
-                </div>
+        <Card className="w-full max-w-[420px]">
+          <CardHeader className="space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
+                W
               </div>
-            ) : null}
-
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                autoComplete="email"
-                id="email"
-                name="email"
-                placeholder="admin@example.com"
-                required
-                type="email"
-              />
+              <div className="text-sm font-semibold">Wardn Hub</div>
             </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                autoComplete={isRegister ? "new-password" : "current-password"}
-                id="password"
-                minLength={isRegister ? 8 : undefined}
-                name="password"
-                placeholder="Enter password"
-                required
-                type="password"
-              />
+            <div>
+              <CardTitle className="text-2xl">{isRegister ? "Create account" : "Sign in"}</CardTitle>
+              <CardDescription>
+                {isRegister
+                  ? "Create access to the MCP registry."
+                  : "Access your MCP registry workspace."}
+              </CardDescription>
             </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4">
+              {showClerk ? (
+                isRegister ? (
+                  <SignUpButton
+                    fallbackRedirectUrl={nextPath}
+                    forceRedirectUrl={nextPath}
+                    mode="redirect"
+                  >
+                    <Button
+                      className="w-full"
+                      type="button"
+                      variant={showLocalForm ? "outline" : "default"}
+                    >
+                      Continue with account
+                    </Button>
+                  </SignUpButton>
+                ) : (
+                  <SignInButton
+                    fallbackRedirectUrl={nextPath}
+                    forceRedirectUrl={nextPath}
+                    mode="redirect"
+                  >
+                    <Button
+                      className="w-full"
+                      type="button"
+                      variant={showLocalForm ? "outline" : "default"}
+                    >
+                      Continue with account
+                    </Button>
+                  </SignInButton>
+                )
+              ) : null}
 
-            {isRegister ? (
-              <div className="grid gap-2">
-                <Label htmlFor="confirmPassword">Confirm password</Label>
-                <Input
-                  autoComplete="new-password"
-                  id="confirmPassword"
-                  minLength={8}
-                  name="confirmPassword"
-                  placeholder="Confirm password"
-                  required
-                  type="password"
-                />
-              </div>
-            ) : null}
+              {!showLocalForm && providersLoaded && !showClerk ? (
+                <p className="text-sm text-destructive">No sign-in provider is currently available.</p>
+              ) : null}
 
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              {showLocalForm ? (
+                <form className="grid gap-4" method="post" onSubmit={(event) => void handleSubmit(event)}>
+                  {isRegister ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-2">
+                        <Label htmlFor="firstName">First name</Label>
+                        <Input
+                          autoComplete="given-name"
+                          id="firstName"
+                          name="firstName"
+                          placeholder="First"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="lastName">Last name</Label>
+                        <Input
+                          autoComplete="family-name"
+                          id="lastName"
+                          name="lastName"
+                          placeholder="Last"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
 
-            <Button className="w-full" disabled={isSubmitting} type="submit">
-              {isSubmitting
-                ? isRegister
-                  ? "Creating account"
-                  : "Signing in"
-                : isRegister
-                  ? "Create account"
-                  : "Sign in"}
-            </Button>
+                  <div className="grid gap-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      autoComplete="email"
+                      id="email"
+                      name="email"
+                      placeholder="admin@example.com"
+                      required
+                      type="email"
+                    />
+                  </div>
 
-            <p className="text-center text-sm text-muted-foreground">
-              {isRegister ? "Already have an account?" : "Need an account?"}{" "}
-              <Link
-                className="font-medium text-primary underline-offset-4 hover:underline"
-                href={isRegister ? `/login${nextQuery}` : `/register${nextQuery}`}
-              >
-                {isRegister ? "Sign in" : "Create account"}
-              </Link>
-            </p>
-          </form>
-        </CardContent>
-      </Card>
+                  <div className="grid gap-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      autoComplete={isRegister ? "new-password" : "current-password"}
+                      id="password"
+                      minLength={isRegister ? 8 : undefined}
+                      name="password"
+                      placeholder="Enter password"
+                      required
+                      type="password"
+                    />
+                  </div>
+
+                  {isRegister ? (
+                    <div className="grid gap-2">
+                      <Label htmlFor="confirmPassword">Confirm password</Label>
+                      <Input
+                        autoComplete="new-password"
+                        id="confirmPassword"
+                        minLength={8}
+                        name="confirmPassword"
+                        placeholder="Confirm password"
+                        required
+                        type="password"
+                      />
+                    </div>
+                  ) : null}
+
+                  {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+                  <Button className="w-full" disabled={isSubmitting} type="submit">
+                    {isSubmitting
+                      ? isRegister
+                        ? "Creating account"
+                        : "Signing in"
+                      : isRegister
+                        ? "Create account"
+                        : "Sign in"}
+                  </Button>
+
+                  <p className="text-center text-sm text-muted-foreground">
+                    {isRegister ? "Already have an account?" : "Need an account?"}{" "}
+                    <Link
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      href={isRegister ? `/login${nextQuery}` : `/register${nextQuery}`}
+                    >
+                      {isRegister ? "Sign in" : "Create account"}
+                    </Link>
+                  </p>
+                </form>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
       </main>
     </>
   );

@@ -11,6 +11,7 @@ APITokenScope = Literal[
     "tokens:read",
     "tokens:write",
 ]
+AuthProviderKey = Literal["local", "clerk"]
 
 DEFAULT_API_TOKEN_SCOPES: list[APITokenScope] = [
     "catalog:read",
@@ -90,6 +91,18 @@ class UserAdminUpdate(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: SecretStr
+
+
+class AuthProviderRead(BaseModel):
+    provider: AuthProviderKey
+    label: str
+    sign_in_enabled: bool = Field(alias="signInEnabled")
+    sign_up_enabled: bool = Field(alias="signUpEnabled")
+
+
+class AuthProviderListResponse(BaseModel):
+    default_provider: AuthProviderKey = Field(alias="defaultProvider")
+    providers: list[AuthProviderRead]
 
 
 class UserAPITokenCreate(BaseModel):

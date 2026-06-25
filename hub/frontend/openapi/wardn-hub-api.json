@@ -151,6 +151,63 @@
         "title": "AuditEventRead",
         "type": "object"
       },
+      "AuthProviderListResponse": {
+        "properties": {
+          "defaultProvider": {
+            "enum": [
+              "local",
+              "clerk"
+            ],
+            "title": "Defaultprovider",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/AuthProviderRead"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "defaultProvider",
+          "providers"
+        ],
+        "title": "AuthProviderListResponse",
+        "type": "object"
+      },
+      "AuthProviderRead": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "local",
+              "clerk"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "signInEnabled": {
+            "title": "Signinenabled",
+            "type": "boolean"
+          },
+          "signUpEnabled": {
+            "title": "Signupenabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "label",
+          "signInEnabled",
+          "signUpEnabled"
+        ],
+        "title": "AuthProviderRead",
+        "type": "object"
+      },
       "BootstrapUserCreate": {
         "properties": {
           "email": {
@@ -4698,6 +4755,27 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/providers": {
+      "get": {
+        "operationId": "auth_list_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Providers",
         "tags": [
           "auth"
         ]

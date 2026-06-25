@@ -4,7 +4,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.users.models import User, UserAPIToken
+from app.modules.users.models import User, UserAPIToken, UserExternalIdentity
 
 
 async def count_users(session: AsyncSession) -> int:
@@ -21,6 +21,22 @@ async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
         select(User)
         .options(selectinload(User.local_credentials))
         .where(func.lower(User.email) == email.casefold())
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_external_identity(
+    session: AsyncSession,
+    provider: str,
+    subject: str,
+) -> UserExternalIdentity | None:
+    result = await session.execute(
+        select(UserExternalIdentity)
+        .options(selectinload(UserExternalIdentity.user))
+        .where(
+            UserExternalIdentity.provider == provider,
+            UserExternalIdentity.subject == subject,
+        )
     )
     return result.scalar_one_or_none()
 

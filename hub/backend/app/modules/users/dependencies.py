@@ -7,9 +7,11 @@ from app.core.config import get_settings
 from app.core.security import verify_session_token
 from app.db.session import get_db_session
 from app.modules.users import repository
+from app.modules.users.auth_providers import verify_external_bearer_token
+from app.modules.users.exceptions import InvalidLoginError
 from app.modules.users.models import User, UserAPIToken
 from app.modules.users.schemas import APITokenScope
-from app.modules.users.service import authenticate_api_token
+from app.modules.users.service import authenticate_api_token, get_or_create_external_user
 
 API_TOKEN_STATE_KEY = "wardn_hub_api_token"
 
@@ -36,6 +38,20 @@ async def get_current_user(
         if authenticated:
             user, _api_token = authenticated
             setattr(request.state, API_TOKEN_STATE_KEY, _api_token)
+            return user
+        external_claims = await verify_external_bearer_token(plaintext_token)
+        if external_claims is not None:
+            try:
+                user = await get_or_create_external_user(session, external_claims)
+            except InvalidLoginError:
+                user = None
+            if user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="authentication required",
+                )
+            await session.commit()
+            await session.refresh(user)
             return user
 
     if user_id is None:

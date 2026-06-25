@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  AuthProviderListResponse,
   ErrorResponse,
   HTTPValidationError,
   LoginRequest,
@@ -367,6 +368,48 @@ export const authMe = async ( options?: RequestInit): Promise<authMeResponse> =>
 
   const data: authMeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as authMeResponse
+}
+
+
+export type authListProvidersResponse200 = {
+  data: AuthProviderListResponse
+  status: 200
+}
+
+export type authListProvidersResponseSuccess = (authListProvidersResponse200) & {
+  headers: Headers;
+};
+;
+
+export type authListProvidersResponse = (authListProvidersResponseSuccess)
+
+export const getAuthListProvidersUrl = () => {
+
+
+
+
+  return `http://localhost:8000/api/v1/auth/providers`
+}
+
+/**
+ * @summary Providers
+ */
+export const authListProviders = async ( options?: RequestInit): Promise<authListProvidersResponse> => {
+
+  const res = await fetch(getAuthListProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authListProvidersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as authListProvidersResponse
 }
 
 

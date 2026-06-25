@@ -5,13 +5,14 @@ import pytest
 
 from app.core.security import verify_password
 from app.modules.users import service
+from app.modules.users.auth_providers import ExternalIdentityClaims
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
     InvalidLoginError,
     InvalidUserRoleUpdateError,
 )
-from app.modules.users.models import User
+from app.modules.users.models import User, UserExternalIdentity
 from app.modules.users.schemas import LoginRequest, UserAdminUpdate, UserAPITokenCreate, UserCreate
 
 
@@ -79,6 +80,70 @@ async def test_create_user_rejects_duplicate_email(monkeypatch) -> None:
 
     with pytest.raises(DuplicateUserError):
         await service.create_user(FakeSession(), user_payload())
+
+
+@pytest.mark.asyncio
+async def test_external_auth_links_existing_user_by_email(monkeypatch) -> None:
+    user = User(
+        email="admin@example.com",
+        first_name="Admin",
+        last_name="User",
+        is_active=True,
+    )
+    user.id = uuid4()
+
+    async def missing_identity(*args, **kwargs):
+        return None
+
+    async def existing_user(*args, **kwargs):
+        return user
+
+    monkeypatch.setattr(service.repository, "get_external_identity", missing_identity)
+    monkeypatch.setattr(service.repository, "get_user_by_email", existing_user)
+    session = FakeSession()
+
+    response = await service.get_or_create_external_user(
+        session,
+        ExternalIdentityClaims(
+            provider="clerk",
+            subject="user_123",
+            email="ADMIN@EXAMPLE.COM",
+        ),
+    )
+
+    identities = [item for item in session.added if isinstance(item, UserExternalIdentity)]
+    assert response is user
+    assert identities[0].provider == "clerk"
+    assert identities[0].subject == "user_123"
+    assert identities[0].email == "admin@example.com"
+
+
+@pytest.mark.asyncio
+async def test_external_auth_creates_user_without_local_credentials(monkeypatch) -> None:
+    async def missing_identity(*args, **kwargs):
+        return None
+
+    async def missing_user(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_external_identity", missing_identity)
+    monkeypatch.setattr(service.repository, "get_user_by_email", missing_user)
+    session = FakeSession()
+
+    user = await service.get_or_create_external_user(
+        session,
+        ExternalIdentityClaims(
+            provider="clerk",
+            subject="user_123",
+            email="member@example.com",
+            first_name="Member",
+            last_name="User",
+        ),
+    )
+
+    assert user.email == "member@example.com"
+    assert user.local_credentials is None
+    assert user.is_superuser is False
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@
 
 import type {
   AuditEventListResponse,
+  AuthProviderListResponse,
   BootstrapUserCreate,
   LoginRequest,
   OrganizationCreate,
@@ -53,6 +54,15 @@ export type RegistryUserRead = UserDirectoryRead;
 const API_PREFIX = "/api/v1";
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 
+type ClerkWindow = Window & {
+  Clerk?: {
+    session?: {
+      getToken: () => Promise<string | null>;
+    } | null;
+    signOut?: () => Promise<void>;
+  };
+};
+
 export class HubApiError extends Error {
   status: number;
 
@@ -70,8 +80,7 @@ function apiBaseUrl() {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token =
-    typeof window === "undefined" ? "" : window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+  const token = await authBearerToken();
   const response = await fetch(`${apiBaseUrl()}${path}`, {
     ...init,
     credentials: "include",
@@ -101,6 +110,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return data as T;
+}
+
+async function clerkSessionToken() {
+  if (typeof window === "undefined") return "";
+  const clerk = (window as ClerkWindow).Clerk;
+  if (!clerk?.session?.getToken) return "";
+  return (await clerk.session.getToken()) ?? "";
+}
+
+async function authBearerToken() {
+  if (typeof window === "undefined") return "";
+  const localToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+  if (localToken) return localToken;
+  return clerkSessionToken();
 }
 
 function query(params: Record<string, string | number | boolean | undefined>) {
@@ -341,6 +364,10 @@ export function getApiToken() {
   return typeof window === "undefined" ? "" : window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
 }
 
+export function listAuthProviders() {
+  return request<AuthProviderListResponse>("/auth/providers");
+}
+
 export function login(payload: LoginRequest) {
   return request<UserRead>("/auth/login", {
     method: "POST",
@@ -379,6 +406,11 @@ export function updateUserAdminFlags(userId: string, payload: UserAdminUpdate) {
 
 export function logout() {
   return request<void>("/auth/logout", { method: "POST" });
+}
+
+export async function signOutExternalAuth() {
+  if (typeof window === "undefined") return;
+  await (window as ClerkWindow).Clerk?.signOut?.();
 }
 
 export function listApiTokens() {

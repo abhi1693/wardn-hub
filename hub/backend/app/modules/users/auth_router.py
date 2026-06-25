@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.schemas import ErrorResponse
 from app.core.security import create_session_token
 from app.db.session import get_db_session
+from app.modules.users.auth_providers import is_auth_provider_enabled
 from app.modules.users.dependencies import get_current_user, require_api_token_scopes
 from app.modules.users.exceptions import (
     DuplicateUserError,
@@ -16,6 +17,7 @@ from app.modules.users.exceptions import (
 )
 from app.modules.users.models import User
 from app.modules.users.schemas import (
+    AuthProviderListResponse,
     LoginRequest,
     UserAPITokenCreate,
     UserAPITokenCreated,
@@ -30,6 +32,7 @@ from app.modules.users.service import (
     create_user,
     create_user_api_token,
     delete_user_api_token,
+    list_auth_providers,
     list_user_api_tokens,
     update_user_api_token,
 )
@@ -50,6 +53,15 @@ def set_session_cookie(response: Response, user_id: UUID) -> None:
     )
 
 
+@router.get(
+    "/providers",
+    response_model=AuthProviderListResponse,
+    operation_id="auth_list_providers",
+)
+async def providers() -> AuthProviderListResponse:
+    return list_auth_providers()
+
+
 @router.post(
     "/login",
     response_model=UserRead,
@@ -61,6 +73,11 @@ async def login(
     response: Response,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRead:
+    if not is_auth_provider_enabled("local"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="local authentication is disabled",
+        )
     try:
         user = await authenticate_local_user(session, payload)
     except InvalidLoginError as exc:
@@ -87,6 +104,11 @@ async def register(
     response: Response,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRead:
+    if not is_auth_provider_enabled("local"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="local registration is disabled",
+        )
     try:
         user = await create_user(session, payload, is_superuser=False)
     except DuplicateUserError as exc:
