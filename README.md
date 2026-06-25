@@ -109,6 +109,11 @@ npm run web:api:generate
 npm run web:dev
 ```
 
+```sh
+docker build -t wardn-hub-backend -f hub/backend/Dockerfile hub/backend
+docker build -t wardn-hub-frontend -f hub/frontend/Dockerfile .
+```
+
 ## Public Release Checklist
 
 - Use PostgreSQL and run Alembic migrations before serving traffic.
