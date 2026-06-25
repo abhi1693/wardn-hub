@@ -15,6 +15,7 @@ export interface PartnerOrganizationRead {
   name: string;
   partnerProfile: PartnerOrganizationReadPartnerProfile;
   partnerStatus: PartnerOrganizationReadPartnerStatus;
+  partnerSupportLevel: 'official' | 'verified' | 'compatible' | 'deprecated';
   partnerTier: PartnerOrganizationReadPartnerTier;
   slug: string;
   status: string;

@@ -32,11 +32,14 @@ import {
   getServer,
   getSubmission,
   listCategories,
+  listOrganizations,
+  listPartnerOrganizations,
   submissionAction,
   updateServerVersion,
   updateSubmission,
 } from "@/lib/api/hub";
 import type {
+  OrganizationRead,
   RegistryCategoryRead,
   RegistryServerDetailResponse,
   RegistryServerVersionRead,
@@ -721,6 +724,8 @@ export default function SubmitServerPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
+  const [partnerOwnerOrganizations, setPartnerOwnerOrganizations] = useState<OrganizationRead[]>([]);
+  const [ownerOrganizationId, setOwnerOrganizationId] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("repository");
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [repositorySubfolder, setRepositorySubfolder] = useState("");
@@ -745,6 +750,10 @@ export default function SubmitServerPage() {
   const canManagePublishedServers = Boolean(user?.is_superuser);
   const isServerNameLocked = Boolean(lockedServerName);
   const isVersionLocked = Boolean(lockedVersion);
+  const canChoosePartnerOwner =
+    partnerOwnerOrganizations.length > 0 &&
+    !isEditingPublishedServer &&
+    !(isAddingPublishedServerVersion && canManagePublishedServers);
   const pageTitle = (() => {
     if (isAddingNewVersion) return "Add server version";
     if (isAddingPublishedServerVersion) {
@@ -785,6 +794,40 @@ export default function SubmitServerPage() {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let active = true;
+    Promise.all([
+      listOrganizations(),
+      listPartnerOrganizations().catch(() => ({ organizations: [] })),
+    ])
+      .then(([organizationResponse, partnerResponse]) => {
+        if (!active) return;
+        const partnerIds = new Set(partnerResponse.organizations.map((partner) => partner.id));
+        const partnerOrganizations = organizationResponse.organizations.filter((organization) =>
+          partnerIds.has(organization.id),
+        );
+        setPartnerOwnerOrganizations(partnerOrganizations);
+        setOwnerOrganizationId((current) =>
+          current && partnerOrganizations.some((organization) => organization.id === current)
+            ? current
+            : "",
+        );
+      })
+      .catch(() => {
+        if (!active) return;
+        setPartnerOwnerOrganizations([]);
+        setOwnerOrganizationId("");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
     listCategories()
       .then((response) => {
         setCategories(response.categories);
@@ -823,6 +866,7 @@ export default function SubmitServerPage() {
     setIconUrl(firstIconUrl(icons));
     setRemotes(importedRemotes(serverJson.remotes));
     setPackages(importedPackages(serverJson.packages));
+    setOwnerOrganizationId(submission.ownerOrganizationId ?? "");
     setSourceImportMessage(
       mode === "new_version"
         ? "Published server loaded. Update the version before submitting."
@@ -861,6 +905,7 @@ export default function SubmitServerPage() {
     setIconUrl(firstIconUrl(icons));
     setRemotes(importedRemotes(serverJson.remotes));
     setPackages(importedPackages(serverJson.packages));
+    setOwnerOrganizationId(response.server.organization?.id ?? "");
     setSourceImportMessage(
       mode === "server_new_version"
         ? "Published server loaded. Update the version before publishing."
@@ -1174,6 +1219,7 @@ export default function SubmitServerPage() {
           return;
         }
         const draft = await createSubmission({
+          ownerOrganizationId: ownerOrganizationId || null,
           submissionType: "new_version",
           serverJson,
         });
@@ -1186,10 +1232,12 @@ export default function SubmitServerPage() {
       const submissionType = isAddingNewVersion ? "new_version" : editingSubmissionType;
       const draft = isEditingExistingSubmission
         ? await updateSubmission(editingSubmissionId, {
+            ownerOrganizationId: ownerOrganizationId || null,
             submissionType,
             serverJson,
           })
         : await createSubmission({
+            ownerOrganizationId: ownerOrganizationId || null,
             submissionType,
             serverJson,
           });
@@ -1254,6 +1302,40 @@ export default function SubmitServerPage() {
               <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
               </div>
+            ) : null}
+
+            {canChoosePartnerOwner ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Owner</CardTitle>
+                  <CardDescription>
+                    Submit this server as yourself or as a partner organization you belong to.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-2 md:max-w-md">
+                    <Label htmlFor="submission-owner-organization">Partner organization</Label>
+                    <Select
+                      onValueChange={(value) =>
+                        setOwnerOrganizationId(value === "__personal__" ? "" : value)
+                      }
+                      value={ownerOrganizationId || "__personal__"}
+                    >
+                      <SelectTrigger id="submission-owner-organization">
+                        <SelectValue placeholder="Select owner" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__personal__">Personal account</SelectItem>
+                        {partnerOwnerOrganizations.map((organization) => (
+                          <SelectItem key={organization.id} value={organization.id}>
+                            {organization.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardContent>
+              </Card>
             ) : null}
 
             <Card>

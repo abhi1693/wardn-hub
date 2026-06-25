@@ -34,6 +34,7 @@ def partner_organization_response(organization: Organization) -> PartnerOrganiza
         isPartner=organization.is_partner,
         partnerStatus=organization.partner_status,
         partnerTier=organization.partner_tier,
+        partnerSupportLevel=organization.partner_support_level or "compatible",
         websiteUrl=organization.website_url,
         supportEmail=organization.support_email,
         partnerProfile=organization.partner_profile,
@@ -93,6 +94,11 @@ async def update_partner_organization(
         organization.partner_status = payload.partner_status
     if "partner_tier" in payload.model_fields_set and payload.partner_tier is not None:
         organization.partner_tier = payload.partner_tier
+    if (
+        "partner_support_level" in payload.model_fields_set
+        and payload.partner_support_level is not None
+    ):
+        organization.partner_support_level = payload.partner_support_level
     if "website_url" in payload.model_fields_set and payload.website_url is not None:
         organization.website_url = payload.website_url.strip()
     if "support_email" in payload.model_fields_set:
@@ -117,6 +123,7 @@ async def update_partner_organization(
         metadata={
             "partnerStatus": organization.partner_status,
             "partnerTier": organization.partner_tier,
+            "partnerSupportLevel": organization.partner_support_level,
             "isPartner": organization.is_partner,
         },
     )

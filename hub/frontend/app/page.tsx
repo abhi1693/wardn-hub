@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  Building2,
   Eye,
   FileCheck2,
   History,
@@ -17,31 +16,24 @@ import { ServerCard } from "@/components/server-card";
 import { SiteHeader } from "@/components/site-header";
 import {
   HubApiError,
-  createPartnerSupport,
   currentUser,
   listAuditEvents,
-  listPartnerOrganizations,
-  listPartnerSupport,
   listPublishedServers,
   listSubmissions,
   logout,
   rejectSubmission,
   setApiToken,
   submissionAction,
-  updatePartnerOrganization,
 } from "@/lib/api/hub";
 import type {
   AuditEventRead,
-  PartnerOrganizationRead,
-  PartnerServerSupportRead,
   RegistryServerRead,
   SubmissionRead,
   UserRead,
 } from "@/lib/api/generated/model";
 
-type Section = "browse" | "submissions" | "partners" | "audit";
+type Section = "browse" | "submissions" | "audit";
 type LoadState = "idle" | "loading" | "ready" | "error" | "auth";
-type SupportLevel = "official" | "verified" | "compatible" | "deprecated";
 type ShellNavItem = {
   href?: string;
   id?: Section;
@@ -56,11 +48,11 @@ const publicNavItems: ShellNavItem[] = [
 
 const protectedNavItems: ShellNavItem[] = [
   { id: "submissions", label: "Submissions" },
-  { id: "partners", label: "Partners" },
+  { href: "/partners", label: "Partners" },
   { id: "audit", label: "Audit" },
 ];
 
-const adminSections = new Set<Section>(["submissions", "partners", "audit"]);
+const adminSections = new Set<Section>(["submissions", "audit"]);
 
 function isAdminUser(user: UserRead | null) {
   return Boolean(
@@ -370,158 +362,6 @@ function SubmissionsView() {
   );
 }
 
-function PartnersView() {
-  const [state, setState] = useState<LoadState>("loading");
-  const [supportState, setSupportState] = useState<LoadState>("idle");
-  const [error, setError] = useState("");
-  const [partners, setPartners] = useState<PartnerOrganizationRead[]>([]);
-  const [selected, setSelected] = useState("");
-  const [support, setSupport] = useState<PartnerServerSupportRead[]>([]);
-  const [supportServer, setSupportServer] = useState("");
-  const [supportLevel, setSupportLevel] = useState<SupportLevel>("compatible");
-  const [notice, setNotice] = useState("");
-
-  async function refreshPartners() {
-    setState("loading");
-    setError("");
-    return listPartnerOrganizations()
-      .then((response) => {
-        setPartners(response.organizations);
-        setSelected((current) => current || response.organizations[0]?.id || "");
-        setState("ready");
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Unable to load partners.");
-        setState(statusFromError(caught));
-      });
-  }
-
-  async function refreshSupport(organizationId: string) {
-    setSupportState("loading");
-    return listPartnerSupport(organizationId)
-      .then((response) => {
-        setSupport(response.support);
-        setSupportState("ready");
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Unable to load support records.");
-        setSupportState(statusFromError(caught));
-      });
-  }
-
-  async function activateSelectedPartner() {
-    if (!selected) return;
-    setNotice("");
-    try {
-      await updatePartnerOrganization(selected, {
-        isPartner: true,
-        partnerStatus: "active",
-        partnerTier: "verified",
-      });
-      setNotice("Partner metadata updated.");
-      await refreshPartners();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to update partner.");
-      setState(statusFromError(caught));
-    }
-  }
-
-  async function createSupport(event: React.FormEvent) {
-    event.preventDefault();
-    if (!selected) return;
-    setNotice("");
-    try {
-      await createPartnerSupport(selected, {
-        serverName: supportServer,
-        supportLevel,
-        supportStatus: "active",
-      });
-      setSupportServer("");
-      setNotice("Server support record created.");
-      await refreshSupport(selected);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create support record.");
-      setSupportState(statusFromError(caught));
-    }
-  }
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => void refreshPartners(), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
-
-  useEffect(() => {
-    if (!selected) return;
-    const timeoutId = window.setTimeout(() => void refreshSupport(selected), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [selected]);
-
-  return (
-    <DataView title="Partner organizations" eyebrow="Support Metadata" icon={Building2}>
-      <ProtectedState state={state} error={error} />
-      {notice && <div className="notice">{notice}</div>}
-      {state === "ready" && (
-        <div className="split-layout">
-          <div className="records">
-            {partners.length === 0 && <EmptyState title="No partners" detail="No active partners." />}
-            {partners.map((partner) => (
-              <button
-                className={`record-row selectable ${selected === partner.id ? "selected" : ""}`}
-                key={partner.id}
-                onClick={() => setSelected(partner.id)}
-                type="button"
-              >
-                <div>
-                  <strong>{partner.name}</strong>
-                  <small>{partner.slug}</small>
-                </div>
-                <Pill tone={toneFor(partner.partnerStatus)}>{partner.partnerStatus}</Pill>
-                <Pill tone={toneFor(partner.partnerTier)}>{partner.partnerTier}</Pill>
-              </button>
-            ))}
-          </div>
-          <div className="side-surface">
-            <div className="side-header">
-              <h2>Server support</h2>
-              <ActionButton onClick={() => void activateSelectedPartner()}>Mark active</ActionButton>
-            </div>
-            <form className="stacked-form" onSubmit={(event) => void createSupport(event)}>
-              <input
-                onChange={(event) => setSupportServer(event.target.value)}
-                placeholder="io.github.example/weather"
-                required
-                value={supportServer}
-              />
-              <select
-                onChange={(event) => setSupportLevel(event.target.value as SupportLevel)}
-                value={supportLevel}
-              >
-                <option value="compatible">compatible</option>
-                <option value="verified">verified</option>
-                <option value="official">official</option>
-                <option value="deprecated">deprecated</option>
-              </select>
-              <button className="text-button" type="submit">
-                Add support
-              </button>
-            </form>
-            <ProtectedState state={supportState} error={error} />
-            {supportState === "ready" && support.length === 0 && (
-              <EmptyState title="No support records" detail="No mapped servers." />
-            )}
-            {support.map((record) => (
-              <div className="support-row" key={record.id}>
-                <span>{record.serverName}</span>
-                <Pill tone={toneFor(record.supportLevel)}>{record.supportLevel}</Pill>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </DataView>
-  );
-}
-
 function AuditView() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
@@ -642,12 +482,11 @@ export default function Home() {
     >
       {section === "browse" && <BrowseView />}
       {isAdmin && section === "submissions" && <SubmissionsView />}
-      {isAdmin && section === "partners" && <PartnersView />}
       {isAdmin && section === "audit" && <AuditView />}
     </AppShell>
   );
 }
 
 function isSection(value: string | null): value is Section {
-  return ["browse", "submissions", "partners", "audit"].includes(value ?? "");
+  return ["browse", "submissions", "audit"].includes(value ?? "");
 }

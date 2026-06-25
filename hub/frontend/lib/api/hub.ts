@@ -4,12 +4,21 @@ import type {
   AuditEventListResponse,
   BootstrapUserCreate,
   LoginRequest,
+  OrganizationCreate,
+  OrganizationMembershipCreate,
+  OrganizationMembershipListResponse,
+  OrganizationMembershipRead,
+  OrganizationMembershipUpdate,
+  OrganizationListResponse,
+  OrganizationRead,
+  OrganizationRoleListResponse,
   PartnerOrganizationListResponse,
   PartnerOrganizationRead,
   PartnerOrganizationUpdate,
   PartnerServerSupportCreate,
   PartnerServerSupportListResponse,
   PartnerServerSupportRead,
+  PartnerServerSupportUpdate,
   RegistryCategoryListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
@@ -232,6 +241,54 @@ export function listPartnerSupport(organizationId: string) {
   );
 }
 
+export function createOrganization(payload: OrganizationCreate) {
+  return request<OrganizationRead>("/organizations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listOrganizations() {
+  return request<OrganizationListResponse>("/organizations");
+}
+
+export function listOrganizationRoles(organizationId: string) {
+  return request<OrganizationRoleListResponse>(`/organizations/${organizationId}/roles`);
+}
+
+export function listOrganizationMemberships(organizationId: string) {
+  return request<OrganizationMembershipListResponse>(
+    `/organizations/${organizationId}/memberships`,
+  );
+}
+
+export function upsertOrganizationMembership(
+  organizationId: string,
+  payload: OrganizationMembershipCreate,
+) {
+  return request<OrganizationMembershipRead>(`/organizations/${organizationId}/memberships`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateOrganizationMembership(
+  organizationId: string,
+  userId: string,
+  payload: OrganizationMembershipUpdate,
+) {
+  return request<OrganizationMembershipRead>(
+    `/organizations/${organizationId}/memberships/${userId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export function listAuditEvents() {
   return request<AuditEventListResponse>("/audit/events?limit=50");
 }
@@ -318,6 +375,14 @@ export function createPartnerSupport(
       body: JSON.stringify(payload),
     },
   );
+}
+
+export function updatePartnerSupport(supportId: string, payload: PartnerServerSupportUpdate) {
+  return request<PartnerServerSupportRead>(`/partners/server-support/${supportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export { DEFAULT_API_BASE_URL };

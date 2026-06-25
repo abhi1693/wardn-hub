@@ -34,6 +34,12 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    partner_support_level: Mapped[str] = mapped_column(
+        String(32),
+        default="compatible",
+        nullable=False,
+        index=True,
+    )
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     support_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
     partner_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

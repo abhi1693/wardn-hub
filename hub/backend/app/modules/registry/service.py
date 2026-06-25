@@ -187,8 +187,15 @@ def owner_actor(
 def partner_support_summary(
     server_name: str,
     trust: RegistryTrustContext,
+    owner_organization_id: UUID | None = None,
 ) -> list[PartnerSupportSummary]:
     summaries = []
+    seen_organization_ids: set[UUID] = set()
+    owner_organization = (
+        trust.organizations.get(owner_organization_id)
+        if owner_organization_id is not None
+        else None
+    )
     for support, organization in trust.partner_support.get(server_name, []):
         summaries.append(
             PartnerSupportSummary(
@@ -201,6 +208,26 @@ def partner_support_summary(
                 endsAt=support.ends_at,
             )
         )
+        seen_organization_ids.add(organization.id)
+
+    if (
+        owner_organization is not None
+        and owner_organization.is_partner
+        and owner_organization.partner_status == "active"
+        and owner_organization.id not in seen_organization_ids
+    ):
+        summaries.append(
+            PartnerSupportSummary(
+                organization=actor_summary_for_organization(owner_organization),
+                supportLevel=owner_organization.partner_support_level or "compatible",
+                supportStatus="active",
+                supportUrl=owner_organization.website_url,
+                docsUrl="",
+                startsAt=None,
+                endsAt=None,
+            )
+        )
+        seen_organization_ids.add(owner_organization.id)
     return summaries
 
 
@@ -307,7 +334,11 @@ def server_summary(
         updated_by=user_actor(server.updated_by_user_id, trust),
         latest_version=latest,
         categories=categories_for_server(server.id, trust),
-        partner_support=partner_support_summary(server.name, trust),
+        partner_support=partner_support_summary(
+            server.name,
+            trust,
+            server.owner_organization_id,
+        ),
         created_at=server.created_at,
         updated_at=server.updated_at,
     )
@@ -345,7 +376,11 @@ def version_summary(
         updated_by=user_actor(version.updated_by_user_id, trust),
         published_by=user_actor(version.publisher_user_id, trust),
         categories=categories_for_server(version.server_id, trust),
-        partner_support=partner_support_summary(version.name, trust),
+        partner_support=partner_support_summary(
+            version.name,
+            trust,
+            version.owner_organization_id,
+        ),
         published_at=version.published_at,
         status_changed_at=version.status_changed_at,
         created_at=version.created_at,

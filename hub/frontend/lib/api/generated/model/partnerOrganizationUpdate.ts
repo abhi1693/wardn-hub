@@ -13,6 +13,7 @@ export interface PartnerOrganizationUpdate {
   partnerInternalNotes?: string | null;
   partnerProfile?: PartnerOrganizationUpdatePartnerProfile;
   partnerStatus?: PartnerOrganizationUpdatePartnerStatus;
+  partnerSupportLevel?: 'official' | 'verified' | 'compatible' | 'deprecated' | null;
   partnerTier?: PartnerOrganizationUpdatePartnerTier;
   supportEmail?: string | null;
   websiteUrl?: string | null;

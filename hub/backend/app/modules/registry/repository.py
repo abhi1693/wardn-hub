@@ -138,8 +138,19 @@ async def list_servers(
                 OrganizationServerSupport.support_level == support_level
             )
         support_exists = support_exists_query.exists()
+        owner_partner_query = select(Organization.id).where(
+            Organization.id == RegistryServer.owner_organization_id,
+            Organization.is_partner.is_(True),
+            Organization.partner_status == "active",
+        )
+        if support_level:
+            owner_partner_query = owner_partner_query.where(
+                Organization.partner_support_level == support_level
+            )
+        owner_partner_exists = owner_partner_query.exists()
+        has_partner_support = or_(support_exists, owner_partner_exists)
         statement = statement.where(
-            support_exists if partner is not False else ~support_exists
+            has_partner_support if partner is not False else ~has_partner_support
         )
 
     # Registry target filters require JSONB path semantics; keep them as no-ops
