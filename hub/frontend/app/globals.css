@@ -190,6 +190,74 @@ button {
   padding-top: 28px;
 }
 
+.category-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 24px;
+}
+
+.category-page-header h1 {
+  margin: 0;
+  color: #000000;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 40px;
+}
+
+.category-page-header p {
+  max-width: 620px;
+  margin: 8px 0 0;
+  color: #555f6d;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.category-card {
+  display: grid;
+  min-height: 126px;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  padding: 18px 16px;
+  text-decoration: none;
+}
+
+.category-card:hover,
+.category-card:focus-visible {
+  border-color: var(--border);
+  outline: none;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 9%);
+}
+
+.category-card strong {
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.category-card span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #334155;
+  font-size: 14px;
+  line-height: 22px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .hero-section {
   display: grid;
   gap: 16px;
@@ -693,20 +761,6 @@ button {
   padding: 32px 16px 72px;
 }
 
-.server-detail-back {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 8px;
-  color: #555f6d;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.server-detail-back:hover {
-  color: #000000;
-}
-
 .server-detail-hero {
   display: flex;
   align-items: center;
@@ -926,6 +980,12 @@ button {
 .server-detail-list > div:first-child {
   border-top: 0;
   padding-top: 0;
+}
+
+.server-detail-inline-link {
+  color: #000000;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .server-detail-category-list,
@@ -1972,6 +2032,7 @@ button {
 
 	  .toolbar,
 	  .hero-search,
+	  .category-grid,
 	  .catalog-grid,
 	  .registry-layout,
 	  .server-detail-layout,

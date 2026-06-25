@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ServerIcon, serverIconUrl } from "@/components/server-icon";
+import { ServerCard } from "@/components/server-card";
 import {
   HubApiError,
   createPartnerSupport,
@@ -118,10 +118,6 @@ function ActionButton({
       {children}
     </button>
   );
-}
-
-function serverDetailHref(serverName: string) {
-  return `/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function AppShell({
@@ -265,16 +261,7 @@ function BrowseView() {
       {servers.length > 0 && (
         <div className="server-grid">
           {servers.map((server) => (
-            <Link className="server-card" href={serverDetailHref(server.name)} key={server.id}>
-              <span className="server-card-head">
-                <ServerIcon src={serverIconUrl(server)} title={server.title || server.name} />
-                <span>
-                  <strong>{server.title || server.name}</strong>
-                  <small>{server.categories?.[0]?.name || "MCP Server"}</small>
-                </span>
-              </span>
-              <span className="server-card-description">{server.description}</span>
-            </Link>
+            <ServerCard key={server.id} server={server} />
           ))}
         </div>
       )}

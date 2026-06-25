@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Check, Clipboard, ExternalLink } from "lucide-react";
+import { Check, Clipboard, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
@@ -692,7 +692,8 @@ export default function ServerDetailPage() {
   const description = selectedVersion?.description || server?.description || "";
   const documentation = selectedVersion?.documentation || server?.documentation || "";
   const websiteUrl = selectedVersion?.websiteUrl || server?.websiteUrl || "";
-  const category = selectedVersion?.categories?.[0]?.name || server?.categories?.[0]?.name || "MCP Server";
+  const category = selectedVersion?.categories?.[0] ?? server?.categories?.[0];
+  const categoryName = category?.name || "MCP Server";
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
     : server?.partnerSupport ?? [];
@@ -724,6 +725,7 @@ export default function ServerDetailPage() {
         </Link>
         <nav>
           <Link href="/">Explore</Link>
+          <Link href="/categories">Categories</Link>
           <Link href="/submissions">Submissions</Link>
           <Link className="server-detail-nav-cta" href="/submit">
             List Server
@@ -748,11 +750,6 @@ export default function ServerDetailPage() {
 
         {state === "ready" && server ? (
           <>
-            <Link className="server-detail-back" href="/">
-              <ArrowLeft size={16} />
-              Back to registry
-            </Link>
-
             <section className="server-detail-hero">
               <div className="server-detail-logo">
                 <ServerIcon src={serverIconUrl(server)} title={title} />
@@ -875,7 +872,18 @@ export default function ServerDetailPage() {
                         </div>
                         <div>
                           <dt>Category</dt>
-                          <dd>{category}</dd>
+                          <dd>
+                            {category?.slug ? (
+                              <Link
+                                className="server-detail-inline-link"
+                                href={`/categories/${encodeURIComponent(category.slug)}`}
+                              >
+                                {categoryName}
+                              </Link>
+                            ) : (
+                              categoryName
+                            )}
+                          </dd>
                         </div>
                         <div>
                           <dt>Published</dt>
