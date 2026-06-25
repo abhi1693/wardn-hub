@@ -60,3 +60,56 @@ def test_database_url_is_required_without_env(monkeypatch) -> None:
 
     with pytest.raises(ValidationError, match="database_url"):
         Settings(_env_file=None)
+
+
+def test_release_environment_rejects_placeholder_secrets(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "change-me",
+            "WARDN_HUB_API_TOKEN_SECRET": "change-me",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="session_secret"):
+        Settings(_env_file=None)
+
+
+def test_release_environment_rejects_wildcard_cors(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_CORS_ORIGINS": "*",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="cors_origins"):
+        Settings(_env_file=None)
+
+
+def test_release_environment_accepts_strong_secrets(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_CORS_ORIGINS": "https://hub.example.com",
+        },
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.environment == "production"
+    assert settings.cors_origins == ["https://hub.example.com"]
+
+
+def test_api_prefix_must_be_normalized(monkeypatch) -> None:
+    set_required_settings(monkeypatch, {"WARDN_HUB_API_PREFIX": "api/v1/"})
+
+    with pytest.raises(ValidationError, match="api_prefix"):
+        Settings(_env_file=None)

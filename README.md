@@ -1,8 +1,8 @@
 # Wardn Hub
 
-Wardn Hub is a private MCP server definition registry. It stores server records,
-versioned `server.json`-compatible documents, submissions, partner metadata,
-moderation state, and audit history.
+Wardn Hub is an MCP server definition registry and submission product. It stores
+server records, versioned `server.json`-compatible documents, submissions,
+partner metadata, moderation state, and audit history.
 
 Runtime execution is intentionally out of scope.
 
@@ -108,3 +108,15 @@ npm install
 npm run web:api:generate
 npm run web:dev
 ```
+
+## Public Release Checklist
+
+- Use PostgreSQL and run Alembic migrations before serving traffic.
+- Set `WARDN_HUB_ENVIRONMENT` to a non-local value such as `production`.
+- Replace `WARDN_HUB_SESSION_SECRET` and `WARDN_HUB_API_TOKEN_SECRET` with
+  independent, high-entropy values of at least 32 characters.
+- Set `WARDN_HUB_CORS_ORIGINS` to the deployed frontend origin. Wildcard CORS is
+  rejected outside local/test environments.
+- Set `WARDN_HUB_REGISTRY_PUBLIC_BASE_URL` to the public frontend base URL.
+- Set `NEXT_PUBLIC_API_BASE_URL` for split frontend/backend deployments. If it is
+  omitted on a deployed frontend, the browser client uses same-origin `/api/v1`.

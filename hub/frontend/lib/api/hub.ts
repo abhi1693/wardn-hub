@@ -52,7 +52,8 @@ export interface RegistryUserDetailResponse {
   metadata: RegistryServerListResponse["metadata"];
 }
 
-const DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1";
+const API_PREFIX = "/api/v1";
+const DEFAULT_API_BASE_URL = `http://localhost:8000${API_PREFIX}`;
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 
 export class HubApiError extends Error {
@@ -66,25 +67,15 @@ export class HubApiError extends Error {
 }
 
 function apiBaseUrl() {
-  const configured =
-    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL;
-  if (typeof window === "undefined") return configured;
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
+  if (configured) return configured;
+
+  if (typeof window === "undefined") return DEFAULT_API_BASE_URL;
 
   const pageHost = window.location.hostname;
-  if (pageHost === "localhost" || pageHost === "127.0.0.1") return configured;
+  if (pageHost === "localhost" || pageHost === "127.0.0.1") return DEFAULT_API_BASE_URL;
 
-  try {
-    const url = new URL(configured);
-    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
-      url.hostname = pageHost;
-      url.protocol = window.location.protocol;
-      return url.toString().replace(/\/$/, "");
-    }
-  } catch {
-    return configured;
-  }
-
-  return configured;
+  return `${window.location.origin}${API_PREFIX}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

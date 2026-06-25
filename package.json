@@ -12,5 +12,8 @@
     "web:lint": "npm --workspace hub/frontend run lint",
     "backend:test": "cd hub/backend && uv run --extra dev pytest",
     "backend:lint": "cd hub/backend && uv run --extra dev ruff check ."
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

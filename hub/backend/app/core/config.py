@@ -1,11 +1,13 @@
 from functools import lru_cache
 from typing import ClassVar
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_NAME = "Wardn Hub API"
 APP_VERSION = "0.1.0"
+LOCAL_ENVIRONMENTS = {"local", "test"}
+INSECURE_SECRET_VALUES = {"change-me", "changeme", "secret", "password"}
 
 
 class Settings(BaseSettings):
@@ -31,12 +33,51 @@ class Settings(BaseSettings):
     database_url: str
     cors_origins: list[str] = []
 
+    @field_validator("environment", mode="before")
+    @classmethod
+    def normalize_environment(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("api_prefix")
+    @classmethod
+    def validate_api_prefix(cls, value: str) -> str:
+        if not value.startswith("/"):
+            raise ValueError("api_prefix must start with /")
+        if len(value) > 1 and value.endswith("/"):
+            raise ValueError("api_prefix must not end with /")
+        return value
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("session_ttl_seconds")
+    @classmethod
+    def validate_session_ttl_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("session_ttl_seconds must be positive")
+        return value
+
+    @model_validator(mode="after")
+    def validate_release_settings(self) -> "Settings":
+        if self.environment in LOCAL_ENVIRONMENTS:
+            return self
+
+        for field_name in ("session_secret", "api_token_secret"):
+            secret = getattr(self, field_name)
+            if secret.lower() in INSECURE_SECRET_VALUES or len(secret) < 32:
+                raise ValueError(
+                    f"{field_name} must be at least 32 characters and not a placeholder "
+                    "outside local/test environments"
+                )
+
+        if "*" in self.cors_origins:
+            raise ValueError("cors_origins cannot contain * outside local/test environments")
+
+        return self
 
 
 @lru_cache
