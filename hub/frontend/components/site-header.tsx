@@ -47,18 +47,47 @@ function isAdminUser(user: UserRead | null) {
   );
 }
 
+function BrandMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="site-brand-mark"
+      focusable="false"
+      viewBox="0 0 40 40"
+    >
+      <rect className="site-brand-mark-bg" height="36" rx="10" width="36" x="2" y="2" />
+      <path
+        className="site-brand-mark-line"
+        d="M12 15.5 20 10.8 28 15.5v9l-8 4.7-8-4.7v-9Z"
+      />
+      <path className="site-brand-mark-line" d="M20 10.8v7.8M12 15.5l8 4.7 8-4.7" />
+      <circle className="site-brand-mark-node" cx="12" cy="15.5" r="2.45" />
+      <circle className="site-brand-mark-node" cx="20" cy="10.8" r="2.45" />
+      <circle className="site-brand-mark-node" cx="28" cy="15.5" r="2.45" />
+      <path className="site-brand-mark-check" d="m16.2 23 2.55 2.55 5.25-6.1" />
+    </svg>
+  );
+}
+
 function HeaderBrand({ href, onClick }: { href: string; onClick?: () => void }) {
+  const content = (
+    <>
+      <BrandMark />
+      <span className="site-brand-text">Wardn Hub</span>
+    </>
+  );
+
   if (onClick) {
     return (
       <button className="site-brand" onClick={onClick} type="button">
-        Wardn Hub
+        {content}
       </button>
     );
   }
 
   return (
     <Link className="site-brand" href={href}>
-      Wardn Hub
+      {content}
     </Link>
   );
 }

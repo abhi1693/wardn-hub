@@ -114,6 +114,7 @@ button {
   display: inline-flex;
   min-height: 64px;
   align-items: center;
+  gap: 10px;
   border: 0;
   background: transparent;
   color: #000000;
@@ -122,6 +123,51 @@ button {
   line-height: 32px;
   padding: 0;
   text-decoration: none;
+  white-space: nowrap;
+}
+
+.site-brand:hover,
+.site-brand:focus-visible {
+  color: #000000;
+}
+
+.site-brand:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid #0284c7;
+  outline-offset: 4px;
+}
+
+.site-brand-mark {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.site-brand-mark-bg {
+  fill: #101827;
+}
+
+.site-brand-mark-line {
+  fill: none;
+  stroke: #7dd3fc;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.1;
+}
+
+.site-brand-mark-node {
+  fill: #ffffff;
+}
+
+.site-brand-mark-check {
+  fill: none;
+  stroke: #34d399;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.45;
+}
+
+.site-brand-text {
   white-space: nowrap;
 }
 
