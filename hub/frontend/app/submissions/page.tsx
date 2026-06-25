@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   AlertCircle,
+  Archive,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -21,12 +22,23 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog";
 import { AiSubmissionPromptDialog } from "@/components/ai-submission-prompt-dialog";
+import { AiUrlDraftPromptDialog } from "@/components/ai-url-draft-prompt-dialog";
+import { AiValidationPromptDialog } from "@/components/ai-validation-prompt-dialog";
 import { PublicHeader } from "@/components/site-header";
 import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
-import { HubApiError, currentUser, deleteSubmission, listSubmissions } from "@/lib/api/hub";
-import type { SubmissionRead } from "@/lib/api/generated/model";
+import {
+  HubApiError,
+  archiveServer,
+  currentUser,
+  deleteSubmission,
+  listSubmissions,
+  rejectSubmission,
+  submissionAction,
+} from "@/lib/api/hub";
+import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
 type LoadState = "loading" | "ready" | "error" | "auth";
@@ -107,6 +119,14 @@ function isEditableSubmission(status: SubmissionRead["status"]) {
 
 function isDeleteableSubmission(status: SubmissionRead["status"]) {
   return status !== "published";
+}
+
+function canReviewSubmissions(user: UserRead | null) {
+  return Boolean(user?.is_superuser || user?.is_global_moderator);
+}
+
+function canUseReviewActions(user: UserRead | null) {
+  return Boolean(user?.is_superuser);
 }
 
 function getStatusCounts(submissions: SubmissionRead[]) {
@@ -232,6 +252,7 @@ function StatusBadge({ status }: { status: SubmissionRead["status"] }) {
 function AddSubmissionMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [urlDraftPromptOpen, setUrlDraftPromptOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -289,29 +310,62 @@ function AddSubmissionMenu() {
               type="button"
             >
               <Sparkles className="size-4 text-muted-foreground" />
-              AI prompt
+              Submit from GitHub repo
+            </button>
+            <button
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                setMenuOpen(false);
+                setUrlDraftPromptOpen(true);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <FileText className="size-4 text-muted-foreground" />
+              Draft from docs URL
             </button>
           </div>
         ) : null}
       </div>
       <AiSubmissionPromptDialog onOpenChange={setPromptOpen} open={promptOpen} />
+      <AiUrlDraftPromptDialog
+        onOpenChange={setUrlDraftPromptOpen}
+        open={urlDraftPromptOpen}
+      />
     </>
   );
 }
 
 function VersionSubmissionRow({
+  canValidate,
+  canReview,
   deleting,
   onDelete,
+  onOpenFixPrompt,
+  onOpenValidationPrompt,
+  onReviewAction,
+  reviewingActionId,
   submission,
 }: {
+  canValidate: boolean;
+  canReview: boolean;
   deleting: boolean;
   onDelete: (submission: SubmissionRead) => void;
+  onOpenFixPrompt: (submission: SubmissionRead) => void;
+  onOpenValidationPrompt: (submission: SubmissionRead) => void;
+  onReviewAction: (
+    submission: SubmissionRead,
+    action: "approve_publish" | "reject" | "publish",
+  ) => void;
+  reviewingActionId: string;
   submission: SubmissionRead;
 }) {
   const isEditable = isEditableSubmission(submission.status);
   const isDeleteable = isDeleteableSubmission(submission.status);
   const typeLabel = submissionTypeLabels[submission.submissionType] ?? submission.submissionType;
   const Icon = submission.submissionType === "new_version" ? GitBranch : FileText;
+  const isReviewing = reviewingActionId.startsWith(`${submission.id}:`);
+  const hideEditAction = canReview && submission.status === "published";
 
   return (
     <div className="grid gap-3 rounded-md border border-slate-100 bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -348,22 +402,80 @@ function VersionSubmissionRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-        <Button asChild size="sm">
-          <Link
-            href={
-              isEditable
-                ? `/submit?submission=${submission.id}`
-                : `/submit?submission=${submission.id}&version=new`
-            }
+        {canValidate && submission.status === "submitted" ? (
+          <Button
+            onClick={() => onOpenValidationPrompt(submission)}
+            size="sm"
+            type="button"
+            variant="outline"
           >
-            {isEditable ? <Pencil className="size-4" /> : <Plus className="size-4" />}
-            {isEditable ? "Edit" : "New version"}
-          </Link>
-        </Button>
+            <Sparkles className="size-4" />
+            Validate version
+          </Button>
+        ) : null}
+        {submission.status === "rejected" ? (
+          <Button
+            onClick={() => onOpenFixPrompt(submission)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Sparkles className="size-4" />
+            Fix with AI
+          </Button>
+        ) : null}
+        {canReview && submission.status === "submitted" ? (
+          <>
+            <Button
+              disabled={isReviewing}
+              onClick={() => onReviewAction(submission, "approve_publish")}
+              size="sm"
+              type="button"
+            >
+              <CheckCircle2 className="size-4" />
+              Approve & publish
+            </Button>
+            <Button
+              disabled={isReviewing}
+              onClick={() => onReviewAction(submission, "reject")}
+              size="sm"
+              type="button"
+              variant="destructive"
+            >
+              <XCircle className="size-4" />
+              Reject
+            </Button>
+          </>
+        ) : null}
+        {canReview && submission.status === "approved" ? (
+          <Button
+            disabled={isReviewing}
+            onClick={() => onReviewAction(submission, "publish")}
+            size="sm"
+            type="button"
+          >
+            <FileCheck2 className="size-4" />
+            Publish
+          </Button>
+        ) : null}
+        {!hideEditAction ? (
+          <Button asChild size="sm">
+            <Link
+              href={
+                isEditable
+                  ? `/submit?submission=${submission.id}`
+                  : `/submit?submission=${submission.id}&version=new`
+              }
+            >
+              {isEditable ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+              {isEditable ? "Edit" : "New version"}
+            </Link>
+          </Button>
+        ) : null}
         {isDeleteable ? (
           <Button
             aria-label={`Delete ${submission.name} ${submission.version}`}
-            disabled={deleting}
+            disabled={deleting || isReviewing}
             onClick={() => onDelete(submission)}
             size="sm"
             type="button"
@@ -385,15 +497,35 @@ function VersionSubmissionRow({
 }
 
 function SubmissionGroupCard({
+  archivingName,
+  canValidate,
+  canReview,
   deletingId,
   group,
+  onArchive,
   onDelete,
+  onOpenFixPrompt,
+  onOpenValidationPrompt,
+  onReviewAction,
+  reviewingActionId,
 }: {
+  archivingName: string;
+  canValidate: boolean;
+  canReview: boolean;
   deletingId: string;
   group: SubmissionGroup;
+  onArchive: (serverName: string) => void;
   onDelete: (submission: SubmissionRead) => void;
+  onOpenFixPrompt: (submission: SubmissionRead) => void;
+  onOpenValidationPrompt: (submission: SubmissionRead) => void;
+  onReviewAction: (
+    submission: SubmissionRead,
+    action: "approve_publish" | "reject" | "publish",
+  ) => void;
+  reviewingActionId: string;
 }) {
   const versionCount = group.submissions.length;
+  const canArchiveServer = canReview && group.submissions.some((item) => item.status === "published");
   const iconUrl =
     submissionIconUrl(group.latest) ||
     group.submissions.map(submissionIconUrl).find(Boolean) ||
@@ -401,40 +533,62 @@ function SubmissionGroupCard({
 
   return (
     <article className="grid gap-4 rounded-lg border border-border bg-white p-4 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[0_8px_24px_rgb(15_23_42_/_7%)]">
-      <div className="grid min-w-0 gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Link
-            aria-label={`Open latest submission for ${group.name}`}
-            className="inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-            href={`/submissions/${group.latest.id}`}
-          >
-            <ServerIcon src={iconUrl} title={group.name} />
-          </Link>
-          <Link
-            className="min-w-0 overflow-hidden text-ellipsis text-base font-bold text-foreground hover:underline"
-            href={`/submissions/${group.latest.id}`}
-          >
-            {group.name}
-          </Link>
-          <StatusBadge status={group.latest.status} />
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="grid min-w-0 gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Link
+              aria-label={`Open latest submission for ${group.name}`}
+              className="inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+              href={`/submissions/${group.latest.id}`}
+            >
+              <ServerIcon src={iconUrl} title={group.name} />
+            </Link>
+            <Link
+              className="min-w-0 overflow-hidden text-ellipsis text-base font-bold text-foreground hover:underline"
+              href={`/submissions/${group.latest.id}`}
+            >
+              {group.name}
+            </Link>
+            <StatusBadge status={group.latest.status} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">
+              {versionCount} {versionCount === 1 ? "submission" : "submissions"}
+            </span>
+            <span aria-hidden="true">/</span>
+            <span>Latest v{group.latest.version}</span>
+            <span aria-hidden="true">/</span>
+            <span>Updated {formatDate(group.latest.updatedAt)}</span>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span className="font-semibold text-foreground">
-            {versionCount} {versionCount === 1 ? "submission" : "submissions"}
-          </span>
-          <span aria-hidden="true">/</span>
-          <span>Latest v{group.latest.version}</span>
-          <span aria-hidden="true">/</span>
-          <span>Updated {formatDate(group.latest.updatedAt)}</span>
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          {canArchiveServer ? (
+            <Button
+              disabled={archivingName === group.name}
+              onClick={() => onArchive(group.name)}
+              size="sm"
+              type="button"
+              variant="destructive"
+            >
+              <Archive className="size-4" />
+              {archivingName === group.name ? "Archiving" : "Archive server"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
       <div className="grid gap-2">
         {group.submissions.map((submission) => (
           <VersionSubmissionRow
+            canValidate={canValidate}
+            canReview={canReview}
             deleting={deletingId === submission.id}
             key={submission.id}
             onDelete={onDelete}
+            onOpenFixPrompt={onOpenFixPrompt}
+            onOpenValidationPrompt={onOpenValidationPrompt}
+            onReviewAction={onReviewAction}
+            reviewingActionId={reviewingActionId}
             submission={submission}
           />
         ))}
@@ -447,7 +601,13 @@ export default function SubmissionsPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [archivingName, setArchivingName] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [reviewingActionId, setReviewingActionId] = useState("");
+  const [fixPromptSubmission, setFixPromptSubmission] = useState<SubmissionRead | null>(null);
+  const [validationPromptSubmission, setValidationPromptSubmission] =
+    useState<SubmissionRead | null>(null);
+  const [user, setUser] = useState<UserRead | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("all");
 
@@ -457,11 +617,12 @@ export default function SubmissionsPage() {
       setError("");
       Promise.all([currentUser(), listSubmissions()])
         .then(([current, response]) => {
+          setUser(current);
           setSubmissions(
             sortSubmissions(
-              response.submissions.filter(
-                (submission) => submission.submitterUserId === current.id,
-              ),
+              response.submissions.filter((submission) => {
+                return canReviewSubmissions(current) || submission.submitterUserId === current.id;
+              }),
             ),
           );
           setState("ready");
@@ -507,6 +668,61 @@ export default function SubmissionsPage() {
     }
   }
 
+  async function handleArchiveServer(serverName: string) {
+    if (!canUseReviewActions(user)) return;
+    const confirmed = window.confirm(
+      `Archive published server ${serverName}? It will be removed from the public catalog.`,
+    );
+    if (!confirmed) return;
+
+    setArchivingName(serverName);
+    setActionError("");
+    try {
+      await archiveServer(serverName);
+      setSubmissions((current) =>
+        current.filter(
+          (item) => item.name !== serverName || item.status !== "published",
+        ),
+      );
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Unable to archive server.");
+    } finally {
+      setArchivingName("");
+    }
+  }
+
+  async function handleReviewAction(
+    submission: SubmissionRead,
+    action: "approve_publish" | "reject" | "publish",
+  ) {
+    if (!canUseReviewActions(user)) return;
+
+    const message =
+      action === "reject" ? window.prompt("Rejection message", submission.rejectionMessage) : "";
+    if (action === "reject" && !message) return;
+
+    setReviewingActionId(`${submission.id}:${action}`);
+    setActionError("");
+    try {
+      const updated =
+        action === "reject"
+          ? await rejectSubmission(submission.id, { message: message ?? "" })
+          : action === "approve_publish"
+            ? await submissionAction(
+                (await submissionAction(submission.id, "approve")).id,
+                "publish",
+              )
+            : await submissionAction(submission.id, action);
+      setSubmissions((current) =>
+        sortSubmissions(current.map((item) => (item.id === updated.id ? updated : item))),
+      );
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Review action failed.");
+    } finally {
+      setReviewingActionId("");
+    }
+  }
+
   return (
     <>
       <PublicHeader />
@@ -530,7 +746,9 @@ export default function SubmissionsPage() {
                 Track MCP server drafts, reviews, and published versions.
               </p>
             </div>
-            <AddSubmissionMenu />
+            <div className="flex flex-wrap items-center gap-2">
+              <AddSubmissionMenu />
+            </div>
           </header>
 
           <section className="grid gap-4">
@@ -625,10 +843,18 @@ export default function SubmissionsPage() {
               <div className="grid gap-3">
                 {groupedSubmissions.map((group) => (
                   <SubmissionGroupCard
+                    archivingName={archivingName}
+                    canValidate={canReviewSubmissions(user)}
+                    canReview={canUseReviewActions(user)}
                     deletingId={deletingId}
                     group={group}
                     key={group.name}
+                    onArchive={handleArchiveServer}
                     onDelete={handleDeleteSubmission}
+                    onOpenFixPrompt={setFixPromptSubmission}
+                    onOpenValidationPrompt={setValidationPromptSubmission}
+                    onReviewAction={handleReviewAction}
+                    reviewingActionId={reviewingActionId}
                   />
                 ))}
               </div>
@@ -636,6 +862,24 @@ export default function SubmissionsPage() {
           </section>
         </div>
       </main>
+      <AiValidationPromptDialog
+        onOpenChange={(open) => {
+          if (!open) setValidationPromptSubmission(null);
+        }}
+        open={Boolean(validationPromptSubmission)}
+        serverName={validationPromptSubmission?.name ?? ""}
+        submissionIds={validationPromptSubmission ? [validationPromptSubmission.id] : []}
+        version={validationPromptSubmission?.version ?? ""}
+      />
+      <AiDraftFixPromptDialog
+        errorMessage={fixPromptSubmission?.rejectionMessage ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setFixPromptSubmission(null);
+        }}
+        open={Boolean(fixPromptSubmission)}
+        serverName={fixPromptSubmission?.name ?? ""}
+        submissionId={fixPromptSubmission?.id ?? ""}
+      />
     </>
   );
 }

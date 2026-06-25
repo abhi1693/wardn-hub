@@ -211,6 +211,52 @@ def test_validation_rejects_source_review_placeholder_values() -> None:
     )
 
 
+def test_validation_rejects_duplicate_environment_variables() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.environmentVariables = [
+        {"name": "DEBUG", "description": "Enable debug logging."},
+        {"name": "DEBUG", "description": "Duplicate debug setting."},
+    ]
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["environmentVariables"] = [
+        {"name": "CI", "description": "Disable usage statistics in CI."},
+        {"name": "CI", "description": "Duplicate CI setting."},
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "duplicateEnvironmentVariables"
+        and "DEBUG" in check["message"]
+        and "CI" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_rejects_unreadable_source_review_entries() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["commandArguments"] = [
+        {"choices": ["--stdio", "--help"]},
+        {"nested": {"value": "--verbose"}},
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "sourceReviewFormat"
+        and "commandArguments" in check["message"]
+        for check in result["checks"]
+    )
+
+
 @pytest.mark.asyncio
 async def test_new_version_submission_requires_published_server(monkeypatch) -> None:
     async def missing_server(*args, **kwargs):

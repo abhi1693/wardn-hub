@@ -64,6 +64,7 @@ Critical metadata rules:
 - Split package versions from identifiers.
 - Do not put versions or tags inside package identifiers.
 - Include optional variables too if they affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
+- Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
 
 Environment variable review:
 - Read README/docs for every environment variable and CLI option.
@@ -82,6 +83,10 @@ Source review evidence must include:
 - sourceReview.capabilitiesReviewed = true
 - sourceReview.limitationsReviewed = true
 - sourceReview.unknowns = []
+
+Source review list format:
+- filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
+- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","description":"Port for HTTP transport."}.
 
 Before submitting, verify every documented env var and CLI argument from inspected sections is represented or explicitly listed in sourceReview.unknowns with a reason.
 
@@ -163,10 +168,10 @@ export function AiSubmissionPromptDialog({
             <div className="grid gap-1">
               <Dialog.Title className="flex items-center gap-2 text-xl font-black tracking-normal text-foreground">
                 <KeyRound className="size-5 text-muted-foreground" />
-                AI submission prompt
+                Submit from GitHub repo
               </Dialog.Title>
               <Dialog.Description className="text-sm text-muted-foreground">
-                Generate a copyable prompt for importing and submitting a server through the API.
+                Copy a prompt that imports a repository, reviews source docs, creates a draft, and submits it.
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>

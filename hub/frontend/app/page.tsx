@@ -258,7 +258,7 @@ function SubmissionsView() {
 
   async function mutateSubmission(
     submission: SubmissionRead,
-    action: "submit" | "withdraw" | "approve" | "publish" | "reject",
+    action: "submit" | "withdraw" | "approve_publish" | "publish" | "reject",
   ) {
     const message =
       action === "reject" ? window.prompt("Rejection message", submission.rejectionMessage) : "";
@@ -268,6 +268,9 @@ function SubmissionsView() {
     try {
       if (action === "reject") {
         await rejectSubmission(submission.id, { message: message ?? "" });
+      } else if (action === "approve_publish") {
+        const approved = await submissionAction(submission.id, "approve");
+        await submissionAction(approved.id, "publish");
       } else {
         await submissionAction(submission.id, action);
       }
@@ -312,8 +315,8 @@ function SubmissionsView() {
                 ) : null}
                 {submission.status === "submitted" ? (
                   <>
-                    <ActionButton onClick={() => void mutateSubmission(submission, "approve")}>
-                      Approve
+                    <ActionButton onClick={() => void mutateSubmission(submission, "approve_publish")}>
+                      Approve & publish
                     </ActionButton>
                     <ActionButton onClick={() => void mutateSubmission(submission, "reject")}>
                       Reject

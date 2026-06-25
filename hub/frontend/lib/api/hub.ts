@@ -208,6 +208,10 @@ export function deleteServer(serverName: string) {
   });
 }
 
+export function archiveServer(serverName: string) {
+  return deleteServer(serverName);
+}
+
 export function listSubmissions() {
   return request<SubmissionListResponse>("/submissions");
 }

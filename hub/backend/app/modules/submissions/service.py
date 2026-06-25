@@ -150,6 +150,100 @@ def env_placeholder_check(payload: RegistryServerVersionCreate) -> dict[str, str
     return validation_check("envPlaceholders", "passed", "No environment placeholders found.")
 
 
+def duplicate_names(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        name = value.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        normalized = name.strip()
+        if normalized in seen:
+            duplicates.add(normalized)
+        seen.add(normalized)
+    return sorted(duplicates)
+
+
+def duplicate_environment_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    data = payload.model_dump(by_alias=True, exclude_none=True)
+    duplicates: list[str] = []
+
+    packages = data.get("packages") if isinstance(data.get("packages"), list) else []
+    for index, package in enumerate(packages):
+        if not isinstance(package, dict):
+            continue
+        package_duplicates = duplicate_names(package.get("environmentVariables"))
+        if package_duplicates:
+            identifier = package.get("identifier")
+            label = (
+                identifier
+                if isinstance(identifier, str) and identifier
+                else f"package {index + 1}"
+            )
+            duplicates.append(f"{label}: {', '.join(package_duplicates)}")
+
+    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
+    source_review = (
+        meta.get("sourceReview")
+        if isinstance(meta.get("sourceReview"), dict)
+        else {}
+    )
+    source_review_duplicates = duplicate_names(source_review.get("environmentVariables"))
+    if source_review_duplicates:
+        duplicates.append("sourceReview: " + ", ".join(source_review_duplicates))
+
+    if duplicates:
+        return validation_check(
+            "duplicateEnvironmentVariables",
+            "failed",
+            "Duplicate environment variable names are not allowed: " + "; ".join(duplicates),
+        )
+    return validation_check(
+        "duplicateEnvironmentVariables",
+        "passed",
+        "Environment variable names are unique.",
+    )
+
+
+def readable_review_item(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, dict):
+        return False
+    return any(
+        isinstance(value.get(key), str) and value.get(key, "").strip()
+        for key in ("flag", "name", "value", "default", "description")
+    )
+
+
+def source_review_list_quality_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    meta = payload.meta if isinstance(payload.meta, dict) else {}
+    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
+    invalid_fields: list[str] = []
+
+    for field in ("filesRead", "installCommands", "commandArguments", "prerequisites"):
+        value = source_review.get(field)
+        if not isinstance(value, list):
+            continue
+        if any(not readable_review_item(item) for item in value):
+            invalid_fields.append(field)
+
+    if invalid_fields:
+        return validation_check(
+            "sourceReviewFormat",
+            "failed",
+            "Source review entries must be readable strings or objects with "
+            "flag/name/value/default/description: "
+            + ", ".join(invalid_fields),
+        )
+    return validation_check("sourceReviewFormat", "passed", "Source review entries are readable.")
+
+
 def package_transport_detail_check(packages: list[Any]) -> dict[str, str]:
     if not packages:
         return validation_check("packageTransportDetails", "passed", "No package targets provided.")
@@ -280,6 +374,8 @@ def validation_result_for(payload: RegistryServerVersionCreate) -> dict:
         validation_check("schema", "passed", "Registry schema fields are valid."),
         validation_check("target", "passed", "At least one package or remote target is present."),
         env_placeholder_check(payload),
+        duplicate_environment_check(payload),
+        source_review_list_quality_check(payload),
         package_targets_check(payload.packages),
         package_transport_detail_check(payload.packages),
         remote_targets_check(payload.remotes),

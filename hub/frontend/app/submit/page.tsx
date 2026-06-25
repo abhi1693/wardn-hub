@@ -6,6 +6,7 @@ import type { ClipboardEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
 
+import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -427,6 +428,49 @@ function initialTransportEnvironment(value: unknown): EnvironmentField[] {
   }));
 }
 
+function mergeEnvironmentFields(environmentVariables: EnvironmentField[]) {
+  const merged = new Map<string, EnvironmentField>();
+
+  for (const envVar of environmentVariables) {
+    const name = envVar.name.trim();
+    if (!name) {
+      merged.set(envVar.id, envVar);
+      continue;
+    }
+
+    const existing = merged.get(name);
+    if (!existing) {
+      merged.set(name, { ...envVar, name });
+      continue;
+    }
+
+    merged.set(name, {
+      ...existing,
+      description: existing.description || envVar.description,
+      defaultValue: existing.defaultValue || envVar.defaultValue,
+      format: existing.format || envVar.format || "string",
+      required: existing.required || envVar.required,
+      secret: existing.secret || envVar.secret,
+    });
+  }
+
+  return [...merged.values()];
+}
+
+function duplicateEnvironmentNames(environmentVariables: EnvironmentField[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const envVar of environmentVariables) {
+    const name = envVar.name.trim();
+    if (!name) continue;
+    if (seen.has(name)) duplicates.add(name);
+    seen.add(name);
+  }
+
+  return [...duplicates].sort();
+}
+
 function initialPackageArguments(value: unknown): PackageArgumentField[] {
   return records(value).map((argument) => ({
     id: createId("arg"),
@@ -479,10 +523,10 @@ function importedPackages(value: unknown): PackageTarget[] {
       version: importedVersion || parsedPackage.version.replaceAll("$VERSION", "latest"),
       command: stringValue(transport?.command),
       transportType: stringValue(transport?.type) || "stdio",
-      environmentVariables: [
+      environmentVariables: mergeEnvironmentFields([
         ...initialTransportEnvironment(transport?.env),
         ...initialEnvironment(packageTarget.environmentVariables),
-      ],
+      ]),
       packageArguments: [
         ...initialTransportArguments(transport?.args),
         ...initialPackageArguments(packageTarget.packageArguments),
@@ -603,6 +647,7 @@ export default function SubmitServerPage() {
   const [remotes, setRemotes] = useState<RemoteTarget[]>([]);
   const [packages, setPackages] = useState<PackageTarget[]>([]);
   const [error, setError] = useState("");
+  const [draftFixPromptOpen, setDraftFixPromptOpen] = useState(false);
   const [sourceImportMessage, setSourceImportMessage] = useState("");
   const [isImportingSource, setIsImportingSource] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1045,6 +1090,12 @@ export default function SubmitServerPage() {
               `Do not use ${placeholderEnvVar.defaultValue} as a value. Leave ${placeholderEnvVar.name || "the variable"} empty for user-supplied secrets.`,
             );
           }
+          const duplicateEnvNames = duplicateEnvironmentNames(packageTarget.environmentVariables);
+          if (duplicateEnvNames.length > 0) {
+            throw new Error(
+              `Remove duplicate environment variables from ${packageTarget.identifier || "the package"}: ${duplicateEnvNames.join(", ")}.`,
+            );
+          }
           const placeholderArgument = packageTarget.packageArguments.find((argument) =>
             hasEnvironmentPlaceholder(argument.value) || hasEnvironmentPlaceholder(argument.defaultValue),
           );
@@ -1158,6 +1209,9 @@ export default function SubmitServerPage() {
             submissionType,
             serverJson,
           });
+      setSubmissionMode("edit");
+      setEditingSubmissionId(draft.id);
+      setEditingSubmissionType(draft.submissionType);
       await submissionAction(draft.id, "submit");
       setSourceImportMessage("");
       router.push("/submissions");
@@ -1212,12 +1266,6 @@ export default function SubmitServerPage() {
             {isLoadingSubmission ? (
               <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                 Loading submission.
-              </div>
-            ) : null}
-
-            {error ? (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
               </div>
             ) : null}
 
@@ -1975,19 +2023,43 @@ export default function SubmitServerPage() {
               </CardContent>
             </Card>
 
-            <div className="flex justify-end gap-2">
-              <Button asChild type="button" variant="outline">
-                <Link href="/">Cancel</Link>
-              </Button>
-              <Button disabled={isSubmitting} type="submit">
-                <Save className="size-4" />
-                {isSubmitting ? "Submitting" : submitButtonLabel}
-              </Button>
+            <div className="sticky bottom-0 z-10 -mx-5 border-t border-border bg-background/95 px-5 py-4 backdrop-blur">
+              {error ? (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <span>{error}</span>
+                  {editingSubmissionId ? (
+                    <Button
+                      onClick={() => setDraftFixPromptOpen(true)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Fix with AI
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button asChild type="button" variant="outline">
+                  <Link href="/">Cancel</Link>
+                </Button>
+                <Button disabled={isSubmitting} type="submit">
+                  <Save className="size-4" />
+                  {isSubmitting ? "Submitting" : submitButtonLabel}
+                </Button>
+              </div>
             </div>
           </form>
         )}
         </div>
       </main>
+      <AiDraftFixPromptDialog
+        errorMessage={error}
+        onOpenChange={setDraftFixPromptOpen}
+        open={draftFixPromptOpen}
+        serverName={effectiveName}
+        submissionId={editingSubmissionId}
+      />
     </>
   );
 }

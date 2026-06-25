@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { AlertTriangle, FileCheck2, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, FileCheck2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
@@ -14,8 +14,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { deleteSubmission, getSubmission } from "@/lib/api/hub";
-import type { SubmissionRead } from "@/lib/api/generated/model";
+import { archiveServer, currentUser, deleteSubmission, getSubmission } from "@/lib/api/hub";
+import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
 type LoadState = "loading" | "ready" | "error";
@@ -38,6 +38,32 @@ function nestedRecord(value: unknown): Record<string, unknown> {
 
 function stringList(value: unknown) {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function readableReviewItem(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+
+  const record = value as Record<string, unknown>;
+  const parts = [
+    stringValue(record.flag),
+    stringValue(record.name),
+    stringValue(record.value),
+    stringValue(record.default),
+    stringValue(record.description),
+  ].filter(Boolean);
+  if (parts.length > 0) return parts.join(" - ");
+
+  try {
+    return JSON.stringify(record);
+  } catch {
+    return "";
+  }
+}
+
+function reviewItemList(value: unknown) {
+  return Array.isArray(value) ? value.map(readableReviewItem).filter(Boolean) : [];
 }
 
 function transportEnvironment(value: unknown) {
@@ -75,6 +101,10 @@ function isDeleteableSubmission(status: SubmissionRead["status"]) {
   return status !== "published";
 }
 
+function canUseReviewActions(user: UserRead | null) {
+  return Boolean(user?.is_superuser);
+}
+
 export default function SubmissionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -82,8 +112,16 @@ export default function SubmissionDetailPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [submission, setSubmission] = useState<SubmissionRead | null>(null);
+  const [user, setUser] = useState<UserRead | null>(null);
+
+  useEffect(() => {
+    currentUser()
+      .then((response) => setUser(response))
+      .catch(() => setUser(null));
+  }, []);
 
   useEffect(() => {
     if (!submissionId) return;
@@ -120,10 +158,10 @@ export default function SubmissionDetailPage() {
   const sourceReview = nestedRecord(meta.sourceReview);
   const remotes = useMemo(() => records(serverJson.remotes), [serverJson.remotes]);
   const packages = useMemo(() => records(serverJson.packages), [serverJson.packages]);
-  const filesRead = stringList(sourceReview.filesRead);
-  const installCommands = stringList(sourceReview.installCommands);
-  const commandArguments = stringList(sourceReview.commandArguments);
-  const prerequisites = stringList(sourceReview.prerequisites);
+  const filesRead = reviewItemList(sourceReview.filesRead);
+  const installCommands = reviewItemList(sourceReview.installCommands);
+  const commandArguments = reviewItemList(sourceReview.commandArguments);
+  const prerequisites = reviewItemList(sourceReview.prerequisites);
   const reviewedEnvironmentVariables = records(sourceReview.environmentVariables);
 
   async function handleDeleteSubmission() {
@@ -146,6 +184,26 @@ export default function SubmissionDetailPage() {
     }
   }
 
+  async function handleArchiveServer() {
+    if (!submission || submission.status !== "published" || !canUseReviewActions(user)) return;
+    const confirmed = window.confirm(
+      `Archive published server ${submission.name}? It will be removed from the public catalog.`,
+    );
+    if (!confirmed) return;
+
+    setArchiving(true);
+    setActionError("");
+    try {
+      await archiveServer(submission.name);
+      router.push("/submissions");
+      router.refresh();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : "Unable to archive server.");
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   return (
     <>
       <PublicHeader />
@@ -154,12 +212,18 @@ export default function SubmissionDetailPage() {
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {submission ? (
-              submission.status === "published" ? (
-                <Button asChild>
-                  <Link href={`/submit?submission=${submission.id}&version=new`}>
-                    Add new version
-                  </Link>
+              submission.status === "published" && canUseReviewActions(user) ? (
+                <Button
+                  disabled={archiving}
+                  onClick={() => void handleArchiveServer()}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Archive className="size-4" />
+                  {archiving ? "Archiving" : "Archive server"}
                 </Button>
+              ) : submission.status === "published" ? (
+                null
               ) : (
                 <Button asChild>
                   <Link href={`/submit?submission=${submission.id}`}>
