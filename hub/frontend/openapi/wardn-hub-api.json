@@ -1251,6 +1251,175 @@
         "title": "PartnerSupportSummary",
         "type": "object"
       },
+      "RegistryCatalogServerRead": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latestVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryLatestVersionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partnerSupport": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerSupportSummary"
+            },
+            "title": "Partnersupport",
+            "type": "array"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "deprecated",
+              "deleted",
+              "quarantined"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "statusMessage": {
+            "title": "Statusmessage",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryPublishedServerVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "unlisted",
+              "private_preview"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          },
+          "websiteUrl": {
+            "title": "Websiteurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "title",
+          "description",
+          "websiteUrl",
+          "status",
+          "statusMessage",
+          "visibility",
+          "createdAt",
+          "updatedAt",
+          "versions"
+        ],
+        "title": "RegistryCatalogServerRead",
+        "type": "object"
+      },
       "RegistryCategoryCreate": {
         "examples": [
           {
@@ -1563,6 +1732,135 @@
         "title": "RegistryPackage",
         "type": "object"
       },
+      "RegistryPageMetadata": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "perPage": {
+            "title": "Perpage",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "perPage",
+          "total",
+          "pages"
+        ],
+        "title": "RegistryPageMetadata",
+        "type": "object"
+      },
+      "RegistryPublishedServerListResponse": {
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/RegistryPageMetadata"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCatalogServerRead"
+            },
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "servers",
+          "metadata"
+        ],
+        "title": "RegistryPublishedServerListResponse",
+        "type": "object"
+      },
+      "RegistryPublishedServerVersionRead": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "packages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "title": "Publishedat",
+            "type": "string"
+          },
+          "remotes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Remotes",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "deprecated",
+              "deleted",
+              "quarantined",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "statusChangedAt": {
+            "format": "date-time",
+            "title": "Statuschangedat",
+            "type": "string"
+          },
+          "statusMessage": {
+            "title": "Statusmessage",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "statusMessage",
+          "isLatest",
+          "publishedAt",
+          "statusChangedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "RegistryPublishedServerVersionRead",
+        "type": "object"
+      },
       "RegistryRemote": {
         "additionalProperties": true,
         "properties": {
@@ -1763,7 +2061,8 @@
           },
           "icons": {
             "items": {
-              "$ref": "#/components/schemas/RegistryIcon"
+              "additionalProperties": true,
+              "type": "object"
             },
             "title": "Icons",
             "type": "array"
@@ -1817,12 +2116,14 @@
           "repository": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/RegistryRepository"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Repository"
           },
           "status": {
             "enum": [
@@ -2104,13 +2405,6 @@
               }
             ]
           },
-          "categories": {
-            "items": {
-              "$ref": "#/components/schemas/RegistryCategoryRead"
-            },
-            "title": "Categories",
-            "type": "array"
-          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -2137,7 +2431,8 @@
           },
           "icons": {
             "items": {
-              "$ref": "#/components/schemas/RegistryIcon"
+              "additionalProperties": true,
+              "type": "object"
             },
             "title": "Icons",
             "type": "array"
@@ -2177,7 +2472,8 @@
           },
           "packages": {
             "items": {
-              "$ref": "#/components/schemas/RegistryPackage"
+              "additionalProperties": true,
+              "type": "object"
             },
             "title": "Packages",
             "type": "array"
@@ -2206,7 +2502,8 @@
           },
           "remotes": {
             "items": {
-              "$ref": "#/components/schemas/RegistryRemote"
+              "additionalProperties": true,
+              "type": "object"
             },
             "title": "Remotes",
             "type": "array"
@@ -2214,12 +2511,14 @@
           "repository": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/RegistryRepository"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Repository"
           },
           "serverId": {
             "format": "uuid",
@@ -4950,6 +5249,50 @@
         "summary": "Import Server Source Endpoint",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/v1/mcp/catalog": {
+      "get": {
+        "operationId": "mcp_catalog_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryPublishedServerListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mcp Catalog",
+        "tags": [
+          "mcp"
         ]
       }
     },

@@ -6,32 +6,34 @@
  */
 import type { ActorSummary } from './actorSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
+import type { RegistryCatalogServerReadIconsItem } from './registryCatalogServerReadIconsItem';
+import type { RegistryCatalogServerReadRepository } from './registryCatalogServerReadRepository';
+import type { RegistryCatalogServerReadStatus } from './registryCatalogServerReadStatus';
+import type { RegistryCatalogServerReadVisibility } from './registryCatalogServerReadVisibility';
 import type { RegistryCategoryRead } from './registryCategoryRead';
 import type { RegistryLatestVersionSummary } from './registryLatestVersionSummary';
-import type { RegistryServerReadIconsItem } from './registryServerReadIconsItem';
-import type { RegistryServerReadRepository } from './registryServerReadRepository';
-import type { RegistryServerReadStatus } from './registryServerReadStatus';
-import type { RegistryServerReadVisibility } from './registryServerReadVisibility';
+import type { RegistryPublishedServerVersionRead } from './registryPublishedServerVersionRead';
 
-export interface RegistryServerRead {
+export interface RegistryCatalogServerRead {
   categories?: RegistryCategoryRead[];
   createdAt: string;
   createdBy?: ActorSummary | null;
   description: string;
   documentation?: string;
-  icons?: RegistryServerReadIconsItem[];
+  icons?: RegistryCatalogServerReadIconsItem[];
   id: string;
   latestVersion?: RegistryLatestVersionSummary | null;
   name: string;
   organization?: ActorSummary | null;
   owner?: ActorSummary | null;
   partnerSupport?: PartnerSupportSummary[];
-  repository?: RegistryServerReadRepository;
-  status: RegistryServerReadStatus;
+  repository?: RegistryCatalogServerReadRepository;
+  status: RegistryCatalogServerReadStatus;
   statusMessage: string;
   title: string;
   updatedAt: string;
   updatedBy?: ActorSummary | null;
-  visibility: RegistryServerReadVisibility;
+  versions: RegistryPublishedServerVersionRead[];
+  visibility: RegistryCatalogServerReadVisibility;
   websiteUrl: string;
 }

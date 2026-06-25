@@ -6,33 +6,31 @@
  */
 import type { ActorSummary } from './actorSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
-import type { RegistryCategoryRead } from './registryCategoryRead';
-import type { RegistryIcon } from './registryIcon';
-import type { RegistryPackage } from './registryPackage';
-import type { RegistryRemote } from './registryRemote';
-import type { RegistryRepository } from './registryRepository';
+import type { RegistryServerVersionReadIconsItem } from './registryServerVersionReadIconsItem';
+import type { RegistryServerVersionReadPackagesItem } from './registryServerVersionReadPackagesItem';
+import type { RegistryServerVersionReadRemotesItem } from './registryServerVersionReadRemotesItem';
+import type { RegistryServerVersionReadRepository } from './registryServerVersionReadRepository';
 import type { RegistryServerVersionReadServerJson } from './registryServerVersionReadServerJson';
 import type { RegistryServerVersionReadStatus } from './registryServerVersionReadStatus';
 
 export interface RegistryServerVersionRead {
   approver?: ActorSummary | null;
-  categories?: RegistryCategoryRead[];
   createdAt: string;
   createdBy?: ActorSummary | null;
   description: string;
   documentation?: string;
-  icons?: RegistryIcon[];
+  icons?: RegistryServerVersionReadIconsItem[];
   id: string;
   isLatest: boolean;
   name: string;
   organization?: ActorSummary | null;
   owner?: ActorSummary | null;
-  packages?: RegistryPackage[];
+  packages?: RegistryServerVersionReadPackagesItem[];
   partnerSupport?: PartnerSupportSummary[];
   publishedAt: string;
   publishedBy?: ActorSummary | null;
-  remotes?: RegistryRemote[];
-  repository?: RegistryRepository | null;
+  remotes?: RegistryServerVersionReadRemotesItem[];
+  repository?: RegistryServerVersionReadRepository;
   serverId: string;
   serverJson: RegistryServerVersionReadServerJson;
   status: RegistryServerVersionReadStatus;

@@ -325,7 +325,6 @@ class RegistryServerVersionRead(BaseModel):
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
     approver: ActorSummary | None = None
-    categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
         alias="partnerSupport",

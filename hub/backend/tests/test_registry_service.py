@@ -113,6 +113,25 @@ def version_model(server_id, version: str, *, is_latest: bool) -> RegistryServer
     )
 
 
+def category_model(slug: str = "weather", name: str = "Weather") -> RegistryCategory:
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+    return RegistryCategory(
+        id=uuid4(),
+        slug=slug,
+        name=name,
+        description=f"{name} category",
+        sort_order=100,
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+async def categories_by_slug(*args, **kwargs):
+    slugs = args[1] if len(args) > 1 else set()
+    return {slug: category_model(slug, slug.replace("-", " ").title()) for slug in slugs}
+
+
 def test_parse_cursor() -> None:
     assert service.parse_cursor(None) == 0
     assert service.parse_cursor("25") == 25
@@ -305,6 +324,7 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_categories)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_categories)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_categories)
     monkeypatch.setattr(service.repository, "list_users_by_ids", empty_categories)
 
@@ -343,6 +363,7 @@ async def test_create_server_version_syncs_declared_categories(monkeypatch) -> N
     monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
     monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
 
@@ -413,6 +434,7 @@ async def test_list_published_servers_returns_full_version_data(monkeypatch) -> 
     )
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
     monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
 
@@ -426,6 +448,7 @@ async def test_list_published_servers_returns_full_version_data(monkeypatch) -> 
     assert response.servers[0].name == server.name
     assert response.servers[0].repository == server.repository
     assert response.servers[0].icons == server.icons
+    assert response.servers[0].categories[0].slug == "weather"
     server_payload = response.servers[0].model_dump(by_alias=True)
     assert "server" not in server_payload
     assert "versions" in server_payload
@@ -499,6 +522,7 @@ async def test_list_published_servers_groups_versions_under_their_server(monkeyp
     )
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
     monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
 
@@ -512,6 +536,47 @@ async def test_list_published_servers_groups_versions_under_their_server(monkeyp
         weather.name: [weather_v2.id, weather_v1.id],
         calendar.name: [calendar_v1.id],
     }
+
+
+@pytest.mark.asyncio
+async def test_list_published_servers_uses_legacy_version_category_when_join_missing(
+    monkeypatch,
+) -> None:
+    server = server_model()
+    latest = version_model(server.id, "1.0.1", is_latest=True)
+    previous = version_model(server.id, "1.0.0", is_latest=False)
+    latest.server_json.pop("_meta", None)
+    previous.server_json["_meta"] = {
+        service.PUBLISHER_META_KEY: {
+            "category": "search",
+        },
+    }
+
+    async def published_servers(*args, **kwargs):
+        return [(server, latest)], 1
+
+    async def published_versions(*args, **kwargs):
+        return {server.id: [latest, previous]}
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "list_published_servers", published_servers)
+    monkeypatch.setattr(
+        service.repository,
+        "list_published_versions_for_servers",
+        published_versions,
+    )
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    response = await service.list_published_servers(FakeSession(), page=1)
+
+    assert response.servers[0].categories[0].slug == "search"
+    assert "categories" not in response.servers[0].versions[0].model_dump(by_alias=True)
 
 
 @pytest.mark.asyncio
@@ -538,6 +603,7 @@ async def test_create_server_version_sets_owner_and_actor_metadata(monkeypatch) 
     monkeypatch.setattr(service.repository, "sync_server_categories", noop)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
     monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
 

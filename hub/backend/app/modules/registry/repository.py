@@ -530,6 +530,21 @@ async def list_categories_for_servers(
     return categories_by_server
 
 
+async def list_categories_by_slugs(
+    session: AsyncSession,
+    slugs: set[str],
+) -> dict[str, RegistryCategory]:
+    if not slugs:
+        return {}
+    result = await session.execute(
+        select(RegistryCategory).where(
+            RegistryCategory.slug.in_(slugs),
+            RegistryCategory.status == "active",
+        )
+    )
+    return {category.slug: category for category in result.scalars().all()}
+
+
 async def sync_server_categories(
     session: AsyncSession,
     server_id: UUID,

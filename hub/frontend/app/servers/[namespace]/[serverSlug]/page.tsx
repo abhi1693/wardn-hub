@@ -702,7 +702,7 @@ export default function ServerDetailPage() {
   const description = selectedVersion?.description || server?.description || "";
   const documentation = selectedVersion?.documentation || server?.documentation || "";
   const websiteUrl = selectedVersion?.websiteUrl || server?.websiteUrl || "";
-  const category = selectedVersion?.categories?.[0] ?? server?.categories?.[0];
+  const category = server?.categories?.[0];
   const categoryName = category?.name ?? "";
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport

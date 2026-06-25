@@ -7,15 +7,73 @@
 import type {
   ErrorResponse,
   HTTPValidationError,
+  McpCatalogListParams,
   McpServersGetParams,
   McpServersGetVersionParams,
   McpServersListParams,
   McpServersListVersionsParams,
+  RegistryPublishedServerListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerVersionDetailResponse,
   RegistryServerVersionListResponse
 } from '../model';
+
+
+export type mcpCatalogListResponse200 = {
+  data: RegistryPublishedServerListResponse
+  status: 200
+}
+
+export type mcpCatalogListResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpCatalogListResponseSuccess = (mcpCatalogListResponse200) & {
+  headers: Headers;
+};
+export type mcpCatalogListResponseError = (mcpCatalogListResponse422) & {
+  headers: Headers;
+};
+
+export type mcpCatalogListResponse = (mcpCatalogListResponseSuccess | mcpCatalogListResponseError)
+
+export const getMcpCatalogListUrl = (params?: McpCatalogListParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `http://localhost:8000/api/v1/mcp/catalog?${stringifiedParams}` : `http://localhost:8000/api/v1/mcp/catalog`
+}
+
+/**
+ * @summary List Mcp Catalog
+ */
+export const mcpCatalogList = async (params?: McpCatalogListParams, options?: RequestInit): Promise<mcpCatalogListResponse> => {
+
+  const res = await fetch(getMcpCatalogListUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpCatalogListResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpCatalogListResponse
+}
 
 
 export type mcpServersListResponse200 = {

@@ -138,6 +138,20 @@ def category_values_from_server_json(server_json: dict) -> list[str]:
     return category_values_from_metadata(metadata if isinstance(metadata, dict) else {})
 
 
+def category_values_by_server_from_versions(
+    versions: list[RegistryServerVersion],
+    server_ids: set[UUID],
+) -> dict[UUID, list[str]]:
+    values_by_server: dict[UUID, list[str]] = {}
+    for version in versions:
+        if version.server_id not in server_ids or version.server_id in values_by_server:
+            continue
+        values = category_values_from_server_json(version.server_json or {})
+        if values:
+            values_by_server[version.server_id] = values
+    return values_by_server
+
+
 def public_user_name(user) -> str:
     return f"{user.first_name} {user.last_name}".strip()
 
@@ -325,10 +339,30 @@ async def build_trust_context(
         for _support, organization in records:
             organization_ids.add(organization.id)
 
+    server_ids = {server.id for server in servers} | {version.server_id for version in versions}
     categories = await repository.list_categories_for_servers(
         session,
-        {server.id for server in servers} | {version.server_id for version in versions},
+        server_ids,
     )
+    missing_category_server_ids = {
+        server_id
+        for server_id in server_ids
+        if not categories.get(server_id)
+    }
+    fallback_category_slugs = category_values_by_server_from_versions(
+        versions,
+        missing_category_server_ids,
+    )
+    categories_by_slug = await repository.list_categories_by_slugs(
+        session,
+        {slug for slugs in fallback_category_slugs.values() for slug in slugs},
+    )
+    for server_id, slugs in fallback_category_slugs.items():
+        fallback_categories = [
+            categories_by_slug[slug] for slug in slugs if slug in categories_by_slug
+        ]
+        if fallback_categories:
+            categories[server_id] = fallback_categories
 
     return RegistryTrustContext(
         users=await repository.list_users_by_ids(session, user_ids),
@@ -416,7 +450,6 @@ def version_summary(
         created_by=user_actor(version.created_by_user_id, trust),
         updated_by=user_actor(version.updated_by_user_id, trust),
         published_by=user_actor(version.publisher_user_id, trust),
-        categories=categories_for_server(version.server_id, trust),
         partner_support=partner_support_summary(
             version.name,
             trust,
