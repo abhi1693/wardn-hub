@@ -16,6 +16,7 @@ from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
     InvalidLoginError,
+    InvalidUserRoleUpdateError,
     UserAPITokenNotFoundError,
     UserNotFoundError,
 )
@@ -23,6 +24,7 @@ from app.modules.users.models import LocalAuthCredential, User, UserAPIToken
 from app.modules.users.schemas import (
     APITokenScope,
     LoginRequest,
+    UserAdminUpdate,
     UserAPITokenCreate,
     UserAPITokenUpdate,
     UserCreate,
@@ -72,6 +74,40 @@ async def bootstrap_superuser(session: AsyncSession, payload: UserCreate) -> Use
         raise BootstrapUserExistsError("bootstrap user already exists")
     user = await create_user(session, payload, is_superuser=True)
     await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def list_users(session: AsyncSession) -> list[User]:
+    return await repository.list_users(session)
+
+
+async def update_user_admin_flags(
+    session: AsyncSession,
+    actor: User,
+    user_id: uuid.UUID,
+    payload: UserAdminUpdate,
+) -> User:
+    user = await repository.get_user_by_id(session, user_id)
+    if user is None:
+        raise UserNotFoundError("user not found")
+
+    if user.id == actor.id:
+        if payload.is_active is False:
+            raise InvalidUserRoleUpdateError("you cannot deactivate your own account")
+        if payload.is_superuser is False:
+            raise InvalidUserRoleUpdateError("you cannot remove your own superuser access")
+
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+    if payload.is_superuser is not None:
+        user.is_superuser = payload.is_superuser
+    if payload.is_global_moderator is not None:
+        user.is_global_moderator = payload.is_global_moderator
+    if payload.is_global_partner_manager is not None:
+        user.is_global_partner_manager = payload.is_global_partner_manager
+
+    await session.flush()
     await session.refresh(user)
     return user
 

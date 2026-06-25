@@ -9,9 +9,10 @@ from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
     InvalidLoginError,
+    InvalidUserRoleUpdateError,
 )
 from app.modules.users.models import User
-from app.modules.users.schemas import LoginRequest, UserAPITokenCreate, UserCreate
+from app.modules.users.schemas import LoginRequest, UserAdminUpdate, UserAPITokenCreate, UserCreate
 
 
 class FakeSession:
@@ -108,6 +109,48 @@ async def test_authenticate_local_user_rejects_bad_password(monkeypatch) -> None
         await service.authenticate_local_user(
             FakeSession(),
             LoginRequest(email="admin@example.com", password="wrong-password"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_flags_sets_global_roles(monkeypatch) -> None:
+    actor = User(email="admin@example.com", is_superuser=True)
+    actor.id = uuid4()
+    target = User(email="reviewer@example.com")
+    target.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return target
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    user = await service.update_user_admin_flags(
+        FakeSession(),
+        actor,
+        target.id,
+        UserAdminUpdate(isGlobalModerator=True, isGlobalPartnerManager=True),
+    )
+
+    assert user.is_global_moderator is True
+    assert user.is_global_partner_manager is True
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_flags_rejects_self_superuser_removal(monkeypatch) -> None:
+    actor = User(email="admin@example.com", is_superuser=True)
+    actor.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return actor
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    with pytest.raises(InvalidUserRoleUpdateError):
+        await service.update_user_admin_flags(
+            FakeSession(),
+            actor,
+            actor.id,
+            UserAdminUpdate(isSuperuser=False),
         )
 
 

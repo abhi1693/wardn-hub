@@ -25,6 +25,13 @@ async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
     return result.scalar_one_or_none()
 
 
+async def list_users(session: AsyncSession) -> list[User]:
+    result = await session.execute(
+        select(User).order_by(User.created_at.desc(), User.email.asc())
+    )
+    return list(result.scalars().all())
+
+
 async def get_api_token_by_prefix(session: AsyncSession, token_prefix: str) -> UserAPIToken | None:
     result = await session.execute(
         select(UserAPIToken).where(UserAPIToken.token_prefix == token_prefix)
@@ -70,4 +77,3 @@ async def delete_user_api_token(
         )
     )
     return result.rowcount > 0
-

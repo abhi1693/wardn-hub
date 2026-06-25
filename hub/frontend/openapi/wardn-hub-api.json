@@ -2339,22 +2339,6 @@
         "title": "RegistryUserDetailResponse",
         "type": "object"
       },
-      "RegistryUserListResponse": {
-        "properties": {
-          "users": {
-            "items": {
-              "$ref": "#/components/schemas/RegistryUserRead"
-            },
-            "title": "Users",
-            "type": "array"
-          }
-        },
-        "required": [
-          "users"
-        ],
-        "title": "RegistryUserListResponse",
-        "type": "object"
-      },
       "RegistryUserRead": {
         "properties": {
           "avatarUrl": {
@@ -3436,6 +3420,56 @@
         "title": "UserAPITokenUpdate",
         "type": "object"
       },
+      "UserAdminUpdate": {
+        "properties": {
+          "isActive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isactive"
+          },
+          "isGlobalModerator": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isglobalmoderator"
+          },
+          "isGlobalPartnerManager": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isglobalpartnermanager"
+          },
+          "isSuperuser": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuperuser"
+          }
+        },
+        "title": "UserAdminUpdate",
+        "type": "object"
+      },
       "UserCreate": {
         "properties": {
           "email": {
@@ -3468,6 +3502,181 @@
           "password"
         ],
         "title": "UserCreate",
+        "type": "object"
+      },
+      "UserDirectoryListResponse": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserDirectoryRead"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "title": "UserDirectoryListResponse",
+        "type": "object"
+      },
+      "UserDirectoryRead": {
+        "properties": {
+          "avatarUrl": {
+            "default": "",
+            "title": "Avatarurl",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "firstName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firstname"
+          },
+          "htmlUrl": {
+            "default": "",
+            "title": "Htmlurl",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isActive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isactive"
+          },
+          "isGlobalModerator": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isglobalmoderator"
+          },
+          "isGlobalPartnerManager": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isglobalpartnermanager"
+          },
+          "isSuperuser": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuperuser"
+          },
+          "lastLoginAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastloginat"
+          },
+          "lastName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastname"
+          },
+          "login": {
+            "title": "Login",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "login"
+        ],
+        "title": "UserDirectoryRead",
         "type": "object"
       },
       "UserRead": {
@@ -4982,108 +5191,6 @@
         "summary": "Get Mcp Server Version",
         "tags": [
           "mcp"
-        ]
-      }
-    },
-    "/api/v1/mcp/users": {
-      "get": {
-        "operationId": "mcp_users_list",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RegistryUserListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Mcp Users",
-        "tags": [
-          "mcp-users"
-        ]
-      }
-    },
-    "/api/v1/mcp/users/{user_id}": {
-      "get": {
-        "operationId": "mcp_users_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "User Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RegistryUserDetailResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Mcp User",
-        "tags": [
-          "mcp-users"
         ]
       }
     },
@@ -6830,6 +6937,55 @@
         ]
       }
     },
+    "/api/v1/users": {
+      "get": {
+        "operationId": "users_list",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDirectoryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List User Records",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/bootstrap": {
       "post": {
         "operationId": "users_bootstrap",
@@ -6876,6 +7032,174 @@
           }
         },
         "summary": "Bootstrap User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "operationId": "users_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryUserDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get User Record",
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "operationId": "users_update_admin_flags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserAdminUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDirectoryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update User Record Admin Flags",
         "tags": [
           "users"
         ]

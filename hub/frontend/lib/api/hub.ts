@@ -25,6 +25,7 @@ import type {
   RegistryServerVersionCreate,
   RegistryServerVersionDetailResponse,
   RegistryServerVersionUpdate,
+  RegistryUserDetailResponse,
   ServerSourceImportRequest,
   ServerSourceImportResponse,
   SubmissionCreate,
@@ -37,27 +38,14 @@ import type {
   UserAPITokenListResponse,
   UserAPITokenRead,
   UserAPITokenUpdate,
+  UserAdminUpdate,
   UserCreate,
+  UserDirectoryListResponse,
+  UserDirectoryRead,
   UserRead,
 } from "@/lib/api/generated/model";
 
-export interface RegistryUserRead {
-  id: string;
-  login: string;
-  name?: string;
-  avatarUrl?: string;
-  htmlUrl?: string;
-}
-
-export interface RegistryUserListResponse {
-  users: RegistryUserRead[];
-}
-
-export interface RegistryUserDetailResponse {
-  user: RegistryUserRead;
-  servers: RegistryServerListResponse["servers"];
-  metadata: RegistryServerListResponse["metadata"];
-}
+export type RegistryUserRead = UserDirectoryRead;
 
 const API_PREFIX = "/api/v1";
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
@@ -165,12 +153,16 @@ export function listCategories() {
   return request<RegistryCategoryListResponse>("/mcp/categories");
 }
 
+export function listUsers() {
+  return request<UserDirectoryListResponse>("/users");
+}
+
 export function listRegistryUsers() {
-  return request<RegistryUserListResponse>("/mcp/users");
+  return listUsers();
 }
 
 export function getRegistryUser(userId: string) {
-  return request<RegistryUserDetailResponse>(`/mcp/users/${encodeURIComponent(userId)}`);
+  return request<RegistryUserDetailResponse>(`/users/${encodeURIComponent(userId)}`);
 }
 
 export function getServer(serverName: string) {
@@ -347,6 +339,14 @@ export function currentUser() {
 export function bootstrap(payload: BootstrapUserCreate) {
   return request<UserRead>("/users/bootstrap", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUserAdminFlags(userId: string, payload: UserAdminUpdate) {
+  return request<UserDirectoryRead>(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });

@@ -8,8 +8,62 @@ import type {
   BootstrapUserCreate,
   ErrorResponse,
   HTTPValidationError,
-  UserRead
+  RegistryUserDetailResponse,
+  UserAdminUpdate,
+  UserDirectoryListResponse,
+  UserDirectoryRead,
+  UserRead,
+  UsersGetParams
 } from '../model';
+
+
+export type usersListResponse200 = {
+  data: UserDirectoryListResponse
+  status: 200
+}
+
+export type usersListResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type usersListResponseSuccess = (usersListResponse200) & {
+  headers: Headers;
+};
+export type usersListResponseError = (usersListResponse422) & {
+  headers: Headers;
+};
+
+export type usersListResponse = (usersListResponseSuccess | usersListResponseError)
+
+export const getUsersListUrl = () => {
+
+
+
+
+  return `http://localhost:8000/api/v1/users`
+}
+
+/**
+ * @summary List User Records
+ */
+export const usersList = async ( options?: RequestInit): Promise<usersListResponse> => {
+
+  const res = await fetch(getUsersListUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: usersListResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as usersListResponse
+}
 
 
 export type usersBootstrapResponse201 = {
@@ -63,6 +117,129 @@ export const usersBootstrap = async (bootstrapUserCreate: BootstrapUserCreate, o
 
   const data: usersBootstrapResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as usersBootstrapResponse
+}
+
+
+export type usersGetResponse200 = {
+  data: RegistryUserDetailResponse
+  status: 200
+}
+
+export type usersGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type usersGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type usersGetResponseSuccess = (usersGetResponse200) & {
+  headers: Headers;
+};
+export type usersGetResponseError = (usersGetResponse404 | usersGetResponse422) & {
+  headers: Headers;
+};
+
+export type usersGetResponse = (usersGetResponseSuccess | usersGetResponseError)
+
+export const getUsersGetUrl = (userId: string,
+    params?: UsersGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `http://localhost:8000/api/v1/users/${userId}?${stringifiedParams}` : `http://localhost:8000/api/v1/users/${userId}`
+}
+
+/**
+ * @summary Get User Record
+ */
+export const usersGet = async (userId: string,
+    params?: UsersGetParams, options?: RequestInit): Promise<usersGetResponse> => {
+
+  const res = await fetch(getUsersGetUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: usersGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as usersGetResponse
+}
+
+
+export type usersUpdateAdminFlagsResponse200 = {
+  data: UserDirectoryRead
+  status: 200
+}
+
+export type usersUpdateAdminFlagsResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type usersUpdateAdminFlagsResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type usersUpdateAdminFlagsResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type usersUpdateAdminFlagsResponseSuccess = (usersUpdateAdminFlagsResponse200) & {
+  headers: Headers;
+};
+export type usersUpdateAdminFlagsResponseError = (usersUpdateAdminFlagsResponse400 | usersUpdateAdminFlagsResponse404 | usersUpdateAdminFlagsResponse422) & {
+  headers: Headers;
+};
+
+export type usersUpdateAdminFlagsResponse = (usersUpdateAdminFlagsResponseSuccess | usersUpdateAdminFlagsResponseError)
+
+export const getUsersUpdateAdminFlagsUrl = (userId: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/users/${userId}`
+}
+
+/**
+ * @summary Update User Record Admin Flags
+ */
+export const usersUpdateAdminFlags = async (userId: string,
+    userAdminUpdate: UserAdminUpdate, options?: RequestInit): Promise<usersUpdateAdminFlagsResponse> => {
+
+  const res = await fetch(getUsersUpdateAdminFlagsUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(userAdminUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: usersUpdateAdminFlagsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as usersUpdateAdminFlagsResponse
 }
 
 

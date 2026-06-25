@@ -36,6 +36,34 @@ class UserRead(BaseModel):
     updated_at: datetime
 
 
+class UserDirectoryRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: uuid.UUID
+    login: str
+    name: str = ""
+    avatar_url: str = Field(default="", alias="avatarUrl")
+    html_url: str = Field(default="", alias="htmlUrl")
+    email: EmailStr | None = None
+    first_name: str | None = Field(default=None, alias="firstName")
+    last_name: str | None = Field(default=None, alias="lastName")
+    display_name: str | None = Field(default=None, alias="displayName")
+    is_active: bool | None = Field(default=None, alias="isActive")
+    is_superuser: bool | None = Field(default=None, alias="isSuperuser")
+    is_global_moderator: bool | None = Field(default=None, alias="isGlobalModerator")
+    is_global_partner_manager: bool | None = Field(
+        default=None,
+        alias="isGlobalPartnerManager",
+    )
+    last_login_at: datetime | None = Field(default=None, alias="lastLoginAt")
+    created_at: datetime | None = Field(default=None, alias="createdAt")
+    updated_at: datetime | None = Field(default=None, alias="updatedAt")
+
+
+class UserDirectoryListResponse(BaseModel):
+    users: list[UserDirectoryRead]
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: SecretStr = Field(min_length=8)
@@ -45,6 +73,18 @@ class UserCreate(BaseModel):
 
 class BootstrapUserCreate(UserCreate):
     pass
+
+
+class UserAdminUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    is_active: bool | None = Field(default=None, alias="isActive")
+    is_superuser: bool | None = Field(default=None, alias="isSuperuser")
+    is_global_moderator: bool | None = Field(default=None, alias="isGlobalModerator")
+    is_global_partner_manager: bool | None = Field(
+        default=None,
+        alias="isGlobalPartnerManager",
+    )
 
 
 class LoginRequest(BaseModel):

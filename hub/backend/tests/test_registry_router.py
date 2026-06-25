@@ -15,8 +15,6 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
 
     assert {
         "/api/v1/mcp/categories",
-        "/api/v1/mcp/users",
-        "/api/v1/mcp/users/{user_id}",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/versions",
@@ -29,7 +27,8 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         schema["paths"]["/api/v1/mcp/categories"]["get"]["operationId"] == "mcp_categories_list"
     )
     assert schema["paths"]["/api/v1/mcp/servers"]["get"]["operationId"] == "mcp_servers_list"
-    assert schema["paths"]["/api/v1/mcp/users"]["get"]["operationId"] == "mcp_users_list"
+    assert schema["paths"]["/api/v1/users"]["get"]["operationId"] == "users_list"
+    assert schema["paths"]["/api/v1/users/{user_id}"]["get"]["operationId"] == "users_get"
     assert (
         schema["paths"]["/api/v1/admin/mcp/servers"]["post"]["operationId"]
         == "admin_mcp_servers_create_version"

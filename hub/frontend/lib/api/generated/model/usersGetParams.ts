@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type McpUsersGetParams = {
+export type UsersGetParams = {
 cursor?: string | null;
 /**
  * @minimum 1

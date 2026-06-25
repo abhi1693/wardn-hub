@@ -25,3 +25,6 @@ class UserAPITokenNotFoundError(UserError):
 class UserNotFoundError(UserError):
     pass
 
+
+class InvalidUserRoleUpdateError(UserError):
+    pass
