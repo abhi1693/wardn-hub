@@ -1,23 +1,93 @@
 "use client";
 
 import Link from "next/link";
-import { FileCheck2, Pencil, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  AlertCircle,
+  CalendarClock,
+  CheckCircle2,
+  CircleDashed,
+  Clock3,
+  FileCheck2,
+  FileText,
+  GitBranch,
+  Pencil,
+  Plus,
+  RefreshCw,
+  SearchX,
+  XCircle,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { PublicHeader } from "@/components/site-header";
+import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { HubApiError, currentUser, listSubmissions } from "@/lib/api/hub";
 import type { SubmissionRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
 type LoadState = "loading" | "ready" | "error" | "auth";
+type StatusFilter = "all" | SubmissionRead["status"];
+type SubmissionGroup = {
+  latest: SubmissionRead;
+  name: string;
+  submissions: SubmissionRead[];
+};
+
+const statusOrder: SubmissionRead["status"][] = [
+  "draft",
+  "submitted",
+  "approved",
+  "rejected",
+  "withdrawn",
+  "published",
+];
+
+const statusMeta: Record<
+  SubmissionRead["status"],
+  {
+    badge: string;
+    icon: typeof CircleDashed;
+    label: string;
+  }
+> = {
+  approved: {
+    badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    icon: CheckCircle2,
+    label: "Approved",
+  },
+  draft: {
+    badge: "border-slate-200 bg-slate-50 text-slate-700",
+    icon: CircleDashed,
+    label: "Draft",
+  },
+  published: {
+    badge: "border-green-200 bg-green-50 text-green-700",
+    icon: CheckCircle2,
+    label: "Published",
+  },
+  rejected: {
+    badge: "border-red-200 bg-red-50 text-red-700",
+    icon: XCircle,
+    label: "Rejected",
+  },
+  submitted: {
+    badge: "border-amber-200 bg-amber-50 text-amber-700",
+    icon: Clock3,
+    label: "In review",
+  },
+  withdrawn: {
+    badge: "border-zinc-200 bg-zinc-50 text-zinc-700",
+    icon: XCircle,
+    label: "Withdrawn",
+  },
+};
+
+const submissionTypeLabels: Record<SubmissionRead["submissionType"], string> = {
+  metadata_edit: "Metadata edit",
+  new_server: "New server",
+  new_version: "New version",
+  takedown_appeal: "Appeal",
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "Not set";
@@ -27,29 +97,244 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
-function statusClass(status: SubmissionRead["status"]) {
-  switch (status) {
-    case "approved":
-    case "published":
-      return "border-green-200 bg-green-50 text-green-700";
-    case "rejected":
-    case "withdrawn":
-      return "border-red-200 bg-red-50 text-red-700";
-    case "submitted":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    default:
-      return "border-border bg-muted text-muted-foreground";
-  }
-}
-
 function isEditableSubmission(status: SubmissionRead["status"]) {
   return status !== "published";
+}
+
+function getStatusCounts(submissions: SubmissionRead[]) {
+  return submissions.reduce(
+    (counts, submission) => {
+      counts[submission.status] += 1;
+      counts.all += 1;
+      return counts;
+    },
+    {
+      all: 0,
+      approved: 0,
+      draft: 0,
+      published: 0,
+      rejected: 0,
+      submitted: 0,
+      withdrawn: 0,
+    } satisfies Record<StatusFilter, number>,
+  );
+}
+
+function sortSubmissions(submissions: SubmissionRead[]) {
+  return [...submissions].sort((left, right) => {
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function submissionIconUrl(submission: SubmissionRead) {
+  const icons = isRecord(submission.serverJson) ? submission.serverJson.icons : null;
+  if (!Array.isArray(icons)) return "";
+  const icon = icons.find((item) => {
+    if (!isRecord(item)) return false;
+    return typeof item.src === "string" || typeof item.url === "string";
+  });
+  if (!isRecord(icon)) return "";
+  return typeof icon.src === "string" ? icon.src : typeof icon.url === "string" ? icon.url : "";
+}
+
+function groupSubmissionsByServer(submissions: SubmissionRead[]) {
+  const groups = new Map<string, SubmissionRead[]>();
+
+  for (const submission of submissions) {
+    groups.set(submission.name, [...(groups.get(submission.name) ?? []), submission]);
+  }
+
+  return [...groups.entries()]
+    .map(([name, groupedSubmissions]) => {
+      const sorted = sortSubmissions(groupedSubmissions);
+      return {
+        latest: sorted[0],
+        name,
+        submissions: sorted,
+      };
+    })
+    .filter((group): group is SubmissionGroup => Boolean(group.latest))
+    .sort((left, right) => {
+      return new Date(right.latest.updatedAt).getTime() - new Date(left.latest.updatedAt).getTime();
+    });
+}
+
+function StatePanel({
+  action,
+  detail,
+  icon: Icon,
+  tone = "default",
+  title,
+}: {
+  action?: React.ReactNode;
+  detail: string;
+  icon: typeof FileCheck2;
+  tone?: "default" | "danger";
+  title: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid min-h-80 place-items-center rounded-lg border border-dashed bg-white px-6 py-12 text-center shadow-[var(--shadow-card)]",
+        tone === "danger" ? "border-red-200 bg-red-50/40" : "border-border",
+      )}
+    >
+      <div className="grid max-w-md justify-items-center gap-4">
+        <span
+          className={cn(
+            "inline-flex size-12 items-center justify-center rounded-full border",
+            tone === "danger"
+              ? "border-red-200 bg-white text-red-600"
+              : "border-slate-200 bg-slate-50 text-slate-600",
+          )}
+        >
+          <Icon className="size-5" />
+        </span>
+        <div className="grid gap-1">
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+          <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+        </div>
+        {action}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: SubmissionRead["status"] }) {
+  const meta = statusMeta[status];
+  const Icon = meta.icon;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex min-h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-bold",
+        meta.badge,
+      )}
+    >
+      <Icon className="size-3.5" />
+      {meta.label}
+    </span>
+  );
+}
+
+function VersionSubmissionRow({ submission }: { submission: SubmissionRead }) {
+  const isEditable = isEditableSubmission(submission.status);
+  const typeLabel = submissionTypeLabels[submission.submissionType] ?? submission.submissionType;
+  const Icon = submission.submissionType === "new_version" ? GitBranch : FileText;
+
+  return (
+    <div className="grid gap-3 rounded-md border border-slate-100 bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-[36px_minmax(0,1fr)]">
+        <Link
+          aria-label={`Open ${submission.name} ${submission.version}`}
+          className="inline-flex size-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+          href={`/submissions/${submission.id}`}
+        >
+          <Icon className="size-4" />
+        </Link>
+        <div className="grid min-w-0 gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Link
+              className="font-bold text-foreground hover:underline"
+              href={`/submissions/${submission.id}`}
+            >
+              v{submission.version}
+            </Link>
+            <StatusBadge status={submission.status} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>{typeLabel}</span>
+            <span aria-hidden="true">/</span>
+            <span>Updated {formatDate(submission.updatedAt)}</span>
+            {submission.submittedAt ? (
+              <>
+                <span aria-hidden="true">/</span>
+                <span>Submitted {formatDate(submission.submittedAt)}</span>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <Button asChild size="sm">
+          <Link
+            href={
+              isEditable
+                ? `/submit?submission=${submission.id}`
+                : `/submit?submission=${submission.id}&version=new`
+            }
+          >
+            {isEditable ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+            {isEditable ? "Edit" : "New version"}
+          </Link>
+        </Button>
+      </div>
+
+      {submission.rejectionMessage ? (
+        <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700 lg:col-span-2">
+          {submission.rejectionMessage}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SubmissionGroupCard({ group }: { group: SubmissionGroup }) {
+  const versionCount = group.submissions.length;
+  const iconUrl =
+    submissionIconUrl(group.latest) ||
+    group.submissions.map(submissionIconUrl).find(Boolean) ||
+    "";
+
+  return (
+    <article className="grid gap-4 rounded-lg border border-border bg-white p-4 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[0_8px_24px_rgb(15_23_42_/_7%)]">
+      <div className="grid min-w-0 gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Link
+            aria-label={`Open latest submission for ${group.name}`}
+            className="inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+            href={`/submissions/${group.latest.id}`}
+          >
+            <ServerIcon src={iconUrl} title={group.name} />
+          </Link>
+          <Link
+            className="min-w-0 overflow-hidden text-ellipsis text-base font-bold text-foreground hover:underline"
+            href={`/submissions/${group.latest.id}`}
+          >
+            {group.name}
+          </Link>
+          <StatusBadge status={group.latest.status} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground">
+            {versionCount} {versionCount === 1 ? "submission" : "submissions"}
+          </span>
+          <span aria-hidden="true">/</span>
+          <span>Latest v{group.latest.version}</span>
+          <span aria-hidden="true">/</span>
+          <span>Updated {formatDate(group.latest.updatedAt)}</span>
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        {group.submissions.map((submission) => (
+          <VersionSubmissionRow key={submission.id} submission={submission} />
+        ))}
+      </div>
+    </article>
+  );
 }
 
 export default function SubmissionsPage() {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
+  const [filter, setFilter] = useState<StatusFilter>("all");
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -58,7 +343,11 @@ export default function SubmissionsPage() {
       Promise.all([currentUser(), listSubmissions()])
         .then(([current, response]) => {
           setSubmissions(
-            response.submissions.filter((submission) => submission.submitterUserId === current.id),
+            sortSubmissions(
+              response.submissions.filter(
+                (submission) => submission.submitterUserId === current.id,
+              ),
+            ),
           );
           setState("ready");
         })
@@ -70,107 +359,149 @@ export default function SubmissionsPage() {
     return () => window.clearTimeout(timeoutId);
   }, []);
 
+  const counts = useMemo(() => getStatusCounts(submissions), [submissions]);
+  const filteredSubmissions = useMemo(() => {
+    if (filter === "all") return submissions;
+    return submissions.filter((submission) => submission.status === filter);
+  }, [filter, submissions]);
+  const allGroupedSubmissions = useMemo(() => groupSubmissionsByServer(submissions), [submissions]);
+  const groupedSubmissions = useMemo(
+    () => groupSubmissionsByServer(filteredSubmissions),
+    [filteredSubmissions],
+  );
+  const visibleStatusFilters = useMemo(() => {
+    return statusOrder.filter((status) => counts[status] > 0 || filter === status);
+  }, [counts, filter]);
+
   return (
     <>
       <PublicHeader />
-      <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
-      <div className="mx-auto grid w-full max-w-[var(--content-max-width)] gap-5">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="grid gap-1.5">
-                <CardDescription className="flex items-center gap-2 uppercase">
-                  <FileCheck2 className="size-4" />
-                  My submissions
-                </CardDescription>
-                <CardTitle className="text-2xl">Submission review</CardTitle>
-              </div>
-              <Button asChild size="sm">
-                <Link href="/submit">
-                  <Plus className="size-4" />
-                  Add
-                </Link>
-              </Button>
+      <main
+        className="min-h-[calc(100dvh-64px)] bg-[#f6f8fb] py-8"
+        style={{
+          paddingInline:
+            "max(var(--content-gutter), calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter)))",
+        }}
+      >
+        <div className="grid gap-5">
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="grid gap-1">
+              <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
+                <FileCheck2 className="size-6 text-muted-foreground" />
+                <span>
+                  Submission review
+                </span>
+              </h1>
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                Track MCP server drafts, reviews, and published versions.
+              </p>
             </div>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            {state === "loading" ? (
-              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                Loading submissions.
+            <Button asChild>
+              <Link href="/submit">
+                <Plus className="size-4" />
+                Add submission
+              </Link>
+            </Button>
+          </header>
+
+          <section className="grid gap-4">
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="mr-1 text-sm font-bold text-foreground">
+                  {allGroupedSubmissions.length}{" "}
+                  {allGroupedSubmissions.length === 1 ? "server" : "servers"}
+                  <span className="ml-1 text-muted-foreground">
+                    / {counts.all} {counts.all === 1 ? "submission" : "submissions"}
+                  </span>
+                </span>
+                <button
+                  className={cn(
+                    "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
+                    filter === "all"
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                  onClick={() => setFilter("all")}
+                  type="button"
+                >
+                  All
+                  <span className="rounded bg-white/15 px-1.5 text-xs">{counts.all}</span>
+                </button>
+                {visibleStatusFilters.map((status) => (
+                  <button
+                    className={cn(
+                      "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
+                      filter === status
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                    key={status}
+                    onClick={() => setFilter(status)}
+                    type="button"
+                  >
+                    {statusMeta[status].label}
+                    <span className="rounded bg-current/10 px-1.5 text-xs">{counts[status]}</span>
+                  </button>
+                ))}
               </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CalendarClock className="size-4" />
+                Sorted by latest update
+              </div>
+            </div>
+
+            {state === "loading" ? (
+              <StatePanel
+                detail="Fetching the latest submission records for your account."
+                icon={RefreshCw}
+                title="Loading submissions"
+              />
             ) : null}
             {state === "auth" ? (
-              <div className="grid gap-3 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                <div>Sign in to view your submissions.</div>
-                <div>
+              <StatePanel
+                action={
                   <Button asChild size="sm">
                     <Link href="/login?next=submissions">Sign in</Link>
                   </Button>
-                </div>
-              </div>
+                }
+                detail="Authentication is required before submission records can be shown."
+                icon={FileCheck2}
+                title="Sign in required"
+              />
             ) : null}
             {state === "error" ? (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
-              </div>
+              <StatePanel detail={error} icon={AlertCircle} title="Unable to load submissions" tone="danger" />
             ) : null}
-            {state === "ready" ? (
+            {state === "ready" && submissions.length === 0 ? (
+              <StatePanel
+                action={
+                  <Button asChild size="sm">
+                    <Link href="/submit">
+                      <Plus className="size-4" />
+                      Add submission
+                    </Link>
+                  </Button>
+                }
+                detail="Create the first registry submission for a server or version."
+                icon={FileCheck2}
+                title="No submissions yet"
+              />
+            ) : null}
+            {state === "ready" && submissions.length > 0 && filteredSubmissions.length === 0 ? (
+              <StatePanel
+                detail="No submissions match the selected status."
+                icon={SearchX}
+                title="Nothing in this status"
+              />
+            ) : null}
+            {state === "ready" && groupedSubmissions.length > 0 ? (
               <div className="grid gap-3">
-                {submissions.length === 0 ? (
-                  <div className="grid gap-3 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    <div>No submissions yet.</div>
-                    <div>
-                      <Button asChild size="sm">
-                        <Link href="/submit">Submit server</Link>
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-                {submissions.map((submission) => (
-                  <div
-                    className="grid gap-3 rounded-md border bg-card p-4 text-foreground shadow-[var(--shadow-card)] hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_auto]"
-                    key={submission.id}
-                  >
-                    <div className="grid gap-1">
-                      <Link className="font-medium hover:underline" href={`/submissions/${submission.id}`}>
-                        {submission.name}
-                      </Link>
-                      <div className="text-sm text-muted-foreground">
-                        {submission.version} - {submission.submissionType} - updated{" "}
-                        {formatDate(submission.updatedAt)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        {isEditableSubmission(submission.status) ? (
-                          <Button asChild aria-label={`Edit ${submission.name}`} size="icon" variant="outline">
-                            <Link href={`/submit?submission=${submission.id}`} title="Edit submission">
-                              <Pencil className="size-4" />
-                            </Link>
-                          </Button>
-                        ) : (
-                          <Button asChild aria-label={`Add version for ${submission.name}`} size="icon" variant="outline">
-                            <Link href={`/submit?submission=${submission.id}&version=new`} title="Add version">
-                              <Plus className="size-4" />
-                            </Link>
-                          </Button>
-                        )}
-                      </div>
-                      <span
-                        className={cn(
-                          "rounded-full border px-3 py-1 text-xs font-medium",
-                          statusClass(submission.status),
-                        )}
-                      >
-                        {submission.status}
-                      </span>
-                    </div>
-                  </div>
+                {groupedSubmissions.map((group) => (
+                  <SubmissionGroupCard key={group.name} group={group} />
                 ))}
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </section>
         </div>
       </main>
     </>
