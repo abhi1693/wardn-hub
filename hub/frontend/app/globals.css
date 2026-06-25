@@ -221,6 +221,12 @@ button {
   gap: 14px;
 }
 
+.user-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .category-card {
   display: grid;
   min-height: 126px;
@@ -256,6 +262,96 @@ button {
   line-height: 22px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.user-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  min-height: 94px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  padding: 16px;
+  text-decoration: none;
+}
+
+.user-card:hover,
+.user-card:focus-visible {
+  border-color: var(--border);
+  outline: none;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 9%);
+}
+
+.user-card-avatar,
+.user-page-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background-color: #ffffff;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #334155;
+}
+
+.user-card-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background-size: 44px 44px;
+}
+
+.user-card strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.user-card small {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.user-page-header {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 24px;
+}
+
+.user-page-avatar {
+  width: 80px;
+  height: 80px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background-size: 80px 80px;
+}
+
+.user-page-header h1 {
+  margin: 0;
+  color: #000000;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 40px;
+}
+
+.user-page-header p {
+  overflow-wrap: anywhere;
+  margin: 6px 0 0;
+  color: #555f6d;
+  font-size: 15px;
+  line-height: 24px;
 }
 
 .hero-section {
@@ -2033,6 +2129,7 @@ button {
 	  .toolbar,
 	  .hero-search,
 	  .category-grid,
+	  .user-grid,
 	  .catalog-grid,
 	  .registry-layout,
 	  .server-detail-layout,

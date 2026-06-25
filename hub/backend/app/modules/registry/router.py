@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,24 +21,30 @@ from app.modules.registry.schemas import (
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
     RegistryServerVersionUpdate,
+    RegistryUserDetailResponse,
+    RegistryUserListResponse,
 )
 from app.modules.registry.service import (
     create_server_version,
     delete_server,
     delete_server_version,
+    get_registry_user_detail,
     get_server_detail,
     get_version_detail,
     list_categories,
+    list_registry_users,
     list_servers,
     list_versions,
     set_latest_version,
     update_server_version,
 )
 from app.modules.users.dependencies import require_superuser
+from app.modules.users.exceptions import UserNotFoundError
 from app.modules.users.models import User
 
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
 categories_router = APIRouter(prefix="/mcp/categories", tags=["mcp-categories"])
+users_router = APIRouter(prefix="/mcp/users", tags=["mcp-users"])
 admin_router = APIRouter(prefix="/admin/mcp/servers", tags=["admin-mcp"])
 
 
@@ -50,6 +57,43 @@ async def list_mcp_categories(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RegistryCategoryListResponse:
     return await list_categories(session)
+
+
+@users_router.get(
+    "",
+    response_model=RegistryUserListResponse,
+    operation_id="mcp_users_list",
+)
+async def list_mcp_users(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryUserListResponse:
+    return await list_registry_users(session)
+
+
+@users_router.get(
+    "/{user_id}",
+    response_model=RegistryUserDetailResponse,
+    operation_id="mcp_users_get",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_user(
+    user_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> RegistryUserDetailResponse:
+    try:
+        return await get_registry_user_detail(
+            session,
+            user_id,
+            cursor=cursor,
+            limit=limit,
+        )
+    except UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="user not found",
+        ) from exc
 
 
 @public_router.get(

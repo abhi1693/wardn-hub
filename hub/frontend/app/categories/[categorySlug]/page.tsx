@@ -57,6 +57,7 @@ export default function CategoryDetailPage() {
         <nav>
           <Link href="/">Explore</Link>
           <Link href="/categories">Categories</Link>
+          <Link href="/users">Users</Link>
           <Link href="/submissions">Submissions</Link>
           <Link className="server-detail-nav-cta" href="/submit">
             List Server

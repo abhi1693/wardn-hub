@@ -114,8 +114,17 @@ function ActorValue({ actor }: { actor: unknown }) {
   if (!actor || typeof actor !== "object") return <>Not available</>;
   const record = actor as Record<string, unknown>;
   const label = actorLabel(actor);
+  const actorType = stringValue(record.type);
+  const actorId = stringValue(record.id);
   const href = stringValue(record.htmlUrl) || stringValue(record.url);
 
+  if (actorType === "User" && actorId) {
+    return (
+      <Link className="server-detail-inline-link" href={`/users/${encodeURIComponent(actorId)}`}>
+        {label}
+      </Link>
+    );
+  }
   if (!href) return <>{label}</>;
   return (
     <a href={href} rel="noreferrer" target="_blank">
@@ -726,6 +735,7 @@ export default function ServerDetailPage() {
         <nav>
           <Link href="/">Explore</Link>
           <Link href="/categories">Categories</Link>
+          <Link href="/users">Users</Link>
           <Link href="/submissions">Submissions</Link>
           <Link className="server-detail-nav-cta" href="/submit">
             List Server

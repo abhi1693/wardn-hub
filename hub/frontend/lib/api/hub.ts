@@ -25,6 +25,24 @@ import type {
   UserRead,
 } from "@/lib/api/generated/model";
 
+export interface RegistryUserRead {
+  id: string;
+  login: string;
+  name?: string;
+  avatarUrl?: string;
+  htmlUrl?: string;
+}
+
+export interface RegistryUserListResponse {
+  users: RegistryUserRead[];
+}
+
+export interface RegistryUserDetailResponse {
+  user: RegistryUserRead;
+  servers: RegistryServerListResponse["servers"];
+  metadata: RegistryServerListResponse["metadata"];
+}
+
 const DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1";
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 
@@ -135,6 +153,14 @@ export async function listPublishedServers(params: {
 
 export function listCategories() {
   return request<RegistryCategoryListResponse>("/mcp/categories");
+}
+
+export function listRegistryUsers() {
+  return request<RegistryUserListResponse>("/mcp/users");
+}
+
+export function getRegistryUser(userId: string) {
+  return request<RegistryUserDetailResponse>(`/mcp/users/${encodeURIComponent(userId)}`);
 }
 
 export function getServer(serverName: string) {

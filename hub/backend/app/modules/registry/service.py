@@ -28,7 +28,11 @@ from app.modules.registry.schemas import (
     RegistryServerVersionListResponse,
     RegistryServerVersionRead,
     RegistryServerVersionUpdate,
+    RegistryUserDetailResponse,
+    RegistryUserListResponse,
+    RegistryUserRead,
 )
+from app.modules.users.exceptions import UserNotFoundError
 
 
 @dataclass
@@ -115,14 +119,31 @@ def category_values_from_server_json(server_json: dict) -> list[str]:
     return category_values_from_metadata(metadata if isinstance(metadata, dict) else {})
 
 
+def public_user_name(user) -> str:
+    return f"{user.first_name} {user.last_name}".strip()
+
+
+def public_user_login(user) -> str:
+    return public_user_name(user) or str(user.id)
+
+
 def actor_summary_for_user(user) -> ActorSummary:
     return ActorSummary(
         id=user.id,
-        login=user.email,
+        login=public_user_login(user),
         type="User",
-        name=user.display_name,
+        name=public_user_name(user),
         url=f"/api/v1/users/{user.id}",
-        htmlUrl="",
+        htmlUrl=f"/users/{user.id}",
+    )
+
+
+def public_user_summary(user) -> RegistryUserRead:
+    return RegistryUserRead(
+        id=user.id,
+        login=public_user_login(user),
+        name=public_user_name(user),
+        htmlUrl=f"/users/{user.id}",
     )
 
 
@@ -647,6 +668,36 @@ async def list_categories(session) -> RegistryCategoryListResponse:
     categories = await repository.list_categories(session)
     return RegistryCategoryListResponse(
         categories=[category_summary(category) for category in categories]
+    )
+
+
+async def list_registry_users(session) -> RegistryUserListResponse:
+    users = await repository.list_public_registry_users(session)
+    return RegistryUserListResponse(users=[public_user_summary(user) for user in users])
+
+
+async def get_registry_user_detail(
+    session,
+    user_id: UUID,
+    *,
+    cursor: str | None,
+    limit: int,
+) -> RegistryUserDetailResponse:
+    user = (await repository.list_users_by_ids(session, {user_id})).get(user_id)
+    if user is None or not user.is_active:
+        raise UserNotFoundError("user not found")
+
+    offset = parse_cursor(cursor)
+    servers, next_cursor = await repository.list_servers_for_user(
+        session,
+        user_id,
+        offset=offset,
+        limit=limit,
+    )
+    return RegistryUserDetailResponse(
+        user=public_user_summary(user),
+        servers=[await server_with_latest(session, server) for server in servers],
+        metadata=RegistryListMetadata(count=len(servers), next_cursor=next_cursor),
     )
 
 

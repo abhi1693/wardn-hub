@@ -181,6 +181,26 @@ class RegistryServerListResponse(BaseModel):
     metadata: RegistryListMetadata
 
 
+class RegistryUserRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    login: str
+    name: str = ""
+    avatar_url: str = Field(default="", alias="avatarUrl")
+    html_url: str = Field(default="", alias="htmlUrl")
+
+
+class RegistryUserListResponse(BaseModel):
+    users: list[RegistryUserRead]
+
+
+class RegistryUserDetailResponse(BaseModel):
+    user: RegistryUserRead
+    servers: list[RegistryServerRead]
+    metadata: RegistryListMetadata
+
+
 class RegistryCategoryListResponse(BaseModel):
     categories: list[RegistryCategoryRead]
 

@@ -33,6 +33,8 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/versions",
         "/api/v1/mcp/servers/{server_name}/versions/{version}",
+        "/api/v1/mcp/users",
+        "/api/v1/mcp/users/{user_id}",
         "/api/v1/organizations",
         "/api/v1/organizations/{organization_id}",
         "/api/v1/organizations/{organization_id}/memberships",

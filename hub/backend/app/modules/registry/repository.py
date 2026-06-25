@@ -208,6 +208,73 @@ async def list_users_by_ids(session: AsyncSession, user_ids: set[UUID]) -> dict[
     return {user.id: user for user in result.scalars().all()}
 
 
+async def list_public_registry_users(session: AsyncSession) -> list[User]:
+    server_owner_ids = (
+        select(RegistryServer.owner_user_id)
+        .where(
+            RegistryServer.status == "active",
+            RegistryServer.current_version_id.is_not(None),
+            RegistryServer.owner_user_id.is_not(None),
+        )
+    )
+    version_user_ids = (
+        select(RegistryServerVersion.publisher_user_id)
+        .join(RegistryServer, RegistryServer.id == RegistryServerVersion.server_id)
+        .where(
+            RegistryServer.status == "active",
+            RegistryServerVersion.status == "active",
+            RegistryServerVersion.is_latest.is_(True),
+            RegistryServerVersion.publisher_user_id.is_not(None),
+        )
+    )
+    result = await session.execute(
+        select(User)
+        .where(
+            User.is_active.is_(True),
+            or_(
+                User.id.in_(server_owner_ids),
+                User.id.in_(version_user_ids),
+            ),
+        )
+        .order_by(User.display_name.asc(), User.email.asc())
+    )
+    return list(result.scalars().unique().all())
+
+
+async def list_servers_for_user(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    offset: int,
+    limit: int,
+) -> tuple[list[RegistryServer], str]:
+    statement = (
+        visible_servers_query(False)
+        .join(
+            RegistryServerVersion,
+            RegistryServerVersion.id == RegistryServer.current_version_id,
+        )
+        .where(
+            RegistryServer.status == "active",
+            RegistryServerVersion.status == "active",
+            or_(
+                RegistryServer.owner_user_id == user_id,
+                RegistryServer.created_by_user_id == user_id,
+                RegistryServer.updated_by_user_id == user_id,
+                RegistryServerVersion.owner_user_id == user_id,
+                RegistryServerVersion.created_by_user_id == user_id,
+                RegistryServerVersion.updated_by_user_id == user_id,
+                RegistryServerVersion.publisher_user_id == user_id,
+            ),
+        )
+        .order_by(RegistryServer.name.asc())
+    )
+    result = await session.execute(statement.offset(offset).limit(limit + 1))
+    rows = list(result.scalars().unique().all())
+    next_cursor = str(offset + limit) if len(rows) > limit else ""
+    return rows[:limit], next_cursor
+
+
 async def list_organizations_by_ids(
     session: AsyncSession,
     organization_ids: set[UUID],
