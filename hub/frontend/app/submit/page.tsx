@@ -84,6 +84,7 @@ type RemoteTarget = {
   type: string;
   url: string;
   headers: HeaderField[];
+  queryParameters: HeaderField[];
 };
 
 type PackageTarget = {
@@ -222,6 +223,7 @@ function emptyRemote(): RemoteTarget {
     type: "streamable-http",
     url: "",
     headers: [],
+    queryParameters: [],
   };
 }
 
@@ -439,8 +441,8 @@ function initialHeaders(value: unknown): HeaderField[] {
     id: createId("header"),
     name: stringValue(header.name),
     description: stringValue(header.description),
-    required: booleanValue(header.isRequired),
-    secret: booleanValue(header.isSecret),
+    required: booleanValue(header.isRequired ?? header.required),
+    secret: booleanValue(header.isSecret ?? header.secret),
   }));
 }
 
@@ -549,6 +551,7 @@ function importedRemotes(value: unknown): RemoteTarget[] {
     type: stringValue(remote.type) || "streamable-http",
     url: stringValue(remote.url),
     headers: initialHeaders(remote.headers),
+    queryParameters: initialHeaders(remote.queryParameters ?? remote.queryParams),
   }));
 }
 
@@ -644,6 +647,17 @@ function publicHeaders(headers: HeaderField[]) {
       description: header.description.trim(),
       isRequired: header.required,
       isSecret: header.secret,
+    }));
+}
+
+function publicQueryParameters(queryParameters: HeaderField[]) {
+  return queryParameters
+    .filter((parameter) => parameter.name.trim())
+    .map((parameter) => ({
+      name: parameter.name.trim(),
+      description: parameter.description.trim(),
+      isRequired: parameter.required,
+      isSecret: parameter.secret,
     }));
 }
 
@@ -1014,6 +1028,25 @@ export default function SubmitServerPage() {
     );
   }
 
+  function updateRemoteQueryParameter(
+    remoteId: string,
+    parameterId: string,
+    patch: Partial<HeaderField>,
+  ) {
+    setRemotes((current) =>
+      current.map((remote) =>
+        remote.id === remoteId
+          ? {
+              ...remote,
+              queryParameters: remote.queryParameters.map((parameter) =>
+                parameter.id === parameterId ? { ...parameter, ...patch } : parameter,
+              ),
+            }
+          : remote,
+      ),
+    );
+  }
+
   function updatePackage(id: string, patch: Partial<PackageTarget>) {
     setPackages((current) =>
       current.map((packageTarget) =>
@@ -1159,6 +1192,7 @@ export default function SubmitServerPage() {
           type: remote.type.trim() || "streamable-http",
           url: remote.url.trim(),
           headers: publicHeaders(remote.headers),
+          queryParameters: publicQueryParameters(remote.queryParameters),
         }));
       const packagePayload = packages
         .filter((packageTarget) => packageTarget.identifier.trim())
@@ -1724,6 +1758,85 @@ export default function SubmitServerPage() {
                             onClick={() =>
                               updateRemote(remote.id, {
                                 headers: remote.headers.filter((item) => item.id !== header.id),
+                              })
+                            }
+                            size="icon"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium">Query Parameters</div>
+                        <Button
+                          onClick={() =>
+                            updateRemote(remote.id, {
+                              queryParameters: [...remote.queryParameters, emptyHeader()],
+                            })
+                          }
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Plus className="size-4" />
+                          Add parameter
+                        </Button>
+                      </div>
+                      {remote.queryParameters.map((parameter) => (
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto_auto_auto]" key={parameter.id}>
+                          <Input
+                            onChange={(event) =>
+                              updateRemoteQueryParameter(remote.id, parameter.id, {
+                                name: event.target.value,
+                              })
+                            }
+                            placeholder="Parameter name"
+                            value={parameter.name}
+                          />
+                          <Input
+                            onChange={(event) =>
+                              updateRemoteQueryParameter(remote.id, parameter.id, {
+                                description: event.target.value,
+                              })
+                            }
+                            placeholder="Description"
+                            value={parameter.description}
+                          />
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              checked={parameter.required}
+                              onChange={(event) =>
+                                updateRemoteQueryParameter(remote.id, parameter.id, {
+                                  required: event.target.checked,
+                                })
+                              }
+                              type="checkbox"
+                            />
+                            Required
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              checked={parameter.secret}
+                              onChange={(event) =>
+                                updateRemoteQueryParameter(remote.id, parameter.id, {
+                                  secret: event.target.checked,
+                                })
+                              }
+                              type="checkbox"
+                            />
+                            Secret
+                          </label>
+                          <Button
+                            aria-label="Remove query parameter"
+                            onClick={() =>
+                              updateRemote(remote.id, {
+                                queryParameters: remote.queryParameters.filter(
+                                  (item) => item.id !== parameter.id,
+                                ),
                               })
                             }
                             size="icon"

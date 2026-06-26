@@ -116,6 +116,50 @@ def test_package_metadata_accepts_official_snake_case_manifest_fields() -> None:
     assert serialized["packages"][1]["environmentVariables"][0]["isRequired"] is True
 
 
+def test_remote_query_parameters_are_typed_and_serialized() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[],
+            remotes=[
+                {
+                    "type": "streamable-http",
+                    "url": "https://weather.example.com/mcp",
+                    "headers": [
+                        {
+                            "name": "Authorization",
+                            "description": "Bearer token",
+                            "required": True,
+                            "secret": True,
+                        }
+                    ],
+                    "query_params": [
+                        {
+                            "name": "api_key",
+                            "description": "Weather API key",
+                            "is_required": True,
+                            "is_secret": True,
+                        }
+                    ],
+                }
+            ],
+        )
+    )
+
+    serialized = payload.model_dump(by_alias=True, exclude_none=True)
+
+    assert serialized["remotes"][0]["headers"][0]["isRequired"] is True
+    assert serialized["remotes"][0]["headers"][0]["isSecret"] is True
+    assert serialized["remotes"][0]["queryParameters"] == [
+        {
+            "name": "api_key",
+            "value": "",
+            "description": "Weather API key",
+            "isRequired": True,
+            "isSecret": True,
+        }
+    ]
+
+
 def test_server_definition_requires_package_or_remote_target() -> None:
     with pytest.raises(ValueError, match="at least one package or remote"):
         RegistryServerVersionCreate(**registry_payload(packages=[], remotes=[]))

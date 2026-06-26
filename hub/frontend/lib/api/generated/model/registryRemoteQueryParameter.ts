@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.2.18
  */
 
-export interface RegistryRemoteHeader {
+export interface RegistryRemoteQueryParameter {
   description?: string;
   isRequired?: boolean;
   isSecret?: boolean;

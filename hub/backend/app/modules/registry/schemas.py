@@ -157,8 +157,35 @@ class RegistryRemoteHeader(BaseModel):
 
     name: str = Field(default="", examples=["Authorization"])
     value: str = Field(default="", examples=["Bearer ${WEATHER_API_TOKEN}"])
-    required: bool = True
-    secret: bool = True
+    description: str = Field(default="", examples=["Bearer token used by the remote MCP endpoint."])
+    is_required: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("isRequired", "is_required", "required"),
+        serialization_alias="isRequired",
+    )
+    is_secret: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("isSecret", "is_secret", "secret"),
+        serialization_alias="isSecret",
+    )
+
+
+class RegistryRemoteQueryParameter(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = Field(default="", examples=["api_key"])
+    value: str = Field(default="", examples=["${WEATHER_API_TOKEN}"])
+    description: str = Field(default="", examples=["API key passed to the remote MCP endpoint."])
+    is_required: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("isRequired", "is_required", "required"),
+        serialization_alias="isRequired",
+    )
+    is_secret: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("isSecret", "is_secret", "secret"),
+        serialization_alias="isSecret",
+    )
 
 
 class RegistryRemote(BaseModel):
@@ -167,6 +194,16 @@ class RegistryRemote(BaseModel):
     type_: str = Field(default="", alias="type", examples=["streamable-http"])
     url: str = Field(default="", max_length=2048, examples=["https://weather.example.com/mcp"])
     headers: list[RegistryRemoteHeader] = Field(default_factory=list)
+    query_parameters: list[RegistryRemoteQueryParameter] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "queryParameters",
+            "queryParams",
+            "query_parameters",
+            "query_params",
+        ),
+        serialization_alias="queryParameters",
+    )
     authentication: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -694,6 +694,7 @@ function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
         {remotes.map((remote, index) => {
           const url = stringValue(remote.url);
           const headers = records(remote.headers);
+          const queryParameters = records(remote.queryParameters ?? remote.queryParams);
           const environmentVariables = records(remote.environmentVariables);
           const remoteType = targetType(remote, "remote");
           return (
@@ -738,12 +739,44 @@ function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
                               <strong>{valueOrFallback(stringValue(header.name))}</strong>
                             </td>
                             <td>
-                              <BooleanMark value={header.isRequired} />
+                              <BooleanMark value={header.isRequired ?? header.required} />
                             </td>
                             <td>
-                              <BooleanMark value={header.isSecret} />
+                              <BooleanMark value={header.isSecret ?? header.secret} />
                             </td>
                             <td>{stringValue(header.description) || "Not specified"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {queryParameters.length > 0 ? (
+                  <div className="technical-subtable">
+                    <label>Query Parameters</label>
+                    <table className="technical-table compact">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Required</th>
+                          <th>Secret</th>
+                          <th>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {queryParameters.map((parameter, parameterIndex) => (
+                          <tr key={`${stringValue(parameter.name)}-${parameterIndex}`}>
+                            <td>
+                              <strong>{valueOrFallback(stringValue(parameter.name))}</strong>
+                            </td>
+                            <td>
+                              <BooleanMark value={parameter.isRequired ?? parameter.required} />
+                            </td>
+                            <td>
+                              <BooleanMark value={parameter.isSecret ?? parameter.secret} />
+                            </td>
+                            <td>{stringValue(parameter.description) || "Not specified"}</td>
                           </tr>
                         ))}
                       </tbody>

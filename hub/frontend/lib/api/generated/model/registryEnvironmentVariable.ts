@@ -5,10 +5,12 @@
  * OpenAPI spec version: 0.2.18
  */
 
-export interface RegistryRemoteHeader {
+export interface RegistryEnvironmentVariable {
+  default?: string;
   description?: string;
-  isRequired?: boolean;
-  isSecret?: boolean;
+  format?: string;
+  isRequired?: boolean | null;
+  isSecret?: boolean | null;
   name?: string;
   value?: string;
   [key: string]: unknown;

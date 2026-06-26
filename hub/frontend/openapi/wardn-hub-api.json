@@ -1584,6 +1584,75 @@
         "title": "RegistryCategoryUpdate",
         "type": "object"
       },
+      "RegistryEnvironmentVariable": {
+        "additionalProperties": true,
+        "properties": {
+          "default": {
+            "default": "",
+            "examples": [
+              ""
+            ],
+            "title": "Default",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "examples": [
+              "API token used by the weather service."
+            ],
+            "title": "Description",
+            "type": "string"
+          },
+          "format": {
+            "default": "string",
+            "examples": [
+              "string"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "isRequired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isrequired"
+          },
+          "isSecret": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issecret"
+          },
+          "name": {
+            "default": "",
+            "examples": [
+              "WEATHER_API_TOKEN"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "examples": [
+              ""
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "title": "RegistryEnvironmentVariable",
+        "type": "object"
+      },
       "RegistryIcon": {
         "additionalProperties": true,
         "properties": {
@@ -1694,6 +1763,13 @@
       "RegistryPackage": {
         "additionalProperties": true,
         "properties": {
+          "environmentVariables": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryEnvironmentVariable"
+            },
+            "title": "Environmentvariables",
+            "type": "array"
+          },
           "identifier": {
             "default": "",
             "examples": [
@@ -1702,12 +1778,35 @@
             "title": "Identifier",
             "type": "string"
           },
+          "packageArguments": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryPackageArgument"
+            },
+            "title": "Packagearguments",
+            "type": "array"
+          },
+          "registryBaseUrl": {
+            "default": "",
+            "examples": [
+              "https://registry.npmjs.org"
+            ],
+            "title": "Registrybaseurl",
+            "type": "string"
+          },
           "registryType": {
             "default": "",
             "examples": [
               "npm"
             ],
             "title": "Registrytype",
+            "type": "string"
+          },
+          "runtimeHint": {
+            "default": "",
+            "examples": [
+              "docker"
+            ],
+            "title": "Runtimehint",
             "type": "string"
           },
           "transport": {
@@ -1730,6 +1829,97 @@
           }
         },
         "title": "RegistryPackage",
+        "type": "object"
+      },
+      "RegistryPackageArgument": {
+        "additionalProperties": true,
+        "properties": {
+          "allowedValues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowedvalues",
+            "type": "array"
+          },
+          "default": {
+            "default": "",
+            "examples": [
+              ""
+            ],
+            "title": "Default",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "examples": [
+              "Port for the local HTTP server."
+            ],
+            "title": "Description",
+            "type": "string"
+          },
+          "flag": {
+            "default": "",
+            "examples": [
+              "--port"
+            ],
+            "title": "Flag",
+            "type": "string"
+          },
+          "format": {
+            "default": "string",
+            "examples": [
+              "integer"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "isRequired": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isrequired"
+          },
+          "isSecret": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issecret"
+          },
+          "name": {
+            "default": "",
+            "examples": [
+              "port"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "value": {
+            "default": "",
+            "examples": [
+              ""
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "title": "RegistryPackageArgument",
         "type": "object"
       },
       "RegistryPageMetadata": {
@@ -1876,6 +2066,13 @@
             "title": "Headers",
             "type": "array"
           },
+          "queryParameters": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryRemoteQueryParameter"
+            },
+            "title": "Queryparameters",
+            "type": "array"
+          },
           "type": {
             "default": "",
             "examples": [
@@ -1900,6 +2097,24 @@
       "RegistryRemoteHeader": {
         "additionalProperties": true,
         "properties": {
+          "description": {
+            "default": "",
+            "examples": [
+              "Bearer token used by the remote MCP endpoint."
+            ],
+            "title": "Description",
+            "type": "string"
+          },
+          "isRequired": {
+            "default": true,
+            "title": "Isrequired",
+            "type": "boolean"
+          },
+          "isSecret": {
+            "default": true,
+            "title": "Issecret",
+            "type": "boolean"
+          },
           "name": {
             "default": "",
             "examples": [
@@ -1907,16 +2122,6 @@
             ],
             "title": "Name",
             "type": "string"
-          },
-          "required": {
-            "default": true,
-            "title": "Required",
-            "type": "boolean"
-          },
-          "secret": {
-            "default": true,
-            "title": "Secret",
-            "type": "boolean"
           },
           "value": {
             "default": "",
@@ -1928,6 +2133,47 @@
           }
         },
         "title": "RegistryRemoteHeader",
+        "type": "object"
+      },
+      "RegistryRemoteQueryParameter": {
+        "additionalProperties": true,
+        "properties": {
+          "description": {
+            "default": "",
+            "examples": [
+              "API key passed to the remote MCP endpoint."
+            ],
+            "title": "Description",
+            "type": "string"
+          },
+          "isRequired": {
+            "default": true,
+            "title": "Isrequired",
+            "type": "boolean"
+          },
+          "isSecret": {
+            "default": true,
+            "title": "Issecret",
+            "type": "boolean"
+          },
+          "name": {
+            "default": "",
+            "examples": [
+              "api_key"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "examples": [
+              "${WEATHER_API_TOKEN}"
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "title": "RegistryRemoteQueryParameter",
         "type": "object"
       },
       "RegistryRepository": {
@@ -4300,7 +4546,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.11"
+    "version": "0.2.18"
   },
   "openapi": "3.1.0",
   "paths": {
