@@ -884,6 +884,11 @@ async def test_get_server_detail_omits_private_source_evidence(monkeypatch) -> N
         "packages": version.packages,
         "_meta": {
             "categories": ["weather"],
+            "importEvidence": {
+                "files": ["README.md", "server.json"],
+                "missing": ["source review evidence"],
+            },
+            "reviewNotes": "Updated after Wardn review feedback.",
             "sourceReview": {"filesRead": ["README.md"]},
             "source": "README.md",
         },

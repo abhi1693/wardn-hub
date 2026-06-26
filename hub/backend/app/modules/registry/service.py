@@ -65,7 +65,9 @@ PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"
 PRIVATE_METADATA_KEYS = {
     "evidence",
     "filesread",
+    "importevidence",
     "packageversionevidence",
+    "reviewnotes",
     "source",
     "sourcereview",
     "sources",

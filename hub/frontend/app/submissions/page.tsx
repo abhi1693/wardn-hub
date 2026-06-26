@@ -373,7 +373,7 @@ function VersionSubmissionRow({
   const typeLabel = submissionTypeLabels[submission.submissionType] ?? submission.submissionType;
   const Icon = submission.submissionType === "new_version" ? GitBranch : FileText;
   const isReviewing = reviewingActionId.startsWith(`${submission.id}:`);
-  const hideEditAction = !canMutate || (canReview && submission.status === "published");
+  const hideEditAction = !canMutate;
 
   return (
     <div className="grid gap-3 rounded-md border border-slate-100 bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
