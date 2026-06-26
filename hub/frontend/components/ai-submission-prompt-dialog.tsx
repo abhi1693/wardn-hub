@@ -2,6 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ClipboardCopy, FileText, KeyRound, X } from "lucide-react";
+import type { ClipboardEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,27 +14,52 @@ function currentApiBaseUrl() {
   return `${window.location.origin}/api/v1`;
 }
 
-function normalizeRepositoryReference(value: string) {
+function parseRepositorySource(value: string) {
   const trimmed = value.trim();
-  if (!trimmed) return "";
+  if (!trimmed) return { repositoryUrl: "", subfolder: "" };
 
   const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i);
-  if (sshMatch?.[1] && sshMatch?.[2]) return `${sshMatch[1]}/${sshMatch[2]}`;
+  if (sshMatch?.[1] && sshMatch?.[2]) {
+    return {
+      repositoryUrl: `${sshMatch[1]}/${sshMatch[2].replace(/\.git$/, "")}`,
+      subfolder: "",
+    };
+  }
 
   try {
     const parsed = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
-    if (parsed.hostname.replace(/^www\./, "").toLowerCase() !== "github.com") return trimmed;
-    const [owner, repo] = parsed.pathname.replace(/^\/+/, "").split("/");
-    if (!owner || !repo) return trimmed;
-    return `${owner}/${repo.replace(/\.git$/, "")}`;
+    if (parsed.hostname.replace(/^www\./, "").toLowerCase() !== "github.com") {
+      return { repositoryUrl: trimmed, subfolder: "" };
+    }
+    const pathParts = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+    const [owner, repo] = pathParts;
+    const viewMode = pathParts[2];
+    if (!owner || !repo) return { repositoryUrl: trimmed, subfolder: "" };
+    const hasRepositoryPath = viewMode === "tree" || viewMode === "blob";
+    return {
+      repositoryUrl: `${owner}/${repo.replace(/\.git$/, "")}`,
+      subfolder: hasRepositoryPath ? pathParts.slice(4).join("/") : "",
+    };
   } catch {
-    return trimmed;
+    const pathParts = trimmed
+      .replace(/^\/+|\/+$/g, "")
+      .split("/")
+      .filter(Boolean);
+    const [owner, repo] = pathParts;
+    const viewMode = pathParts[2];
+    if (!owner || !repo) return { repositoryUrl: trimmed, subfolder: "" };
+    const hasRepositoryPath = viewMode === "tree" || viewMode === "blob";
+    return {
+      repositoryUrl: `${owner}/${repo.replace(/\.git$/, "")}`,
+      subfolder: hasRepositoryPath ? pathParts.slice(4).join("/") : "",
+    };
   }
 }
 
 function buildAiSubmissionPrompt(repositoryUrl: string, repositorySubfolder: string) {
-  const source = normalizeRepositoryReference(repositoryUrl) || "[repository URL or owner/repo]";
-  const subfolder = repositorySubfolder.trim();
+  const sourceInfo = parseRepositorySource(repositoryUrl);
+  const source = sourceInfo.repositoryUrl || "[repository URL or owner/repo]";
+  const subfolder = repositorySubfolder.trim() || sourceInfo.subfolder;
   const subfolderLine = subfolder ? `\nRepository subfolder: ${subfolder}` : "";
 
   return `Submit this MCP server to Wardn Hub:
@@ -159,8 +185,40 @@ export function AiSubmissionPromptDialog({
     }
   }
 
+  function applyRepositorySource(value: string) {
+    const source = parseRepositorySource(value);
+    setRepositoryUrl(source.repositoryUrl || value.trim());
+    if (source.subfolder) {
+      setRepositorySubfolder(source.subfolder);
+    }
+  }
+
+  function pasteRepositorySource(event: ClipboardEvent<HTMLInputElement>) {
+    const pastedValue = event.clipboardData.getData("text");
+    const source = parseRepositorySource(pastedValue);
+    if (
+      source.repositoryUrl &&
+      (source.repositoryUrl !== pastedValue.trim() || source.subfolder)
+    ) {
+      event.preventDefault();
+      setRepositoryUrl(source.repositoryUrl);
+      if (source.subfolder) {
+        setRepositorySubfolder(source.subfolder);
+      }
+    }
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      setRepositoryUrl("");
+      setRepositorySubfolder("");
+      setCopyState("idle");
+    }
+    onOpenChange(nextOpen);
+  }
+
   return (
-    <Dialog.Root onOpenChange={onOpenChange} open={open}>
+    <Dialog.Root onOpenChange={handleOpenChange} open={open}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px]" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-50 grid max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-border bg-white shadow-2xl focus-visible:outline-none">
@@ -188,9 +246,10 @@ export function AiSubmissionPromptDialog({
                 <Input
                   autoFocus
                   id="ai-submission-repository"
-                  onBlur={() => setRepositoryUrl((value) => normalizeRepositoryReference(value))}
+                  onBlur={() => applyRepositorySource(repositoryUrl)}
                   onChange={(event) => setRepositoryUrl(event.target.value)}
-                  placeholder="owner/repo"
+                  onPaste={pasteRepositorySource}
+                  placeholder="owner/repo or GitHub tree URL"
                   value={repositoryUrl}
                 />
               </div>

@@ -361,12 +361,47 @@ function packagePublisher(registryType: string, identifier: string) {
 }
 
 function normalizeRepositoryReference(value: string) {
-  const repository = parseRepositoryReference(value);
-  if (!repository) {
-    return value.trim();
+  return parseRepositorySource(value).repositoryUrl || value.trim();
+}
+
+function repositorySourceSubfolder(value: string) {
+  const rawValue = value.trim();
+  if (!rawValue) {
+    return "";
   }
 
-  return `${repository.owner}/${repository.repo}`;
+  try {
+    const url = new URL(rawValue.includes("://") ? rawValue : `https://${rawValue}`);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!isGitHubHost(host)) {
+      return "";
+    }
+    const pathParts = url.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+    const viewMode = pathParts[2];
+    if (viewMode !== "tree" && viewMode !== "blob") {
+      return "";
+    }
+    return pathParts.slice(4).join("/");
+  } catch {
+    const pathParts = rawValue.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+    const viewMode = pathParts[2];
+    if (viewMode !== "tree" && viewMode !== "blob") {
+      return "";
+    }
+    return pathParts.slice(4).join("/");
+  }
+}
+
+function parseRepositorySource(value: string) {
+  const repository = parseRepositoryReference(value);
+  if (!repository) {
+    return { repositoryUrl: value.trim(), subfolder: "" };
+  }
+
+  return {
+    repositoryUrl: `${repository.owner}/${repository.repo}`,
+    subfolder: repositorySourceSubfolder(value),
+  };
 }
 
 function repositoryWebUrl(value: string) {
@@ -936,15 +971,25 @@ export default function SubmitServerPage() {
   }
 
   function normalizeCurrentRepositoryReference() {
-    setRepositoryUrl((current) => normalizeRepositoryReference(current));
+    const source = parseRepositorySource(repositoryUrl);
+    setRepositoryUrl(source.repositoryUrl || repositoryUrl.trim());
+    if (source.subfolder) {
+      setRepositorySubfolder(source.subfolder);
+    }
   }
 
   function pasteRepositoryReference(event: ClipboardEvent<HTMLInputElement>) {
     const pastedValue = event.clipboardData.getData("text");
-    const normalizedValue = normalizeRepositoryReference(pastedValue);
-    if (normalizedValue && normalizedValue !== pastedValue.trim()) {
+    const source = parseRepositorySource(pastedValue);
+    if (
+      source.repositoryUrl &&
+      (source.repositoryUrl !== pastedValue.trim() || source.subfolder)
+    ) {
       event.preventDefault();
-      updateRepositoryReference(normalizedValue);
+      updateRepositoryReference(source.repositoryUrl);
+      if (source.subfolder) {
+        setRepositorySubfolder(source.subfolder);
+      }
     }
   }
 
@@ -1395,7 +1440,7 @@ export default function SubmitServerPage() {
                         onBlur={normalizeCurrentRepositoryReference}
                         onChange={(event) => updateRepositoryReference(event.target.value)}
                         onPaste={pasteRepositoryReference}
-                        placeholder="owner/repo"
+                        placeholder="owner/repo or GitHub tree URL"
                         value={repositoryUrl}
                       />
                     </div>

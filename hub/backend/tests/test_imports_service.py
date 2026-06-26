@@ -77,6 +77,49 @@ def test_import_server_source_returns_readme_fallback_when_metadata_missing(monk
     assert response.evidence.missing == ["packages or remotes", "source review evidence"]
 
 
+def test_import_server_source_derives_subfolder_from_github_tree_url(monkeypatch) -> None:
+    fetched_urls: list[str] = []
+
+    def fetch_json(url: str):
+        return {
+            "name": "gatewards-sdk",
+            "description": "Gatewards SDK",
+            "html_url": "https://github.com/rtahabas/gatewards-sdk",
+            "owner": {"avatar_url": "https://github.com/rtahabas.png"},
+        }
+
+    def fetch_text(url: str, *, accept: str = "application/json"):
+        fetched_urls.append(url)
+        if "/readme/packages/mcp-server" in url:
+            return "# Gatewards MCP\n\nGatewards MCP server."
+        if "/main/packages/mcp-server/server.json" in url:
+            return """
+            {
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              "name": "io.github.rtahabas/gatewards-mcp",
+              "description": "Gatewards MCP server.",
+              "version": "1.0.0",
+              "packages": [{"registryType": "npm", "identifier": "@gatewards/mcp-server"}]
+            }
+            """
+        return None
+
+    monkeypatch.setattr(service, "fetch_json", fetch_json)
+    monkeypatch.setattr(service, "fetch_text", fetch_text)
+
+    response = service.import_server_source(
+        ServerSourceImportRequest(
+            repositoryUrl="https://github.com/rtahabas/gatewards-sdk/tree/main/packages/mcp-server",
+        ),
+    )
+
+    assert response.server_json.repository is not None
+    assert response.server_json.repository.url == "rtahabas/gatewards-sdk"
+    assert response.server_json.repository.subfolder == "packages/mcp-server"
+    assert response.server_json.documentation == "# Gatewards MCP\n\nGatewards MCP server."
+    assert any("/readme/packages/mcp-server" in url for url in fetched_urls)
+
+
 def test_import_server_source_enriches_server_json_with_readme_config(monkeypatch) -> None:
     def fetch_json(url: str):
         return {

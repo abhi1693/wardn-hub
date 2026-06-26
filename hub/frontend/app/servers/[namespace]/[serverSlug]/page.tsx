@@ -6,6 +6,8 @@ import { Check, Clipboard, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { ServerIcon, serverIconUrl } from "@/components/server-icon";
@@ -19,6 +21,13 @@ import type {
 type LoadState = "loading" | "ready" | "error";
 type DetailTab = "overview" | "technical";
 type DetailItem = { label: string; value: ReactNode; wide?: boolean };
+type RepositoryReference = {
+  branch?: string;
+  source?: string;
+  subfolder?: string;
+  tag?: string;
+  url?: string;
+};
 
 const technicalManifestHiddenFields = new Set([
   "$schema",
@@ -42,6 +51,14 @@ const technicalManifestHiddenFields = new Set([
   "version",
   "website",
   "websiteUrl",
+]);
+const packageHiddenFields = new Set([
+  "environmentVariables",
+  "identifier",
+  "packageArguments",
+  "registryType",
+  "transport",
+  "version",
 ]);
 
 function stringValue(value: unknown) {
@@ -67,6 +84,73 @@ function repositoryUrl(repository: unknown) {
     : "";
 }
 
+function repositoryReference(repository: unknown): RepositoryReference | null {
+  if (!repository || typeof repository !== "object") return null;
+  const record = repository as Record<string, unknown>;
+  const reference = {
+    branch: stringValue(record.branch),
+    source: stringValue(record.source),
+    subfolder: stringValue(record.subfolder),
+    tag: stringValue(record.tag),
+    url: stringValue(record.url),
+  };
+  return reference.url ? reference : null;
+}
+
+function githubRepositoryParts(repository: RepositoryReference | null) {
+  const url = repository?.url?.replace(/\.git$/, "") ?? "";
+  const match = url.match(/^(?:https?:\/\/github\.com\/)?([^/\s]+)\/([^/\s#?]+)$/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2] };
+}
+
+function encodePath(value: string) {
+  return value
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+function githubRef(repository: RepositoryReference | null) {
+  if (repository?.tag) return `refs/tags/${repository.tag}`;
+  return `refs/heads/${repository?.branch || "main"}`;
+}
+
+function githubDisplayRef(repository: RepositoryReference | null) {
+  return repository?.tag || repository?.branch || "main";
+}
+
+function repositoryRelativePath(value: string, repository: RepositoryReference | null) {
+  const subfolder = repository?.subfolder?.replace(/^\/+|\/+$/g, "") ?? "";
+  const basePath = subfolder ? `/${subfolder}/` : "/";
+  return new URL(value, `https://github.invalid${basePath}`).pathname.replace(/^\/+/, "");
+}
+
+function isExternalOrAnchorUrl(value: string) {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(value);
+}
+
+function resolveRepositoryImageUrl(value: string | undefined, repository: RepositoryReference | null) {
+  if (!value) return value;
+  const trimmed = value.trim();
+  if (!trimmed || isExternalOrAnchorUrl(trimmed)) return value;
+  const parts = githubRepositoryParts(repository);
+  if (!parts) return value;
+  const path = repositoryRelativePath(trimmed, repository);
+  return `https://raw.githubusercontent.com/${parts.owner}/${parts.repo}/${encodePath(githubRef(repository))}/${encodePath(path)}`;
+}
+
+function resolveRepositoryLinkUrl(value: string | undefined, repository: RepositoryReference | null) {
+  if (!value) return value;
+  const trimmed = value.trim();
+  if (!trimmed || isExternalOrAnchorUrl(trimmed)) return value;
+  const parts = githubRepositoryParts(repository);
+  if (!parts) return value;
+  const path = repositoryRelativePath(trimmed, repository);
+  return `https://github.com/${parts.owner}/${parts.repo}/blob/${encodePath(githubDisplayRef(repository))}/${encodePath(path)}`;
+}
+
 function isEmptyValue(value: unknown) {
   return (
     value === undefined ||
@@ -80,10 +164,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function normalizedFieldKey(value: string) {
+  return value.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function isHiddenField(key: string, hiddenFields: Set<string>) {
+  if (hiddenFields.has(key)) return true;
+  const normalizedKey = normalizedFieldKey(key);
+  return Array.from(hiddenFields).some((field) => normalizedFieldKey(field) === normalizedKey);
+}
+
 function hasFields(value: unknown, hiddenFields = new Set<string>()) {
   return (
     isRecord(value) &&
-    Object.entries(value).some(([key, item]) => !hiddenFields.has(key) && !isEmptyValue(item))
+    Object.entries(value).some(([key, item]) => !isHiddenField(key, hiddenFields) && !isEmptyValue(item))
   );
 }
 
@@ -307,7 +401,7 @@ function VisualFields({
   value: Record<string, unknown>;
 }) {
   const entries = Object.entries(value).filter(
-    ([key, item]) => !hiddenFields.has(key) && !isEmptyValue(item),
+    ([key, item]) => !isHiddenField(key, hiddenFields) && !isEmptyValue(item),
   );
 
   if (entries.length === 0) {
@@ -328,17 +422,62 @@ function VisualFields({
   );
 }
 
-function DocumentationBlock({ value }: { value: string }) {
+const documentationSanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    a: [...(defaultSchema.attributes?.a ?? []), "href", "title"],
+    div: [...(defaultSchema.attributes?.div ?? []), "align"],
+    img: [
+      ...(defaultSchema.attributes?.img ?? []),
+      "alt",
+      "height",
+      "loading",
+      "src",
+      "title",
+      "width",
+    ],
+  },
+};
+
+function DocumentationBlock({
+  repository,
+  value,
+}: {
+  repository: RepositoryReference | null;
+  value: string;
+}) {
   return (
     <div className="server-detail-doc">
       <ReactMarkdown
         components={{
-          a: ({ children, href }) => (
-            <a href={href} rel="noreferrer" target={href?.startsWith("http") ? "_blank" : undefined}>
-              {children}
-            </a>
-          ),
+          a: ({ children, href }) => {
+            const resolvedHref = resolveRepositoryLinkUrl(href, repository);
+            return (
+              <a
+                href={resolvedHref}
+                rel="noreferrer"
+                target={resolvedHref?.startsWith("http") ? "_blank" : undefined}
+              >
+                {children}
+              </a>
+            );
+          },
+          img: ({ alt, height, src, title, width }) => {
+            const imageSrc = typeof src === "string" ? src : undefined;
+            return (
+              <img
+                alt={alt ?? ""}
+                height={height}
+                loading="lazy"
+                src={resolveRepositoryImageUrl(imageSrc, repository)}
+                title={title}
+                width={width}
+              />
+            );
+          },
         }}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, documentationSanitizeSchema]]}
         remarkPlugins={[remarkGfm]}
       >
         {value}
@@ -585,12 +724,7 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                     </div>
                   ) : null}
                 </div>
-                <VisualFields
-                  hiddenFields={
-                    new Set(["identifier", "registryType", "transport", "version", "environmentVariables", "packageArguments"])
-                  }
-                  value={packageTarget}
-                />
+                <VisualFields hiddenFields={packageHiddenFields} value={packageTarget} />
                 <PackageEnvironmentTable environmentVariables={environmentVariables} />
                 <PackageArgumentsTable packageArguments={packageArguments} />
               </div>
@@ -613,8 +747,9 @@ function ManifestMetadataPanel({
 
   const schema = stringValue(manifest.$schema);
   const meta = isRecord(manifest._meta) ? manifest._meta : null;
+  const hasPublicMeta = hasFields(meta, technicalManifestHiddenFields);
 
-  if (!schema && !version && !meta) return null;
+  if (!schema && !version && !hasPublicMeta) return null;
 
   return (
     <section className="technical-side-card">
@@ -635,10 +770,10 @@ function ManifestMetadataPanel({
             </a>
           </div>
         ) : null}
-        {meta ? (
+        {hasPublicMeta && meta ? (
           <div>
             <label>Publisher Metadata</label>
-            <VisualFields value={meta} />
+            <VisualFields hiddenFields={technicalManifestHiddenFields} value={meta} />
           </div>
         ) : null}
       </div>
@@ -697,6 +832,7 @@ export default function ServerDetailPage() {
   );
 
   const targets = useMemo(() => versionTargets(selectedVersion), [selectedVersion]);
+  const repository = repositoryReference(selectedVersion?.repository ?? server?.repository);
   const repoUrl = repositoryUrl(selectedVersion?.repository ?? server?.repository);
   const title = selectedVersion?.title || server?.title || server?.name || "MCP Server";
   const description = selectedVersion?.description || server?.description || "";
@@ -855,7 +991,7 @@ export default function ServerDetailPage() {
                     {hasDocumentation ? (
                       <section className="server-detail-card">
                         <h2>Documentation</h2>
-                        <DocumentationBlock value={documentation} />
+                        <DocumentationBlock repository={repository} value={documentation} />
                       </section>
                     ) : null}
                   </div>

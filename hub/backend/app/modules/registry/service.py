@@ -62,6 +62,16 @@ EMPTY_TRUST_CONTEXT = RegistryTrustContext(
 
 
 PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"
+PRIVATE_METADATA_KEYS = {
+    "evidence",
+    "filesread",
+    "packageversionevidence",
+    "source",
+    "sourcereview",
+    "sources",
+    "staleversionreferences",
+    "staleversionreferencesreviewed",
+}
 
 
 def parse_cursor(cursor: str | None) -> int:
@@ -84,6 +94,28 @@ def registry_json(value):
     if isinstance(value, dict):
         return {key: registry_json(item) for key, item in value.items()}
     return value
+
+
+def normalized_metadata_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def public_registry_json(value, *, parent_key: str = ""):
+    if isinstance(value, BaseModel):
+        return public_registry_json(value.model_dump(by_alias=True), parent_key=parent_key)
+    if isinstance(value, list):
+        return [public_registry_json(item, parent_key=parent_key) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    public_value = {}
+    for key, item in value.items():
+        normalized_key = normalized_metadata_key(str(key))
+        normalized_parent = normalized_metadata_key(parent_key)
+        if normalized_key in PRIVATE_METADATA_KEYS and normalized_parent != "repository":
+            continue
+        public_value[key] = public_registry_json(item, parent_key=str(key))
+    return public_value
 
 
 def document_values(payload: MCPServerDocument) -> dict:
@@ -422,8 +454,20 @@ def server_summary(
 def version_summary(
     version: RegistryServerVersion,
     *,
+    include_private_metadata: bool = True,
     trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
 ) -> RegistryServerVersionRead:
+    packages = (
+        version.packages
+        if include_private_metadata
+        else public_registry_json(version.packages)
+    )
+    remotes = version.remotes if include_private_metadata else public_registry_json(version.remotes)
+    server_json = (
+        version.server_json
+        if include_private_metadata
+        else public_registry_json(version.server_json)
+    )
     return RegistryServerVersionRead(
         id=version.id,
         server_id=version.server_id,
@@ -434,10 +478,10 @@ def version_summary(
         documentation=version.documentation,
         website_url=version.website_url,
         repository=version.repository,
-        packages=version.packages,
-        remotes=version.remotes,
+        packages=packages,
+        remotes=remotes,
         icons=version.icons,
-        server_json=version.server_json,
+        server_json=server_json,
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
@@ -466,8 +510,8 @@ def published_version_summary(version: RegistryServerVersion) -> RegistryPublish
     return RegistryPublishedServerVersionRead(
         id=version.id,
         version=version.version,
-        packages=version.packages,
-        remotes=version.remotes,
+        packages=public_registry_json(version.packages),
+        remotes=public_registry_json(version.remotes),
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
@@ -974,7 +1018,10 @@ async def get_server_detail(
     trust = await build_trust_context(session, servers=[server], versions=versions)
     return RegistryServerDetailResponse(
         server=server_summary(server, latest, trust=trust),
-        versions=[version_summary(version, trust=trust) for version in versions],
+        versions=[
+            version_summary(version, include_private_metadata=False, trust=trust)
+            for version in versions
+        ],
     )
 
 
@@ -993,7 +1040,10 @@ async def list_versions(
         raise RegistryServerNotFoundError("server not found")
     trust = await build_trust_context(session, versions=versions)
     return RegistryServerVersionListResponse(
-        versions=[version_summary(version, trust=trust) for version in versions],
+        versions=[
+            version_summary(version, include_private_metadata=False, trust=trust)
+            for version in versions
+        ],
         metadata=RegistryListMetadata(count=len(versions)),
     )
 
@@ -1029,6 +1079,6 @@ async def get_version_detail(
     support = partner_support_summary(version.name, trust)
     return RegistryServerVersionDetailResponse(
         server=server_summary(server, latest, trust=trust),
-        version=version_summary(version, trust=trust),
+        version=version_summary(version, include_private_metadata=False, trust=trust),
         support={"partnerSupport": [item.model_dump(by_alias=True) for item in support]},
     )

@@ -66,6 +66,25 @@ def parse_github_repository(value: str) -> GitHubRepository:
     return GitHubRepository(owner=path_parts[0], repo=strip_git_suffix(path_parts[1]))
 
 
+def github_source_subfolder(value: str) -> str:
+    raw_value = value.strip()
+    if not raw_value:
+        return ""
+
+    try:
+        url = urlparse(raw_value if "://" in raw_value else f"https://{raw_value}")
+    except ValueError:
+        path_parts = [part for part in raw_value.strip("/").split("/") if part]
+    else:
+        if url.hostname is None or url.hostname.lower().replace("www.", "") != GITHUB_HOST:
+            return ""
+        path_parts = [part for part in url.path.split("/") if part]
+
+    if len(path_parts) < 5 or path_parts[2] not in {"tree", "blob"}:
+        return ""
+    return clean_subfolder("/".join(path_parts[4:]))
+
+
 def repository_reference(repository: GitHubRepository) -> str:
     return f"{repository.owner}/{repository.repo}"
 
@@ -357,7 +376,9 @@ def server_json_from_metadata(
 
 def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImportResponse:
     repository = parse_github_repository(payload.repository_url)
-    subfolder = clean_subfolder(payload.subfolder)
+    subfolder = clean_subfolder(payload.subfolder) or github_source_subfolder(
+        payload.repository_url
+    )
     metadata = fetch_github_metadata(repository)
     readme = fetch_github_readme(repository, subfolder)
     fallback = {**metadata, "documentation": readme}

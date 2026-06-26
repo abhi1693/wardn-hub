@@ -849,3 +849,93 @@ async def test_get_server_detail_includes_partner_support(monkeypatch) -> None:
     assert response.server.partner_support[0].support_level == "official"
     assert response.server.partner_support[0].organization.login == "acme"
     assert response.server.categories[0].slug == "development"
+
+
+@pytest.mark.asyncio
+async def test_get_server_detail_omits_private_source_evidence(monkeypatch) -> None:
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+    server = server_model()
+    server.repository = {"source": "github", "url": "https://github.com/example/weather"}
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    version.repository = {"source": "github", "url": "https://github.com/example/weather"}
+    env_var = {
+        "name": "WEATHER_API_KEY",
+        "description": "Weather API key.",
+        "source": "README.md configuration section",
+    }
+    version.packages = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "environmentVariables": [env_var],
+            "packageVersionEvidence": (
+                "Current package version is 0.21.0 from package.json, manifest.json, "
+                "and npm registry."
+            ),
+            "staleVersionReferences": [
+                "server.json version and package version are stale.",
+            ],
+            "staleVersionReferencesReviewed": True,
+        }
+    ]
+    version.server_json = {
+        **version.server_json,
+        "repository": version.repository,
+        "packages": version.packages,
+        "_meta": {
+            "categories": ["weather"],
+            "sourceReview": {"filesRead": ["README.md"]},
+            "source": "README.md",
+        },
+    }
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [version]
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    async def categories(*args, **kwargs):
+        return {
+            server.id: [
+                RegistryCategory(
+                    id=uuid4(),
+                    slug="weather",
+                    name="Weather",
+                    description="Weather tools",
+                    sort_order=100,
+                    status="active",
+                    created_at=now,
+                    updated_at=now,
+                )
+            ]
+        }
+
+    monkeypatch.setattr(service.repository, "get_server", get_server)
+    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", categories)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    response = await service.get_server_detail(FakeSession(), server.name)
+    public_version = response.versions[0]
+
+    assert public_version.repository == version.repository
+    assert public_version.server_json["repository"] == version.repository
+    assert public_version.packages[0]["environmentVariables"] == [
+        {"name": "WEATHER_API_KEY", "description": "Weather API key."}
+    ]
+    assert "packageVersionEvidence" not in public_version.packages[0]
+    assert "staleVersionReferences" not in public_version.packages[0]
+    assert "staleVersionReferencesReviewed" not in public_version.packages[0]
+    assert public_version.server_json["packages"][0]["environmentVariables"] == [
+        {"name": "WEATHER_API_KEY", "description": "Weather API key."}
+    ]
+    assert "packageVersionEvidence" not in public_version.server_json["packages"][0]
+    assert "staleVersionReferences" not in public_version.server_json["packages"][0]
+    assert "staleVersionReferencesReviewed" not in public_version.server_json["packages"][0]
+    assert public_version.server_json["_meta"] == {"categories": ["weather"]}
