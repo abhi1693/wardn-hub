@@ -251,18 +251,6 @@ function formatTone(value: string) {
   return "string";
 }
 
-function inferredEnvironmentFormat(value: string) {
-  const trimmed = value.trim();
-  if (["true", "false"].includes(trimmed.toLowerCase())) return "boolean";
-  if (trimmed && !Number.isNaN(Number(trimmed))) return "number";
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return "uri";
-  return "string";
-}
-
-function inferredEnvironmentSecret(name: string) {
-  return /(?:^|_)(?:api_?key|secret|token|password|credential|private_?key)(?:_|$)/i.test(name);
-}
-
 function FormatBadge({ value }: { value: string }) {
   return <span className={`technical-badge tone-${formatTone(value)}`}>{value}</span>;
 }
@@ -609,60 +597,6 @@ function PackageArgumentsTable({
   );
 }
 
-function TransportEnvironmentTable({ environment }: { environment: unknown }) {
-  if (!isRecord(environment)) return null;
-
-  const rows = Object.entries(environment)
-    .map(([name, value]) => ({
-      format: inferredEnvironmentFormat(typeof value === "string" ? value : JSON.stringify(value)),
-      name,
-      required: value === "" ? undefined : false,
-      secret: inferredEnvironmentSecret(name),
-      value: typeof value === "string" ? value : JSON.stringify(value),
-    }))
-    .filter((envVar) => envVar.name);
-
-  if (rows.length === 0) return null;
-
-  return (
-    <div className="technical-subtable">
-      <label>Environment</label>
-      <div className="technical-table-wrap">
-        <table className="technical-table compact">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Format</th>
-              <th>Secret</th>
-              <th>Required</th>
-              <th>Default</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((envVar) => (
-              <tr key={envVar.name}>
-                <td>
-                  <strong>{envVar.name}</strong>
-                </td>
-                <td>
-                  <FormatBadge value={envVar.format} />
-                </td>
-                <td>
-                  <BooleanMark value={envVar.secret} />
-                </td>
-                <td>
-                  <RequirementMark value={envVar.required} />
-                </td>
-                <td>{envVar.value || "No default"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
   if (remotes.length === 0) return null;
 
@@ -855,7 +789,6 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                   </div>
                 ) : null}
                 <VisualFields hiddenFields={packageHiddenFields} value={packageTarget} />
-                <TransportEnvironmentTable environment={transport.env} />
                 <PackageEnvironmentTable environmentVariables={environmentVariables} />
                 <PackageArgumentsTable packageArguments={packageArguments} />
               </div>
