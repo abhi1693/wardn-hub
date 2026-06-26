@@ -179,6 +179,12 @@ function records(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function emptyHeader(): HeaderField {
   return {
     id: createId("header"),
@@ -541,17 +547,49 @@ function firstIconUrl(value: unknown) {
 }
 
 function categoryFromServerJson(value: Record<string, unknown>) {
-  const meta = value._meta;
-  if (!meta || typeof meta !== "object") {
+  const meta = recordValue(value._meta);
+  if (!meta) {
     return "";
   }
 
-  const publisherMeta = (meta as Record<string, unknown>)[PUBLISHER_META_KEY];
-  if (!publisherMeta || typeof publisherMeta !== "object") {
-    return "";
+  const publisherMeta = recordValue(meta[PUBLISHER_META_KEY]);
+  const publisherCategory = stringValue(publisherMeta?.category);
+  if (publisherCategory) {
+    return publisherCategory;
   }
 
-  return stringValue((publisherMeta as Record<string, unknown>).category);
+  const publisherCategories = Array.isArray(publisherMeta?.categories)
+    ? publisherMeta.categories
+    : [];
+  const firstPublisherCategory = publisherCategories.find(
+    (item): item is string => typeof item === "string" && Boolean(item.trim()),
+  );
+  if (firstPublisherCategory) {
+    return firstPublisherCategory;
+  }
+
+  const category = stringValue(meta.category);
+  if (category) {
+    return category;
+  }
+
+  const categories = Array.isArray(meta.categories) ? meta.categories : [];
+  return categories.find(
+    (item): item is string => typeof item === "string" && Boolean(item.trim()),
+  ) ?? "";
+}
+
+function serverMetaPayload(existingMeta: Record<string, unknown> | null, category: string) {
+  const meta = existingMeta ? { ...existingMeta } : {};
+  if (category) {
+    const publisherMeta = recordValue(meta[PUBLISHER_META_KEY]);
+    meta[PUBLISHER_META_KEY] = {
+      ...(publisherMeta ?? {}),
+      category,
+    };
+  }
+
+  return Object.keys(meta).length > 0 ? meta : undefined;
 }
 
 function bumpPatchVersion(value: string) {
@@ -637,6 +675,7 @@ export default function SubmitServerPage() {
   const [documentation, setDocumentation] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [category, setCategory] = useState("");
+  const [serverMeta, setServerMeta] = useState<Record<string, unknown> | null>(null);
   const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
   const [partnerOwnerOrganizations, setPartnerOwnerOrganizations] = useState<OrganizationRead[]>([]);
   const [ownerOrganizationId, setOwnerOrganizationId] = useState("");
@@ -778,6 +817,7 @@ export default function SubmitServerPage() {
     setDocumentation(stringValue(serverJson.documentation));
     setWebsiteUrl(stringValue(serverJson.websiteUrl));
     setCategory(categoryFromServerJson(serverJson));
+    setServerMeta(recordValue(serverJson._meta));
     setIconUrl(firstIconUrl(icons));
     setRemotes(importedRemotes(serverJson.remotes));
     setPackages(importedPackages(serverJson.packages));
@@ -817,6 +857,7 @@ export default function SubmitServerPage() {
     setDocumentation(stringValue(serverJson.documentation) || response.server.documentation || "");
     setWebsiteUrl(stringValue(serverJson.websiteUrl) || response.server.websiteUrl || "");
     setCategory(categoryFromServerJson(serverJson));
+    setServerMeta(recordValue(serverJson._meta));
     setIconUrl(firstIconUrl(icons));
     setRemotes(importedRemotes(serverJson.remotes));
     setPackages(importedPackages(serverJson.packages));
@@ -1024,6 +1065,7 @@ export default function SubmitServerPage() {
       setIconUrl(metadataIconUrl);
       setPackages(metadataPackages);
       setRemotes(metadataRemotes);
+      setServerMeta(null);
       setSourceImportMessage(
         metadata.source === "server.json"
           ? "Registry document loaded."
@@ -1145,6 +1187,7 @@ export default function SubmitServerPage() {
             },
           ]
         : [];
+      const meta = serverMetaPayload(serverMeta, category);
       const serverJson = {
         $schema: DEFAULT_SCHEMA,
         name: serverName,
@@ -1157,15 +1200,7 @@ export default function SubmitServerPage() {
         remotes: remotePayload,
         packages: packagePayload,
         icons,
-        ...(category
-          ? {
-              _meta: {
-                [PUBLISHER_META_KEY]: {
-                  category,
-                },
-              },
-            }
-          : {}),
+        ...(meta ? { _meta: meta } : {}),
       };
 
       if (isEditingPublishedServer && !canManagePublishedServers) {

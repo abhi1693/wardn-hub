@@ -81,6 +81,28 @@ export class HubApiError extends Error {
   }
 }
 
+function formatValidationDetail(detail: unknown) {
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (!Array.isArray(detail)) {
+    return "";
+  }
+
+  return detail
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return "";
+      }
+      const record = item as Record<string, unknown>;
+      const location = Array.isArray(record.loc) ? record.loc.map(String).join(".") : "";
+      const message = typeof record.msg === "string" ? record.msg : "";
+      return [location, message].filter(Boolean).join(": ");
+    })
+    .filter(Boolean)
+    .join("; ");
+}
+
 function apiBaseUrl() {
   const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
   if (configured) return configured;
@@ -103,10 +125,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const data = body && contentType.includes("application/json") ? JSON.parse(body) : {};
 
   if (!response.ok) {
-    const message =
-      typeof data.detail === "string"
-        ? data.detail
-        : `Request failed with ${response.status} from ${response.url}`;
+    const detailMessage = formatValidationDetail((data as Record<string, unknown>).detail);
+    const message = detailMessage || `Request failed with ${response.status} from ${response.url}`;
     throw new HubApiError(response.status, message);
   }
 
