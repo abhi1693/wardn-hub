@@ -78,7 +78,7 @@ type PackageArgumentField = HeaderField & {
   includeInLaunch: boolean;
   options: string;
   value: string;
-  valueName: string;
+  requiresValue: boolean;
 };
 
 type RemoteTarget = {
@@ -217,7 +217,7 @@ function emptyPackageArgument(): PackageArgumentField {
     includeInLaunch: false,
     options: "",
     value: "",
-    valueName: "",
+    requiresValue: false,
   };
 }
 
@@ -518,24 +518,32 @@ function duplicateEnvironmentNames(environmentVariables: EnvironmentField[]) {
   return [...duplicates].sort();
 }
 
-function splitArgumentFlagValueName(flag: string, fallbackValueName = "") {
+function splitArgumentFlagRequiresValue(flag: string, fallbackRequiresValue = false) {
   const trimmed = flag.trim();
-  const match = trimmed.match(/^(.*?)(?:\s+<([^<>]+)>|\s+\[([^\[\]]+)\])$/);
+  const match = trimmed.match(/^(.*?)(?:\s*(?:=\s*)?<([^<>]+)>|\s+\[([^\[\]]+)\])$/);
   if (!match) {
-    return { flag: trimmed, valueName: fallbackValueName };
+    return { flag: trimmed, requiresValue: fallbackRequiresValue };
   }
 
   return {
     flag: match[1].trim(),
-    valueName: fallbackValueName || match[2] || match[3] || "",
+    requiresValue: true,
   };
+}
+
+function normalizeArgumentStaticValue(value: string) {
+  const trimmed = value.trim();
+  if (/^(?:<[^<>]+>|\[[^\[\]]+\])$/.test(trimmed)) {
+    return { value: "", requiresValue: true };
+  }
+  return { value, requiresValue: false };
 }
 
 function initialPackageArguments(value: unknown): PackageArgumentField[] {
   return records(value).map((argument) => {
-    const parsedFlag = splitArgumentFlagValueName(
+    const parsedFlag = splitArgumentFlagRequiresValue(
       stringValue(argument.flag),
-      stringValue(argument.valueName ?? argument.value_name),
+      booleanValue(argument.requiresValue ?? argument.requires_value),
     );
     return {
       id: createId("arg"),
@@ -551,7 +559,7 @@ function initialPackageArguments(value: unknown): PackageArgumentField[] {
       required: booleanValue(argument.isRequired),
       secret: booleanValue(argument.isSecret),
       value: stringValue(argument.value),
-      valueName: parsedFlag.valueName,
+      requiresValue: parsedFlag.requiresValue,
     };
   });
 }
@@ -570,7 +578,7 @@ function initialTransportArguments(value: unknown): PackageArgumentField[] {
     required: index === 0,
     secret: false,
     value: String(argument),
-    valueName: "",
+    requiresValue: false,
   }));
 }
 
@@ -728,7 +736,7 @@ function publicPackageArguments(packageArguments: PackageArgumentField[]): Recor
         name,
         flag: argument.flag.trim(),
         value: value,
-        valueName: argument.valueName.trim(),
+        requiresValue: argument.requiresValue,
         description,
         default: argument.defaultValue.trim(),
         format: argument.format || "string",
@@ -2157,31 +2165,48 @@ export default function SubmitServerPage() {
                             />
                             <Input
                               onChange={(event) =>
-                                updatePackageArgument(packageTarget.id, argument.id, {
-                                  flag: event.target.value,
-                                })
+                                {
+                                  const parsedFlag = splitArgumentFlagRequiresValue(
+                                    event.target.value,
+                                    argument.requiresValue,
+                                  );
+                                  updatePackageArgument(packageTarget.id, argument.id, {
+                                    flag: parsedFlag.flag,
+                                    requiresValue: parsedFlag.requiresValue,
+                                  });
+                                }
                               }
                               placeholder="Flag, e.g. --log-level"
                               value={argument.flag}
                             />
                             <Input
                               onChange={(event) =>
-                                updatePackageArgument(packageTarget.id, argument.id, {
-                                  value: event.target.value,
-                                })
+                                {
+                                  const normalizedValue = normalizeArgumentStaticValue(
+                                    event.target.value,
+                                  );
+                                  updatePackageArgument(packageTarget.id, argument.id, {
+                                    value: normalizedValue.value,
+                                    requiresValue:
+                                      normalizedValue.requiresValue || argument.requiresValue,
+                                  });
+                                }
                               }
                               placeholder="Static value, e.g. stdio"
                               value={argument.value}
                             />
-                            <Input
-                              onChange={(event) =>
-                                updatePackageArgument(packageTarget.id, argument.id, {
-                                  valueName: event.target.value,
-                                })
-                              }
-                              placeholder="Value, e.g. port"
-                              value={argument.valueName}
-                            />
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                checked={argument.requiresValue}
+                                onChange={(event) =>
+                                  updatePackageArgument(packageTarget.id, argument.id, {
+                                    requiresValue: event.target.checked,
+                                  })
+                                }
+                                type="checkbox"
+                              />
+                              Takes value
+                            </label>
                             <Select
                               onValueChange={(value) =>
                                 updatePackageArgument(packageTarget.id, argument.id, { format: value })

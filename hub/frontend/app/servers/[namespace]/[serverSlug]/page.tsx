@@ -588,7 +588,7 @@ function PackageArgumentsTable({
       required: argument.isRequired,
       secret: argument.isSecret,
       value: stringValue(argument.value),
-      valueName: stringValue(argument.valueName ?? argument.value_name),
+      requiresValue: argument.requiresValue ?? argument.requires_value,
     }))
     .filter((argument) => argument.name || argument.flag || argument.value);
 
@@ -603,7 +603,7 @@ function PackageArgumentsTable({
             <tr>
               <th>Name</th>
               <th>Flag</th>
-              <th>Value</th>
+              <th>Takes Value</th>
               <th>Format</th>
               <th>Required</th>
               <th>Launch</th>
@@ -620,9 +620,8 @@ function PackageArgumentsTable({
                 </td>
                 <td>{argument.flag || "Not specified"}</td>
                 <td>
-                  {argument.value ||
-                    argument.valueName ||
-                    (argument.defaultValue ? argument.defaultValue : "No value")}
+                  <BooleanMark value={argument.requiresValue} />
+                  {argument.value ? <span>{argument.value}</span> : null}
                 </td>
                 <td>
                   <FormatBadge value={argument.format} />

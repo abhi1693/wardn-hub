@@ -58,7 +58,7 @@ Source review requirements:
 
 Source review list format:
 - filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
-- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","description":"Port for HTTP transport."}.
+- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.
 
 Metadata rules:
 - Do not use environment placeholder values that wrap names in dollar signs and braces.
@@ -66,6 +66,12 @@ Metadata rules:
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
 - Split package versions from identifiers. Do not put versions or tags inside package identifiers.
 - Ensure package transport command, args, env, and type match documented install/run instructions.
+- packages[].transport.args must contain only the concrete default launch arguments in runnable order. Do not add every documented CLI option there.
+- Optional CLI flags/configurable arguments belong in packages[].packageArguments with includeInLaunch false.
+- Use packageArguments[].requiresValue true for flags that take a user-supplied value. Do not include placeholder text like <port> or [url] in transport.args.
+- requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
+- Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
+- If a package argument is part of the default launch command, set includeInLaunch true.
 - Ensure documentation, title, description, websiteUrl, repository, packages/remotes, icons, and version are accurate where available.
 
 Return:

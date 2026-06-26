@@ -91,6 +91,12 @@ Critical metadata rules:
 - Do not put versions or tags inside package identifiers.
 - Include optional variables too if they affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
+- packages[].transport.args must be the runnable default launch arguments only. Do not add every documented CLI option there.
+- Optional CLI flags/configurable arguments belong in packages[].packageArguments with includeInLaunch false.
+- Use packageArguments[].requiresValue true for flags that take a user-supplied value. Do not include placeholder text like <port> or [url] in transport.args.
+- requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
+- Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
+- For arguments that are actually part of the default launch command, set includeInLaunch true and keep packages[].transport.args in the exact runnable order.
 
 Environment variable review:
 - Read README/docs for every environment variable and CLI option.
@@ -112,7 +118,7 @@ Source review evidence must include:
 
 Source review list format:
 - filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
-- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","description":"Port for HTTP transport."}.
+- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.
 
 Before submitting, verify every documented env var and CLI argument from inspected sections is represented or explicitly listed in sourceReview.unknowns with a reason.
 

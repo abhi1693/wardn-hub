@@ -58,12 +58,18 @@ Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.
 - Package identifiers and versions are split correctly. No package identifier contains a version or tag.
 - Transport command, args, env, and transport type match documented install/run instructions.
+- packages[].transport.args contains only the concrete default launch arguments in runnable order, not every documented optional CLI flag.
+- Optional CLI flags/configurable arguments are represented in packages[].packageArguments with includeInLaunch false.
+- Flags that take user-supplied values are represented with packageArguments[].requiresValue true, not placeholder text in transport.args.
+- packageArguments[].value does not contain placeholder examples such as "<host>", "[url]", "host", or "url"; requiresValue is the metadata for that.
+- packageArguments[].flag does not contain placeholders. For docs that show "--host <host>", the correct shape is flag "--host" and requiresValue true.
+- Package arguments that are part of the default launch command have includeInLaunch true.
 - No environment value uses placeholder syntax that wraps names in dollar signs and braces.
 - Environment variable names are unique within each package target and within sourceReview.environmentVariables.
 - Secret or user-specific defaults are empty strings.
 - Every documented environment variable is represented in sourceReview.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
 - Variables required at launch are also represented in packages[].transport.env with safe defaults.
-- CLI arguments and configurable flags are represented in sourceReview.commandArguments and package transport args where appropriate.
+- CLI arguments and configurable flags are represented in sourceReview.commandArguments and packageArguments; only default launch args are represented in package transport args.
 - Prerequisites are represented in sourceReview.prerequisites.
 - sourceReview.filesRead, installCommands, commandArguments, environmentVariables, prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns are complete.
 - capabilitiesReviewed and limitationsReviewed are true.

@@ -1915,20 +1915,17 @@
             "title": "Options",
             "type": "array"
           },
+          "requiresValue": {
+            "default": false,
+            "title": "Requiresvalue",
+            "type": "boolean"
+          },
           "value": {
             "default": "",
             "examples": [
               ""
             ],
             "title": "Value",
-            "type": "string"
-          },
-          "valueName": {
-            "default": "",
-            "examples": [
-              "port"
-            ],
-            "title": "Valuename",
             "type": "string"
           }
         },
@@ -4559,7 +4556,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.19"
+    "version": "0.2.20"
   },
   "openapi": "3.1.0",
   "paths": {

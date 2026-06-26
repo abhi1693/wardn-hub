@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -23,6 +24,17 @@ RegistryVersionStatus = Literal["active", "deprecated", "deleted", "quarantined"
 RegistryVisibility = Literal["public", "unlisted", "private_preview"]
 CATEGORY_SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"
+ARGUMENT_VALUE_PLACEHOLDER_PATTERN = re.compile(
+    r"^(?P<flag>.*?)(?:\s*(?:=\s*)?<(?P<angle>[^<>]+)>|\s+\[(?P<bracket>[^\[\]]+)\])$"
+)
+ARGUMENT_PLACEHOLDER_VALUE_PATTERN = re.compile(r"^(?:<[^<>]+>|\[[^\[\]]+\])$")
+
+
+def split_argument_value_placeholder(flag: str) -> tuple[str, bool]:
+    match = ARGUMENT_VALUE_PLACEHOLDER_PATTERN.match(flag.strip())
+    if not match:
+        return flag, False
+    return match.group("flag").strip(), True
 
 
 def metadata_has_category(metadata: dict[str, Any] | None) -> bool:
@@ -95,15 +107,14 @@ class RegistryPackageArgument(BaseModel):
     name: str = Field(default="", examples=["port"])
     flag: str = Field(default="", examples=["--port"])
     value: str = Field(default="", examples=[""])
-    value_name: str = Field(
-        default="",
-        validation_alias=AliasChoices("valueName", "value_name", "placeholder"),
-        serialization_alias="valueName",
-        examples=["port"],
-    )
     default: str = Field(default="", examples=[""])
     description: str = Field(default="", examples=["Port for the local HTTP server."])
     format: str = Field(default="string", examples=["integer"])
+    requires_value: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("requiresValue", "requires_value"),
+        serialization_alias="requiresValue",
+    )
     include_in_launch: bool = Field(
         default=False,
         validation_alias=AliasChoices("includeInLaunch", "include_in_launch", "includeInCommand"),
@@ -125,6 +136,32 @@ class RegistryPackageArgument(BaseModel):
         validation_alias=AliasChoices("isSecret", "is_secret", "secret"),
         serialization_alias="isSecret",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_value_placeholder(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        normalized_data = {**data}
+        flag = data.get("flag")
+        flag_requires_value = False
+        if isinstance(flag, str) and flag.strip():
+            normalized_flag, flag_requires_value = split_argument_value_placeholder(flag)
+            normalized_data["flag"] = normalized_flag
+
+        value = data.get("value")
+        value_requires_value = (
+            isinstance(value, str) and bool(ARGUMENT_PLACEHOLDER_VALUE_PATTERN.match(value.strip()))
+        )
+        if value_requires_value:
+            normalized_data["value"] = ""
+
+        for key in ("valueName", "value_name", "placeholder"):
+            normalized_data.pop(key, None)
+
+        if flag_requires_value or value_requires_value:
+            normalized_data["requiresValue"] = True
+        return normalized_data
 
 
 class RegistryPackage(BaseModel):
