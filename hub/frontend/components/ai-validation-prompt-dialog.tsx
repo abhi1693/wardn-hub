@@ -34,6 +34,8 @@ Required API access:
 - If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
 - Do not call the Wardn Hub API until a token is available.
 - The token must belong to an admin or moderator account with review-system access and must be able to read the submitted queue.
+- The token must include submissions:read to inspect submissions and submissions:moderate to approve or reject submissions.
+- To publish, the token must belong to a superuser and include submissions:publish.
 - Moderator tokens may approve or reject submitted versions. Publishing and archiving require a superuser token.
 - If GET /submissions does not expose submitted records for review, stop and report that the token does not have review access.
 - Do not approve, reject, publish, update, or delete anything before presenting your validation report and receiving explicit user approval for the exact action.

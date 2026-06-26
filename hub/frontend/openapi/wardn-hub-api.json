@@ -3647,11 +3647,20 @@
           "scopes": {
             "items": {
               "enum": [
+                "admin:write",
+                "audit:read",
                 "catalog:read",
+                "namespaces:write",
+                "partners:write",
+                "registry:write",
                 "submissions:read",
                 "submissions:write",
+                "submissions:moderate",
+                "submissions:publish",
                 "tokens:read",
-                "tokens:write"
+                "tokens:write",
+                "users:read",
+                "users:write"
               ],
               "type": "string"
             },
@@ -3757,11 +3766,20 @@
           "scopes": {
             "items": {
               "enum": [
+                "admin:write",
+                "audit:read",
                 "catalog:read",
+                "namespaces:write",
+                "partners:write",
+                "registry:write",
                 "submissions:read",
                 "submissions:write",
+                "submissions:moderate",
+                "submissions:publish",
                 "tokens:read",
-                "tokens:write"
+                "tokens:write",
+                "users:read",
+                "users:write"
               ],
               "type": "string"
             },
@@ -3870,11 +3888,20 @@
               {
                 "items": {
                   "enum": [
+                    "admin:write",
+                    "audit:read",
                     "catalog:read",
+                    "namespaces:write",
+                    "partners:write",
+                    "registry:write",
                     "submissions:read",
                     "submissions:write",
+                    "submissions:moderate",
+                    "submissions:publish",
                     "tokens:read",
-                    "tokens:write"
+                    "tokens:write",
+                    "users:read",
+                    "users:write"
                   ],
                   "type": "string"
                 },
@@ -4273,7 +4300,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.1.0"
+    "version": "0.2.11"
   },
   "openapi": "3.1.0",
   "paths": {

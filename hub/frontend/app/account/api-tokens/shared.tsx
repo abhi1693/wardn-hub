@@ -37,6 +37,16 @@ export const scopeOptions: { description: string; label: string; value: APIToken
     value: "submissions:write",
   },
   {
+    description: "Approve or reject submitted versions.",
+    label: "Submissions moderate",
+    value: "submissions:moderate",
+  },
+  {
+    description: "Publish approved submissions.",
+    label: "Submissions publish",
+    value: "submissions:publish",
+  },
+  {
     description: "View token records.",
     label: "Tokens read",
     value: "tokens:read",
@@ -45,6 +55,41 @@ export const scopeOptions: { description: string; label: string; value: APIToken
     description: "Create and manage tokens.",
     label: "Tokens write",
     value: "tokens:write",
+  },
+  {
+    description: "Manage registry records.",
+    label: "Registry write",
+    value: "registry:write",
+  },
+  {
+    description: "Manage namespaces.",
+    label: "Namespaces write",
+    value: "namespaces:write",
+  },
+  {
+    description: "Manage partner records.",
+    label: "Partners write",
+    value: "partners:write",
+  },
+  {
+    description: "Read audit events.",
+    label: "Audit read",
+    value: "audit:read",
+  },
+  {
+    description: "Read user records.",
+    label: "Users read",
+    value: "users:read",
+  },
+  {
+    description: "Manage users.",
+    label: "Users write",
+    value: "users:write",
+  },
+  {
+    description: "Perform superuser-only actions.",
+    label: "Admin write",
+    value: "admin:write",
   },
 ];
 
@@ -58,6 +103,12 @@ export const readOnlyScopes: APITokenScope[] = [
   "catalog:read",
   "submissions:read",
   "tokens:read",
+];
+
+export const reviewScopes: APITokenScope[] = [
+  "catalog:read",
+  "submissions:read",
+  "submissions:moderate",
 ];
 
 export function formatDate(value?: string | null) {

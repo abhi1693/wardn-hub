@@ -15,6 +15,7 @@ import {
   defaultScopes,
   expiryToIso,
   readOnlyScopes,
+  reviewScopes,
   ScopeCheckbox,
   scopeOptions,
   TOKEN_CREATED_STORAGE_KEY,
@@ -159,6 +160,9 @@ export default function CreateApiTokenPage() {
                     </Button>
                     <Button onClick={() => setScopes(defaultScopes)} size="sm" type="button" variant="outline">
                       Submission
+                    </Button>
+                    <Button onClick={() => setScopes(reviewScopes)} size="sm" type="button" variant="outline">
+                      Review
                     </Button>
                     <Button
                       onClick={() => setScopes(scopeOptions.map((scope) => scope.value))}

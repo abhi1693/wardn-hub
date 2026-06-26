@@ -18,6 +18,7 @@ import {
   isoToDateInput,
   LoadState,
   readOnlyScopes,
+  reviewScopes,
   ScopeCheckbox,
   scopeOptions,
   StatePanel,
@@ -228,6 +229,9 @@ export default function EditApiTokenPage() {
                         </Button>
                         <Button onClick={() => setScopes(defaultScopes)} size="sm" type="button" variant="outline">
                           Submission
+                        </Button>
+                        <Button onClick={() => setScopes(reviewScopes)} size="sm" type="button" variant="outline">
+                          Review
                         </Button>
                         <Button
                           onClick={() => setScopes(scopeOptions.map((scope) => scope.value))}
