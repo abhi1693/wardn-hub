@@ -537,8 +537,8 @@ async def create_server_version(
             description=payload.description,
             documentation=payload.documentation,
             website_url=payload.website_url,
-            repository=payload.repository,
-            icons=payload.icons,
+            repository=values["repository"],
+            icons=values["icons"],
             status="active",
             status_message="",
             visibility="public",
@@ -556,8 +556,8 @@ async def create_server_version(
         server.description = payload.description
         server.documentation = payload.documentation
         server.website_url = payload.website_url
-        server.repository = payload.repository
-        server.icons = payload.icons
+        server.repository = values["repository"]
+        server.icons = values["icons"]
         if server.status == "deleted":
             server.status = "active"
             server.status_message = ""
@@ -634,7 +634,8 @@ async def update_server_version(
     if server is None:
         raise RegistryServerNotFoundError("server not found")
 
-    for key, value in document_values(payload).items():
+    values = document_values(payload)
+    for key, value in values.items():
         setattr(version, key, value)
     if updated_by_user_id is not None:
         version.updated_by_user_id = updated_by_user_id
@@ -647,8 +648,8 @@ async def update_server_version(
         server.title = payload.title
         server.description = payload.description
         server.website_url = payload.website_url
-        server.repository = payload.repository
-        server.icons = payload.icons
+        server.repository = values["repository"]
+        server.icons = values["icons"]
         if updated_by_user_id is not None:
             server.updated_by_user_id = updated_by_user_id
         await sync_server_categories_if_present(session, server.id, category_values(payload))

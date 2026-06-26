@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -336,6 +337,57 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     assert response.server.latest_version.version == "1.0.0"
     assert response.version.is_latest is True
     assert response.version.server_json["name"] == "io.github.example/weather"
+
+
+@pytest.mark.asyncio
+async def test_create_server_version_stores_json_values_on_server(monkeypatch) -> None:
+    async def missing_server(*args, **kwargs):
+        return None
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    payload = RegistryServerVersionCreate(
+        **{
+            **registry_payload().model_dump(by_alias=True),
+            "repository": {
+                "type": "git",
+                "source": "github",
+                "url": "https://github.com/example/weather",
+            },
+            "icons": [{"src": "https://example.com/icon.png", "type": "image/png"}],
+        }
+    )
+    session = FakeSession()
+    monkeypatch.setattr(service.repository, "get_server", missing_server)
+    monkeypatch.setattr(service.repository, "get_server_version", missing_server)
+    monkeypatch.setattr(service.repository, "clear_latest_for_server", noop)
+    monkeypatch.setattr(service.repository, "sync_server_categories", noop)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    await service.create_server_version(session, payload)
+
+    server = next(item for item in session.added if isinstance(item, RegistryServer))
+    assert server.repository == {
+        "source": "github",
+        "type": "git",
+        "url": "https://github.com/example/weather",
+        "subfolder": "",
+        "branch": "",
+        "tag": "",
+    }
+    assert server.icons == [
+        {"src": "https://example.com/icon.png", "type": "image/png", "sizes": ""}
+    ]
+    json.dumps(server.repository)
+    json.dumps(server.icons)
 
 
 @pytest.mark.asyncio
