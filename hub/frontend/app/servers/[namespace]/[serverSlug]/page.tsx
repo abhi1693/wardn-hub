@@ -281,6 +281,18 @@ function formatTone(value: string) {
   return "string";
 }
 
+function inferredEnvironmentFormat(value: string) {
+  const trimmed = value.trim();
+  if (["true", "false"].includes(trimmed.toLowerCase())) return "boolean";
+  if (trimmed && !Number.isNaN(Number(trimmed))) return "number";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return "uri";
+  return "string";
+}
+
+function inferredEnvironmentSecret(name: string) {
+  return /(?:^|_)(?:api_?key|secret|token|password|credential|private_?key)(?:_|$)/i.test(name);
+}
+
 function FormatBadge({ value }: { value: string }) {
   return <span className={`technical-badge tone-${formatTone(value)}`}>{value}</span>;
 }
@@ -297,6 +309,18 @@ function BooleanMark({ value }: { value: unknown }) {
       {enabled ? <Check size={16} /> : "x"}
     </span>
   );
+}
+
+function RequirementMark({ value }: { value: unknown }) {
+  if (typeof value !== "boolean") {
+    return (
+      <span aria-label="Unknown" className="technical-boolean unknown" title="Unknown">
+        ?
+      </span>
+    );
+  }
+
+  return <BooleanMark value={value} />;
 }
 
 function CopyButton({ value }: { value: string }) {
@@ -536,7 +560,7 @@ function PackageEnvironmentTable({
                   <BooleanMark value={envVar.secret} />
                 </td>
                 <td>
-                  <BooleanMark value={envVar.required} />
+                  <RequirementMark value={envVar.required} />
                 </td>
               </tr>
             ))}
@@ -611,7 +635,10 @@ function TransportEnvironmentTable({ environment }: { environment: unknown }) {
 
   const rows = Object.entries(environment)
     .map(([name, value]) => ({
+      format: inferredEnvironmentFormat(typeof value === "string" ? value : JSON.stringify(value)),
       name,
+      required: value === "" ? undefined : false,
+      secret: inferredEnvironmentSecret(name),
       value: typeof value === "string" ? value : JSON.stringify(value),
     }))
     .filter((envVar) => envVar.name);
@@ -626,6 +653,9 @@ function TransportEnvironmentTable({ environment }: { environment: unknown }) {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Format</th>
+              <th>Secret</th>
+              <th>Required</th>
               <th>Default</th>
             </tr>
           </thead>
@@ -634,6 +664,15 @@ function TransportEnvironmentTable({ environment }: { environment: unknown }) {
               <tr key={envVar.name}>
                 <td>
                   <strong>{envVar.name}</strong>
+                </td>
+                <td>
+                  <FormatBadge value={envVar.format} />
+                </td>
+                <td>
+                  <BooleanMark value={envVar.secret} />
+                </td>
+                <td>
+                  <RequirementMark value={envVar.required} />
                 </td>
                 <td>{envVar.value || "No default"}</td>
               </tr>

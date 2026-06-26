@@ -2147,6 +2147,11 @@ button {
   color: #b91c1c !important;
 }
 
+.technical-table td .technical-boolean.unknown,
+.technical-boolean.unknown {
+  color: #6b7280 !important;
+}
+
 .technical-remote-list,
 .technical-side-stack {
   display: grid;
