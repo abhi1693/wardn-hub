@@ -8,6 +8,7 @@ import {
   API_ACCESS_INSTRUCTIONS,
   REGISTRY_METADATA_SCOPE_RULE,
   VALIDATION_PACKAGE_ARGUMENT_CHECKS,
+  VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS,
   copyText,
   currentApiBaseUrl,
 } from "@/components/ai-prompt-shared";
@@ -58,6 +59,7 @@ Required checks:
 - Package identifiers and versions are split correctly. No package identifier contains a version or tag.
 - Transport command, args, env, and transport type match documented install/run instructions.
 ${VALIDATION_PACKAGE_ARGUMENT_CHECKS}
+${VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS}
 - No environment value uses placeholder syntax that wraps names in dollar signs and braces.
 - Environment variable names are unique within each package target and within sourceReview.environmentVariables.
 - Secret or user-specific defaults are empty strings.

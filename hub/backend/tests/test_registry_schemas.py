@@ -281,6 +281,93 @@ def test_remote_query_parameters_are_typed_and_serialized() -> None:
     ]
 
 
+def test_remote_auth_query_parameters_are_canonicalized() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[],
+            remotes=[
+                {
+                    "type": "streamable-http",
+                    "url": "https://mcp.browserbase.com/mcp?browserbaseApiKey={browserbaseApiKey}",
+                    "authentication": {
+                        "type": "query",
+                        "queryParameters": [
+                            {
+                                "name": "browserbaseApiKey",
+                                "value": "",
+                                "secret": True,
+                                "required": True,
+                            },
+                            {
+                                "name": "modelName",
+                                "default": "google/gemini-2.5-flash-lite",
+                                "secret": False,
+                                "required": False,
+                            },
+                        ],
+                    },
+                }
+            ],
+        )
+    )
+
+    serialized = payload.model_dump(by_alias=True, exclude_none=True)
+
+    assert serialized["remotes"][0]["url"] == "https://mcp.browserbase.com/mcp"
+    assert serialized["remotes"][0]["authentication"] == {"type": "query"}
+    assert serialized["remotes"][0]["queryParameters"] == [
+        {
+            "name": "browserbaseApiKey",
+            "value": "",
+            "description": "",
+            "isRequired": True,
+            "isSecret": True,
+        },
+        {
+            "name": "modelName",
+            "value": "",
+            "description": "",
+            "isRequired": False,
+            "isSecret": False,
+            "default": "google/gemini-2.5-flash-lite",
+        },
+    ]
+
+
+def test_remote_url_query_parameters_are_extracted() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[],
+            remotes=[
+                {
+                    "type": "streamable-http",
+                    "url": "https://weather.example.com/mcp?apiKey={apiKey}&region=us",
+                }
+            ],
+        )
+    )
+
+    serialized = payload.model_dump(by_alias=True, exclude_none=True)
+
+    assert serialized["remotes"][0]["url"] == "https://weather.example.com/mcp"
+    assert serialized["remotes"][0]["queryParameters"] == [
+        {
+            "name": "apiKey",
+            "value": "",
+            "description": "",
+            "isRequired": True,
+            "isSecret": True,
+        },
+        {
+            "name": "region",
+            "value": "us",
+            "description": "",
+            "isRequired": True,
+            "isSecret": False,
+        },
+    ]
+
+
 def test_server_definition_requires_package_or_remote_target() -> None:
     with pytest.raises(ValueError, match="at least one package or remote"):
         RegistryServerVersionCreate(**registry_payload(packages=[], remotes=[]))

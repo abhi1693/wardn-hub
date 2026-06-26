@@ -44,7 +44,15 @@ export const PACKAGE_AND_REMOTE_RULES = `Package and remote rules:
 - If the server is installed through npm, PyPI/uvx, Docker/OCI, or another package registry, add packages[] with registryType, identifier, version when known, and transport.
 - Split versions from package identifiers. Do not put versions or tags inside identifiers.
 - If the server is hosted remotely over HTTP/SSE/streamable HTTP and users connect to a URL instead of installing a package, add remotes[] instead of inventing a package target.
-- Preserve documented command, args, transport type, env, and endpoint paths exactly enough for a user to configure the server.`;
+- Preserve documented command, args, transport type, env, and endpoint paths exactly enough for a user to configure the server.
+- Remote endpoint URLs must not include configurable query strings such as ?apiKey={apiKey}. Put those parameters in remotes[].queryParameters instead.
+- Use remotes[].queryParameters for remote URL query parameters. Do not put query parameters under remotes[].authentication.queryParameters.`;
+
+export const REMOTE_QUERY_PARAMETER_RULES = `Remote query parameter rules:
+- Remote endpoint URLs must be the base endpoint path only, without configurable query strings.
+- Put remote query parameters in remotes[].queryParameters with name, description, isRequired, and isSecret.
+- Do not put query parameters under remotes[].authentication.queryParameters.
+- For docs that show "https://example.com/mcp?apiKey={apiKey}", use {"url":"https://example.com/mcp","queryParameters":[{"name":"apiKey","isRequired":true,"isSecret":true}]}.`;
 
 export const PACKAGE_ARGUMENT_RULES = `Package argument rules:
 - packages[].transport.args must be the runnable default launch arguments only. Do not add every documented CLI option there.
@@ -92,6 +100,7 @@ export const DRAFT_METADATA_RULES = `Metadata rules:
 - Split package versions from identifiers. Do not put versions or tags inside package identifiers.
 - Ensure package transport command, args, env, and type match documented install/run instructions.
 ${PACKAGE_ARGUMENT_RULES}
+${REMOTE_QUERY_PARAMETER_RULES}
 - Ensure documentation, title, description, websiteUrl, repository, packages/remotes, icons, and version are accurate where available.`;
 
 export const VALIDATION_PACKAGE_ARGUMENT_CHECKS = `- packages[].transport.args contains only the concrete default launch arguments in runnable order, not every documented optional CLI flag.
@@ -100,3 +109,7 @@ export const VALIDATION_PACKAGE_ARGUMENT_CHECKS = `- packages[].transport.args c
 - packageArguments[].value does not contain placeholder examples such as "<host>", "[url]", "host", or "url"; requiresValue is the metadata for that.
 - packageArguments[].flag does not contain placeholders. For docs that show "--host <host>", the correct shape is flag "--host" and requiresValue true.
 - Package arguments that are part of the default launch command have includeInLaunch true.`;
+
+export const VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = `- Remote endpoint URLs do not include configurable query strings such as ?apiKey={apiKey}.
+- Remote URL query parameters are represented in remotes[].queryParameters, not remotes[].authentication.queryParameters.
+- If docs show a hosted URL with query authentication, the base endpoint is stored in remotes[].url and the query auth fields are stored in remotes[].queryParameters.`;

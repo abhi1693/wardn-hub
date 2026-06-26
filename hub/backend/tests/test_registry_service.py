@@ -154,6 +154,45 @@ def test_parse_cursor() -> None:
         service.parse_cursor("not-a-cursor")
 
 
+def test_version_summary_normalizes_stored_remote_query_parameters() -> None:
+    version = version_model(uuid4(), "1.0.0", is_latest=True)
+    version.remotes = [
+        {
+            "url": "https://mcp.browserbase.com/mcp?browserbaseApiKey={browserbaseApiKey}",
+            "type": "streamable-http",
+            "authentication": {
+                "type": "query",
+                "queryParameters": [
+                    {
+                        "name": "browserbaseApiKey",
+                        "value": "",
+                        "secret": True,
+                        "required": True,
+                    }
+                ],
+            },
+        }
+    ]
+
+    response = service.version_summary(version)
+
+    assert response.remotes == [
+        {
+            "url": "https://mcp.browserbase.com/mcp",
+            "type": "streamable-http",
+            "authentication": {"type": "query"},
+            "queryParameters": [
+                {
+                    "name": "browserbaseApiKey",
+                    "value": "",
+                    "isSecret": True,
+                    "isRequired": True,
+                }
+            ],
+        }
+    ]
+
+
 def test_category_values_extracts_publisher_metadata() -> None:
     payload = registry_payload()
     payload.meta = {

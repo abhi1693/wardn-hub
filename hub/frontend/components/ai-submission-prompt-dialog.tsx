@@ -9,6 +9,7 @@ import {
   API_ACCESS_INSTRUCTIONS,
   ENVIRONMENT_REVIEW_RULES,
   PACKAGE_ARGUMENT_RULES,
+  REMOTE_QUERY_PARAMETER_RULES,
   SOURCE_REVIEW_EVIDENCE_REQUIREMENTS,
   SOURCE_REVIEW_LIST_FORMAT,
   copyText,
@@ -94,6 +95,8 @@ Critical metadata rules:
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
 
 ${PACKAGE_ARGUMENT_RULES}
+
+${REMOTE_QUERY_PARAMETER_RULES}
 
 ${ENVIRONMENT_REVIEW_RULES}
 

@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 from uuid import UUID
 
 from pydantic import (
@@ -28,6 +29,13 @@ ARGUMENT_VALUE_PLACEHOLDER_PATTERN = re.compile(
     r"^(?P<flag>.*?)(?:\s*(?:=\s*)?<(?P<angle>[^<>]+)>|\s+\[(?P<bracket>[^\[\]]+)\])$"
 )
 ARGUMENT_PLACEHOLDER_VALUE_PATTERN = re.compile(r"^(?:<[^<>]+>|\[[^\[\]]+\])$")
+REMOTE_QUERY_PARAMETER_ALIASES = (
+    "queryParameters",
+    "queryParams",
+    "query_parameters",
+    "query_params",
+)
+REMOTE_QUERY_VALUE_PLACEHOLDER_PATTERN = re.compile(r"^(?:\{([^{}]+)\}|<([^<>]+)>|\[([^\[\]]+)\])$")
 
 
 def split_argument_value_placeholder(flag: str) -> tuple[str, bool]:
@@ -51,6 +59,112 @@ def metadata_has_category(metadata: dict[str, Any] | None) -> bool:
         ):
             return True
     return False
+
+
+def normalize_remote_query_parameter(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    parameter = dict(value)
+    name = parameter.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    parameter["name"] = name.strip()
+
+    if "required" in parameter and "isRequired" not in parameter:
+        parameter["isRequired"] = parameter.pop("required")
+    if "secret" in parameter and "isSecret" not in parameter:
+        parameter["isSecret"] = parameter.pop("secret")
+
+    return parameter
+
+
+def query_parameter_from_url(name: str, value: str) -> dict[str, Any] | None:
+    if not name.strip():
+        return None
+
+    parameter: dict[str, Any] = {
+        "name": name.strip(),
+        "value": value,
+        "isRequired": True,
+        "isSecret": False,
+    }
+    if REMOTE_QUERY_VALUE_PLACEHOLDER_PATTERN.match(value.strip()):
+        parameter["value"] = ""
+        parameter["isSecret"] = True
+    return parameter
+
+
+def remote_query_parameters_from_value(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    parameters = []
+    for parameter in value:
+        normalized = normalize_remote_query_parameter(parameter)
+        if normalized:
+            parameters.append(normalized)
+    return parameters
+
+
+def normalize_remote_mapping(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+
+    remote = dict(value)
+    query_parameters: list[dict[str, Any]] = []
+    seen_parameter_names: set[str] = set()
+    has_query_parameter_field = False
+
+    def add_parameters(parameters: list[dict[str, Any]]) -> None:
+        for parameter in parameters:
+            name = str(parameter.get("name") or "").strip()
+            if not name or name in seen_parameter_names:
+                continue
+            seen_parameter_names.add(name)
+            query_parameters.append(parameter)
+
+    for alias in REMOTE_QUERY_PARAMETER_ALIASES:
+        if alias in remote:
+            has_query_parameter_field = True
+            add_parameters(remote_query_parameters_from_value(remote.pop(alias, None)))
+
+    authentication = remote.get("authentication")
+    if isinstance(authentication, dict):
+        authentication = dict(authentication)
+        for alias in REMOTE_QUERY_PARAMETER_ALIASES:
+            if alias in authentication:
+                has_query_parameter_field = True
+                add_parameters(remote_query_parameters_from_value(authentication.pop(alias, None)))
+        remote["authentication"] = authentication
+
+    url = remote.get("url")
+    if isinstance(url, str) and url.strip():
+        parsed_url = urlsplit(url.strip())
+        url_query_parameters = [
+            parameter
+            for parameter in (
+                query_parameter_from_url(name, value)
+                for name, value in parse_qsl(parsed_url.query, keep_blank_values=True)
+            )
+            if parameter is not None
+        ]
+        if url_query_parameters:
+            has_query_parameter_field = True
+        add_parameters(url_query_parameters)
+        if query_parameters and parsed_url.query:
+            remote["url"] = urlunsplit(
+                (
+                    parsed_url.scheme,
+                    parsed_url.netloc,
+                    parsed_url.path,
+                    "",
+                    parsed_url.fragment,
+                )
+            )
+
+    if query_parameters or has_query_parameter_field:
+        remote["queryParameters"] = query_parameters
+    return remote
 
 
 class RegistryRepository(BaseModel):
@@ -253,6 +367,11 @@ class RegistryRemote(BaseModel):
         serialization_alias="queryParameters",
     )
     authentication: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_query_parameters(cls, data: Any) -> Any:
+        return normalize_remote_mapping(data)
 
 
 class MCPServerDocument(BaseModel):

@@ -41,6 +41,7 @@ from app.modules.registry.schemas import (
     RegistryUserDetailResponse,
     RegistryUserListResponse,
     RegistryUserRead,
+    normalize_remote_mapping,
 )
 from app.modules.users.exceptions import UserNotFoundError
 
@@ -98,6 +99,14 @@ def registry_json(value):
     return value
 
 
+def registry_remotes_json(value):
+    if isinstance(value, BaseModel):
+        return registry_json(value)
+    if isinstance(value, list):
+        return [registry_json(normalize_remote_mapping(item)) for item in value]
+    return registry_json(value)
+
+
 def normalized_metadata_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
@@ -130,7 +139,7 @@ def document_values(payload: MCPServerDocument) -> dict:
         "website_url": payload.website_url,
         "repository": registry_json(payload.repository),
         "packages": registry_json(payload.packages),
-        "remotes": registry_json(payload.remotes),
+        "remotes": registry_remotes_json(payload.remotes),
         "icons": registry_json(payload.icons),
         "server_json": payload.model_dump(by_alias=True, exclude_none=True),
     }
@@ -467,7 +476,12 @@ def version_summary(
         if include_private_metadata
         else public_registry_json(version.packages)
     )
-    remotes = version.remotes if include_private_metadata else public_registry_json(version.remotes)
+    normalized_remotes = registry_remotes_json(version.remotes)
+    remotes = (
+        normalized_remotes
+        if include_private_metadata
+        else public_registry_json(normalized_remotes)
+    )
     server_json = (
         version.server_json
         if include_private_metadata
@@ -516,7 +530,7 @@ def published_version_summary(version: RegistryServerVersion) -> RegistryPublish
         id=version.id,
         version=version.version,
         packages=public_registry_json(version.packages),
-        remotes=public_registry_json(version.remotes),
+        remotes=public_registry_json(registry_remotes_json(version.remotes)),
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
