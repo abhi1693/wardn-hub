@@ -572,7 +572,6 @@ function PackageArgumentsTable({
           <thead>
             <tr>
               <th>Name</th>
-              <th>Flag</th>
               <th>Takes Value</th>
               <th>Format</th>
               <th>Required</th>
@@ -588,7 +587,6 @@ function PackageArgumentsTable({
                   {argument.defaultValue ? <em>Default: {argument.defaultValue}</em> : null}
                   {argument.options ? <em>Options: {argument.options}</em> : null}
                 </td>
-                <td>{argument.flag || "Not specified"}</td>
                 <td>
                   <BooleanMark value={argument.requiresValue} />
                   {argument.value ? <span>{argument.value}</span> : null}
