@@ -116,6 +116,72 @@ def test_package_metadata_accepts_official_snake_case_manifest_fields() -> None:
     assert serialized["packages"][1]["environmentVariables"][0]["isRequired"] is True
 
 
+def test_package_arguments_distinguish_options_from_launch_args() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[
+                {
+                    "registry_type": "npm",
+                    "identifier": "@example/weather-mcp",
+                    "transport": {
+                        "type": "stdio",
+                        "command": "npx",
+                        "args": ["-y", "@example/weather-mcp", "--stdio"],
+                    },
+                    "package_arguments": [
+                        {
+                            "name": "port",
+                            "flag": "-p, --port",
+                            "value_name": "port",
+                            "description": "HTTP port for local mode.",
+                            "format": "integer",
+                            "include_in_launch": False,
+                        },
+                        {
+                            "value": "--stdio",
+                            "include_in_launch": True,
+                        },
+                    ],
+                }
+            ]
+        )
+    )
+
+    serialized = payload.model_dump(by_alias=True, exclude_none=True)
+
+    assert serialized["packages"][0]["transport"]["args"] == [
+        "-y",
+        "@example/weather-mcp",
+        "--stdio",
+    ]
+    assert serialized["packages"][0]["packageArguments"] == [
+        {
+            "name": "port",
+            "flag": "-p, --port",
+            "value": "",
+            "valueName": "port",
+            "default": "",
+            "description": "HTTP port for local mode.",
+            "format": "integer",
+            "includeInLaunch": False,
+            "options": [],
+            "allowedValues": [],
+        },
+        {
+            "name": "",
+            "flag": "",
+            "value": "--stdio",
+            "valueName": "",
+            "default": "",
+            "description": "",
+            "format": "string",
+            "includeInLaunch": True,
+            "options": [],
+            "allowedValues": [],
+        },
+    ]
+
+
 def test_remote_query_parameters_are_typed_and_serialized() -> None:
     payload = RegistryServerVersionCreate(
         **registry_payload(

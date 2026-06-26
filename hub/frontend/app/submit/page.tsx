@@ -75,8 +75,10 @@ type PackageArgumentField = HeaderField & {
   defaultValue: string;
   flag: string;
   format: string;
+  includeInLaunch: boolean;
   options: string;
   value: string;
+  valueName: string;
 };
 
 type RemoteTarget = {
@@ -212,8 +214,10 @@ function emptyPackageArgument(): PackageArgumentField {
     defaultValue: "",
     flag: "",
     format: "string",
+    includeInLaunch: false,
     options: "",
     value: "",
+    valueName: "",
   };
 }
 
@@ -514,19 +518,42 @@ function duplicateEnvironmentNames(environmentVariables: EnvironmentField[]) {
   return [...duplicates].sort();
 }
 
+function splitArgumentFlagValueName(flag: string, fallbackValueName = "") {
+  const trimmed = flag.trim();
+  const match = trimmed.match(/^(.*?)(?:\s+<([^<>]+)>|\s+\[([^\[\]]+)\])$/);
+  if (!match) {
+    return { flag: trimmed, valueName: fallbackValueName };
+  }
+
+  return {
+    flag: match[1].trim(),
+    valueName: fallbackValueName || match[2] || match[3] || "",
+  };
+}
+
 function initialPackageArguments(value: unknown): PackageArgumentField[] {
-  return records(value).map((argument) => ({
-    id: createId("arg"),
-    name: stringValue(argument.name),
-    description: stringValue(argument.description),
-    defaultValue: stringValue(argument.default),
-    flag: stringValue(argument.flag),
-    format: stringValue(argument.format) || "string",
-    options: Array.isArray(argument.options) ? argument.options.map(String).join(", ") : "",
-    required: booleanValue(argument.isRequired),
-    secret: booleanValue(argument.isSecret),
-    value: stringValue(argument.value),
-  }));
+  return records(value).map((argument) => {
+    const parsedFlag = splitArgumentFlagValueName(
+      stringValue(argument.flag),
+      stringValue(argument.valueName ?? argument.value_name),
+    );
+    return {
+      id: createId("arg"),
+      name: stringValue(argument.name),
+      description: stringValue(argument.description),
+      defaultValue: stringValue(argument.default),
+      flag: parsedFlag.flag,
+      format: stringValue(argument.format) || "string",
+      includeInLaunch: booleanValue(
+        argument.includeInLaunch ?? argument.includeInCommand ?? argument.include_in_launch,
+      ),
+      options: Array.isArray(argument.options) ? argument.options.map(String).join(", ") : "",
+      required: booleanValue(argument.isRequired),
+      secret: booleanValue(argument.isSecret),
+      value: stringValue(argument.value),
+      valueName: parsedFlag.valueName,
+    };
+  });
 }
 
 function initialTransportArguments(value: unknown): PackageArgumentField[] {
@@ -538,10 +565,12 @@ function initialTransportArguments(value: unknown): PackageArgumentField[] {
     defaultValue: "",
     flag: "",
     format: "string",
+    includeInLaunch: true,
     options: "",
     required: index === 0,
     secret: false,
     value: String(argument),
+    valueName: "",
   }));
 }
 
@@ -681,7 +710,11 @@ function publicPackageArguments(packageArguments: PackageArgumentField[]): Recor
       const value = argument.value.trim();
       const description = argument.description.trim();
       if (!name && value) {
-        return { value, description };
+        return {
+          value,
+          description,
+          includeInLaunch: argument.includeInLaunch,
+        };
       }
       if (!name) {
         return null;
@@ -694,15 +727,35 @@ function publicPackageArguments(packageArguments: PackageArgumentField[]): Recor
       return {
         name,
         flag: argument.flag.trim(),
+        value: value,
+        valueName: argument.valueName.trim(),
         description,
         default: argument.defaultValue.trim(),
         format: argument.format || "string",
+        includeInLaunch: argument.includeInLaunch,
         options,
         isRequired: argument.required,
         isSecret: argument.secret,
       };
     })
     .filter((argument): argument is Record<string, unknown> => Boolean(argument));
+}
+
+function launchArgumentValues(packageArguments: PackageArgumentField[]) {
+  return packageArguments
+    .filter((argument) => argument.includeInLaunch)
+    .flatMap((argument) => {
+      const value = argument.value.trim();
+      if (value) return [value];
+
+      const flag = argument.flag.trim();
+      if (!flag) return [];
+
+      const defaultValue = argument.defaultValue.trim();
+      if (defaultValue) return [flag, defaultValue];
+
+      return [flag];
+    });
 }
 
 export default function SubmitServerPage() {
@@ -1228,9 +1281,7 @@ export default function SubmitServerPage() {
               .filter((envVar) => envVar.name.trim())
               .map((envVar) => [envVar.name.trim(), envVar.defaultValue.trim()]),
           );
-          const transportArgs = packageTarget.packageArguments
-            .map((argument) => argument.value.trim() || argument.flag.trim())
-            .filter(Boolean);
+          const transportArgs = launchArgumentValues(packageTarget.packageArguments);
           return {
             registryType: packageTarget.registryType.trim() || "npm",
             identifier: packageTarget.identifier.trim(),
@@ -1953,7 +2004,7 @@ export default function SubmitServerPage() {
                       <div className="grid gap-2">
                         <Label>Resolved launch</Label>
                         <div className="min-h-9 overflow-x-auto whitespace-nowrap rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                          {[packageTarget.command, ...packageTarget.packageArguments.map((argument) => argument.value || argument.flag)]
+                          {[packageTarget.command, ...launchArgumentValues(packageTarget.packageArguments)]
                             .filter(Boolean)
                             .join(" ") || "Not configured"}
                         </div>
@@ -2094,7 +2145,7 @@ export default function SubmitServerPage() {
                       </div>
                       {packageTarget.packageArguments.map((argument) => (
                         <div className="space-y-3 rounded-md border p-3" key={argument.id}>
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_140px_auto]">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.75fr)_140px_auto]">
                             <Input
                               onChange={(event) =>
                                 updatePackageArgument(packageTarget.id, argument.id, {
@@ -2121,6 +2172,15 @@ export default function SubmitServerPage() {
                               }
                               placeholder="Static value, e.g. stdio"
                               value={argument.value}
+                            />
+                            <Input
+                              onChange={(event) =>
+                                updatePackageArgument(packageTarget.id, argument.id, {
+                                  valueName: event.target.value,
+                                })
+                              }
+                              placeholder="Value, e.g. port"
+                              value={argument.valueName}
                             />
                             <Select
                               onValueChange={(value) =>
@@ -2155,7 +2215,7 @@ export default function SubmitServerPage() {
                               <Trash2 className="size-4" />
                             </Button>
                           </div>
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto]">
                             <Input
                               onChange={(event) =>
                                 updatePackageArgument(packageTarget.id, argument.id, {
@@ -2194,6 +2254,18 @@ export default function SubmitServerPage() {
                                 type="checkbox"
                               />
                               Required
+                            </label>
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                checked={argument.includeInLaunch}
+                                onChange={(event) =>
+                                  updatePackageArgument(packageTarget.id, argument.id, {
+                                    includeInLaunch: event.target.checked,
+                                  })
+                                }
+                                type="checkbox"
+                              />
+                              Launch
                             </label>
                             <label className="flex items-center gap-2 text-sm">
                               <input

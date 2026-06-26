@@ -582,13 +582,15 @@ function PackageArgumentsTable({
       description: stringValue(argument.description),
       flag: stringValue(argument.flag),
       format: stringValue(argument.format) || "string",
+      includeInLaunch: argument.includeInLaunch,
       name: stringValue(argument.name),
       options: Array.isArray(argument.options) ? argument.options.map(String).join(", ") : "",
       required: argument.isRequired,
       secret: argument.isSecret,
       value: stringValue(argument.value),
+      valueName: stringValue(argument.valueName ?? argument.value_name),
     }))
-    .filter((argument) => argument.name || argument.flag);
+    .filter((argument) => argument.name || argument.flag || argument.value);
 
   if (rows.length === 0) return null;
 
@@ -601,8 +603,10 @@ function PackageArgumentsTable({
             <tr>
               <th>Name</th>
               <th>Flag</th>
+              <th>Value</th>
               <th>Format</th>
               <th>Required</th>
+              <th>Launch</th>
             </tr>
           </thead>
           <tbody>
@@ -616,10 +620,18 @@ function PackageArgumentsTable({
                 </td>
                 <td>{argument.flag || "Not specified"}</td>
                 <td>
+                  {argument.value ||
+                    argument.valueName ||
+                    (argument.defaultValue ? argument.defaultValue : "No value")}
+                </td>
+                <td>
                   <FormatBadge value={argument.format} />
                 </td>
                 <td>
                   <BooleanMark value={argument.required} />
+                </td>
+                <td>
+                  <BooleanMark value={argument.includeInLaunch} />
                 </td>
               </tr>
             ))}

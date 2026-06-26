@@ -95,9 +95,20 @@ class RegistryPackageArgument(BaseModel):
     name: str = Field(default="", examples=["port"])
     flag: str = Field(default="", examples=["--port"])
     value: str = Field(default="", examples=[""])
+    value_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("valueName", "value_name", "placeholder"),
+        serialization_alias="valueName",
+        examples=["port"],
+    )
     default: str = Field(default="", examples=[""])
     description: str = Field(default="", examples=["Port for the local HTTP server."])
     format: str = Field(default="string", examples=["integer"])
+    include_in_launch: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("includeInLaunch", "include_in_launch", "includeInCommand"),
+        serialization_alias="includeInLaunch",
+    )
     options: list[str] = Field(default_factory=list)
     allowed_values: list[str] = Field(
         default_factory=list,
