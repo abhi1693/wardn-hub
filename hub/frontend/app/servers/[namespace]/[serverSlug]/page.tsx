@@ -29,29 +29,6 @@ type RepositoryReference = {
   url?: string;
 };
 
-const technicalManifestHiddenFields = new Set([
-  "$schema",
-  "_meta",
-  "categories",
-  "category",
-  "description",
-  "docs",
-  "documentation",
-  "homepage",
-  "icon",
-  "icons",
-  "name",
-  "packages",
-  "readme",
-  "readmeUrl",
-  "remotes",
-  "repo",
-  "repository",
-  "title",
-  "version",
-  "website",
-  "websiteUrl",
-]);
 const packageHiddenFields = new Set([
   "environmentVariables",
   "identifier",
@@ -178,13 +155,6 @@ function isHiddenField(key: string, hiddenFields: Set<string>) {
   if (hiddenFields.has(key)) return true;
   const normalizedKey = normalizedFieldKey(key);
   return Array.from(hiddenFields).some((field) => normalizedFieldKey(field) === normalizedKey);
-}
-
-function hasFields(value: unknown, hiddenFields = new Set<string>()) {
-  return (
-    isRecord(value) &&
-    Object.entries(value).some(([key, item]) => !isHiddenField(key, hiddenFields) && !isEmptyValue(item))
-  );
 }
 
 function labelFromKey(value: string) {
@@ -909,10 +879,8 @@ function ManifestMetadataPanel({
   if (!manifest) return null;
 
   const schema = stringValue(manifest.$schema);
-  const meta = isRecord(manifest._meta) ? manifest._meta : null;
-  const hasPublicMeta = hasFields(meta, technicalManifestHiddenFields);
 
-  if (!schema && !version && !hasPublicMeta) return null;
+  if (!schema && !version) return null;
 
   return (
     <section className="technical-side-card">
@@ -933,24 +901,7 @@ function ManifestMetadataPanel({
             </a>
           </div>
         ) : null}
-        {hasPublicMeta && meta ? (
-          <div>
-            <label>Publisher Metadata</label>
-            <VisualFields hiddenFields={technicalManifestHiddenFields} value={meta} />
-          </div>
-        ) : null}
       </div>
-    </section>
-  );
-}
-
-function ManifestFieldsPanel({ manifest }: { manifest: Record<string, unknown> | null }) {
-  if (!hasFields(manifest, technicalManifestHiddenFields) || !manifest) return null;
-
-  return (
-    <section className="technical-card">
-      <TechnicalHeader title="Manifest Fields" />
-      <VisualFields hiddenFields={technicalManifestHiddenFields} value={manifest} />
     </section>
   );
 }
@@ -1208,7 +1159,6 @@ export default function ServerDetailPage() {
                   <div className="technical-main">
                     <PackageDefinitionPanel packages={targets.packages} />
                     <RemotesPanel remotes={targets.remotes} />
-                    <ManifestFieldsPanel manifest={manifest} />
                   </div>
 
                   <aside className="technical-sidebar">
