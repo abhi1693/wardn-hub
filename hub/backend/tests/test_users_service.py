@@ -119,6 +119,45 @@ async def test_external_auth_links_existing_user_by_email(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_external_auth_updates_existing_identity_profile_names(monkeypatch) -> None:
+    user = User(
+        email="member@example.com",
+        first_name="Old",
+        last_name="Name",
+        is_active=True,
+    )
+    user.id = uuid4()
+    identity = UserExternalIdentity(
+        user_id=user.id,
+        provider="clerk",
+        subject="user_123",
+        email="member@example.com",
+    )
+    identity.user = user
+
+    async def existing_identity(*args, **kwargs):
+        return identity
+
+    monkeypatch.setattr(service.repository, "get_external_identity", existing_identity)
+
+    response = await service.get_or_create_external_user(
+        FakeSession(),
+        ExternalIdentityClaims(
+            provider="clerk",
+            subject="user_123",
+            email="MEMBER@EXAMPLE.COM",
+            first_name="Member",
+            last_name="User",
+        ),
+    )
+
+    assert response is user
+    assert user.first_name == "Member"
+    assert user.last_name == "User"
+    assert identity.email == "member@example.com"
+
+
+@pytest.mark.asyncio
 async def test_external_auth_creates_user_without_local_credentials(monkeypatch) -> None:
     async def missing_identity(*args, **kwargs):
         return None

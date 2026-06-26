@@ -18,6 +18,13 @@ class ExternalIdentityClaims:
     last_name: str = ""
 
 
+@dataclass(frozen=True)
+class ClerkUserProfile:
+    email: str = ""
+    first_name: str = ""
+    last_name: str = ""
+
+
 class ExternalAuthError(Exception):
     pass
 
@@ -57,10 +64,10 @@ def string_claim(claims: dict[str, Any], *keys: str) -> str:
     return ""
 
 
-async def fetch_clerk_user_email(subject: str) -> str:
+async def fetch_clerk_user_profile(subject: str) -> ClerkUserProfile:
     settings = get_settings()
     if not settings.clerk_secret_key:
-        return ""
+        return ClerkUserProfile()
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -69,23 +76,30 @@ async def fetch_clerk_user_email(subject: str) -> str:
                 headers={"Authorization": f"Bearer {settings.clerk_secret_key}"},
             )
     except httpx.HTTPError:
-        return ""
+        return ClerkUserProfile()
     if response.status_code >= 400:
-        return ""
+        return ClerkUserProfile()
     try:
         payload = response.json()
     except ValueError:
-        return ""
+        return ClerkUserProfile()
+
+    email = ""
     email_addresses = payload.get("email_addresses")
     primary_email_id = payload.get("primary_email_address_id")
-    if not isinstance(email_addresses, list):
-        return ""
-    for email_record in email_addresses:
-        if not isinstance(email_record, dict):
-            continue
-        if email_record.get("id") == primary_email_id:
-            return string_claim(email_record, "email_address")
-    return ""
+    if isinstance(email_addresses, list):
+        for email_record in email_addresses:
+            if not isinstance(email_record, dict):
+                continue
+            if email_record.get("id") == primary_email_id:
+                email = string_claim(email_record, "email_address")
+                break
+
+    return ClerkUserProfile(
+        email=email,
+        first_name=string_claim(payload, "first_name"),
+        last_name=string_claim(payload, "last_name"),
+    )
 
 
 async def verify_clerk_token(token: str) -> ExternalIdentityClaims:
@@ -112,8 +126,14 @@ async def verify_clerk_token(token: str) -> ExternalIdentityClaims:
         raise ExternalAuthError("Clerk token is missing subject")
 
     email = string_claim(claims, "email", "email_address")
+    first_name = string_claim(claims, "given_name", "first_name")
+    last_name = string_claim(claims, "family_name", "last_name")
+    profile = ClerkUserProfile()
+
+    if not email or not first_name or not last_name:
+        profile = await fetch_clerk_user_profile(subject)
     if not email:
-        email = await fetch_clerk_user_email(subject)
+        email = profile.email
     if not email:
         raise ExternalAuthError("Clerk token did not provide an email")
 
@@ -121,8 +141,8 @@ async def verify_clerk_token(token: str) -> ExternalIdentityClaims:
         provider="clerk",
         subject=subject,
         email=email,
-        first_name=string_claim(claims, "given_name", "first_name"),
-        last_name=string_claim(claims, "family_name", "last_name"),
+        first_name=first_name or profile.first_name,
+        last_name=last_name or profile.last_name,
     )
 
 

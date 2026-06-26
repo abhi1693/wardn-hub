@@ -53,6 +53,15 @@ def auth_provider_label(provider: str) -> str:
     return "Email and password"
 
 
+def apply_external_profile_claims(user: User, claims: ExternalIdentityClaims) -> None:
+    first_name = claims.first_name.strip()
+    last_name = claims.last_name.strip()
+    if first_name:
+        user.first_name = first_name
+    if last_name:
+        user.last_name = last_name
+
+
 def list_auth_providers() -> AuthProviderListResponse:
     settings = get_settings()
     providers = enabled_auth_providers()
@@ -106,6 +115,7 @@ async def get_or_create_external_user(
         if not user.is_active:
             raise InvalidLoginError("inactive external user")
         identity.email = normalize_email(claims.email)
+        apply_external_profile_claims(user, claims)
         user.last_login_at = datetime.now(UTC)
         await session.flush()
         return user
@@ -124,6 +134,8 @@ async def get_or_create_external_user(
         await session.flush()
     elif not user.is_active:
         raise InvalidLoginError("inactive external user")
+    else:
+        apply_external_profile_claims(user, claims)
 
     identity = UserExternalIdentity(
         user_id=user.id,

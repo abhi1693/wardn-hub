@@ -151,8 +151,8 @@ The default container command runs that build-and-start flow automatically.
   that `aud` value, set `WARDN_HUB_CLERK_AUDIENCE` to the same value, and set
   `NEXT_PUBLIC_CLERK_JWT_TEMPLATE` to the template name so the frontend requests
   the correct token. Set `WARDN_HUB_CLERK_SECRET_KEY` if the backend must fetch
-  the user's primary email from Clerk because the token does not include `email`
-  or `email_address`.
+  the user's primary email, first name, or last name from Clerk because the token
+  does not include those profile fields.
 - Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and server-side `CLERK_SECRET_KEY` for
   the frontend when Clerk is enabled. Do not prefix the secret key with
   `NEXT_PUBLIC_`.
