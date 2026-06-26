@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.modules.organizations.exceptions import OrganizationAccessDeniedError
-from app.modules.registry.schemas import RegistryServerVersionCreate
+from app.modules.registry.schemas import RegistryEnvironmentVariable, RegistryServerVersionCreate
 from app.modules.submissions import service
 from app.modules.submissions.exceptions import (
     InvalidSubmissionTransitionError,
@@ -268,6 +268,78 @@ def test_validation_rejects_duplicate_environment_variables() -> None:
         check["name"] == "duplicateEnvironmentVariables"
         and "DEBUG" in check["message"]
         and "CI" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_reads_official_snake_case_package_environment_variables() -> None:
+    raw_payload = registry_payload().model_dump(by_alias=True)
+    raw_payload["packages"] = [
+        {
+            "registry_type": "npm",
+            "identifier": "@example/weather-mcp",
+            "transport": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@example/weather-mcp"],
+            },
+            "environment_variables": [
+                {
+                    "name": "WEATHER_API_KEY",
+                    "description": "Weather API key.",
+                    "is_required": True,
+                    "is_secret": True,
+                    "format": "string",
+                },
+                {
+                    "name": "WEATHER_API_KEY",
+                    "description": "Duplicate weather API key.",
+                    "is_required": True,
+                    "is_secret": True,
+                    "format": "string",
+                },
+            ],
+        }
+    ]
+    payload = RegistryServerVersionCreate(
+        **raw_payload
+    )
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "duplicateEnvironmentVariables"
+        and "@example/weather-mcp: WEATHER_API_KEY" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_warns_when_transport_env_lacks_typed_metadata() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    assert package.transport is not None
+    package.transport.env = {
+        "WEATHER_API_KEY": "",
+        "WEATHER_TIMEOUT": "5000",
+    }
+    package.environment_variables = [
+        RegistryEnvironmentVariable(
+            name="WEATHER_API_KEY",
+            description="Weather API key.",
+            is_required=True,
+            is_secret=True,
+            format="string",
+        )
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "warning"
+    assert any(
+        check["name"] == "environmentMetadata"
+        and "WEATHER_TIMEOUT" in check["message"]
+        and "WEATHER_API_KEY" not in check["message"]
         for check in result["checks"]
     )
 

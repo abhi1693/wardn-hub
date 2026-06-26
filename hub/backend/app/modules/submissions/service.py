@@ -210,6 +210,53 @@ def duplicate_environment_check(payload: RegistryServerVersionCreate) -> dict[st
     )
 
 
+def environment_metadata_check(packages: list[Any]) -> dict[str, str]:
+    missing: list[str] = []
+
+    for index, package_value in enumerate(packages):
+        package = model_or_dict(package_value)
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        transport_env = transport_value.get("env")
+        if not isinstance(transport_env, dict) or not transport_env:
+            continue
+
+        environment_variables = (
+            package.get("environmentVariables")
+            if isinstance(package.get("environmentVariables"), list)
+            else []
+        )
+        documented_names = {
+            str(env_var.get("name")).strip()
+            for env_var in environment_variables
+            if isinstance(env_var, dict) and str(env_var.get("name", "")).strip()
+        }
+        missing_names = sorted(
+            name for name in transport_env if isinstance(name, str) and name not in documented_names
+        )
+        if missing_names:
+            identifier = package.get("identifier")
+            label = (
+                identifier
+                if isinstance(identifier, str) and identifier
+                else f"package {index + 1}"
+            )
+            missing.append(f"{label}: {', '.join(missing_names)}")
+
+    if missing:
+        return validation_check(
+            "environmentMetadata",
+            "warning",
+            "Transport env defaults should have matching environmentVariables metadata: "
+            + "; ".join(missing),
+        )
+    return validation_check(
+        "environmentMetadata",
+        "passed",
+        "Transport environment variables include typed metadata where needed.",
+    )
+
+
 def readable_review_item(value: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
@@ -375,6 +422,7 @@ def validation_result_for(payload: RegistryServerVersionCreate) -> dict:
         validation_check("target", "passed", "At least one package or remote target is present."),
         env_placeholder_check(payload),
         duplicate_environment_check(payload),
+        environment_metadata_check(payload.packages),
         source_review_list_quality_check(payload),
         package_targets_check(payload.packages),
         package_transport_detail_check(payload.packages),

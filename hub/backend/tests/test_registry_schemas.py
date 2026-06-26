@@ -57,6 +57,65 @@ def test_mcpb_packages_are_allowed_in_hub() -> None:
     assert payload.packages[0].registry_type == "mcpb"
 
 
+def test_package_metadata_accepts_official_snake_case_manifest_fields() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            name="io.github.browserbase/mcp-server-browserbase",
+            packages=[
+                {
+                    "registry_type": "npm",
+                    "registry_base_url": "https://registry.npmjs.org",
+                    "identifier": "@browserbasehq/mcp",
+                    "version": "2.2.0",
+                    "transport": {"type": "stdio"},
+                    "environment_variables": [
+                        {
+                            "description": "Your Browserbase API key",
+                            "is_required": True,
+                            "format": "string",
+                            "is_secret": True,
+                            "name": "BROWSERBASE_API_KEY",
+                        }
+                    ],
+                },
+                {
+                    "registry_type": "oci",
+                    "identifier": "browserbasehq/mcp-server-browserbase",
+                    "runtime_hint": "docker",
+                    "environment_variables": [
+                        {
+                            "description": "Your Browserbase Project ID",
+                            "is_required": True,
+                            "format": "string",
+                            "is_secret": False,
+                            "name": "BROWSERBASE_PROJECT_ID",
+                        }
+                    ],
+                },
+            ],
+        )
+    )
+
+    serialized = payload.model_dump(by_alias=True, exclude_none=True)
+
+    assert serialized["packages"][0]["registryType"] == "npm"
+    assert serialized["packages"][0]["registryBaseUrl"] == "https://registry.npmjs.org"
+    assert serialized["packages"][0]["environmentVariables"] == [
+        {
+            "description": "Your Browserbase API key",
+            "value": "",
+            "default": "",
+            "format": "string",
+            "isRequired": True,
+            "isSecret": True,
+            "name": "BROWSERBASE_API_KEY",
+        }
+    ]
+    assert serialized["packages"][1]["registryType"] == "oci"
+    assert serialized["packages"][1]["runtimeHint"] == "docker"
+    assert serialized["packages"][1]["environmentVariables"][0]["isRequired"] is True
+
+
 def test_server_definition_requires_package_or_remote_target() -> None:
     with pytest.raises(ValueError, match="at least one package or remote"):
         RegistryServerVersionCreate(**registry_payload(packages=[], remotes=[]))

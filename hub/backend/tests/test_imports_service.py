@@ -22,7 +22,22 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
               "name": "io.github.acme/weather-mcp",
               "description": "Weather forecast MCP tools.",
               "version": "1.0.0",
-              "packages": [{"registryType": "npm", "identifier": "@acme/weather-mcp"}],
+              "packages": [
+                {
+                  "registry_type": "npm",
+                  "registry_base_url": "https://registry.npmjs.org",
+                  "identifier": "@acme/weather-mcp",
+                  "environment_variables": [
+                    {
+                      "name": "WEATHER_API_TOKEN",
+                      "description": "Weather API token.",
+                      "is_required": true,
+                      "is_secret": true,
+                      "format": "string"
+                    }
+                  ]
+                }
+              ],
               "_meta": {"categories": ["weather"]}
             }
             """
@@ -39,7 +54,14 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
     assert response.server_json.name == "io.github.acme/weather-mcp"
     assert response.server_json.documentation == "# Weather MCP\n\nWeather forecast tools."
     assert response.server_json.packages[0].registry_type == "npm"
+    assert response.server_json.packages[0].registry_base_url == "https://registry.npmjs.org"
     assert response.server_json.packages[0].identifier == "@acme/weather-mcp"
+    assert response.server_json.packages[0].environment_variables[0].name == "WEATHER_API_TOKEN"
+    assert response.server_json.packages[0].environment_variables[0].is_required is True
+    serialized = response.server_json.model_dump(by_alias=True, exclude_none=True)
+    assert serialized["packages"][0]["registryType"] == "npm"
+    assert serialized["packages"][0]["registryBaseUrl"] == "https://registry.npmjs.org"
+    assert serialized["packages"][0]["environmentVariables"][0]["isSecret"] is True
     assert response.server_json.meta == {"categories": ["weather"]}
     assert response.submission_payload.server_json == response.server_json
     assert response.evidence.files == ["README.md", "server.json"]

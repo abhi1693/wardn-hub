@@ -2,7 +2,15 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
 
 MCP_SERVER_NAME_PATTERN = r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$"
 SEMVER_PATTERN = (
@@ -61,13 +69,87 @@ class RegistryTransport(BaseModel):
     env: dict[str, Any] = Field(default_factory=dict)
 
 
+class RegistryEnvironmentVariable(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = Field(default="", examples=["WEATHER_API_TOKEN"])
+    description: str = Field(default="", examples=["API token used by the weather service."])
+    value: str = Field(default="", examples=[""])
+    default: str = Field(default="", examples=[""])
+    format: str = Field(default="string", examples=["string"])
+    is_required: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("isRequired", "is_required", "required"),
+        serialization_alias="isRequired",
+    )
+    is_secret: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("isSecret", "is_secret", "secret"),
+        serialization_alias="isSecret",
+    )
+
+
+class RegistryPackageArgument(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    name: str = Field(default="", examples=["port"])
+    flag: str = Field(default="", examples=["--port"])
+    value: str = Field(default="", examples=[""])
+    default: str = Field(default="", examples=[""])
+    description: str = Field(default="", examples=["Port for the local HTTP server."])
+    format: str = Field(default="string", examples=["integer"])
+    options: list[str] = Field(default_factory=list)
+    allowed_values: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("allowedValues", "allowed_values"),
+        serialization_alias="allowedValues",
+    )
+    is_required: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("isRequired", "is_required", "required"),
+        serialization_alias="isRequired",
+    )
+    is_secret: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("isSecret", "is_secret", "secret"),
+        serialization_alias="isSecret",
+    )
+
+
 class RegistryPackage(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    registry_type: str = Field(default="", alias="registryType", examples=["npm"])
+    registry_type: str = Field(
+        default="",
+        validation_alias=AliasChoices("registryType", "registry_type"),
+        serialization_alias="registryType",
+        examples=["npm"],
+    )
+    registry_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("registryBaseUrl", "registry_base_url"),
+        serialization_alias="registryBaseUrl",
+        examples=["https://registry.npmjs.org"],
+    )
     identifier: str = Field(default="", examples=["@acme/weather-mcp"])
     version: str = Field(default="", examples=["1.0.0"])
+    runtime_hint: str = Field(
+        default="",
+        validation_alias=AliasChoices("runtimeHint", "runtime_hint"),
+        serialization_alias="runtimeHint",
+        examples=["docker"],
+    )
     transport: RegistryTransport | None = None
+    environment_variables: list[RegistryEnvironmentVariable] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("environmentVariables", "environment_variables"),
+        serialization_alias="environmentVariables",
+    )
+    package_arguments: list[RegistryPackageArgument] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("packageArguments", "package_arguments"),
+        serialization_alias="packageArguments",
+    )
 
 
 class RegistryRemoteHeader(BaseModel):
