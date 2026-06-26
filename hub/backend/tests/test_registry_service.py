@@ -15,6 +15,7 @@ from app.modules.registry.exceptions import (
 )
 from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
 from app.modules.registry.schemas import RegistryCategoryCreate, RegistryServerVersionCreate
+from app.modules.users.models import User
 
 
 class FakeSession:
@@ -131,6 +132,15 @@ def category_model(slug: str = "weather", name: str = "Weather") -> RegistryCate
 async def categories_by_slug(*args, **kwargs):
     slugs = args[1] if len(args) > 1 else set()
     return {slug: category_model(slug, slug.replace("-", " ").title()) for slug in slugs}
+
+
+def test_actor_summary_uses_user_display_name_when_profile_names_are_blank() -> None:
+    user = User(id=uuid4(), email="publisher@example.com", first_name="", last_name="")
+
+    actor = service.actor_summary_for_user(user)
+
+    assert actor.name == "publisher@example.com"
+    assert actor.login == "publisher@example.com"
 
 
 def test_parse_cursor() -> None:

@@ -187,6 +187,9 @@ def category_values_by_server_from_versions(
 
 
 def public_user_name(user) -> str:
+    display_name = getattr(user, "display_name", "")
+    if display_name:
+        return display_name
     return f"{user.first_name} {user.last_name}".strip()
 
 
