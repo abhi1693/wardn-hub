@@ -4,14 +4,19 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ClipboardCopy, FileText, Globe2, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
+import {
+  API_ACCESS_INSTRUCTIONS,
+  ENVIRONMENT_VARIABLE_RULES,
+  PACKAGE_AND_REMOTE_RULES,
+  PACKAGE_ARGUMENT_RULES,
+  SOURCE_REVIEW_EVIDENCE_REQUIREMENTS,
+  SOURCE_REVIEW_LIST_FORMAT,
+  copyText,
+  currentApiBaseUrl,
+} from "@/components/ai-prompt-shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-function currentApiBaseUrl() {
-  if (typeof window === "undefined") return "/api/v1";
-  return `${window.location.origin}/api/v1`;
-}
 
 function normalizeUrl(value: string) {
   const trimmed = value.trim();
@@ -32,10 +37,7 @@ ${url}
 
 Wardn Hub API base URL: ${currentApiBaseUrl()}
 
-Required API access:
-- Use WARDN_HUB_TOKEN as the Wardn Hub bearer token.
-- If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
-- Do not call the Wardn Hub API until a token is available.
+${API_ACCESS_INSTRUCTIONS}
 
 Goal:
 - Read the documentation URL and create a draft with POST /submissions.
@@ -62,41 +64,16 @@ Draft creation rules:
 - Set repository only when the source repository is known.
 - Add icons only from official stable URLs.
 
-Package and remote rules:
-- If the server is installed through npm, PyPI/uvx, Docker/OCI, or another package registry, add packages[] with registryType, identifier, version when known, and transport.
-- Split versions from package identifiers. Do not put versions or tags inside identifiers.
-- If the server is hosted remotely over HTTP/SSE/streamable HTTP and users connect to a URL instead of installing a package, add remotes[] instead of inventing a package target.
-- Preserve documented command, args, transport type, env, and endpoint paths exactly enough for a user to configure the server.
+${PACKAGE_AND_REMOTE_RULES}
 
-Environment variable and argument rules:
-- Do not use environment placeholder values that wrap names in dollar signs and braces.
-- For secrets or user-specific values, use an empty string.
-- Use documented non-secret defaults when available.
-- Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
-- Add every documented environment variable to serverJson._meta.sourceReview.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
-- If an env var belongs in runtime launch config, add it to packages[].transport.env with a safe value.
-- Treat packages[].transport.args as the concrete default launch command only. Do not put every documented option in transport.args.
-- Add only arguments that must always be present for the documented default launch to packages[].transport.args, preserving order exactly.
-- Put documented optional flags/configuration options in packages[].packageArguments with includeInLaunch false.
-- Use packageArguments[].requiresValue true when a flag takes a user-supplied value. Do not put placeholder text like <port> or [url] in transport.args.
-- requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
-- Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
-- If a package argument is part of the default launch command, set includeInLaunch true. Otherwise leave it false.
+${ENVIRONMENT_VARIABLE_RULES}
+
+${PACKAGE_ARGUMENT_RULES}
 - Add every documented CLI argument/configurable flag to serverJson._meta.sourceReview.commandArguments even when it is not part of the default launch.
 
-Source review evidence must include:
-- sourceReview.filesRead
-- sourceReview.installCommands
-- sourceReview.commandArguments
-- sourceReview.environmentVariables
-- sourceReview.prerequisites
-- sourceReview.capabilitiesReviewed = true
-- sourceReview.limitationsReviewed = true
-- sourceReview.unknowns = []
+${SOURCE_REVIEW_EVIDENCE_REQUIREMENTS}
 
-Source review list format:
-- filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
-- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.
+${SOURCE_REVIEW_LIST_FORMAT}
 
 Before creating the draft:
 - Validate the payload shape against the Wardn Hub API/OpenAPI schema if available.
@@ -112,36 +89,6 @@ Return:
 - environment variables included
 - source URLs/files read
 - any remaining unknowns`;
-}
-
-async function copyText(value: string, target?: HTMLTextAreaElement | null) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-  } catch {
-    // Clipboard can be exposed but blocked on non-secure origins.
-  }
-
-  const textarea = target ?? document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  if (!target) {
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-  }
-
-  try {
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    const copied = document.execCommand("copy");
-    if (!copied) throw new Error("copy command failed");
-  } finally {
-    if (!target) document.body.removeChild(textarea);
-  }
 }
 
 export function AiUrlDraftPromptDialog({

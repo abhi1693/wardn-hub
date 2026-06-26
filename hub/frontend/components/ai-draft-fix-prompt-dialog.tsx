@@ -4,12 +4,15 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ClipboardCopy, FileText, Wrench, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
+import {
+  API_ACCESS_INSTRUCTIONS,
+  DRAFT_METADATA_RULES,
+  REGISTRY_METADATA_SCOPE_RULE,
+  SOURCE_REVIEW_LIST_FORMAT,
+  copyText,
+  currentApiBaseUrl,
+} from "@/components/ai-prompt-shared";
 import { Button } from "@/components/ui/button";
-
-function currentApiBaseUrl() {
-  if (typeof window === "undefined") return "/api/v1";
-  return `${window.location.origin}/api/v1`;
-}
 
 function buildAiDraftFixPrompt({
   errorMessage,
@@ -27,10 +30,7 @@ Draft submission ID: ${submissionId}
 Server name: ${serverName || "unknown"}
 Current submit/review feedback: ${errorMessage || "unknown"}
 
-Required API access:
-- Use WARDN_HUB_TOKEN as the Wardn Hub bearer token.
-- If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
-- Do not call the Wardn Hub API until a token is available.
+${API_ACCESS_INSTRUCTIONS}
 
 Goal:
 - Fetch the draft with GET /submissions/${submissionId}.
@@ -44,7 +44,7 @@ Important:
 - Do not create a new submission. Fix this existing draft only.
 - Do not guess source-review evidence. It must reflect URLs/files actually inspected.
 - If the draft lacks enough source links to verify the server, stop and ask the user for the official repository or documentation URL.
-- Treat this as registry metadata review only. Do not install workspace MCP servers, invoke MCP tools, or manage runtime infrastructure.
+- ${REGISTRY_METADATA_SCOPE_RULE}
 
 Source review requirements:
 - Fill serverJson._meta.sourceReview.filesRead with every README/docs/source URL or file inspected.
@@ -56,23 +56,9 @@ Source review requirements:
 - Set sourceReview.limitationsReviewed = true after reviewing documented limitations, caveats, unsupported behavior, risks, or operational requirements.
 - Set sourceReview.unknowns = [] only when all required source-review questions are resolved. Otherwise list specific unknowns and do not submit.
 
-Source review list format:
-- filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
-- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.
+${SOURCE_REVIEW_LIST_FORMAT}
 
-Metadata rules:
-- Do not use environment placeholder values that wrap names in dollar signs and braces.
-- For secrets or user-specific values, use an empty string.
-- Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
-- Split package versions from identifiers. Do not put versions or tags inside package identifiers.
-- Ensure package transport command, args, env, and type match documented install/run instructions.
-- packages[].transport.args must contain only the concrete default launch arguments in runnable order. Do not add every documented CLI option there.
-- Optional CLI flags/configurable arguments belong in packages[].packageArguments with includeInLaunch false.
-- Use packageArguments[].requiresValue true for flags that take a user-supplied value. Do not include placeholder text like <port> or [url] in transport.args.
-- requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
-- Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
-- If a package argument is part of the default launch command, set includeInLaunch true.
-- Ensure documentation, title, description, websiteUrl, repository, packages/remotes, icons, and version are accurate where available.
+${DRAFT_METADATA_RULES}
 
 Return:
 - final submission ID
@@ -82,36 +68,6 @@ Return:
 - command arguments included
 - remaining validation warnings/errors, if any
 - if you cannot fix it, the exact missing information needed from the user`;
-}
-
-async function copyText(value: string, target?: HTMLTextAreaElement | null) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-  } catch {
-    // Clipboard can be exposed but blocked on non-secure origins.
-  }
-
-  const textarea = target ?? document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  if (!target) {
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-  }
-
-  try {
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    const copied = document.execCommand("copy");
-    if (!copied) throw new Error("copy command failed");
-  } finally {
-    if (!target) document.body.removeChild(textarea);
-  }
 }
 
 export function AiDraftFixPromptDialog({

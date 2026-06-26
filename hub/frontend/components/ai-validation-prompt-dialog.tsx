@@ -4,12 +4,14 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ClipboardCheck, ClipboardCopy, ShieldCheck, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
+import {
+  API_ACCESS_INSTRUCTIONS,
+  REGISTRY_METADATA_SCOPE_RULE,
+  VALIDATION_PACKAGE_ARGUMENT_CHECKS,
+  copyText,
+  currentApiBaseUrl,
+} from "@/components/ai-prompt-shared";
 import { Button } from "@/components/ui/button";
-
-function currentApiBaseUrl() {
-  if (typeof window === "undefined") return "/api/v1";
-  return `${window.location.origin}/api/v1`;
-}
 
 function buildAiValidationPrompt({
   serverName,
@@ -29,10 +31,7 @@ Version: ${version || "unknown"}
 In-review submission ID shown in UI:
 ${idList || "- none"}
 
-Required API access:
-- Use WARDN_HUB_TOKEN as the Wardn Hub bearer token.
-- If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
-- Do not call the Wardn Hub API until a token is available.
+${API_ACCESS_INSTRUCTIONS}
 - The token must belong to an admin or moderator account with review-system access and must be able to read the submitted queue.
 - The token must include submissions:read to inspect submissions and submissions:moderate to approve or reject submissions.
 - To publish, the token must belong to a superuser and include submissions:publish.
@@ -52,18 +51,13 @@ Validation workflow for each submission:
 2. Identify the source repository from serverJson.repository.url and any source links in documentation/package metadata.
 3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
 4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
-5. Treat this as registry metadata review only. Do not add runtime installs, do not invoke MCP tools, and do not manage runtime infrastructure.
+5. ${REGISTRY_METADATA_SCOPE_RULE}
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.
 - Package identifiers and versions are split correctly. No package identifier contains a version or tag.
 - Transport command, args, env, and transport type match documented install/run instructions.
-- packages[].transport.args contains only the concrete default launch arguments in runnable order, not every documented optional CLI flag.
-- Optional CLI flags/configurable arguments are represented in packages[].packageArguments with includeInLaunch false.
-- Flags that take user-supplied values are represented with packageArguments[].requiresValue true, not placeholder text in transport.args.
-- packageArguments[].value does not contain placeholder examples such as "<host>", "[url]", "host", or "url"; requiresValue is the metadata for that.
-- packageArguments[].flag does not contain placeholders. For docs that show "--host <host>", the correct shape is flag "--host" and requiresValue true.
-- Package arguments that are part of the default launch command have includeInLaunch true.
+${VALIDATION_PACKAGE_ARGUMENT_CHECKS}
 - No environment value uses placeholder syntax that wraps names in dollar signs and braces.
 - Environment variable names are unique within each package target and within sourceReview.environmentVariables.
 - Secret or user-specific defaults are empty strings.
@@ -106,36 +100,6 @@ After the report:
 - After performing an approved action, return the endpoints called, final submission status, and any API error.
 
 Do not mark a submission as passing if source review evidence is incomplete, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified.`;
-}
-
-async function copyText(value: string, target?: HTMLTextAreaElement | null) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-  } catch {
-    // Clipboard can be exposed but blocked on non-secure origins.
-  }
-
-  const textarea = target ?? document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  if (!target) {
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-  }
-
-  try {
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    const copied = document.execCommand("copy");
-    if (!copied) throw new Error("copy command failed");
-  } finally {
-    if (!target) document.body.removeChild(textarea);
-  }
 }
 
 export function AiValidationPromptDialog({

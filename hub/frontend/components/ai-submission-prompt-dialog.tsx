@@ -5,14 +5,18 @@ import { Check, ClipboardCopy, FileText, KeyRound, X } from "lucide-react";
 import type { ClipboardEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 
+import {
+  API_ACCESS_INSTRUCTIONS,
+  ENVIRONMENT_REVIEW_RULES,
+  PACKAGE_ARGUMENT_RULES,
+  SOURCE_REVIEW_EVIDENCE_REQUIREMENTS,
+  SOURCE_REVIEW_LIST_FORMAT,
+  copyText,
+  currentApiBaseUrl,
+} from "@/components/ai-prompt-shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-function currentApiBaseUrl() {
-  if (typeof window === "undefined") return "/api/v1";
-  return `${window.location.origin}/api/v1`;
-}
 
 function parseRepositorySource(value: string) {
   const trimmed = value.trim();
@@ -68,10 +72,7 @@ ${source}${subfolderLine}
 
 Wardn Hub API base URL: ${currentApiBaseUrl()}
 
-Required API access:
-- Use WARDN_HUB_TOKEN as the Wardn Hub bearer token.
-- If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
-- Do not call the Wardn Hub API until a token is available.
+${API_ACCESS_INSTRUCTIONS}
 
 Complete the full flow:
 1. Call POST /imports/server-source first with repositoryUrl and subfolder.
@@ -91,34 +92,14 @@ Critical metadata rules:
 - Do not put versions or tags inside package identifiers.
 - Include optional variables too if they affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
-- packages[].transport.args must be the runnable default launch arguments only. Do not add every documented CLI option there.
-- Optional CLI flags/configurable arguments belong in packages[].packageArguments with includeInLaunch false.
-- Use packageArguments[].requiresValue true for flags that take a user-supplied value. Do not include placeholder text like <port> or [url] in transport.args.
-- requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
-- Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
-- For arguments that are actually part of the default launch command, set includeInLaunch true and keep packages[].transport.args in the exact runnable order.
 
-Environment variable review:
-- Read README/docs for every environment variable and CLI option.
-- Do not only copy variables returned by import API.
-- Add every documented environment variable to sourceReview.environmentVariables.
-- If an environment variable belongs in runtime launch config, add it to packages[].transport.env.
-- Use documented non-secret defaults when available.
-- If you intentionally exclude a variable from packages[].transport.env, still include it in sourceReview.environmentVariables with source and reason.
+${PACKAGE_ARGUMENT_RULES}
 
-Source review evidence must include:
-- sourceReview.filesRead
-- sourceReview.installCommands
-- sourceReview.commandArguments
-- sourceReview.environmentVariables
-- sourceReview.prerequisites
-- sourceReview.capabilitiesReviewed = true
-- sourceReview.limitationsReviewed = true
-- sourceReview.unknowns = []
+${ENVIRONMENT_REVIEW_RULES}
 
-Source review list format:
-- filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
-- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.
+${SOURCE_REVIEW_EVIDENCE_REQUIREMENTS}
+
+${SOURCE_REVIEW_LIST_FORMAT}
 
 Before submitting, verify every documented env var and CLI argument from inspected sections is represented or explicitly listed in sourceReview.unknowns with a reason.
 
@@ -131,36 +112,6 @@ Return:
 - validation status
 - validation warnings/errors, if any
 - list of env vars included`;
-}
-
-async function copyText(value: string, target?: HTMLTextAreaElement | null) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-  } catch {
-    // Some browsers expose clipboard but reject it on non-secure origins.
-  }
-
-  const textarea = target ?? document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  if (!target) {
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-  }
-
-  try {
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    const copied = document.execCommand("copy");
-    if (!copied) throw new Error("copy command failed");
-  } finally {
-    if (!target) document.body.removeChild(textarea);
-  }
 }
 
 export function AiSubmissionPromptDialog({
