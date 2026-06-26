@@ -2164,6 +2164,10 @@ button {
   gap: 20px;
 }
 
+.technical-pair-grid .wide {
+  grid-column: 1 / -1;
+}
+
 .technical-remote label,
 .technical-subtable label,
 .technical-package-list label,

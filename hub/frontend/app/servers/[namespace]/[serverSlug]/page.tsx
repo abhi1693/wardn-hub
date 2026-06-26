@@ -71,6 +71,12 @@ function records(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
+function strings(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item)).filter(Boolean)
+    : [];
+}
+
 function versionTargets(version?: RegistryServerVersionRead) {
   return {
     packages: records(version?.packages),
@@ -600,6 +606,45 @@ function PackageArgumentsTable({
   );
 }
 
+function TransportEnvironmentTable({ environment }: { environment: unknown }) {
+  if (!isRecord(environment)) return null;
+
+  const rows = Object.entries(environment)
+    .map(([name, value]) => ({
+      name,
+      value: typeof value === "string" ? value : JSON.stringify(value),
+    }))
+    .filter((envVar) => envVar.name);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="technical-subtable">
+      <label>Environment</label>
+      <div className="technical-table-wrap">
+        <table className="technical-table compact">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((envVar) => (
+              <tr key={envVar.name}>
+                <td>
+                  <strong>{envVar.name}</strong>
+                </td>
+                <td>{envVar.value || "No default"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
   if (remotes.length === 0) return null;
 
@@ -687,9 +732,12 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
         {packages.map((packageTarget, index) => {
           const identifier = targetValue(packageTarget, "Package");
           const transport = nestedRecord(packageTarget, "transport");
+          const command = stringValue(transport.command);
+          const transportArguments = strings(transport.args);
           const transportType = stringValue(transport.type) || "stdio";
           const environmentVariables = records(packageTarget.environmentVariables);
           const packageArguments = records(packageTarget.packageArguments);
+          const fullCommand = [command, ...transportArguments].filter(Boolean).join(" ");
           return (
             <details className="technical-package-item" key={`${identifier}-${index}`} open={index === 0}>
               <summary>
@@ -724,7 +772,39 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                     </div>
                   ) : null}
                 </div>
+                {command || transportArguments.length > 0 ? (
+                  <div className="technical-pair-grid">
+                    {command ? (
+                      <div>
+                        <label>Command</label>
+                        <div className="technical-code-field">
+                          <span>{command}</span>
+                          <CopyButton value={command} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {transportArguments.length > 0 ? (
+                      <div>
+                        <label>Arguments</label>
+                        <div className="technical-code-field">
+                          <span>{transportArguments.join(" ")}</span>
+                          <CopyButton value={transportArguments.join(" ")} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {fullCommand ? (
+                      <div className="wide">
+                        <label>Full Command</label>
+                        <div className="technical-code-field">
+                          <span>{fullCommand}</span>
+                          <CopyButton value={fullCommand} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <VisualFields hiddenFields={packageHiddenFields} value={packageTarget} />
+                <TransportEnvironmentTable environment={transport.env} />
                 <PackageEnvironmentTable environmentVariables={environmentVariables} />
                 <PackageArgumentsTable packageArguments={packageArguments} />
               </div>
