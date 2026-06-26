@@ -757,35 +757,15 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                     </div>
                   ) : null}
                 </div>
-                {command || transportArguments.length > 0 ? (
+                {fullCommand ? (
                   <div className="technical-pair-grid">
-                    {command ? (
-                      <div>
-                        <label>Command</label>
-                        <div className="technical-code-field">
-                          <span>{command}</span>
-                          <CopyButton value={command} />
-                        </div>
+                    <div className="wide">
+                      <label>Command</label>
+                      <div className="technical-code-field">
+                        <span>{fullCommand}</span>
+                        <CopyButton value={fullCommand} />
                       </div>
-                    ) : null}
-                    {transportArguments.length > 0 ? (
-                      <div>
-                        <label>Arguments</label>
-                        <div className="technical-code-field">
-                          <span>{transportArguments.join(" ")}</span>
-                          <CopyButton value={transportArguments.join(" ")} />
-                        </div>
-                      </div>
-                    ) : null}
-                    {fullCommand ? (
-                      <div className="wide">
-                        <label>Full Command</label>
-                        <div className="technical-code-field">
-                          <span>{fullCommand}</span>
-                          <CopyButton value={fullCommand} />
-                        </div>
-                      </div>
-                    ) : null}
+                    </div>
                   </div>
                 ) : null}
                 <VisualFields hiddenFields={packageHiddenFields} value={packageTarget} />
