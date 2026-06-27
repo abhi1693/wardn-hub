@@ -3,7 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, FileCheck2, KeyRound, LogIn, LogOut } from "lucide-react";
+import { BellRing, ChevronDown, FileCheck2, KeyRound, LogIn, LogOut } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -211,6 +211,15 @@ export function HeaderUserMenu({
             >
               <KeyRound size={18} />
               <span>API tokens</span>
+            </Link>
+            <Link
+              className="site-user-menu-item"
+              href="/account/events"
+              onClick={() => setOpen(false)}
+              role="menuitem"
+            >
+              <BellRing size={18} />
+              <span>Events</span>
             </Link>
           </div>
 

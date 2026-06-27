@@ -303,10 +303,15 @@ async def admin_delete_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
+    current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> None:
     try:
-        await delete_server_version(session, server_name, version)
+        await delete_server_version(
+            session,
+            server_name,
+            version,
+            actor_user_id=current_user.id,
+        )
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
         raise not_found(exc) from exc
     await commit_session(session)
@@ -321,10 +326,10 @@ async def admin_delete_mcp_server_version(
 async def admin_delete_mcp_server(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
+    current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> None:
     try:
-        await delete_server(session, server_name)
+        await delete_server(session, server_name, actor_user_id=current_user.id)
     except RegistryServerNotFoundError as exc:
         raise not_found(exc) from exc
     await commit_session(session)

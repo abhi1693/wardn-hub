@@ -29,6 +29,16 @@ export const scopeOptions: { description: string; label: string; value: APIToken
     value: "catalog:read",
   },
   {
+    description: "Read event rules and webhook delivery history.",
+    label: "Events read",
+    value: "events:read",
+  },
+  {
+    description: "Create event rules and replay webhook deliveries.",
+    label: "Events write",
+    value: "events:write",
+  },
+  {
     description: "View your submissions.",
     label: "Submissions read",
     value: "submissions:read",

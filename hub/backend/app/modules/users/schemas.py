@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 APITokenScope = Literal[
     "audit:read",
     "catalog:read",
+    "events:read",
+    "events:write",
     "namespaces:write",
     "partners:write",
     "registry:write",

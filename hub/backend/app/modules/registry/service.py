@@ -1,10 +1,11 @@
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 
+from app.modules.events.service import emit_event_record, subject_payload
 from app.modules.registry import repository
 from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
@@ -143,6 +144,130 @@ def document_values(payload: MCPServerDocument) -> dict:
         "icons": registry_json(payload.icons),
         "server_json": payload.model_dump(by_alias=True, exclude_none=True),
     }
+
+
+def registry_server_event_payload(
+    *,
+    event_id: UUID,
+    event_type: str,
+    server: RegistryServer,
+    actor_user_id: UUID | None,
+    occurred_at: datetime,
+) -> dict:
+    payload = subject_payload(
+        event_id=event_id,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        actor_user_id=actor_user_id,
+        actor_token_id=None,
+        subject_type="registry_server",
+        subject_id=server.id,
+        subject={"name": server.name},
+        links={"registryServerApiUrl": f"/api/v1/mcp/servers/{server.name}"},
+    )
+    payload["registryServer"] = {
+        "id": str(server.id),
+        "name": server.name,
+        "title": server.title,
+        "status": server.status,
+        "visibility": server.visibility,
+        "currentVersionId": str(server.current_version_id) if server.current_version_id else None,
+    }
+    return payload
+
+
+def registry_version_event_payload(
+    *,
+    event_id: UUID,
+    event_type: str,
+    version: RegistryServerVersion,
+    actor_user_id: UUID | None,
+    occurred_at: datetime,
+) -> dict:
+    payload = subject_payload(
+        event_id=event_id,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        actor_user_id=actor_user_id,
+        actor_token_id=None,
+        subject_type="registry_server_version",
+        subject_id=version.id,
+        subject={"name": version.name, "version": version.version},
+        links={
+            "registryServerApiUrl": f"/api/v1/mcp/servers/{version.name}",
+            "registryVersionApiUrl": (
+                f"/api/v1/mcp/servers/{version.name}/versions/{version.version}"
+            ),
+        },
+    )
+    payload["registryVersion"] = {
+        "id": str(version.id),
+        "serverId": str(version.server_id),
+        "name": version.name,
+        "version": version.version,
+        "status": version.status,
+        "isLatest": version.is_latest,
+        "publishedAt": version.published_at.isoformat().replace("+00:00", "Z"),
+    }
+    return payload
+
+
+async def emit_registry_server_event(
+    session,
+    *,
+    event_type: str,
+    server: RegistryServer,
+    actor_user_id: UUID | None,
+    occurred_at: datetime | None = None,
+) -> None:
+    event_id = uuid4()
+    occurred_at = occurred_at or datetime.now(UTC)
+    await emit_event_record(
+        session,
+        event_id=event_id,
+        event_type=event_type,
+        subject_type="registry_server",
+        subject_id=server.id,
+        actor_user_id=actor_user_id,
+        owner_user_id=server.owner_user_id,
+        owner_organization_id=server.owner_organization_id,
+        payload=registry_server_event_payload(
+            event_id=event_id,
+            event_type=event_type,
+            server=server,
+            actor_user_id=actor_user_id,
+            occurred_at=occurred_at,
+        ),
+    )
+
+
+async def emit_registry_version_event(
+    session,
+    *,
+    event_type: str,
+    version: RegistryServerVersion,
+    actor_user_id: UUID | None,
+    occurred_at: datetime | None = None,
+) -> None:
+    event_id = uuid4()
+    occurred_at = occurred_at or datetime.now(UTC)
+    await emit_event_record(
+        session,
+        event_id=event_id,
+        event_type=event_type,
+        subject_type="registry_server_version",
+        subject_id=version.id,
+        actor_user_id=actor_user_id,
+        owner_user_id=version.owner_user_id,
+        owner_organization_id=version.owner_organization_id,
+        payload=registry_version_event_payload(
+            event_id=event_id,
+            event_type=event_type,
+            version=version,
+            actor_user_id=actor_user_id,
+            occurred_at=occurred_at,
+        ),
+    )
 
 
 def category_slug(value: str) -> str:
@@ -586,6 +711,7 @@ async def create_server_version(
         raise DuplicateRegistryVersionError("server version already exists")
 
     server = await repository.get_server(session, payload.name, include_deleted=True)
+    should_emit_server_published = server is None or server.status == "deleted"
     values = document_values(payload)
     now = datetime.now(UTC)
 
@@ -666,6 +792,22 @@ async def create_server_version(
     await sync_server_categories_if_present(session, server.id, category_values(payload))
     await session.flush()
     await session.refresh(server)
+    actor_user_id = publisher_user_id or updated_by_user_id or created_by_user_id
+    if should_emit_server_published:
+        await emit_registry_server_event(
+            session,
+            event_type="registry.server.published",
+            server=server,
+            actor_user_id=actor_user_id,
+            occurred_at=now,
+        )
+    await emit_registry_version_event(
+        session,
+        event_type="registry.version.published",
+        version=version,
+        actor_user_id=actor_user_id,
+        occurred_at=now,
+    )
     trust = await build_trust_context(session, servers=[server], versions=[version])
     return RegistryServerVersionDetailResponse(
         server=server_summary(server, version, trust=trust),
@@ -727,7 +869,13 @@ async def update_server_version(
     )
 
 
-async def delete_server_version(session, name: str, version_name: str) -> None:
+async def delete_server_version(
+    session,
+    name: str,
+    version_name: str,
+    *,
+    actor_user_id: UUID | None = None,
+) -> None:
     version = await repository.get_server_version(
         session,
         name,
@@ -763,11 +911,23 @@ async def delete_server_version(session, name: str, version_name: str) -> None:
             server.status = "deleted"
             server.status_message = "All versions deleted from Wardn Hub."
             server.current_version_id = None
+            await emit_registry_server_event(
+                session,
+                event_type="registry.server.archived",
+                server=server,
+                actor_user_id=actor_user_id,
+                occurred_at=version.status_changed_at,
+            )
 
     await session.flush()
 
 
-async def delete_server(session, name: str) -> None:
+async def delete_server(
+    session,
+    name: str,
+    *,
+    actor_user_id: UUID | None = None,
+) -> None:
     server = await repository.get_server(session, name, include_deleted=True)
     if server is None:
         raise RegistryServerNotFoundError("server not found")
@@ -790,6 +950,13 @@ async def delete_server(session, name: str) -> None:
     server.status_message = "All versions deleted from Wardn Hub."
     server.current_version_id = None
     await repository.sync_server_categories(session, server.id, [])
+    await emit_registry_server_event(
+        session,
+        event_type="registry.server.archived",
+        server=server,
+        actor_user_id=actor_user_id,
+        occurred_at=now,
+    )
     await session.flush()
 
 

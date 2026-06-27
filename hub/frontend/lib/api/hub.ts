@@ -5,6 +5,15 @@ import type {
   AuditEventsListParams,
   AuthProviderListResponse,
   BootstrapUserCreate,
+  EventDeliveryListResponse,
+  EventDeliveryRead,
+  EventRuleCreate,
+  EventRuleListResponse,
+  EventRuleRead,
+  EventRuleUpdate,
+  EventSecretRotateResponse,
+  EventTypeListResponse,
+  EventsDeliveriesListParams,
   LoginRequest,
   McpServersListParams,
   OrganizationCreate,
@@ -67,6 +76,19 @@ import {
   getAuthRegisterUrl,
   getAuthUpdateApiTokenUrl,
 } from "@/lib/api/generated/auth/auth";
+import {
+  getEventsDeliveriesGetUrl,
+  getEventsDeliveriesListUrl,
+  getEventsDeliveriesReplayUrl,
+  getEventsRulesCreateUrl,
+  getEventsRulesDeleteUrl,
+  getEventsRulesGetUrl,
+  getEventsRulesListUrl,
+  getEventsRulesRotateSecretUrl,
+  getEventsRulesTestUrl,
+  getEventsRulesUpdateUrl,
+  getEventsTypesListUrl,
+} from "@/lib/api/generated/events/events";
 import { getImportsServerSourceUrl } from "@/lib/api/generated/imports/imports";
 import {
   getMcpCategoriesCreateUrl,
@@ -470,6 +492,70 @@ export function updateOrganizationMembership(
 export function listAuditEvents() {
   const params: AuditEventsListParams = { limit: 50 };
   return generatedRequest<AuditEventListResponse>(getAuditEventsListUrl(params));
+}
+
+export function listEventTypes() {
+  return generatedRequest<EventTypeListResponse>(getEventsTypesListUrl());
+}
+
+export function listEventRules() {
+  return generatedRequest<EventRuleListResponse>(getEventsRulesListUrl());
+}
+
+export function getEventRule(ruleId: string) {
+  return generatedRequest<EventRuleRead>(getEventsRulesGetUrl(encodeURIComponent(ruleId)));
+}
+
+export function createEventRule(payload: EventRuleCreate) {
+  return generatedRequest<EventRuleRead>(getEventsRulesCreateUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateEventRule(ruleId: string, payload: EventRuleUpdate) {
+  return generatedRequest<EventRuleRead>(getEventsRulesUpdateUrl(encodeURIComponent(ruleId)), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteEventRule(ruleId: string) {
+  return generatedRequest<void>(getEventsRulesDeleteUrl(encodeURIComponent(ruleId)), {
+    method: "DELETE",
+  });
+}
+
+export function testEventRule(ruleId: string) {
+  return generatedRequest<EventDeliveryRead>(getEventsRulesTestUrl(encodeURIComponent(ruleId)), {
+    method: "POST",
+  });
+}
+
+export function rotateEventRuleSecret(ruleId: string) {
+  return generatedRequest<EventSecretRotateResponse>(
+    getEventsRulesRotateSecretUrl(encodeURIComponent(ruleId)),
+    { method: "POST" },
+  );
+}
+
+export function listEventDeliveries(params: EventsDeliveriesListParams = { limit: 50 }) {
+  return generatedRequest<EventDeliveryListResponse>(getEventsDeliveriesListUrl(params));
+}
+
+export function getEventDelivery(deliveryId: string) {
+  return generatedRequest<EventDeliveryRead>(
+    getEventsDeliveriesGetUrl(encodeURIComponent(deliveryId)),
+  );
+}
+
+export function replayEventDelivery(deliveryId: string) {
+  return generatedRequest<EventDeliveryRead>(
+    getEventsDeliveriesReplayUrl(encodeURIComponent(deliveryId)),
+    { method: "POST" },
+  );
 }
 
 export function setApiToken(token: string) {

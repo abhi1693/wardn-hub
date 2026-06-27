@@ -255,6 +255,617 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EventDeliveryEventSummary": {
+        "properties": {
+          "eventType": {
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurredAt": {
+            "default": "",
+            "title": "Occurredat",
+            "type": "string"
+          },
+          "subjectId": {
+            "title": "Subjectid",
+            "type": "string"
+          },
+          "subjectLabel": {
+            "title": "Subjectlabel",
+            "type": "string"
+          },
+          "subjectType": {
+            "title": "Subjecttype",
+            "type": "string"
+          },
+          "subjectVersion": {
+            "default": "",
+            "title": "Subjectversion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventType",
+          "subjectType",
+          "subjectId",
+          "subjectLabel"
+        ],
+        "title": "EventDeliveryEventSummary",
+        "type": "object"
+      },
+      "EventDeliveryListResponse": {
+        "properties": {
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/EventDeliveryRead"
+            },
+            "title": "Deliveries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "deliveries"
+        ],
+        "title": "EventDeliveryListResponse",
+        "type": "object"
+      },
+      "EventDeliveryRead": {
+        "properties": {
+          "attemptCount": {
+            "title": "Attemptcount",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "destinationType": {
+            "title": "Destinationtype",
+            "type": "string"
+          },
+          "destinationUrlRedacted": {
+            "title": "Destinationurlredacted",
+            "type": "string"
+          },
+          "errorMessage": {
+            "title": "Errormessage",
+            "type": "string"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventDeliveryEventSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventRecordId": {
+            "format": "uuid",
+            "title": "Eventrecordid",
+            "type": "string"
+          },
+          "eventRuleId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventruleid"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lastAttemptAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastattemptat"
+          },
+          "nextAttemptAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextattemptat"
+          },
+          "requestHeaders": {
+            "additionalProperties": true,
+            "title": "Requestheaders",
+            "type": "object"
+          },
+          "responseBody": {
+            "title": "Responsebody",
+            "type": "string"
+          },
+          "responseStatus": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsestatus"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventRecordId",
+          "eventRuleId",
+          "destinationType",
+          "destinationUrlRedacted",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastAttemptAt",
+          "responseStatus",
+          "responseBody",
+          "errorMessage",
+          "requestHeaders",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "EventDeliveryRead",
+        "type": "object"
+      },
+      "EventRuleCreate": {
+        "properties": {
+          "actionConfig": {
+            "additionalProperties": true,
+            "title": "Actionconfig",
+            "type": "object"
+          },
+          "actionType": {
+            "const": "webhook",
+            "default": "webhook",
+            "title": "Actiontype",
+            "type": "string"
+          },
+          "conditions": {
+            "additionalProperties": true,
+            "title": "Conditions",
+            "type": "object"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "failurePolicy": {
+            "additionalProperties": true,
+            "title": "Failurepolicy",
+            "type": "object"
+          },
+          "isEnabled": {
+            "default": true,
+            "title": "Isenabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          }
+        },
+        "required": [
+          "name",
+          "eventTypes",
+          "actionConfig"
+        ],
+        "title": "EventRuleCreate",
+        "type": "object"
+      },
+      "EventRuleListResponse": {
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/EventRuleRead"
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "title": "EventRuleListResponse",
+        "type": "object"
+      },
+      "EventRuleRead": {
+        "properties": {
+          "actionConfig": {
+            "additionalProperties": true,
+            "title": "Actionconfig",
+            "type": "object"
+          },
+          "actionType": {
+            "title": "Actiontype",
+            "type": "string"
+          },
+          "conditions": {
+            "additionalProperties": true,
+            "title": "Conditions",
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdByUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyuserid"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "failurePolicy": {
+            "additionalProperties": true,
+            "title": "Failurepolicy",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isEnabled": {
+            "title": "Isenabled",
+            "type": "boolean"
+          },
+          "lastTriggeredAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasttriggeredat"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          },
+          "signingSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signingsecret"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ownerUserId",
+          "ownerOrganizationId",
+          "createdByUserId",
+          "name",
+          "description",
+          "isEnabled",
+          "eventTypes",
+          "conditions",
+          "actionType",
+          "actionConfig",
+          "failurePolicy",
+          "lastTriggeredAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "EventRuleRead",
+        "type": "object"
+      },
+      "EventRuleUpdate": {
+        "properties": {
+          "actionConfig": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actionconfig"
+          },
+          "actionType": {
+            "anyOf": [
+              {
+                "const": "webhook",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actiontype"
+          },
+          "conditions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "eventTypes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventtypes"
+          },
+          "failurePolicy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failurepolicy"
+          },
+          "isEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isenabled"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          }
+        },
+        "title": "EventRuleUpdate",
+        "type": "object"
+      },
+      "EventSecretRotateResponse": {
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/EventRuleRead"
+          },
+          "signingSecret": {
+            "title": "Signingsecret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "signingSecret"
+        ],
+        "title": "EventSecretRotateResponse",
+        "type": "object"
+      },
+      "EventTypeListResponse": {
+        "properties": {
+          "eventTypes": {
+            "items": {
+              "$ref": "#/components/schemas/EventTypeRead"
+            },
+            "title": "Eventtypes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "eventTypes"
+        ],
+        "title": "EventTypeListResponse",
+        "type": "object"
+      },
+      "EventTypeRead": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "eventType": {
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "subjectType": {
+            "title": "Subjecttype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventType",
+          "label",
+          "description",
+          "subjectType"
+        ],
+        "title": "EventTypeRead",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3905,6 +4516,8 @@
               "enum": [
                 "audit:read",
                 "catalog:read",
+                "events:read",
+                "events:write",
                 "namespaces:write",
                 "partners:write",
                 "registry:write",
@@ -4023,6 +4636,8 @@
               "enum": [
                 "audit:read",
                 "catalog:read",
+                "events:read",
+                "events:write",
                 "namespaces:write",
                 "partners:write",
                 "registry:write",
@@ -4144,6 +4759,8 @@
                   "enum": [
                     "audit:read",
                     "catalog:read",
+                    "events:read",
+                    "events:write",
                     "namespaces:write",
                     "partners:write",
                     "registry:write",
@@ -4553,7 +5170,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.22"
+    "version": "0.2.24"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5408,6 +6025,661 @@
         "summary": "Register",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/events/deliveries": {
+      "get": {
+        "operationId": "events_deliveries_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rule_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rule Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDeliveryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Delivery Records",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/deliveries/{delivery_id}": {
+      "get": {
+        "operationId": "events_deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Event Delivery Record",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/deliveries/{delivery_id}/replay": {
+      "post": {
+        "operationId": "events_deliveries_replay",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Event Delivery Record",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/rules": {
+      "get": {
+        "operationId": "events_rules_list",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventRuleListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Rule Records",
+        "tags": [
+          "events"
+        ]
+      },
+      "post": {
+        "operationId": "events_rules_create",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventRuleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventRuleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Event Rule Record",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/rules/{rule_id}": {
+      "delete": {
+        "operationId": "events_rules_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Event Rule Record",
+        "tags": [
+          "events"
+        ]
+      },
+      "get": {
+        "operationId": "events_rules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventRuleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Event Rule Record",
+        "tags": [
+          "events"
+        ]
+      },
+      "put": {
+        "operationId": "events_rules_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventRuleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventRuleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Event Rule Record",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/rules/{rule_id}/rotate-secret": {
+      "post": {
+        "operationId": "events_rules_rotate_secret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSecretRotateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Event Rule Secret",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/rules/{rule_id}/test": {
+      "post": {
+        "operationId": "events_rules_test",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDeliveryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Event Rule Record",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/events/types": {
+      "get": {
+        "operationId": "events_types_list",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTypeListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Type Records",
+        "tags": [
+          "events"
         ]
       }
     },

@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.modules.events.models import EventRecord
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
 from app.modules.registry import service
@@ -379,7 +380,8 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_categories)
     monkeypatch.setattr(service.repository, "list_users_by_ids", empty_categories)
 
-    response = await service.create_server_version(FakeSession(), registry_payload())
+    session = FakeSession()
+    response = await service.create_server_version(session, registry_payload())
 
     assert calls == ["clear_latest", "sync_categories"]
     assert response.server.name == "io.github.example/weather"
@@ -387,6 +389,45 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     assert response.server.latest_version.version == "1.0.0"
     assert response.version.is_latest is True
     assert response.version.server_json["name"] == "io.github.example/weather"
+    event_types = [
+        item.event_type for item in session.added if isinstance(item, EventRecord)
+    ]
+    assert event_types == ["registry.server.published", "registry.version.published"]
+
+
+@pytest.mark.asyncio
+async def test_create_existing_server_version_emits_version_event_only(monkeypatch) -> None:
+    server = server_model()
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def missing_version(*args, **kwargs):
+        return None
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "get_server", get_server)
+    monkeypatch.setattr(service.repository, "get_server_version", missing_version)
+    monkeypatch.setattr(service.repository, "clear_latest_for_server", noop)
+    monkeypatch.setattr(service.repository, "sync_server_categories", noop)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+    session = FakeSession()
+
+    await service.create_server_version(session, registry_payload("2.0.0"))
+
+    event_types = [
+        item.event_type for item in session.added if isinstance(item, EventRecord)
+    ]
+    assert event_types == ["registry.version.published"]
 
 
 @pytest.mark.asyncio
@@ -796,7 +837,14 @@ async def test_delete_server_deletes_all_versions(monkeypatch) -> None:
     monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
     monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
 
-    await service.delete_server(FakeSession(), "io.github.example/weather")
+    session = FakeSession()
+    actor_user_id = uuid4()
+
+    await service.delete_server(
+        session,
+        "io.github.example/weather",
+        actor_user_id=actor_user_id,
+    )
 
     assert server.status == "deleted"
     assert server.current_version_id is None
@@ -805,6 +853,10 @@ async def test_delete_server_deletes_all_versions(monkeypatch) -> None:
     assert previous.status == "deleted"
     assert previous.is_latest is False
     assert synced_categories == []
+    event = next(item for item in session.added if isinstance(item, EventRecord))
+    assert event.event_type == "registry.server.archived"
+    assert event.actor_user_id == actor_user_id
+    assert event.payload["registryServer"]["status"] == "deleted"
 
 
 @pytest.mark.asyncio

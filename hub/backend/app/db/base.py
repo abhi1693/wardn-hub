@@ -7,6 +7,7 @@ class Base(DeclarativeBase):
 
 def import_models() -> None:
     from app.modules.audit import models as _audit_models  # noqa: F401
+    from app.modules.events import models as _event_models  # noqa: F401
     from app.modules.namespaces import models as _namespace_models  # noqa: F401
     from app.modules.organizations import models as _organization_models  # noqa: F401
     from app.modules.partners import models as _partner_models  # noqa: F401

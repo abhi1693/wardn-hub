@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.audit.service import emit_audit_event
+from app.modules.events.service import emit_audit_and_event, subject_payload
 from app.modules.organizations import repository as organization_repository
 from app.modules.organizations.exceptions import (
     OrganizationAccessDeniedError,
@@ -551,6 +551,107 @@ def submission_response(submission: ServerSubmission) -> SubmissionRead:
     )
 
 
+def submission_event_payload(
+    *,
+    event_id: uuid.UUID,
+    event_type: str,
+    submission: ServerSubmission,
+    actor_user_id: uuid.UUID | None,
+    actor_token_id: uuid.UUID | None,
+    occurred_at: datetime,
+) -> dict[str, Any]:
+    payload = subject_payload(
+        event_id=event_id,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        actor_user_id=actor_user_id,
+        actor_token_id=actor_token_id,
+        subject_type="server_submission",
+        subject_id=submission.id,
+        subject={
+            "name": submission.name,
+            "version": submission.version,
+        },
+        links={"submissionApiUrl": f"/api/v1/submissions/{submission.id}"},
+    )
+    payload["submission"] = {
+        "id": str(submission.id),
+        "name": submission.name,
+        "version": submission.version,
+        "status": submission.status,
+        "submissionType": submission.submission_type,
+        "createdAt": (
+            submission.created_at.isoformat().replace("+00:00", "Z")
+            if submission.created_at
+            else None
+        ),
+        "updatedAt": (
+            submission.updated_at.isoformat().replace("+00:00", "Z")
+            if submission.updated_at
+            else None
+        ),
+        "submittedAt": (
+            submission.submitted_at.isoformat().replace("+00:00", "Z")
+            if submission.submitted_at
+            else None
+        ),
+        "approvedAt": (
+            submission.approved_at.isoformat().replace("+00:00", "Z")
+            if submission.approved_at
+            else None
+        ),
+        "publishedServerVersionId": (
+            str(submission.published_server_version_id)
+            if submission.published_server_version_id
+            else None
+        ),
+        "rejectionMessage": submission.rejection_message or "",
+    }
+    return payload
+
+
+async def emit_submission_event(
+    session: AsyncSession,
+    *,
+    event_type: str,
+    submission: ServerSubmission,
+    actor_user_id: uuid.UUID | None,
+    api_token: UserAPIToken | None = None,
+    occurred_at: datetime | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    event_id = uuid.uuid4()
+    actor_token_id = api_token.id if api_token is not None and api_token.id else None
+    occurred_at = occurred_at or datetime.now(UTC)
+    event_payload = submission_event_payload(
+        event_id=event_id,
+        event_type=event_type,
+        submission=submission,
+        actor_user_id=actor_user_id,
+        actor_token_id=actor_token_id,
+        occurred_at=occurred_at,
+    )
+    await emit_audit_and_event(
+        session,
+        event_id=event_id,
+        event_type=event_type,
+        subject_type="server_submission",
+        subject_id=submission.id,
+        actor_user_id=actor_user_id,
+        actor_token_id=actor_token_id,
+        organization_id=submission.owner_organization_id,
+        owner_user_id=submission.owner_user_id,
+        owner_organization_id=submission.owner_organization_id,
+        metadata={
+            "name": submission.name,
+            "version": submission.version,
+            "status": submission.status,
+            **(metadata or {}),
+        },
+        event_payload=event_payload,
+    )
+
+
 async def ensure_can_read_submission(
     session: AsyncSession,
     user: User,
@@ -681,14 +782,13 @@ async def create_submission(
     session.add(submission)
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.created",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=user.id,
-        organization_id=submission.owner_organization_id,
-        metadata={"name": submission.name, "version": submission.version},
+        api_token=api_token,
+        submission=submission,
+        occurred_at=submission.created_at or datetime.now(UTC),
     )
     return submission_response(submission)
 
@@ -743,14 +843,13 @@ async def update_submission(
     submission.rejection_message = ""
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.updated",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=user.id,
-        organization_id=submission.owner_organization_id,
-        metadata={"name": submission.name, "version": submission.version},
+        api_token=api_token,
+        submission=submission,
+        occurred_at=submission.updated_at or datetime.now(UTC),
     )
     return submission_response(submission)
 
@@ -767,16 +866,13 @@ async def delete_submission(
         raise SubmissionNotFoundError("submission not found")
     ensure_can_mutate_submission(user, submission)
     ensure_api_token_submission_access(api_token, submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.deleted",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=user.id,
-        organization_id=submission.owner_organization_id,
+        api_token=api_token,
+        submission=submission,
         metadata={
-            "name": submission.name,
-            "version": submission.version,
             "status": submission.status,
         },
     )
@@ -807,14 +903,14 @@ async def submit_submission(
     submission.rejection_message = ""
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    submitted_at = submission.submitted_at or datetime.now(UTC)
+    await emit_submission_event(
         session,
         event_type="submission.submitted",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=user.id,
-        organization_id=submission.owner_organization_id,
-        metadata={"name": submission.name, "version": submission.version},
+        api_token=api_token,
+        submission=submission,
+        occurred_at=submitted_at,
     )
     return submission_response(submission)
 
@@ -836,14 +932,12 @@ async def withdraw_submission(
     submission.status = "withdrawn"
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.withdrawn",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=user.id,
-        organization_id=submission.owner_organization_id,
-        metadata={"name": submission.name, "version": submission.version},
+        api_token=api_token,
+        submission=submission,
     )
     return submission_response(submission)
 
@@ -868,14 +962,13 @@ async def approve_submission(
     submission.rejection_message = ""
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.approved",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=approver.id,
-        organization_id=submission.owner_organization_id,
-        metadata={"name": submission.name, "version": submission.version},
+        api_token=api_token,
+        submission=submission,
+        occurred_at=submission.approved_at or datetime.now(UTC),
     )
     return submission_response(submission)
 
@@ -899,14 +992,13 @@ async def reject_submission(
     submission.rejection_message = message.strip()
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.rejected",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=approver.id,
-        organization_id=submission.owner_organization_id,
-        metadata={"name": submission.name, "version": submission.version},
+        api_token=api_token,
+        submission=submission,
+        metadata={"rejectionMessage": submission.rejection_message},
     )
     return submission_response(submission)
 
@@ -941,16 +1033,13 @@ async def publish_submission(
     submission.published_server_version_id = published.version.id
     await session.flush()
     await session.refresh(submission)
-    await emit_audit_event(
+    await emit_submission_event(
         session,
         event_type="submission.published",
-        subject_type="server_submission",
-        subject_id=submission.id,
         actor_user_id=publisher.id,
-        organization_id=submission.owner_organization_id,
+        api_token=api_token,
+        submission=submission,
         metadata={
-            "name": submission.name,
-            "version": submission.version,
             "publishedServerVersionId": str(published.version.id),
         },
     )

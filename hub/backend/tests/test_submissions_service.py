@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.modules.events.models import EventRecord
 from app.modules.organizations.exceptions import OrganizationAccessDeniedError
 from app.modules.registry.schemas import RegistryEnvironmentVariable, RegistryServerVersionCreate
 from app.modules.submissions import service
@@ -706,6 +707,164 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
         "updated_by_user_id": moderator.id,
         "publisher_user_id": moderator.id,
     }
+
+
+@pytest.mark.asyncio
+async def test_submit_submission_emits_event_record(monkeypatch) -> None:
+    submitter = current_user()
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="draft",
+    )
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    session = FakeSession()
+
+    await service.submit_submission(session, submitter, submission.id)
+
+    event = next(item for item in session.added if isinstance(item, EventRecord))
+    assert event.event_type == "submission.submitted"
+    assert event.owner_user_id == submitter.id
+    assert event.payload["submission"]["id"] == str(submission.id)
+    assert event.payload["submission"]["status"] == "submitted"
+    assert event.payload["links"]["submissionApiUrl"] == f"/api/v1/submissions/{submission.id}"
+
+
+@pytest.mark.asyncio
+async def test_submission_catalog_event_types_emit_event_records(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_global_moderator=True)
+    published_version_id = uuid4()
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    async def publish_version(*args, **kwargs):
+        return SimpleNamespace(version=SimpleNamespace(id=published_version_id))
+
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+
+    async def assert_emits(event_type: str, callback, *, expected_status: str) -> None:
+        session = FakeSession()
+        await callback(session)
+        event = next(item for item in session.added if isinstance(item, EventRecord))
+        assert event.event_type == event_type
+        assert event.payload["submission"]["status"] == expected_status
+        assert event.payload["eventType"] == event_type
+
+    await assert_emits(
+        "submission.created",
+        lambda session: service.create_submission(
+            session,
+            submitter,
+            SubmissionCreate(serverJson=complete_registry_payload()),
+        ),
+        expected_status="draft",
+    )
+
+    async def update_action(session):
+        submission = submission_record(
+            submitter_user_id=submitter.id,
+            owner_user_id=submitter.id,
+            status="draft",
+        )
+
+        async def get_submission(*args, **kwargs):
+            return submission
+
+        monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+        await service.update_submission(
+            session,
+            submitter,
+            submission.id,
+            SubmissionUpdate(serverJson=complete_registry_payload(version="1.0.1")),
+        )
+
+    await assert_emits("submission.updated", update_action, expected_status="draft")
+
+    async def withdraw_action(session):
+        submission = submission_record(
+            submitter_user_id=submitter.id,
+            owner_user_id=submitter.id,
+            status="submitted",
+        )
+
+        async def get_submission(*args, **kwargs):
+            return submission
+
+        monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+        await service.withdraw_submission(session, submitter, submission.id)
+
+    await assert_emits("submission.withdrawn", withdraw_action, expected_status="withdrawn")
+
+    async def approve_action(session):
+        submission = submission_record(
+            submitter_user_id=submitter.id,
+            owner_user_id=submitter.id,
+            status="submitted",
+        )
+
+        async def get_submission(*args, **kwargs):
+            return submission
+
+        monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+        await service.approve_submission(session, moderator, submission.id)
+
+    await assert_emits("submission.approved", approve_action, expected_status="approved")
+
+    async def reject_action(session):
+        submission = submission_record(
+            submitter_user_id=submitter.id,
+            owner_user_id=submitter.id,
+            status="submitted",
+        )
+
+        async def get_submission(*args, **kwargs):
+            return submission
+
+        monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+        await service.reject_submission(session, moderator, submission.id, "Needs changes.")
+
+    await assert_emits("submission.rejected", reject_action, expected_status="rejected")
+
+    async def publish_action(session):
+        submission = submission_record(
+            submitter_user_id=submitter.id,
+            owner_user_id=submitter.id,
+            status="approved",
+        )
+
+        async def get_submission(*args, **kwargs):
+            return submission
+
+        monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+        await service.publish_submission(session, moderator, submission.id)
+
+    await assert_emits("submission.published", publish_action, expected_status="published")
+
+    async def delete_action(session):
+        submission = submission_record(
+            submitter_user_id=submitter.id,
+            owner_user_id=submitter.id,
+            status="draft",
+        )
+
+        async def get_submission(*args, **kwargs):
+            return submission
+
+        monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+        await service.delete_submission(session, submitter, submission.id)
+
+    await assert_emits("submission.deleted", delete_action, expected_status="draft")
 
 
 @pytest.mark.asyncio
