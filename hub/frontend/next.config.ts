@@ -10,7 +10,6 @@ const privatePaths = [
   "register",
   "submit",
   "submissions",
-  "users",
 ];
 const noindexHeaders = [
   {

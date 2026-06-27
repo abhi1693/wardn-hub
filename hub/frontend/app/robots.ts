@@ -20,7 +20,6 @@ export default function robots(): MetadataRoute.Robots {
           "/register",
           "/submit",
           "/submissions",
-          "/users",
           "/_next/",
         ],
         userAgent: "*",
