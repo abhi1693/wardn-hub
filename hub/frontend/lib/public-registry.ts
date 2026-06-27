@@ -5,26 +5,11 @@ import type {
   RegistryServerListResponse,
   RegistryServerRead,
 } from "@/lib/api/generated/model";
+import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
 import { resolveSiteUrl } from "@/lib/site";
 
 const API_PREFIX = "/api/v1";
 const PAGE_SIZE = 100;
-const PUBLIC_CARD_FIELDS = [
-  "id",
-  "name",
-  "title",
-  "description",
-  "websiteUrl",
-  "repository",
-  "icons",
-  "status",
-  "visibility",
-  "latestVersion",
-  "qualityScore",
-  "categories",
-  "createdAt",
-  "updatedAt",
-].join(",");
 export const SITEMAP_CATALOG_CHUNK_SIZE = 2000;
 
 function stripTrailingSlash(value: string) {
@@ -100,6 +85,24 @@ export async function listPublishedRegistryServers(params?: {
   }
 
   return servers;
+}
+
+export async function listPublishedRegistryServerPage(params?: {
+  category?: string;
+  cursor?: string;
+  limit?: number;
+}) {
+  const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
+    ...(params?.category ? { category: params.category } : {}),
+    ...(params?.cursor ? { cursor: params.cursor } : {}),
+    fields: PUBLIC_CARD_FIELDS,
+    limit: params?.limit ?? PAGE_SIZE,
+  });
+
+  return {
+    nextCursor: response.metadata.nextCursor ?? "",
+    servers: response.servers.filter((server) => Boolean(server.latestVersion)),
+  };
 }
 
 export async function countPublishedRegistryServers() {

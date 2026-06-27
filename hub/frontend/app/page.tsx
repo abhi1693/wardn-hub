@@ -1,13 +1,14 @@
 import { Server } from "lucide-react";
 import type { Metadata } from "next";
 
-import { ServerCard } from "@/components/server-card";
+import { ExploreServerGrid } from "@/app/explore-client";
 import { PublicHeader } from "@/components/site-header";
-import { listPublishedRegistryServers } from "@/lib/public-registry";
+import { listPublishedRegistryServerPage } from "@/lib/public-registry";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, registryIndexJsonLd } from "@/lib/structured-data";
 
 export const revalidate = 3600;
+const EXPLORE_PAGE_SIZE = 60;
 
 export const metadata: Metadata = {
   alternates: {
@@ -37,15 +38,18 @@ function EmptyState({ title, detail }: { detail: string; title: string }) {
 }
 
 export default async function Home() {
-  const { error, servers } = await (async () => {
+  const { error, nextCursor, servers } = await (async () => {
     try {
+      const page = await listPublishedRegistryServerPage({ limit: EXPLORE_PAGE_SIZE });
       return {
         error: "",
-        servers: await listPublishedRegistryServers({ limit: 60 }),
+        nextCursor: page.nextCursor,
+        servers: page.servers,
       };
     } catch (caught) {
       return {
         error: caught instanceof Error ? caught.message : "Unable to load registry.",
+        nextCursor: "",
         servers: [],
       };
     }
@@ -78,11 +82,7 @@ export default async function Home() {
             </div>
           ) : null}
           {servers.length > 0 ? (
-            <div className="server-grid">
-              {servers.map((server) => (
-                <ServerCard key={server.id} server={server} showQualityScore />
-              ))}
-            </div>
+            <ExploreServerGrid initialNextCursor={nextCursor} initialServers={servers} />
           ) : null}
         </div>
       </section>

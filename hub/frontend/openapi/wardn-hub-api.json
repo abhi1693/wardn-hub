@@ -5243,7 +5243,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.33"
+    "version": "0.2.34"
   },
   "openapi": "3.1.0",
   "paths": {

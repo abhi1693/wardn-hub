@@ -271,6 +271,8 @@ export function clerkTokenOptions(): ClerkTokenOptions | undefined {
 }
 
 export function listServers(params: {
+  cursor?: string;
+  fields?: string;
   search?: string;
   supportLevel?: string;
   partner?: boolean;
@@ -278,6 +280,8 @@ export function listServers(params: {
   limit?: number;
 }) {
   const generatedParams: McpServersListParams = {
+    cursor: optionalQueryString(params.cursor),
+    fields: optionalQueryString(params.fields),
     search: optionalQueryString(params.search),
     support_level: optionalQueryString(params.supportLevel),
     partner: params.partner,
@@ -288,6 +292,8 @@ export function listServers(params: {
 }
 
 export async function listPublishedServers(params: {
+  cursor?: string;
+  fields?: string;
   search?: string;
   supportLevel?: string;
   partner?: boolean;

@@ -1,0 +1,16 @@
+export const PUBLIC_CARD_FIELDS = [
+  "id",
+  "name",
+  "title",
+  "description",
+  "websiteUrl",
+  "repository",
+  "icons",
+  "status",
+  "visibility",
+  "latestVersion",
+  "qualityScore",
+  "categories",
+  "createdAt",
+  "updatedAt",
+].join(",");

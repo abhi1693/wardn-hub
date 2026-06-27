@@ -1643,6 +1643,48 @@ button {
   gap: 14px;
 }
 
+.server-grid-more {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.server-grid-more p {
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.server-grid-load-more {
+  display: inline-flex;
+  min-width: 132px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 0 18px;
+}
+
+.server-grid-load-more:hover:not(:disabled),
+.server-grid-load-more:focus-visible:not(:disabled) {
+  border-color: #94a3b8;
+  outline: none;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 10%);
+}
+
+.server-grid-load-more:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .server-card {
   display: grid;
   min-height: 188px;
