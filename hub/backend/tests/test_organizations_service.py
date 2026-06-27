@@ -8,8 +8,9 @@ from app.modules.organizations.exceptions import (
     DuplicateOrganizationError,
     OrganizationAccessDeniedError,
 )
-from app.modules.organizations.models import Organization, OrganizationMembership
-from app.modules.organizations.schemas import OrganizationCreate
+from app.modules.organizations.models import Organization, OrganizationMembership, OrganizationRole
+from app.modules.organizations.schemas import OrganizationCreate, OrganizationMembershipCreate
+from app.modules.users.exceptions import UserNotFoundError
 from app.modules.users.models import User
 
 
@@ -71,6 +72,20 @@ def organization(*, is_partner: bool) -> Organization:
         slug="acme",
         status="active",
         is_partner=is_partner,
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+
+
+def organization_role(organization_id) -> OrganizationRole:
+    return OrganizationRole(
+        id=uuid4(),
+        organization_id=organization_id,
+        name="Member",
+        slug="member",
+        description="Member role",
+        permissions=["organization.members.manage"],
+        is_system_role=True,
         created_at=datetime(2026, 6, 23, tzinfo=UTC),
         updated_at=datetime(2026, 6, 23, tzinfo=UTC),
     )
@@ -165,3 +180,40 @@ async def test_global_partner_manager_cannot_manage_non_partner_memberships(monk
 
     with pytest.raises(OrganizationAccessDeniedError):
         await service.list_memberships(FakeSession(), partner_manager(), org.id)
+
+
+@pytest.mark.asyncio
+async def test_upsert_membership_rejects_missing_target_user(monkeypatch) -> None:
+    org = organization(is_partner=False)
+    role = organization_role(org.id)
+    target_user_id = uuid4()
+
+    async def get_org(*args, **kwargs):
+        return org
+
+    async def get_membership(*args, **kwargs):
+        return None
+
+    async def get_role(*args, **kwargs):
+        return role
+
+    async def missing_user(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_organization_by_id", get_org)
+    monkeypatch.setattr(service.repository, "get_organization_membership", get_membership)
+    monkeypatch.setattr(service.repository, "get_organization_role_by_slug", get_role)
+    monkeypatch.setattr(service.user_repository, "get_user_by_id", missing_user)
+
+    session = FakeSession()
+
+    with pytest.raises(UserNotFoundError):
+        await service.upsert_membership(
+            session,
+            superuser(),
+            org.id,
+            OrganizationMembershipCreate(userId=target_user_id, roleSlug="member"),
+        )
+
+    assert session.added == []
+    assert session.flushed is False

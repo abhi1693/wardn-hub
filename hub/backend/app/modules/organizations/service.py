@@ -30,6 +30,8 @@ from app.modules.organizations.schemas import (
     OrganizationRoleRead,
     OrganizationUpdate,
 )
+from app.modules.users import repository as user_repository
+from app.modules.users.exceptions import UserNotFoundError
 from app.modules.users.models import User
 
 ORG_ADMIN_PERMISSIONS = {"organization.manage", "organization.members.manage"}
@@ -324,6 +326,9 @@ async def upsert_membership(
     )
     if role is None:
         raise OrganizationRoleNotFoundError("organization role not found")
+    target_user = await user_repository.get_user_by_id(session, payload.user_id)
+    if target_user is None or not target_user.is_active:
+        raise UserNotFoundError("user not found")
     membership = await repository.get_any_organization_membership(
         session,
         organization_id,

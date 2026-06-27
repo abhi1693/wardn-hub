@@ -39,6 +39,7 @@ from app.modules.organizations.service import (
     upsert_membership,
 )
 from app.modules.users.dependencies import get_current_user
+from app.modules.users.exceptions import UserNotFoundError
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
@@ -209,7 +210,7 @@ async def upsert_organization_membership_route(
         response = await upsert_membership(session, current_user, organization_id, payload)
     except OrganizationAccessDeniedError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except OrganizationRoleNotFoundError as exc:
+    except (OrganizationRoleNotFoundError, UserNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     await session.commit()
     return response
@@ -245,4 +246,3 @@ async def update_organization_membership_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     await session.commit()
     return response
-
