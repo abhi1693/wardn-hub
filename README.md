@@ -179,6 +179,14 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_CLERK_JWKS_URL` | Optional Clerk JWKS override. |
 | `WARDN_HUB_CLERK_AUDIENCE` | Optional Clerk JWT audience. |
 | `WARDN_HUB_CLERK_SECRET_KEY` | Optional backend Clerk secret for fetching profile data not present in JWTs. |
+| `WARDN_HUB_OTEL_ENABLED` | Enables OpenTelemetry tracing for the backend. Defaults to `false`. |
+| `WARDN_HUB_OTEL_SERVICE_NAME` | Service name reported to the collector. Defaults to `wardn-hub-api`. |
+| `WARDN_HUB_OTEL_SERVICE_NAMESPACE` | Service namespace reported as a resource attribute. Defaults to `wardn-hub`. |
+| `WARDN_HUB_OTEL_RESOURCE_ATTRIBUTES` | Optional comma-separated OpenTelemetry resource attributes, for example `k8s.namespace.name=wardn,k8s.deployment.name=wardn-hub`. |
+| `WARDN_HUB_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Optional OTLP HTTP traces endpoint. For the local k3s Grafana stack, use `http://opentelemetry-collector.cattle-monitoring-system.svc.cluster.local:4318/v1/traces`. |
+| `WARDN_HUB_OTEL_EXPORTER_OTLP_TRACES_HEADERS` | Optional comma-separated OTLP exporter headers. Leave empty for the in-cluster collector. |
+| `WARDN_HUB_OTEL_TRACES_SAMPLE_RATIO` | Trace sampling ratio from `0.0` to `1.0`. Defaults to `1.0`. |
+| `WARDN_HUB_OTEL_EXCLUDED_URLS` | Optional comma-separated URL patterns excluded from FastAPI tracing. |
 
 Frontend settings:
 

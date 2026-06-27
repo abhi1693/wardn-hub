@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     registry_public_base_url: str
     database_url: str
     cors_origins: list[str] = []
+    otel_enabled: bool = False
+    otel_service_name: str = "wardn-hub-api"
+    otel_service_namespace: str = "wardn-hub"
+    otel_resource_attributes: str = ""
+    otel_exporter_otlp_traces_endpoint: str = ""
+    otel_exporter_otlp_traces_headers: str = ""
+    otel_traces_sample_ratio: float = 1.0
+    otel_excluded_urls: str = ""
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -88,6 +96,13 @@ class Settings(BaseSettings):
     def validate_session_ttl_seconds(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("session_ttl_seconds must be positive")
+        return value
+
+    @field_validator("otel_traces_sample_ratio")
+    @classmethod
+    def validate_otel_traces_sample_ratio(cls, value: float) -> float:
+        if value < 0 or value > 1:
+            raise ValueError("otel_traces_sample_ratio must be between 0 and 1")
         return value
 
     @model_validator(mode="after")

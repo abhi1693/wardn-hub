@@ -157,3 +157,21 @@ def test_api_prefix_must_be_normalized(monkeypatch) -> None:
 
     with pytest.raises(ValidationError, match="api_prefix"):
         Settings(_env_file=None)
+
+
+def test_otel_settings_default_to_disabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.otel_enabled is False
+    assert settings.otel_service_name == "wardn-hub-api"
+    assert settings.otel_service_namespace == "wardn-hub"
+    assert settings.otel_traces_sample_ratio == 1.0
+
+
+def test_otel_trace_sample_ratio_must_be_between_zero_and_one(monkeypatch) -> None:
+    set_required_settings(monkeypatch, {"WARDN_HUB_OTEL_TRACES_SAMPLE_RATIO": "1.1"})
+
+    with pytest.raises(ValidationError, match="otel_traces_sample_ratio"):
+        Settings(_env_file=None)

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.telemetry import configure_telemetry
 
 
 @asynccontextmanager
@@ -36,8 +37,8 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_prefix)
+    configure_telemetry(app)
     return app
 
 
 app = create_app()
-
