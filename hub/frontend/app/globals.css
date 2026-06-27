@@ -139,7 +139,7 @@ button {
 
 .site-footer {
   border-top: 1px solid #e5e7eb;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   color: #475569;
 }
 
@@ -148,40 +148,50 @@ button {
   max-width: var(--content-max-width);
   margin: 0 auto;
   grid-template-columns: minmax(220px, 1fr) 2fr;
-  gap: 32px;
-  padding: 28px var(--content-gutter);
+  gap: 40px;
+  padding: 44px var(--content-gutter) 26px;
 }
 
 .site-footer-brand {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 8px;
+}
+
+.site-footer-kicker {
+  color: #006d77 !important;
+  font-size: 12px !important;
+  font-weight: 800;
+  line-height: 16px !important;
+  text-transform: uppercase;
 }
 
 .site-footer-brand strong {
   color: #0f172a;
-  font-size: 16px;
-  line-height: 22px;
+  font-size: 24px;
+  line-height: 32px;
 }
 
 .site-footer-brand span,
 .site-footer-brand small {
-  max-width: 420px;
+  max-width: 460px;
   color: #64748b;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .site-footer-nav {
   display: grid;
   grid-template-columns: repeat(3, minmax(120px, 1fr));
-  gap: 20px;
+  gap: 28px;
 }
 
 .site-footer-section {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 14px;
+  border-left: 1px solid #e2e8f0;
+  padding-left: 18px;
 }
 
 .site-footer-section h2 {
@@ -195,7 +205,7 @@ button {
 
 .site-footer-section ul {
   display: grid;
-  gap: 7px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -203,8 +213,8 @@ button {
 
 .site-footer-section a {
   color: #475569;
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
   text-decoration: none;
 }
 
@@ -213,6 +223,19 @@ button {
   color: #0f172a;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.site-footer-bottom {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  grid-column: 1 / -1;
+  gap: 18px;
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .site-brand-mark {
@@ -3065,13 +3088,26 @@ button {
 
   .site-footer-inner {
     grid-template-columns: 1fr;
-    gap: 22px;
-    padding: 24px 14px;
+    gap: 26px;
+    padding: 34px 14px 22px;
   }
 
   .site-footer-nav {
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 18px;
+    gap: 22px;
+  }
+
+  .site-footer-section {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .site-footer-bottom {
+    min-height: 0;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 18px;
   }
 
   .workspace {

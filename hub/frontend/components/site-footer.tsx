@@ -8,6 +8,7 @@ const footerSections = [
       { href: "/", label: "Explore" },
       { href: "/categories", label: "Categories" },
       { href: "/users", label: "Users" },
+      { href: "/partners", label: "Partners" },
     ],
     title: "Registry",
   },
@@ -16,6 +17,7 @@ const footerSections = [
       { href: "/submit", label: "Submit" },
       { href: "/submissions", label: "Submissions" },
       { href: "/account/api-tokens", label: "API tokens" },
+      { href: "/login", label: "Sign in" },
     ],
     title: "Contribute",
   },
@@ -36,9 +38,9 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div className="site-footer-brand">
+          <span className="site-footer-kicker">MCP registry</span>
           <strong>{siteConfig.name}</strong>
           <span>{siteConfig.tagline}</span>
-          <small>© {year} Wardn AI</small>
         </div>
 
         <nav aria-label="Footer" className="site-footer-nav">
@@ -55,6 +57,12 @@ export function SiteFooter() {
             </section>
           ))}
         </nav>
+
+        <div className="site-footer-bottom">
+          <span>© {year} Wardn AI</span>
+          <span>Public registry metadata only</span>
+          <span>Canonical catalog: hub.wardnai.dev</span>
+        </div>
       </div>
     </footer>
   );
