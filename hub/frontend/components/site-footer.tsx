@@ -26,10 +26,16 @@ const footerSections = [
       { href: "/sitemap.xml", label: "Sitemap" },
       { href: "/llms.txt", label: "LLMs.txt" },
       { href: "/robots.txt", label: "Robots.txt" },
+      { href: "https://github.com/abhi1693/wardn-hub", label: "GitHub" },
+      { href: "https://x.com/abhi16_93", label: "X / Twitter" },
     ],
-    title: "Crawlers",
+    title: "Source",
   },
 ];
+
+function isExternalHref(href: string) {
+  return /^https?:\/\//i.test(href);
+}
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
@@ -50,7 +56,13 @@ export function SiteFooter() {
               <ul>
                 {section.links.map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href}>{link.label}</Link>
+                    {isExternalHref(link.href) ? (
+                      <a href={link.href} rel="noreferrer" target="_blank">
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link href={link.href}>{link.label}</Link>
+                    )}
                   </li>
                 ))}
               </ul>
