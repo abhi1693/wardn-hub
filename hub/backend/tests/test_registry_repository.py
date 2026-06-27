@@ -107,6 +107,23 @@ async def test_list_servers_version_filter_requires_active_matching_version() ->
 
 
 @pytest.mark.asyncio
+async def test_list_published_servers_uses_published_filters_for_count_and_rows() -> None:
+    session = CaptureSession()
+
+    rows, total = await repository.list_published_servers(session, offset=20, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert len(session.statements) == 2
+    for statement in (sql(session.statements[0]), sql(session.statements[1])):
+        assert "mcp_servers.status = 'active'" in statement
+        assert "mcp_servers.visibility = 'public'" in statement
+        assert "mcp_servers.current_version_id IS NOT NULL" in statement
+        assert "mcp_server_versions.status = 'active'" in statement
+        assert "mcp_server_versions.is_latest IS true" in statement
+
+
+@pytest.mark.asyncio
 async def test_get_published_server_version_requires_active_current_latest() -> None:
     session = CaptureSession()
     server = RegistryServer(id=uuid4(), name="io.github.example/weather")
@@ -130,5 +147,29 @@ async def test_public_registry_users_require_public_current_versions() -> None:
     statement = sql(session.statements[0])
     assert users == []
     assert "mcp_servers.visibility = 'public'" in statement
-    assert "mcp_servers.current_version_id = mcp_server_versions.id" in statement
+    assert "mcp_server_versions.id = mcp_servers.current_version_id" in statement
+    assert "mcp_servers.current_version_id IS NOT NULL" in statement
     assert "mcp_server_versions.status = 'active'" in statement
+    assert "mcp_server_versions.is_latest IS true" in statement
+
+
+@pytest.mark.asyncio
+async def test_list_servers_for_user_uses_published_filters() -> None:
+    session = CaptureSession()
+    user_id = uuid4()
+
+    servers, next_cursor = await repository.list_servers_for_user(
+        session,
+        user_id,
+        offset=0,
+        limit=50,
+    )
+
+    statement = sql(session.statements[0])
+    assert servers == []
+    assert next_cursor == ""
+    assert "mcp_servers.status = 'active'" in statement
+    assert "mcp_servers.visibility = 'public'" in statement
+    assert "mcp_servers.current_version_id IS NOT NULL" in statement
+    assert "mcp_server_versions.status = 'active'" in statement
+    assert "mcp_server_versions.is_latest IS true" in statement

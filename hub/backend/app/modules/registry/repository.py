@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, and_, delete, func, or_, select, update
@@ -35,28 +36,24 @@ def visible_versions_query(include_deleted: bool) -> Select[tuple[RegistryServer
     return statement
 
 
-def published_current_version_join_condition():
-    return and_(
-        RegistryServerVersion.id == RegistryServer.current_version_id,
-        RegistryServerVersion.server_id == RegistryServer.id,
-    )
-
-
-def published_server_filters():
+def published_server_current_version_query(*entities: Any) -> Select[Any]:
     return (
-        RegistryServer.status == "active",
-        RegistryServer.visibility == "public",
-        RegistryServer.current_version_id.is_not(None),
-        RegistryServerVersion.status == "active",
-        RegistryServerVersion.is_latest.is_(True),
-    )
-
-
-def published_servers_query() -> Select[tuple[RegistryServer]]:
-    return (
-        select(RegistryServer)
-        .join(RegistryServerVersion, published_current_version_join_condition())
-        .where(*published_server_filters())
+        select(*entities)
+        .select_from(RegistryServer)
+        .join(
+            RegistryServerVersion,
+            and_(
+                RegistryServerVersion.id == RegistryServer.current_version_id,
+                RegistryServerVersion.server_id == RegistryServer.id,
+            ),
+        )
+        .where(
+            RegistryServer.status == "active",
+            RegistryServer.visibility == "public",
+            RegistryServer.current_version_id.is_not(None),
+            RegistryServerVersion.status == "active",
+            RegistryServerVersion.is_latest.is_(True),
+        )
     )
 
 
@@ -73,7 +70,9 @@ async def get_server(
 
 
 async def get_published_server(session: AsyncSession, name: str) -> RegistryServer | None:
-    result = await session.execute(published_servers_query().where(RegistryServer.name == name))
+    result = await session.execute(
+        published_server_current_version_query(RegistryServer).where(RegistryServer.name == name)
+    )
     return result.scalar_one_or_none()
 
 
@@ -138,7 +137,7 @@ async def list_servers(
     if status and status != "active":
         return [], ""
 
-    statement = published_servers_query()
+    statement = published_server_current_version_query(RegistryServer)
     if search:
         pattern = f"%{search.strip()}%"
         statement = statement.where(
@@ -227,19 +226,9 @@ async def list_published_servers(
     offset: int,
     limit: int,
 ) -> tuple[list[tuple[RegistryServer, RegistryServerVersion]], int]:
-    filters = published_server_filters()
-    join_condition = published_current_version_join_condition()
-
-    total = await session.scalar(
-        select(func.count())
-        .select_from(RegistryServer)
-        .join(RegistryServerVersion, join_condition)
-        .where(*filters)
-    )
+    total = await session.scalar(published_server_current_version_query(func.count()))
     result = await session.execute(
-        select(RegistryServer, RegistryServerVersion)
-        .join(RegistryServerVersion, join_condition)
-        .where(*filters)
+        published_server_current_version_query(RegistryServer, RegistryServerVersion)
         .order_by(RegistryServer.name.asc())
         .offset(offset)
         .limit(limit)
@@ -347,25 +336,15 @@ async def list_users_by_ids(session: AsyncSession, user_ids: set[UUID]) -> dict[
 
 
 async def list_public_registry_users(session: AsyncSession) -> list[User]:
-    server_owner_ids = (
-        select(RegistryServer.owner_user_id)
-        .join(RegistryServerVersion, published_current_version_join_condition())
-        .where(
-            *published_server_filters(),
-            RegistryServer.owner_user_id.is_not(None),
-        )
+    server_owner_ids = published_server_current_version_query(
+        RegistryServer.owner_user_id
+    ).where(
+        RegistryServer.owner_user_id.is_not(None),
     )
-    version_user_ids = (
-        select(RegistryServerVersion.publisher_user_id)
-        .join(RegistryServer, RegistryServer.id == RegistryServerVersion.server_id)
-        .where(
-            RegistryServer.status == "active",
-            RegistryServer.visibility == "public",
-            RegistryServer.current_version_id == RegistryServerVersion.id,
-            RegistryServerVersion.status == "active",
-            RegistryServerVersion.is_latest.is_(True),
-            RegistryServerVersion.publisher_user_id.is_not(None),
-        )
+    version_user_ids = published_server_current_version_query(
+        RegistryServerVersion.publisher_user_id
+    ).where(
+        RegistryServerVersion.publisher_user_id.is_not(None),
     )
     result = await session.execute(
         select(User)
@@ -389,15 +368,8 @@ async def list_servers_for_user(
     limit: int,
 ) -> tuple[list[RegistryServer], str]:
     statement = (
-        visible_servers_query(False)
-        .join(
-            RegistryServerVersion,
-            RegistryServerVersion.id == RegistryServer.current_version_id,
-        )
+        published_server_current_version_query(RegistryServer)
         .where(
-            RegistryServer.status == "active",
-            RegistryServer.visibility == "public",
-            RegistryServerVersion.status == "active",
             or_(
                 RegistryServer.owner_user_id == user_id,
                 RegistryServer.created_by_user_id == user_id,
