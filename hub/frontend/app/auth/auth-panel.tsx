@@ -25,6 +25,7 @@ import {
   setApiToken,
 } from "@/lib/api/hub";
 import type { AuthProviderRead } from "@/lib/api/generated/model";
+import { isClerkEnabled } from "@/lib/auth/providers";
 
 type AuthMode = "login" | "register";
 
@@ -36,10 +37,6 @@ const fallbackProviders: AuthProviderRead[] = [
     signUpEnabled: true,
   },
 ];
-
-function isClerkConfigured() {
-  return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-}
 
 function ClerkRedirect({
   isRegister,
@@ -120,7 +117,7 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
   );
   const showClerk = Boolean(
     clerkProvider &&
-      isClerkConfigured() &&
+      isClerkEnabled() &&
       (isRegister ? clerkProvider.signUpEnabled : clerkProvider.signInEnabled),
   );
 

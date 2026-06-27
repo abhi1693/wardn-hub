@@ -3,18 +3,12 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 
-function clientAuthProviders() {
-  return (process.env.NEXT_PUBLIC_AUTH_PROVIDERS ?? "local")
-    .split(",")
-    .map((provider) => provider.trim().toLowerCase())
-    .filter(Boolean);
-}
+import { clerkPublishableKey, isClerkEnabled } from "@/lib/auth/providers";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  const clerkEnabled = clientAuthProviders().includes("clerk");
+  const publishableKey = clerkPublishableKey();
 
-  if (!clerkEnabled || !publishableKey) {
+  if (!isClerkEnabled()) {
     return <>{children}</>;
   }
 

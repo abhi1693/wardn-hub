@@ -16,6 +16,7 @@ import {
   signOutExternalAuth,
 } from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
+import { isClerkEnabled } from "@/lib/auth/providers";
 
 type HeaderItem = {
   active?: boolean;
@@ -44,20 +45,6 @@ const adminItems: HeaderItem[] = [
 const partnerManagerItems: HeaderItem[] = [{ href: "/partners", label: "Partners" }];
 
 const superuserItems: HeaderItem[] = [{ href: "/audit", label: "Audit" }];
-
-function clientAuthProviders() {
-  return (process.env.NEXT_PUBLIC_AUTH_PROVIDERS ?? "local")
-    .split(",")
-    .map((provider) => provider.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function clerkEnabled() {
-  return (
-    clientAuthProviders().includes("clerk") &&
-    Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
-  );
-}
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -432,7 +419,7 @@ function ClerkPublicHeader() {
 }
 
 export function PublicHeader() {
-  if (clerkEnabled()) {
+  if (isClerkEnabled()) {
     return <ClerkPublicHeader />;
   }
 
