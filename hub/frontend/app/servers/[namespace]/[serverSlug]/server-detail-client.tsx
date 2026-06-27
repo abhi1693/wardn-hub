@@ -16,6 +16,7 @@ import type {
   RegistryServerDetailResponse,
   RegistryServerVersionRead,
 } from "@/lib/api/generated/model";
+import { publicRegistryUrl } from "@/lib/site";
 
 type LoadState = "loading" | "ready" | "error";
 type DetailTab = "overview" | "technical";
@@ -92,6 +93,16 @@ function encodePath(value: string) {
     .filter(Boolean)
     .map((part) => encodeURIComponent(part))
     .join("/");
+}
+
+function qualityBadgePath(serverName: string, version?: string) {
+  const path = `/api/v1/mcp/badges/quality/${encodePath(serverName)}`;
+  if (!version) return path;
+  return `${path}?${new URLSearchParams({ version }).toString()}`;
+}
+
+function qualityBadgeUrl(serverName: string, version?: string) {
+  return publicRegistryUrl(qualityBadgePath(serverName, version));
 }
 
 function githubRef(repository: RepositoryReference | null) {
@@ -328,25 +339,86 @@ function RequirementMark({ value }: { value: unknown }) {
   return <BooleanMark value={value} />;
 }
 
-function CopyButton({ value }: { value: string }) {
+async function writeClipboardText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    if (!document.execCommand("copy")) {
+      throw new Error("Copy command was rejected");
+    }
+  } finally {
+    textarea.remove();
+  }
+}
+
+function CopyButton({ label = "Copy target", value }: { label?: string; value: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copyValue() {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    try {
+      await writeClipboardText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch (error) {
+      console.error("Unable to copy value to the clipboard.", error);
+    }
   }
 
   return (
     <button
-      aria-label="Copy target"
+      aria-label={label}
       className="server-detail-copy"
       onClick={() => void copyValue()}
-      title="Copy target"
+      title={label}
       type="button"
     >
       {copied ? <Check size={16} /> : <Clipboard size={16} />}
     </button>
+  );
+}
+
+function QualityBadgePanel({
+  badgePreviewUrl,
+  badgeUrl,
+  markdown,
+  score,
+}: {
+  badgePreviewUrl: string;
+  badgeUrl: string;
+  markdown: string;
+  score?: number | null;
+}) {
+  return (
+    <section className="server-detail-card server-detail-badge-card">
+      <div className="server-detail-card-title-row">
+        <h2>README Badge</h2>
+        <CopyButton label="Copy Markdown" value={markdown} />
+      </div>
+      <a className="server-detail-badge-preview" href={badgeUrl} rel="noreferrer" target="_blank">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt={`Wardn Score: ${typeof score === "number" ? `${score}/100` : "pending"}`}
+          height={20}
+          src={badgePreviewUrl}
+        />
+      </a>
+      <div className="server-detail-markdown-snippet">
+        <code>{markdown}</code>
+      </div>
+    </section>
   );
 }
 
@@ -914,6 +986,13 @@ export function ServerDetailClient({
   const websiteUrl = selectedVersion?.websiteUrl || server?.websiteUrl || "";
   const category = server?.categories?.[0];
   const categoryName = category?.name ?? "";
+  const badgeVersion = selectedVersion && !selectedVersion.isLatest ? selectedVersion.version : "";
+  const badgePreviewUrl = server?.name ? qualityBadgePath(server.name, badgeVersion) : "";
+  const badgeUrl = server?.name ? qualityBadgeUrl(server.name, badgeVersion) : "";
+  const badgeMarkdown = server?.name
+    ? `[![Wardn Score](${badgeUrl})](${publicRegistryUrl(`/servers/${encodePath(server.name)}`)})`
+    : "";
+  const qualityScore = selectedVersion?.qualityScore ?? server?.qualityScore ?? null;
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
     : server?.partnerSupport ?? [];
@@ -1111,6 +1190,15 @@ export function ServerDetailClient({
                         </div>
                       </dl>
                     </section>
+
+                    {badgeUrl && badgeMarkdown ? (
+                      <QualityBadgePanel
+                        badgePreviewUrl={badgePreviewUrl}
+                        badgeUrl={badgeUrl}
+                        markdown={badgeMarkdown}
+                        score={qualityScore}
+                      />
+                    ) : null}
 
                   </aside>
                 </>

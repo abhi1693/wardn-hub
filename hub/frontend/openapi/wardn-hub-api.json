@@ -5243,7 +5243,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.31"
+    "version": "0.2.33"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6961,6 +6961,73 @@
         "summary": "Import Server Source Endpoint",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/v1/mcp/badges/quality/{server_name}": {
+      "get": {
+        "operationId": "mcp_quality_score_badge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/svg+xml": {}
+            },
+            "description": "Quality score badge SVG."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Quality Score Badge",
+        "tags": [
+          "mcp"
         ]
       }
     },

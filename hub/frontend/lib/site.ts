@@ -1,5 +1,6 @@
 const DEFAULT_SITE_URL =
   process.env.NODE_ENV === "production" ? "https://hub.wardnai.dev" : "http://localhost:3000";
+const DEFAULT_PUBLIC_REGISTRY_URL = "https://hub.wardnai.dev";
 
 function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
@@ -24,6 +25,16 @@ function computeSiteUrl() {
 
 const SITE_URL = computeSiteUrl();
 
+function computePublicRegistryUrl() {
+  const raw =
+    process.env.NEXT_PUBLIC_REGISTRY_PUBLIC_BASE_URL?.trim() ||
+    process.env.WARDN_HUB_REGISTRY_PUBLIC_BASE_URL?.trim() ||
+    DEFAULT_PUBLIC_REGISTRY_URL;
+  return stripTrailingSlash(ensureUrlHasProtocol(raw)) || DEFAULT_PUBLIC_REGISTRY_URL;
+}
+
+const PUBLIC_REGISTRY_URL = computePublicRegistryUrl();
+
 export const siteConfig = {
   description:
     "Wardn Hub is a community-driven directory for discovering, comparing, and sharing Model Context Protocol servers.",
@@ -46,6 +57,14 @@ export function resolveSiteUrl() {
   return SITE_URL;
 }
 
+export function resolvePublicRegistryUrl() {
+  return PUBLIC_REGISTRY_URL;
+}
+
 export function absoluteUrl(path: string) {
   return new URL(path, SITE_URL).toString();
+}
+
+export function publicRegistryUrl(path: string) {
+  return new URL(path, PUBLIC_REGISTRY_URL).toString();
 }

@@ -1,9 +1,10 @@
 from datetime import datetime
+from html import escape
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.router import bad_request, commit_response, commit_session, conflict, not_found
@@ -53,9 +54,85 @@ from app.modules.users.dependencies import require_superuser_scopes
 from app.modules.users.models import User
 
 catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
+badges_router = APIRouter(prefix="/mcp/badges", tags=["mcp"])
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
 categories_router = APIRouter(prefix="/mcp/categories", tags=["mcp-categories"])
 admin_router = APIRouter(prefix="/admin/mcp/servers", tags=["admin-mcp"])
+
+
+def score_badge_color(score: int | None) -> str:
+    if score is None:
+        return "#939393"
+    if score >= 85:
+        return "#4b0"
+    if score >= 70:
+        return "#67ac09"
+    if score >= 50:
+        return "#d8b800"
+    return "#dd4343"
+
+
+def quality_score_badge_value_metrics(value: str) -> tuple[int, int]:
+    if value == "pending":
+        return 55, 450
+    if value == "100/100":
+        return 57, 470
+    if len(value) == len("0/100"):
+        return 43, 330
+    return 49, 390
+
+
+def quality_score_badge_svg(score: int | None) -> str:
+    label = "Wardn Score"
+    value = f"{score}/100" if score is not None else "pending"
+    label_width = 81
+    label_text_length = 710
+    label_text_x = 415
+    value_width, value_text_length = quality_score_badge_value_metrics(value)
+    value_text_x = int((label_width + (value_width / 2)) * 10 - 10)
+    width = label_width + value_width
+    color = score_badge_color(score)
+    escaped_label = escape(label)
+    escaped_value = escape(value)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" '
+        f'role="img" aria-label="{escaped_label}: {escaped_value}">'
+        f"<title>{escaped_label}: {escaped_value}</title>"
+        '<filter id="blur"><feGaussianBlur stdDeviation="16"/></filter>'
+        '<linearGradient id="s" x2="0" y2="100%">'
+        '<stop offset="0" stop-color="#bbb" stop-opacity=".1"/>'
+        '<stop offset="1" stop-opacity=".1"/>'
+        "</linearGradient>"
+        f'<clipPath id="r"><rect width="{width}" height="20" rx="3"/></clipPath>'
+        '<g clip-path="url(#r)">'
+        f'<rect width="{label_width}" height="20" fill="#555"/>'
+        f'<rect x="{label_width}" width="{value_width}" height="20" fill="{color}"/>'
+        f'<rect width="{width}" height="20" fill="url(#s)"/>'
+        "</g>"
+        '<g fill="#fff" text-anchor="middle" '
+        'font-family="Verdana,Geneva,DejaVu Sans,sans-serif" '
+        'text-rendering="geometricPrecision" font-size="110">'
+        '<g transform="scale(.1)">'
+        '<g aria-hidden="true" fill="#010101">'
+        f'<text x="{label_text_x}" y="150" fill-opacity=".8" filter="url(#blur)" '
+        f'textLength="{label_text_length}">{escaped_label}</text>'
+        f'<text x="{label_text_x}" y="150" fill-opacity=".3" '
+        f'textLength="{label_text_length}">{escaped_label}</text>'
+        "</g>"
+        f'<text x="{label_text_x}" y="140" textLength="{label_text_length}">{escaped_label}</text>'
+        "</g>"
+        '<g transform="scale(.1)">'
+        '<g aria-hidden="true" fill="#010101">'
+        f'<text x="{value_text_x}" y="150" fill-opacity=".8" filter="url(#blur)" '
+        f'textLength="{value_text_length}">{escaped_value}</text>'
+        f'<text x="{value_text_x}" y="150" fill-opacity=".3" '
+        f'textLength="{value_text_length}">{escaped_value}</text>'
+        "</g>"
+        f'<text x="{value_text_x}" y="140" textLength="{value_text_length}">{escaped_value}</text>'
+        "</g>"
+        "</g>"
+        "</svg>"
+    )
 
 
 @categories_router.get(
@@ -191,6 +268,39 @@ async def list_mcp_catalog(
         return response
     except ValueError as exc:
         raise bad_request(exc, detail="invalid fields") from exc
+
+
+@badges_router.get(
+    "/quality/{server_name:path}",
+    operation_id="mcp_quality_score_badge",
+    responses={
+        status.HTTP_200_OK: {
+            "content": {"image/svg+xml": {}},
+            "description": "Quality score badge SVG.",
+        },
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+    },
+)
+async def get_mcp_quality_score_badge(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    version: str | None = None,
+) -> Response:
+    try:
+        if version:
+            detail = await get_version_detail(session, server_name, version)
+            score = detail.version.quality_score
+        else:
+            detail = await get_server_detail(session, server_name)
+            score = detail.server.quality_score
+    except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
+        detail = "server version not found" if version else "server not found"
+        raise not_found(exc, detail=detail) from exc
+    return Response(
+        content=quality_score_badge_svg(score),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @public_router.get(

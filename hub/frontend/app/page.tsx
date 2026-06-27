@@ -80,7 +80,7 @@ export default async function Home() {
           {servers.length > 0 ? (
             <div className="server-grid">
               {servers.map((server) => (
-                <ServerCard key={server.id} server={server} />
+                <ServerCard key={server.id} server={server} showQualityScore />
               ))}
             </div>
           ) : null}

@@ -194,6 +194,7 @@ Frontend settings:
 | --- | --- |
 | `WARDN_HUB_API_INTERNAL_BASE_URL` | Backend URL reached by the Next.js server-side proxy. Defaults to `http://localhost:8000`. |
 | `NEXT_PUBLIC_SITE_URL` | Public frontend base URL used for canonical metadata, robots.txt, sitemap URLs, and llms.txt. Defaults to `https://hub.wardnai.dev` in production and `http://localhost:3000` locally. |
+| `NEXT_PUBLIC_REGISTRY_PUBLIC_BASE_URL` | Browser-visible public registry URL used for generated README badge Markdown. Defaults to `https://hub.wardnai.dev`. |
 | `NEXT_PUBLIC_API_BASE_URL` | Optional browser-visible backend URL. If unset, the browser uses same-origin `/api/v1`. |
 | `NEXT_PUBLIC_AUTH_PROVIDERS` | Auth providers exposed to the frontend. Defaults to `local`. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Enables Clerk UI integration when Clerk is listed in `NEXT_PUBLIC_AUTH_PROVIDERS`. |
@@ -335,6 +336,8 @@ GitHub Actions currently includes:
   independent high-entropy secrets of at least 32 characters.
 - Set `WARDN_HUB_CORS_ORIGINS` to the deployed frontend origin.
 - Set `WARDN_HUB_REGISTRY_PUBLIC_BASE_URL` to the public frontend base URL.
+- Set `NEXT_PUBLIC_REGISTRY_PUBLIC_BASE_URL` to the public frontend base URL
+  when generated README badge Markdown should point at a non-default domain.
 - Set `WARDN_HUB_API_INTERNAL_BASE_URL` for frontend deployments where the
   backend is not reachable at `http://localhost:8000` from the Next.js server.
 - Enable only the intended auth providers with `WARDN_HUB_AUTH_PROVIDERS` and

@@ -15,6 +15,7 @@ from app.modules.registry.schemas import (
     RegistryListMetadata,
     RegistryPageMetadata,
     RegistryPublishedServerListResponse,
+    RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerRead,
     RegistryServerVersionDetailResponse,
@@ -113,6 +114,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
 
     assert {
         "/api/v1/mcp/categories",
+        "/api/v1/mcp/badges/quality/{server_name}",
         "/api/v1/mcp/catalog",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",
@@ -153,6 +155,10 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
     assert (
         schema["paths"]["/api/v1/mcp/catalog"]["get"]["operationId"]
         == "mcp_catalog_list"
+    )
+    assert (
+        schema["paths"]["/api/v1/mcp/badges/quality/{server_name}"]["get"]["operationId"]
+        == "mcp_quality_score_badge"
     )
     assert schema["paths"]["/api/v1/users"]["get"]["operationId"] == "users_list"
     assert schema["paths"]["/api/v1/users/{user_id}"]["get"]["operationId"] == "users_get"
@@ -294,6 +300,74 @@ def test_list_servers_route_rejects_unknown_fields(monkeypatch) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid fields"
+
+
+def test_quality_score_badge_renders_svg(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+
+    async def fake_session():
+        yield object()
+
+    async def get_server(*args, **kwargs):
+        return RegistryServerDetailResponse(
+            server=registry_detail_response(server_id, version_id).server,
+            versions=[],
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_detail", get_server)
+
+    response = TestClient(app).get("/api/v1/mcp/badges/quality/io.github.example/weather")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert response.headers["cache-control"] == "public, max-age=300"
+    assert "Wardn Score" in response.text
+    assert "96/100" in response.text
+
+
+def test_quality_score_badge_supports_pending_score(monkeypatch) -> None:
+    app = create_app()
+    detail = registry_detail_response(uuid4(), uuid4())
+    detail.server.quality_score = None
+
+    async def fake_session():
+        yield object()
+
+    async def get_server(*args, **kwargs):
+        return RegistryServerDetailResponse(server=detail.server, versions=[])
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_detail", get_server)
+
+    response = TestClient(app).get("/api/v1/mcp/badges/quality/io.github.example/weather")
+
+    assert response.status_code == 200
+    assert "pending" in response.text
+
+
+def test_quality_score_badge_can_target_version(monkeypatch) -> None:
+    app = create_app()
+    detail = registry_detail_response(uuid4(), uuid4())
+    detail.version.quality_score = 72
+
+    async def fake_session():
+        yield object()
+
+    async def get_version(*args, **kwargs):
+        return detail
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_version_detail", get_version)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/badges/quality/io.github.example/weather?version=1.0.0"
+    )
+
+    assert response.status_code == 200
+    assert "72/100" in response.text
 
 
 def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:

@@ -1646,7 +1646,7 @@ button {
 .server-card {
   display: grid;
   min-height: 188px;
-  align-content: start;
+  grid-template-rows: auto 1fr auto;
   gap: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1669,6 +1669,11 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+}
+
+.server-card-title-block {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .server-card-icon {
@@ -1723,6 +1728,7 @@ button {
 .server-card strong {
   display: block;
   overflow-wrap: anywhere;
+  min-width: 0;
   color: #0f172a;
   font-size: 16px;
   line-height: 22px;
@@ -1746,6 +1752,65 @@ button {
   line-height: 24px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.server-card-footer {
+  display: flex;
+}
+
+.server-card-score-meter {
+  display: grid;
+  width: 100%;
+  gap: 7px;
+}
+
+.server-card-score-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.server-card-score-value {
+  flex: 0 0 auto;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.server-card-score-track {
+  display: block;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.server-card-score-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #939393;
+}
+
+.server-card-score-meter.excellent .server-card-score-fill {
+  background: #4b0;
+}
+
+.server-card-score-meter.good .server-card-score-fill {
+  background: #67ac09;
+}
+
+.server-card-score-meter.fair .server-card-score-fill {
+  background: #d8b800;
+}
+
+.server-card-score-meter.poor .server-card-score-fill {
+  background: #dd4343;
 }
 
 .server-detail-page {
@@ -1881,6 +1946,49 @@ button {
   letter-spacing: 0.08em;
   line-height: 16px;
   text-transform: uppercase;
+}
+
+.server-detail-card-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.server-detail-badge-card {
+  gap: 14px;
+}
+
+.server-detail-badge-preview {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+}
+
+.server-detail-badge-preview img {
+  display: block;
+  max-width: 100%;
+  height: 20px;
+}
+
+.server-detail-markdown-snippet {
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.server-detail-markdown-snippet code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  white-space: normal;
 }
 
 .server-detail-summary,
