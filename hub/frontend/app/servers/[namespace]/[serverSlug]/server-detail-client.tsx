@@ -674,10 +674,6 @@ function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
                       {url ? <CopyButton value={url} /> : null}
                     </div>
                   </div>
-                  <div>
-                    <label>Transport Type</label>
-                    <TransportTypePill value={remoteType} />
-                  </div>
                 </div>
 
                 {headers.length > 0 ? (
