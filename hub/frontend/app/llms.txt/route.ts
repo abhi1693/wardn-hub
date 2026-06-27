@@ -3,7 +3,6 @@ import { absoluteUrl, siteConfig } from "@/lib/site";
 import { textResponse } from "@/lib/sitemap";
 
 export const revalidate = 3600;
-export const dynamic = "force-dynamic";
 
 export async function GET() {
   let categoryLines: string[] = [];

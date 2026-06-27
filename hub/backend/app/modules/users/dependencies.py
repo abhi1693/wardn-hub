@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from opentelemetry import trace
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -15,6 +16,13 @@ from app.modules.users.service import authenticate_api_token, get_or_create_exte
 
 API_TOKEN_STATE_KEY = "wardn_hub_api_token"
 CLERK_SESSION_COOKIE_NAME = "__session"
+tracer = trace.get_tracer(__name__)
+
+
+def set_user_id_attribute(span: trace.Span, user: User) -> None:
+    user_id = getattr(user, "id", None)
+    if user_id is not None:
+        span.set_attribute("auth.user_id", str(user_id))
 
 
 def get_request_api_token(request: Request) -> UserAPIToken | None:
@@ -43,54 +51,91 @@ async def get_current_user(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
-    user_id = None
-    settings = get_settings()
-    setattr(request.state, API_TOKEN_STATE_KEY, None)
-    session_token = request.cookies.get(settings.session_cookie_name)
+    with tracer.start_as_current_span("auth.current_user") as span:
+        user_id = None
+        settings = get_settings()
+        setattr(request.state, API_TOKEN_STATE_KEY, None)
+        session_token = request.cookies.get(settings.session_cookie_name)
+        span.set_attribute("auth.has_session_cookie", bool(session_token))
+        span.set_attribute(
+            "auth.has_authorization_bearer",
+            bool(authorization and authorization.lower().startswith("bearer ")),
+        )
 
-    if session_token:
-        user_id = verify_session_token(session_token)
+        if session_token:
+            with tracer.start_as_current_span("auth.verify_session_token") as verify_span:
+                user_id = verify_session_token(session_token)
+                verify_span.set_attribute("auth.session.valid", user_id is not None)
 
-    plaintext_token = ""
-    if user_id is None and authorization and authorization.lower().startswith("bearer "):
-        plaintext_token = authorization.removeprefix("Bearer ").removeprefix("bearer ").strip()
-    if user_id is None and not plaintext_token:
-        plaintext_token = request.cookies.get(CLERK_SESSION_COOKIE_NAME, "").strip()
+        plaintext_token = ""
+        if user_id is None and authorization and authorization.lower().startswith("bearer "):
+            plaintext_token = authorization.removeprefix("Bearer ").removeprefix("bearer ").strip()
+        if user_id is None and not plaintext_token:
+            plaintext_token = request.cookies.get(CLERK_SESSION_COOKIE_NAME, "").strip()
+            span.set_attribute("auth.has_clerk_cookie", bool(plaintext_token))
 
-    if user_id is None and plaintext_token:
-        authenticated = await authenticate_api_token(session, plaintext_token)
-        if authenticated:
-            user, _api_token = authenticated
-            setattr(request.state, API_TOKEN_STATE_KEY, _api_token)
-            return user
-        external_claims = await verify_external_bearer_token(plaintext_token)
-        if external_claims is not None:
-            try:
-                user = await get_or_create_external_user(session, external_claims)
-            except InvalidLoginError:
-                user = None
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="authentication required",
+        if user_id is None and plaintext_token:
+            span.set_attribute("auth.path", "bearer")
+            with tracer.start_as_current_span("auth.api_token_lookup") as token_span:
+                authenticated = await authenticate_api_token(session, plaintext_token)
+                token_span.set_attribute("auth.api_token.matched", authenticated is not None)
+            if authenticated:
+                user, _api_token = authenticated
+                setattr(request.state, API_TOKEN_STATE_KEY, _api_token)
+                span.set_attribute("auth.result", "api_token")
+                set_user_id_attribute(span, user)
+                return user
+
+            with tracer.start_as_current_span("auth.external_token_lookup") as external_span:
+                external_claims = await verify_external_bearer_token(plaintext_token)
+                external_span.set_attribute(
+                    "auth.external.matched",
+                    external_claims is not None,
                 )
-            await session.commit()
-            await session.refresh(user)
-            return user
+                if external_claims is not None:
+                    external_span.set_attribute("auth.external.provider", external_claims.provider)
+            if external_claims is not None:
+                with tracer.start_as_current_span("auth.external_user_lookup") as user_span:
+                    user_span.set_attribute("auth.external.provider", external_claims.provider)
+                    try:
+                        user = await get_or_create_external_user(session, external_claims)
+                    except InvalidLoginError:
+                        user = None
+                    user_span.set_attribute("auth.user.found", user is not None)
+                if user is None:
+                    span.set_attribute("auth.result", "unauthorized")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="authentication required",
+                    )
+                await session.commit()
+                await session.refresh(user)
+                span.set_attribute("auth.result", "external")
+                set_user_id_attribute(span, user)
+                return user
 
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="authentication required",
-        )
+        if user_id is None:
+            span.set_attribute("auth.result", "unauthorized")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="authentication required",
+            )
 
-    user = await repository.get_user_by_id(session, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="authentication required",
-        )
-    return user
+        span.set_attribute("auth.path", "session")
+        with tracer.start_as_current_span("auth.session_user_lookup") as lookup_span:
+            lookup_span.set_attribute("auth.user_id", str(user_id))
+            user = await repository.get_user_by_id(session, user_id)
+            lookup_span.set_attribute("auth.user.found", user is not None)
+            lookup_span.set_attribute("auth.user.active", bool(user and user.is_active))
+        if user is None or not user.is_active:
+            span.set_attribute("auth.result", "unauthorized")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="authentication required",
+            )
+        span.set_attribute("auth.result", "session")
+        set_user_id_attribute(span, user)
+        return user
 
 
 async def get_optional_current_user(

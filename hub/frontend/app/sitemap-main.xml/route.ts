@@ -3,7 +3,6 @@ import { absoluteUrl } from "@/lib/site";
 import { sitemapResponse, urlsetXml, type SitemapUrlEntry } from "@/lib/sitemap";
 
 export const revalidate = 3600;
-export const dynamic = "force-dynamic";
 
 export async function GET() {
   const now = new Date();

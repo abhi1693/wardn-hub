@@ -9,6 +9,8 @@ import { CategoriesClient } from "./categories-client";
 const title = "MCP server categories";
 const description = "Browse community-curated Model Context Protocol servers by category on Wardn Hub.";
 
+export const revalidate = 3600;
+
 export const metadata: Metadata = {
   alternates: {
     canonical: "/categories",

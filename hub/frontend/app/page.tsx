@@ -7,7 +7,7 @@ import { listPublishedRegistryServers } from "@/lib/public-registry";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, registryIndexJsonLd } from "@/lib/structured-data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   alternates: {

@@ -6,11 +6,21 @@ import { listPublicCategories, listPublishedRegistryServers } from "@/lib/public
 import { siteConfig } from "@/lib/site";
 import { categoryDetailJsonLd, JsonLdScript } from "@/lib/structured-data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 type CategoryDetailPageProps = {
   params: Promise<{ categorySlug?: string }>;
 };
+
+export async function generateStaticParams() {
+  try {
+    const categories = await listPublicCategories();
+    return categories.map((category) => ({ categorySlug: category.slug }));
+  } catch (error) {
+    console.error("Unable to prebuild category pages from the registry API.", error);
+    return [];
+  }
+}
 
 export async function generateMetadata({ params }: CategoryDetailPageProps): Promise<Metadata> {
   const { categorySlug = "" } = await params;

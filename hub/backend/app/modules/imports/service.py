@@ -6,6 +6,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
 from app.modules.imports.exceptions import SourceNotFoundError, UnsupportedSourceError
 from app.modules.imports.schemas import ServerSourceImportRequest, ServerSourceImportResponse
 
@@ -13,6 +16,7 @@ DEFAULT_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/serv
 GITHUB_HOST = "github.com"
 MAX_IMPORT_BYTES = 512_000
 FENCED_CODE_PATTERN = re.compile(r"```(?:json|jsonc)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
+tracer = trace.get_tracer(__name__)
 
 
 @dataclass(frozen=True)
@@ -98,31 +102,54 @@ def clean_subfolder(value: str) -> str:
 
 
 def fetch_text(url: str, *, accept: str = "application/json") -> str | None:
-    request = Request(url, headers={"Accept": accept, "User-Agent": "wardn-hub-importer/0.1"})
-    try:
-        with urlopen(request, timeout=10) as response:
-            data = response.read(MAX_IMPORT_BYTES + 1)
-    except HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise SourceNotFoundError("source metadata could not be loaded") from exc
-    except URLError as exc:
-        raise SourceNotFoundError("source metadata could not be loaded") from exc
+    parsed = urlparse(url)
+    with tracer.start_as_current_span("imports.source_fetch") as span:
+        span.set_attribute("source.url.host", parsed.hostname or "")
+        span.set_attribute("source.url.path", parsed.path)
+        span.set_attribute("source.accept", accept)
+        request = Request(
+            url,
+            headers={"Accept": accept, "User-Agent": "wardn-hub-importer/0.1"},
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                span.set_attribute("http.response.status_code", response.status)
+                data = response.read(MAX_IMPORT_BYTES + 1)
+        except HTTPError as exc:
+            span.set_attribute("http.response.status_code", exc.code)
+            if exc.code == 404:
+                span.set_attribute("source.found", False)
+                return None
+            span.set_status(Status(StatusCode.ERROR, "source metadata could not be loaded"))
+            raise SourceNotFoundError("source metadata could not be loaded") from exc
+        except URLError as exc:
+            span.set_status(Status(StatusCode.ERROR, "source metadata could not be loaded"))
+            raise SourceNotFoundError("source metadata could not be loaded") from exc
 
-    if len(data) > MAX_IMPORT_BYTES:
-        raise SourceNotFoundError("source metadata is too large to import")
-    return data.decode("utf-8", errors="replace")
+        span.set_attribute("source.bytes", len(data))
+        if len(data) > MAX_IMPORT_BYTES:
+            span.set_status(Status(StatusCode.ERROR, "source metadata is too large to import"))
+            raise SourceNotFoundError("source metadata is too large to import")
+        span.set_attribute("source.found", True)
+        return data.decode("utf-8", errors="replace")
 
 
 def fetch_json(url: str) -> dict[str, Any]:
-    text = fetch_text(url)
-    if not text:
-        return {}
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError:
-        return {}
-    return value if isinstance(value, dict) else {}
+    with tracer.start_as_current_span("imports.parse_json") as span:
+        parsed = urlparse(url)
+        span.set_attribute("source.url.host", parsed.hostname or "")
+        span.set_attribute("source.url.path", parsed.path)
+        text = fetch_text(url)
+        if not text:
+            span.set_attribute("source.found", False)
+            return {}
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            span.set_attribute("parse.success", False)
+            return {}
+        span.set_attribute("parse.success", isinstance(value, dict))
+        return value if isinstance(value, dict) else {}
 
 
 def github_api_url(repository: GitHubRepository, path: str) -> str:
@@ -221,21 +248,30 @@ def strip_json_comments(value: str) -> str:
 
 
 def extract_readme_mcp_json(readme: str) -> dict[str, Any]:
-    if "mcpServers" not in readme:
+    with tracer.start_as_current_span("imports.parse_readme_mcp_json") as span:
+        span.set_attribute("readme.bytes", len(readme.encode("utf-8")))
+        if "mcpServers" not in readme:
+            span.set_attribute("parse.success", False)
+            return {}
+
+        candidate_count = 0
+        for match in FENCED_CODE_PATTERN.finditer(readme):
+            snippet = match.group(1).strip()
+            if "mcpServers" not in snippet:
+                continue
+            candidate_count += 1
+            try:
+                value = json.loads(strip_json_comments(snippet))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict) and isinstance(value.get("mcpServers"), dict):
+                span.set_attribute("parse.success", True)
+                span.set_attribute("parse.candidates", candidate_count)
+                return value
+
+        span.set_attribute("parse.success", False)
+        span.set_attribute("parse.candidates", candidate_count)
         return {}
-
-    for match in FENCED_CODE_PATTERN.finditer(readme):
-        snippet = match.group(1).strip()
-        if "mcpServers" not in snippet:
-            continue
-        try:
-            value = json.loads(strip_json_comments(snippet))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict) and isinstance(value.get("mcpServers"), dict):
-            return value
-
-    return {}
 
 
 def merge_readme_package_config(
@@ -375,99 +411,123 @@ def server_json_from_metadata(
 
 
 def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImportResponse:
-    repository = parse_github_repository(payload.repository_url)
-    subfolder = clean_subfolder(payload.subfolder) or github_source_subfolder(
-        payload.repository_url
-    )
-    metadata = fetch_github_metadata(repository)
-    readme = fetch_github_readme(repository, subfolder)
-    fallback = {**metadata, "documentation": readme}
-    files = ["README.md"] if readme else []
-    readme_mcp_json = extract_readme_mcp_json(readme)
-    readme_mcp_metadata = (
-        metadata_from_mcp_json(readme_mcp_json, repository) if readme_mcp_json else {}
-    )
+    with tracer.start_as_current_span("imports.server_source") as span:
+        repository = parse_github_repository(payload.repository_url)
+        subfolder = clean_subfolder(payload.subfolder) or github_source_subfolder(
+            payload.repository_url
+        )
+        span.set_attribute("source.repository", repository_reference(repository))
+        span.set_attribute("source.subfolder", subfolder)
 
-    for path, candidate_url in raw_metadata_candidates(repository, subfolder):
-        text = fetch_text(candidate_url)
-        if not text:
-            continue
-        try:
-            raw_payload = json.loads(text)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(raw_payload, dict):
-            continue
-        files.append(path)
-
-        if raw_payload.get("$schema") or raw_payload.get("packages") or raw_payload.get("remotes"):
-            metadata = with_fallback(
-                {
-                    **raw_payload,
-                    "source": "server.json",
-                    "repository": {
-                        "source": "github",
-                        "url": repository_reference(repository),
-                        **({"subfolder": subfolder} if subfolder else {}),
-                    },
-                },
-                fallback,
-            )
-            server_json = server_json_from_metadata(metadata, repository, subfolder)
-            server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
-            metadata = with_server_targets(metadata, server_json)
-            return ServerSourceImportResponse(
-                **metadata,
-                serverJson=server_json,
-                submissionPayload={"submissionType": "new_server", "serverJson": server_json},
-                evidence={"files": files, "missing": import_missing_fields(server_json)},
-            )
-
-        if raw_payload.get("mcpServers"):
-            metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
-            server_json = server_json_from_metadata(metadata, repository, subfolder)
-            metadata = with_server_targets(metadata, server_json)
-            return ServerSourceImportResponse(
-                **metadata,
-                serverJson=server_json,
-                submissionPayload={"submissionType": "new_server", "serverJson": server_json},
-                evidence={"files": files, "missing": import_missing_fields(server_json)},
-            )
-
-    if readme_mcp_json:
-        metadata = with_fallback(readme_mcp_metadata, fallback)
-        server_json = server_json_from_metadata(metadata, repository, subfolder)
-        metadata = with_server_targets(metadata, server_json)
-        return ServerSourceImportResponse(
-            **metadata,
-            serverJson=server_json,
-            submissionPayload={"submissionType": "new_server", "serverJson": server_json},
-            evidence={"files": files, "missing": import_missing_fields(server_json)},
+        metadata = fetch_github_metadata(repository)
+        readme = fetch_github_readme(repository, subfolder)
+        fallback = {**metadata, "documentation": readme}
+        files = ["README.md"] if readme else []
+        readme_mcp_json = extract_readme_mcp_json(readme)
+        readme_mcp_metadata = (
+            metadata_from_mcp_json(readme_mcp_json, repository) if readme_mcp_json else {}
         )
 
-    server_json = server_json_from_metadata(
-        {
-            **fallback,
-            "source": "github",
-            "repository": {
+        for path, candidate_url in raw_metadata_candidates(repository, subfolder):
+            with tracer.start_as_current_span("imports.parse_source_metadata") as parse_span:
+                parse_span.set_attribute("source.file", path)
+                text = fetch_text(candidate_url)
+                if not text:
+                    parse_span.set_attribute("source.found", False)
+                    continue
+                parse_span.set_attribute("source.found", True)
+                try:
+                    raw_payload = json.loads(text)
+                except json.JSONDecodeError:
+                    parse_span.set_attribute("parse.success", False)
+                    continue
+                if not isinstance(raw_payload, dict):
+                    parse_span.set_attribute("parse.success", False)
+                    continue
+                parse_span.set_attribute("parse.success", True)
+                files.append(path)
+
+            if (
+                raw_payload.get("$schema")
+                or raw_payload.get("packages")
+                or raw_payload.get("remotes")
+            ):
+                metadata = with_fallback(
+                    {
+                        **raw_payload,
+                        "source": "server.json",
+                        "repository": {
+                            "source": "github",
+                            "url": repository_reference(repository),
+                            **({"subfolder": subfolder} if subfolder else {}),
+                        },
+                    },
+                    fallback,
+                )
+                server_json = server_json_from_metadata(metadata, repository, subfolder)
+                server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
+                metadata = with_server_targets(metadata, server_json)
+                span.set_attribute("imports.source", "server.json")
+                span.set_attribute("imports.files", len(files))
+                return ServerSourceImportResponse(
+                    **metadata,
+                    serverJson=server_json,
+                    submissionPayload={"submissionType": "new_server", "serverJson": server_json},
+                    evidence={"files": files, "missing": import_missing_fields(server_json)},
+                )
+
+            if raw_payload.get("mcpServers"):
+                metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
+                server_json = server_json_from_metadata(metadata, repository, subfolder)
+                metadata = with_server_targets(metadata, server_json)
+                span.set_attribute("imports.source", "mcp.json")
+                span.set_attribute("imports.files", len(files))
+                return ServerSourceImportResponse(
+                    **metadata,
+                    serverJson=server_json,
+                    submissionPayload={"submissionType": "new_server", "serverJson": server_json},
+                    evidence={"files": files, "missing": import_missing_fields(server_json)},
+                )
+
+        if readme_mcp_json:
+            metadata = with_fallback(readme_mcp_metadata, fallback)
+            server_json = server_json_from_metadata(metadata, repository, subfolder)
+            metadata = with_server_targets(metadata, server_json)
+            span.set_attribute("imports.source", "mcp.json")
+            span.set_attribute("imports.files", len(files))
+            return ServerSourceImportResponse(
+                **metadata,
+                serverJson=server_json,
+                submissionPayload={"submissionType": "new_server", "serverJson": server_json},
+                evidence={"files": files, "missing": import_missing_fields(server_json)},
+            )
+
+        server_json = server_json_from_metadata(
+            {
+                **fallback,
                 "source": "github",
-                "url": repository_reference(repository),
-                **({"subfolder": subfolder} if subfolder else {}),
+                "repository": {
+                    "source": "github",
+                    "url": repository_reference(repository),
+                    **({"subfolder": subfolder} if subfolder else {}),
+                },
             },
-        },
-        repository,
-        subfolder,
-    )
-    missing = import_missing_fields(server_json)
-    return ServerSourceImportResponse(
-        source="github",
-        title=string_value(fallback.get("title")),
-        description=string_value(fallback.get("description")),
-        documentation=readme,
-        websiteUrl=string_value(fallback.get("websiteUrl")),
-        iconUrl=string_value(fallback.get("iconUrl")),
-        repository=server_json["repository"],
-        serverJson=server_json,
-        submissionPayload={"submissionType": "new_server", "serverJson": server_json},
-        evidence={"files": files, "missing": missing},
-    )
+            repository,
+            subfolder,
+        )
+        missing = import_missing_fields(server_json)
+        span.set_attribute("imports.source", "github")
+        span.set_attribute("imports.files", len(files))
+        span.set_attribute("imports.missing_fields", len(missing))
+        return ServerSourceImportResponse(
+            source="github",
+            title=string_value(fallback.get("title")),
+            description=string_value(fallback.get("description")),
+            documentation=readme,
+            websiteUrl=string_value(fallback.get("websiteUrl")),
+            iconUrl=string_value(fallback.get("iconUrl")),
+            repository=server_json["repository"],
+            serverJson=server_json,
+            submissionPayload={"submissionType": "new_server", "serverJson": server_json},
+            evidence={"files": files, "missing": missing},
+        )

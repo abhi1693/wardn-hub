@@ -1,16 +1,32 @@
 import type { Metadata } from "next";
 
-import { getPublishedRegistryServer } from "@/lib/public-registry";
+import {
+  getPublishedRegistryServer,
+  listPublishedRegistryServers,
+} from "@/lib/public-registry";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, serverDetailJsonLd } from "@/lib/structured-data";
 
 import { ServerDetailClient } from "./server-detail-client";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 type ServerDetailPageProps = {
   params: Promise<{ namespace?: string; serverSlug?: string }>;
 };
+
+export async function generateStaticParams() {
+  try {
+    const servers = await listPublishedRegistryServers();
+    return servers.flatMap((server) => {
+      const [namespace, serverSlug] = server.name.split("/");
+      return namespace && serverSlug ? [{ namespace, serverSlug }] : [];
+    });
+  } catch (error) {
+    console.error("Unable to prebuild server detail pages from the registry API.", error);
+    return [];
+  }
+}
 
 function serverNameFromParams(params: { namespace?: string; serverSlug?: string }) {
   const namespace = params.namespace ?? "";
