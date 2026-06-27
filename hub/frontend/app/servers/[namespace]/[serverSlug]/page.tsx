@@ -241,7 +241,20 @@ function valueOrFallback(value: string, fallback = "Not specified") {
   return value || fallback;
 }
 
-function formatTone(value: string) {
+type TechnicalPillTone =
+  | "boolean"
+  | "command"
+  | "neutral"
+  | "network"
+  | "number"
+  | "package"
+  | "secret"
+  | "string"
+  | "structured"
+  | "transport"
+  | "warning";
+
+function formatTone(value: string): TechnicalPillTone {
   const normalized = value.toLowerCase();
   if (["boolean", "bool"].includes(normalized)) return "boolean";
   if (["integer", "number", "float", "double"].includes(normalized)) return "number";
@@ -251,34 +264,60 @@ function formatTone(value: string) {
   return "string";
 }
 
+function packageTone(value: string): TechnicalPillTone {
+  const normalized = value.toLowerCase();
+  if (["npm", "pypi", "uvx", "oci", "docker", "container"].includes(normalized)) {
+    return "package";
+  }
+  return "neutral";
+}
+
+function transportTone(value: string): TechnicalPillTone {
+  const normalized = value.toLowerCase();
+  if (["http", "https", "sse", "streamable-http", "websocket", "ws"].includes(normalized)) {
+    return "network";
+  }
+  if (["stdio", "local"].includes(normalized)) return "transport";
+  return "neutral";
+}
+
+function TechnicalPill({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: TechnicalPillTone;
+}) {
+  return <span className={`technical-pill tone-${tone}`}>{children}</span>;
+}
+
 function FormatBadge({ value }: { value: string }) {
-  return <span className={`technical-badge tone-${formatTone(value)}`}>{value}</span>;
+  return <TechnicalPill tone={formatTone(value)}>{value}</TechnicalPill>;
+}
+
+function RegistryTypePill({ value }: { value: string }) {
+  return <TechnicalPill tone={packageTone(value)}>{value}</TechnicalPill>;
+}
+
+function TransportTypePill({ value }: { value: string }) {
+  return <TechnicalPill tone={transportTone(value)}>{value}</TechnicalPill>;
 }
 
 function BooleanMark({ value }: { value: unknown }) {
   const enabled = value === true;
-
-  return (
-    <span
-      aria-label={enabled ? "Yes" : "No"}
-      className={`technical-boolean ${enabled ? "yes" : "no"}`}
-      title={enabled ? "Yes" : "No"}
-    >
-      {enabled ? <Check size={16} /> : "x"}
-    </span>
-  );
+  return <TechnicalPill tone={enabled ? "boolean" : "neutral"}>{enabled ? "Yes" : "No"}</TechnicalPill>;
 }
 
 function RequirementMark({ value }: { value: unknown }) {
   if (typeof value !== "boolean") {
-    return (
-      <span aria-label="Unknown" className="technical-boolean unknown" title="Unknown">
-        ?
-      </span>
-    );
+    return <TechnicalPill tone="neutral">Unknown</TechnicalPill>;
   }
 
-  return <BooleanMark value={value} />;
+  return (
+    <TechnicalPill tone={value ? "warning" : "neutral"}>
+      {value ? "Required" : "Optional"}
+    </TechnicalPill>
+  );
 }
 
 function CopyButton({ value }: { value: string }) {
@@ -629,7 +668,7 @@ function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
                   </div>
                   <div>
                     <label>Transport Type</label>
-                    <strong>{remoteType}</strong>
+                    <TransportTypePill value={remoteType} />
                   </div>
                 </div>
 
@@ -729,7 +768,8 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                 <span>
                   <strong>{identifier}</strong>
                   <em>
-                    {targetType(packageTarget, "package")} · {transportType}
+                    <RegistryTypePill value={targetType(packageTarget, "package")} />
+                    <TransportTypePill value={transportType} />
                   </em>
                 </span>
               </summary>
@@ -744,16 +784,16 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                 <div className="technical-pair-grid">
                   <div>
                     <label>Type</label>
-                    <strong>{targetType(packageTarget, "package")}</strong>
+                    <RegistryTypePill value={targetType(packageTarget, "package")} />
                   </div>
                   <div>
                     <label>Transport</label>
-                    <strong>{transportType}</strong>
+                    <TransportTypePill value={transportType} />
                   </div>
                   {stringValue(packageTarget.version) ? (
                     <div>
                       <label>Version</label>
-                      <strong>{stringValue(packageTarget.version)}</strong>
+                      <TechnicalPill tone="number">{stringValue(packageTarget.version)}</TechnicalPill>
                     </div>
                   ) : null}
                 </div>

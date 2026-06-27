@@ -185,6 +185,7 @@ Frontend settings:
 | Variable | Purpose |
 | --- | --- |
 | `WARDN_HUB_API_INTERNAL_BASE_URL` | Backend URL reached by the Next.js server-side proxy. Defaults to `http://localhost:8000`. |
+| `NEXT_PUBLIC_SITE_URL` | Public frontend base URL used for canonical metadata, robots.txt, sitemap URLs, and llms.txt. Defaults to `https://hub.wardnai.dev` in production and `http://localhost:3000` locally. |
 | `NEXT_PUBLIC_API_BASE_URL` | Optional browser-visible backend URL. If unset, the browser uses same-origin `/api/v1`. |
 | `NEXT_PUBLIC_AUTH_PROVIDERS` | Auth providers exposed to the frontend. Defaults to `local`. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Enables Clerk UI integration when Clerk is listed in `NEXT_PUBLIC_AUTH_PROVIDERS`. |
