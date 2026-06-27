@@ -241,6 +241,14 @@ def test_review_progress_arguments() -> None:
     assert args.verbose is True
 
 
+def test_auto_reject_argument() -> None:
+    default_args = cli.build_parser().parse_args([])
+    args = cli.build_parser().parse_args(["--auto-reject"])
+
+    assert default_args.auto_reject is False
+    assert args.auto_reject is True
+
+
 def test_review_progress_interval_env_requires_integer(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -494,6 +502,14 @@ Looks good.
     assert cli.extract_suggested_rejection_message(findings) is None
 
 
+def test_extract_review_decision() -> None:
+    assert cli.extract_review_decision("Decision: pass") == "pass"
+    assert cli.extract_review_decision("Decision: needs fixes") == "needs_fixes"
+    assert cli.extract_review_decision("Decision: cannot validate") == "cannot_validate"
+    assert cli.extract_review_decision("Decision: reject") == "reject"
+    assert cli.extract_review_decision("No decision here") is None
+
+
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
     client = FakeClient()
 
@@ -573,6 +589,7 @@ Please fix the source review evidence.
         max_reviews=None,
         once=True,
         dry_run=False,
+        auto_reject=False,
         stdin=StringIO("r\n"),
         stdout=stdout,
     )
@@ -582,6 +599,74 @@ Please fix the source review evidence.
         ("reject", "sub-1", "Please fix the source review evidence."),
     ]
     assert "Rejection message:" not in stdout.getvalue()
+
+
+def test_review_loop_auto_rejects_llm_rejection_with_suggested_message() -> None:
+    class RejectingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: cannot validate
+
+Suggested rejection message:
+Please add missing package transport metadata.
+"""
+
+    client = FakeClient([submitted_submission()])
+    reviewer = RejectingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        stdin=StringIO(),
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert client.actions == [
+        ("reject", "sub-1", "Please add missing package transport metadata."),
+    ]
+    output = stdout.getvalue()
+    assert "Auto-rejecting with suggested rejection message" in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_auto_reject_falls_back_without_suggested_message() -> None:
+    class RejectingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: needs fixes
+
+Suggested rejection message:
+none
+"""
+
+    client = FakeClient([submitted_submission()])
+    reviewer = RejectingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        stdin=StringIO("s\n"),
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "Auto-reject requested, but no suggested rejection message was found" in output
+    assert "Skipped sub-1" in output
 
 
 def test_review_loop_skips_submission_for_current_run() -> None:
@@ -596,6 +681,7 @@ def test_review_loop_skips_submission_for_current_run() -> None:
         max_reviews=None,
         once=False,
         dry_run=False,
+        auto_reject=False,
         stdin=StringIO("s\n"),
         stdout=stdout,
     )
@@ -630,6 +716,7 @@ def test_review_loop_continues_after_review_error() -> None:
         max_reviews=2,
         once=False,
         dry_run=False,
+        auto_reject=False,
         stdin=StringIO("a\n"),
         stdout=stdout,
     )
@@ -659,6 +746,7 @@ def test_review_loop_once_stops_after_review_error() -> None:
         max_reviews=None,
         once=True,
         dry_run=False,
+        auto_reject=False,
         stdin=StringIO("a\n"),
         stdout=stdout,
     )

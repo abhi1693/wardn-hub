@@ -698,6 +698,28 @@ def normalize_suggested_rejection_message(message: str) -> str | None:
     return message
 
 
+def extract_review_decision(findings: str) -> str | None:
+    match = re.search(r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Decision\s*:\s*(.+?)\s*$", findings)
+    if match is None:
+        return None
+
+    decision = re.sub(r"[`*_]", "", match.group(1)).strip().lower()
+    decision = re.sub(r"\s+", " ", decision)
+    if decision.startswith("pass"):
+        return "pass"
+    if decision.startswith("needs fixes") or decision.startswith("needs fix"):
+        return "needs_fixes"
+    if decision.startswith("cannot validate"):
+        return "cannot_validate"
+    if decision.startswith("reject") or decision.startswith("rejected"):
+        return "reject"
+    return None
+
+
+def should_auto_reject(findings: str) -> bool:
+    return extract_review_decision(findings) in {"cannot_validate", "needs_fixes", "reject"}
+
+
 def extract_suggested_rejection_message(findings: str) -> str | None:
     match = re.search(
         r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Suggested rejection message\s*:?\s*$",
@@ -773,6 +795,7 @@ def review_loop(
     max_reviews: int | None,
     once: bool,
     dry_run: bool,
+    auto_reject: bool,
     stdin: TextIO,
     stdout: TextIO,
 ) -> int:
@@ -815,6 +838,34 @@ def review_loop(
         print_heading(stdout, "LLM Findings")
         print(findings, file=stdout)
 
+        suggested_rejection_message = extract_suggested_rejection_message(findings)
+        if auto_reject and should_auto_reject(findings):
+            if suggested_rejection_message:
+                print(
+                    "Auto-rejecting with suggested rejection message from LLM findings.",
+                    file=stdout,
+                )
+                apply_decision(
+                    client,
+                    submission_id,
+                    "reject",
+                    dry_run=dry_run,
+                    stdin=stdin,
+                    stdout=stdout,
+                    suggested_rejection_message=suggested_rejection_message,
+                )
+                completed_reviews += 1
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
+
+            print(
+                "Auto-reject requested, but no suggested rejection message was found; "
+                "leaving this submission for manual decision.",
+                file=stdout,
+            )
+
         decision = read_decision(stdin, stdout, can_publish=can_publish)
         if decision == "quit":
             print("Stopping review loop.", file=stdout)
@@ -830,7 +881,7 @@ def review_loop(
                 dry_run=dry_run,
                 stdin=stdin,
                 stdout=stdout,
-                suggested_rejection_message=extract_suggested_rejection_message(findings),
+                suggested_rejection_message=suggested_rejection_message,
             )
 
         completed_reviews += 1
@@ -945,6 +996,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run LLM review and prompts without mutating submissions.",
     )
+    parser.add_argument(
+        "--auto-reject",
+        action="store_true",
+        help=(
+            "Automatically reject reviews whose LLM decision is needs fixes, cannot validate, "
+            "or reject, using the suggested rejection message. Falls back to the prompt if no "
+            "suggested rejection message is found."
+        ),
+    )
     return parser
 
 
@@ -990,6 +1050,7 @@ def main(argv: list[str] | None = None) -> int:
             max_reviews=args.max_reviews,
             once=args.once,
             dry_run=args.dry_run,
+            auto_reject=args.auto_reject,
             stdin=sys.stdin,
             stdout=sys.stdout,
         )
