@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { getPublishedRegistryServer } from "@/lib/public-registry";
+import { siteConfig } from "@/lib/site";
 
 import { ServerDetailClient } from "./server-detail-client";
 
@@ -25,11 +26,16 @@ export async function generateMetadata({ params }: ServerDetailPageProps): Promi
   const canonical = serverName ? serverCanonicalPath(serverName) : "/servers";
 
   if (!serverName) {
+    const title = "MCP server";
     return {
       alternates: {
         canonical,
       },
-      title: "MCP server",
+      title,
+      twitter: {
+        card: "summary",
+        title: `${title} | ${siteConfig.name}`,
+      },
     };
   }
 
@@ -46,10 +52,15 @@ export async function generateMetadata({ params }: ServerDetailPageProps): Promi
       description,
       openGraph: {
         description,
-        title,
+        title: `${title} | ${siteConfig.name}`,
         url: canonical,
       },
       title,
+      twitter: {
+        card: "summary",
+        description,
+        title: `${title} | ${siteConfig.name}`,
+      },
     };
   } catch {
     return {
@@ -57,6 +68,10 @@ export async function generateMetadata({ params }: ServerDetailPageProps): Promi
         canonical,
       },
       title: serverName,
+      twitter: {
+        card: "summary",
+        title: `${serverName} | ${siteConfig.name}`,
+      },
     };
   }
 }

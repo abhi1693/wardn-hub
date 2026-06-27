@@ -19,6 +19,7 @@ export async function generateMetadata({ params }: CategoryDetailPageProps): Pro
     const categories = await listPublicCategories();
     const category = categories.find((item) => item.slug === categorySlug);
     const categoryName = category?.name ?? categorySlug;
+    const title = `${categoryName} MCP servers`;
     const description =
       category?.description ||
       `Browse published MCP server definitions in the ${categoryName} category on Wardn Hub.`;
@@ -30,10 +31,15 @@ export async function generateMetadata({ params }: CategoryDetailPageProps): Pro
       description,
       openGraph: {
         description,
-        title: `${categoryName} MCP servers`,
+        title: `${title} | ${siteConfig.name}`,
         url: canonical,
       },
-      title: `${categoryName} MCP servers`,
+      title,
+      twitter: {
+        card: "summary",
+        description,
+        title: `${title} | ${siteConfig.name}`,
+      },
     };
   } catch {
     return {
@@ -42,6 +48,11 @@ export async function generateMetadata({ params }: CategoryDetailPageProps): Pro
       },
       description: siteConfig.description,
       title: "MCP server category",
+      twitter: {
+        card: "summary",
+        description: siteConfig.description,
+        title: `MCP server category | ${siteConfig.name}`,
+      },
     };
   }
 }

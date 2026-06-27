@@ -15,10 +15,15 @@ export const metadata: Metadata = {
   description: siteConfig.description,
   openGraph: {
     description: siteConfig.description,
-    title: siteConfig.tagline,
+    title: `${siteConfig.tagline} | ${siteConfig.name}`,
     url: "/",
   },
   title: siteConfig.tagline,
+  twitter: {
+    card: "summary",
+    description: siteConfig.description,
+    title: `${siteConfig.tagline} | ${siteConfig.name}`,
+  },
 };
 
 function EmptyState({ title, detail }: { detail: string; title: string }) {
