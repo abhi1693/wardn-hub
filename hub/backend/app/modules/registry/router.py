@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.router import bad_request, commit_response, commit_session, conflict, not_found
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.registry.exceptions import (
@@ -78,12 +79,8 @@ async def create_mcp_category(
     try:
         response = await create_category(session, payload)
     except DuplicateRegistryCategoryError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="category slug already exists",
-        ) from exc
-    await session.commit()
-    return response
+        raise conflict(exc, detail="category slug already exists") from exc
+    return await commit_response(session, response)
 
 
 @categories_router.patch(
@@ -104,14 +101,10 @@ async def update_mcp_category(
     try:
         response = await update_category(session, category_slug, payload)
     except RegistryCategoryNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found(exc) from exc
     except DuplicateRegistryCategoryError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="category slug already exists",
-        ) from exc
-    await session.commit()
-    return response
+        raise conflict(exc, detail="category slug already exists") from exc
+    return await commit_response(session, response)
 
 
 @categories_router.delete(
@@ -128,8 +121,8 @@ async def delete_mcp_category(
     try:
         await delete_category(session, category_slug)
     except RegistryCategoryNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
+        raise not_found(exc) from exc
+    await commit_session(session)
 
 
 @public_router.get(
@@ -165,10 +158,7 @@ async def list_mcp_servers(
             category=category,
         )
     except InvalidRegistryCursorError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid cursor",
-        ) from exc
+        raise bad_request(exc, detail="invalid cursor") from exc
 
 
 @catalog_router.get(
@@ -196,10 +186,7 @@ async def list_mcp_server_versions(
     try:
         return await list_versions(session, server_name)
     except RegistryServerNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="server not found",
-        ) from exc
+        raise not_found(exc, detail="server not found") from exc
 
 
 @public_router.get(
@@ -216,10 +203,7 @@ async def get_mcp_server_version(
     try:
         return await get_version_detail(session, server_name, version)
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="server version not found",
-        ) from exc
+        raise not_found(exc, detail="server version not found") from exc
 
 
 @public_router.get(
@@ -235,10 +219,7 @@ async def get_mcp_server(
     try:
         return await get_server_detail(session, server_name)
     except RegistryServerNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="server not found",
-        ) from exc
+        raise not_found(exc, detail="server not found") from exc
 
 
 @admin_router.post(
@@ -263,12 +244,8 @@ async def admin_create_mcp_server_version(
             publisher_user_id=current_user.id,
         )
     except DuplicateRegistryVersionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="server version already exists",
-        ) from exc
-    await session.commit()
-    return response
+        raise conflict(exc, detail="server version already exists") from exc
+    return await commit_response(session, response)
 
 
 @admin_router.put(
@@ -291,11 +268,10 @@ async def admin_update_mcp_server_version(
             version,
             payload,
             updated_by_user_id=current_user.id,
-        )
+    )
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise not_found(exc) from exc
+    return await commit_response(session, response)
 
 
 @admin_router.post(
@@ -313,9 +289,8 @@ async def admin_set_latest_mcp_server_version(
     try:
         response = await set_latest_version(session, server_name, version)
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise not_found(exc) from exc
+    return await commit_response(session, response)
 
 
 @admin_router.delete(
@@ -333,8 +308,8 @@ async def admin_delete_mcp_server_version(
     try:
         await delete_server_version(session, server_name, version)
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
+        raise not_found(exc) from exc
+    await commit_session(session)
 
 
 @admin_router.delete(
@@ -351,5 +326,5 @@ async def admin_delete_mcp_server(
     try:
         await delete_server(session, server_name)
     except RegistryServerNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
+        raise not_found(exc) from exc
+    await commit_session(session)

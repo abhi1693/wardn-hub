@@ -1,8 +1,9 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
+from app.core.router import bad_request, not_found
 from app.core.schemas import ErrorResponse
 from app.modules.imports.exceptions import SourceNotFoundError, UnsupportedSourceError
 from app.modules.imports.schemas import ServerSourceImportRequest, ServerSourceImportResponse
@@ -29,6 +30,6 @@ async def import_server_source_endpoint(
     try:
         return await asyncio.to_thread(import_server_source, payload)
     except UnsupportedSourceError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise bad_request(exc) from exc
     except SourceNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found(exc) from exc

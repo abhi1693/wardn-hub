@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.router import bad_request, commit_response, conflict, forbidden, not_found
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.namespaces.exceptions import (
@@ -30,18 +31,6 @@ from app.modules.users.dependencies import get_current_user, require_superuser_s
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
-
-
-def not_found(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-def forbidden(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-
-
-def bad_request(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.get(
@@ -76,9 +65,8 @@ async def create_namespace_claim_record(
     except NamespaceAccessDeniedError as exc:
         raise forbidden(exc) from exc
     except DuplicateNamespaceClaimError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise conflict(exc) from exc
+    return await commit_response(session, response)
 
 
 @router.get(
@@ -120,8 +108,7 @@ async def verify_namespace_claim_record(
         raise not_found(exc) from exc
     except InvalidNamespaceClaimTransitionError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.post(
@@ -141,8 +128,7 @@ async def fail_namespace_claim_record(
         raise not_found(exc) from exc
     except InvalidNamespaceClaimTransitionError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.post(
@@ -163,5 +149,4 @@ async def revoke_namespace_claim_record(
         raise forbidden(exc) from exc
     except InvalidNamespaceClaimTransitionError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)

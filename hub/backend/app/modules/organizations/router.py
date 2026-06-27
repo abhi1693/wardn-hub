@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.router import commit_response, conflict, forbidden, not_found
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.organizations.exceptions import (
@@ -71,11 +72,10 @@ async def create_organization_route(
     try:
         response = await create_organization(session, current_user, payload)
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
     except DuplicateOrganizationError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise conflict(exc) from exc
+    return await commit_response(session, response)
 
 
 @router.get(
@@ -95,9 +95,9 @@ async def get_organization_route(
     try:
         return await get_organization(session, current_user, organization_id)
     except OrganizationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found(exc) from exc
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
 
 
 @router.put(
@@ -118,11 +118,10 @@ async def update_organization_route(
     try:
         response = await update_organization(session, current_user, organization_id, payload)
     except OrganizationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found(exc) from exc
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise forbidden(exc) from exc
+    return await commit_response(session, response)
 
 
 @router.get(
@@ -142,9 +141,9 @@ async def list_organization_roles(
     try:
         return await list_roles(session, current_user, organization_id)
     except OrganizationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found(exc) from exc
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
 
 
 @router.post(
@@ -166,11 +165,10 @@ async def create_organization_role(
     try:
         response = await create_role(session, current_user, organization_id, payload)
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
     except DuplicateOrganizationRoleError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise conflict(exc) from exc
+    return await commit_response(session, response)
 
 
 @router.get(
@@ -187,7 +185,7 @@ async def list_organization_memberships_route(
     try:
         return await list_memberships(session, current_user, organization_id)
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
 
 
 @router.post(
@@ -209,11 +207,10 @@ async def upsert_organization_membership_route(
     try:
         response = await upsert_membership(session, current_user, organization_id, payload)
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
     except (OrganizationRoleNotFoundError, UserNotFoundError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise not_found(exc) from exc
+    return await commit_response(session, response)
 
 
 @router.patch(
@@ -241,8 +238,7 @@ async def update_organization_membership_route(
             payload,
         )
     except OrganizationAccessDeniedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise forbidden(exc) from exc
     except (OrganizationRoleNotFoundError, OrganizationMembershipNotFoundError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise not_found(exc) from exc
+    return await commit_response(session, response)

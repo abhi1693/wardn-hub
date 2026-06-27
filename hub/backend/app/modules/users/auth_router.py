@@ -1,10 +1,18 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.router import (
+    commit_and_refresh,
+    commit_session,
+    conflict,
+    forbidden,
+    not_found,
+    unauthorized,
+)
 from app.core.schemas import ErrorResponse
 from app.core.security import create_session_token
 from app.db.session import get_db_session
@@ -78,22 +86,14 @@ async def login(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRead:
     if not is_auth_provider_enabled("local"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="local authentication is disabled",
-        )
+        raise forbidden(detail="local authentication is disabled")
     try:
         user = await authenticate_local_user(session, payload)
     except InvalidLoginError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid email or password",
-        ) from exc
+        raise unauthorized(exc, detail="invalid email or password") from exc
 
     set_session_cookie(response, user.id)
-    await session.commit()
-    await session.refresh(user)
-    return UserRead.model_validate(user)
+    return UserRead.model_validate(await commit_and_refresh(session, user))
 
 
 @router.post(
@@ -109,22 +109,14 @@ async def register(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> UserRead:
     if not is_auth_provider_enabled("local"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="local registration is disabled",
-        )
+        raise forbidden(detail="local registration is disabled")
     try:
         user = await create_user(session, payload, is_superuser=False)
     except DuplicateUserError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="email already exists",
-        ) from exc
+        raise conflict(exc, detail="email already exists") from exc
 
     set_session_cookie(response, user.id)
-    await session.commit()
-    await session.refresh(user)
-    return UserRead.model_validate(user)
+    return UserRead.model_validate(await commit_and_refresh(session, user))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, operation_id="auth_logout")
@@ -162,8 +154,7 @@ async def create_api_token(
     current_user: Annotated[User, Depends(require_api_token_scopes("tokens:write"))],
 ) -> UserAPITokenCreated:
     record, token = await create_user_api_token(session, current_user.id, payload)
-    await session.commit()
-    await session.refresh(record)
+    record = await commit_and_refresh(session, record)
     return UserAPITokenCreated(
         token=token,
         record=UserAPITokenRead.model_validate(record),
@@ -200,10 +191,8 @@ async def update_api_token(
     try:
         record = await update_user_api_token(session, current_user.id, token_id, payload)
     except UserAPITokenNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
-    await session.refresh(record)
-    return UserAPITokenRead.model_validate(record)
+        raise not_found(exc) from exc
+    return UserAPITokenRead.model_validate(await commit_and_refresh(session, record))
 
 
 @router.delete(
@@ -220,5 +209,5 @@ async def delete_api_token(
     try:
         await delete_user_api_token(session, current_user.id, token_id)
     except UserAPITokenNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await session.commit()
+        raise not_found(exc) from exc
+    await commit_session(session)

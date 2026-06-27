@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.router import bad_request, commit_response, conflict, not_found
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.registry.schemas import RegistryUserDetailResponse
@@ -77,10 +78,7 @@ async def bootstrap_user(
     try:
         user = await bootstrap_superuser(session, payload)
     except BootstrapUserExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="bootstrap user already exists",
-        ) from exc
+        raise conflict(exc, detail="bootstrap user already exists") from exc
     return UserRead.model_validate(user)
 
 
@@ -136,10 +134,7 @@ async def get_user_record(
             limit=limit,
         )
     except UserNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="user not found",
-        ) from exc
+        raise not_found(exc, detail="user not found") from exc
 
 
 @router.patch(
@@ -160,8 +155,10 @@ async def update_user_record_admin_flags(
     try:
         user = await update_user_admin_flags(session, current_user, user_id, payload)
     except UserNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise not_found(exc) from exc
     except InvalidUserRoleUpdateError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    await session.commit()
-    return user_directory_record(user, include_admin=True)
+        raise bad_request(exc) from exc
+    return user_directory_record(
+        await commit_response(session, user),
+        include_admin=True,
+    )

@@ -1,9 +1,17 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.router import (
+    bad_request,
+    commit_response,
+    commit_session,
+    conflict,
+    forbidden,
+    not_found,
+)
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.submissions.exceptions import (
@@ -43,18 +51,6 @@ from app.modules.users.models import User
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
 
-def not_found(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-def forbidden(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-
-
-def bad_request(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-
 @router.get("", response_model=SubmissionListResponse, operation_id="submissions_list")
 async def list_submission_records(
     request: Request,
@@ -85,13 +81,12 @@ async def create_submission_record(
             api_token=get_request_api_token(request),
         )
     except DuplicatePublishedVersionError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise conflict(exc) from exc
     except SubmissionAccessDeniedError as exc:
         raise forbidden(exc) from exc
     except SubmissionValidationError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.get(
@@ -152,8 +147,7 @@ async def update_submission_record(
         SubmissionValidationError,
     ) as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.delete(
@@ -185,7 +179,7 @@ async def delete_submission_record(
         raise forbidden(exc) from exc
     except InvalidSubmissionTransitionError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
+    await commit_session(session)
 
 
 @router.post(
@@ -217,8 +211,7 @@ async def submit_submission_record(
         SubmissionValidationError,
     ) as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.post(
@@ -245,8 +238,7 @@ async def withdraw_submission_record(
         raise forbidden(exc) from exc
     except InvalidSubmissionTransitionError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.post(
@@ -271,8 +263,7 @@ async def approve_submission_record(
         raise not_found(exc) from exc
     except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.post(
@@ -299,8 +290,7 @@ async def reject_submission_record(
         raise not_found(exc) from exc
     except InvalidSubmissionTransitionError as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.post(
@@ -325,5 +315,4 @@ async def publish_submission_record(
         raise not_found(exc) from exc
     except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:
         raise bad_request(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)

@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.router import bad_request, commit_response, conflict, not_found
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.partners.exceptions import (
@@ -37,14 +38,6 @@ from app.modules.users.models import User
 router = APIRouter(prefix="/partners", tags=["partners"])
 
 
-def not_found(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-def bad_request(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-
 @router.get(
     "",
     response_model=PartnerOrganizationListResponse,
@@ -75,11 +68,10 @@ async def update_partner_organization_record(
             current_user,
             organization_id,
             payload,
-        )
+    )
     except PartnerOrganizationNotFoundError as exc:
         raise not_found(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
 
 
 @router.get(
@@ -123,9 +115,8 @@ async def create_partner_server_support_record(
     except InvalidPartnerSupportError as exc:
         raise bad_request(exc) from exc
     except DuplicatePartnerSupportError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
-    return response
+        raise conflict(exc) from exc
+    return await commit_response(session, response)
 
 
 @router.patch(
@@ -144,5 +135,4 @@ async def update_partner_server_support_record(
         response = await update_server_support(session, current_user, support_id, payload)
     except PartnerSupportNotFoundError as exc:
         raise not_found(exc) from exc
-    await session.commit()
-    return response
+    return await commit_response(session, response)
