@@ -1,5 +1,6 @@
 import type {
   RegistryCategoryListResponse,
+  RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerRead,
 } from "@/lib/api/generated/model";
@@ -58,22 +59,36 @@ export async function listPublicCategories() {
   return response.categories;
 }
 
-export async function listPublishedRegistryServers() {
+export async function listPublishedRegistryServers(params?: {
+  category?: string;
+  limit?: number;
+}) {
   const servers: RegistryServerRead[] = [];
   let cursor = "";
+  const maxServers = params?.limit ?? MAX_SITEMAP_PAGES * PAGE_SIZE;
 
   for (let page = 0; page < MAX_SITEMAP_PAGES; page += 1) {
     const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
+      ...(params?.category ? { category: params.category } : {}),
       limit: PAGE_SIZE,
       ...(cursor ? { cursor } : {}),
     });
 
     servers.push(...response.servers.filter((server) => Boolean(server.latestVersion)));
+    if (servers.length >= maxServers) return servers.slice(0, maxServers);
+
     cursor = response.metadata.nextCursor ?? "";
     if (!cursor) break;
   }
 
   return servers;
+}
+
+export async function getPublishedRegistryServer(serverName: string) {
+  const response = await registryRequest<RegistryServerDetailResponse>(
+    `/mcp/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`,
+  );
+  return response;
 }
 
 export function serverDetailPath(serverName: string) {
