@@ -137,6 +137,84 @@ button {
   outline-offset: 4px;
 }
 
+.site-footer {
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #475569;
+}
+
+.site-footer-inner {
+  display: grid;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  grid-template-columns: minmax(220px, 1fr) 2fr;
+  gap: 32px;
+  padding: 28px var(--content-gutter);
+}
+
+.site-footer-brand {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.site-footer-brand strong {
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.site-footer-brand span,
+.site-footer-brand small {
+  max-width: 420px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.site-footer-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 20px;
+}
+
+.site-footer-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.site-footer-section h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 16px;
+}
+
+.site-footer-section ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer-section a {
+  color: #475569;
+  font-size: 13px;
+  line-height: 18px;
+  text-decoration: none;
+}
+
+.site-footer-section a:hover,
+.site-footer-section a:focus-visible {
+  color: #0f172a;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .site-brand-mark {
   width: 34px;
   height: 34px;
@@ -2983,6 +3061,17 @@ button {
   .site-nav-item {
     min-height: 38px;
     justify-content: center;
+  }
+
+  .site-footer-inner {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    padding: 24px 14px;
+  }
+
+  .site-footer-nav {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 18px;
   }
 
   .workspace {
