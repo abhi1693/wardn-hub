@@ -112,6 +112,32 @@ def test_normalize_api_base_url_adds_default_api_prefix() -> None:
     )
 
 
+def test_api_client_wraps_response_read_timeout() -> None:
+    class TimeoutResponse:
+        status = 200
+        headers = {"content-type": "application/json"}
+
+        def __enter__(self) -> TimeoutResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            raise TimeoutError("read timed out")
+
+    client = cli.WardnHubApiClient(
+        base_url="https://hub.example.com/api/v1",
+        token="token",
+        user_agent="test",
+        timeout_seconds=3,
+    )
+
+    with patch("urllib.request.urlopen", return_value=TimeoutResponse()):
+        with pytest.raises(cli.UserFacingError, match="timed out after 3 seconds reading"):
+            client.request("GET", "/submissions")
+
+
 def test_url_alias_sets_api_base_url() -> None:
     args = cli.build_parser().parse_args(["--url", "https://hub.example.com/api/v1"])
 
@@ -727,6 +753,51 @@ def test_review_loop_continues_after_review_error() -> None:
     output = stdout.getvalue()
     assert "Review failed for sub-1" in output
     assert "leaving submission unchanged" in output
+
+
+def test_review_loop_continues_after_action_error() -> None:
+    class ActionFailingClient(FakeClient):
+        def reject_submission(self, submission_id: str, message: str) -> dict[str, Any]:
+            raise cli.UserFacingError("timed out after 30 seconds reading Wardn Hub API response")
+
+    class RejectingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            if len(self.prompts) == 1:
+                return """Decision: needs fixes
+
+Suggested rejection message:
+Please fix the metadata.
+"""
+            return "Decision: pass\n\nSuggested approval note:\nApproved."
+
+    client = ActionFailingClient(
+        [
+            submitted_submission_with_id("sub-1"),
+            submitted_submission_with_id("sub-2"),
+        ]
+    )
+    reviewer = RejectingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=2,
+        once=False,
+        dry_run=False,
+        auto_reject=False,
+        stdin=StringIO("r\na\n"),
+        stdout=stdout,
+    )
+
+    assert result == 1
+    assert len(reviewer.prompts) == 2
+    assert client.actions == [("approve", "sub-2", None)]
+    output = stdout.getvalue()
+    assert "Action failed for sub-1" in output
+    assert "skipping it for this run" in output
 
 
 def test_review_loop_once_stops_after_review_error() -> None:

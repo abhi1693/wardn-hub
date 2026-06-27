@@ -314,6 +314,9 @@ class WardnHubApiClient:
         except urllib.error.URLError as exc:
             message = f"could not connect to Wardn Hub API at {url}: {exc.reason}"
             raise UserFacingError(message) from exc
+        except TimeoutError as exc:
+            message = f"timed out after {self.timeout_seconds} seconds reading Wardn Hub API response from {url}"
+            raise UserFacingError(message) from exc
 
         if status in allowed:
             return None
@@ -845,16 +848,24 @@ def review_loop(
                     "Auto-rejecting with suggested rejection message from LLM findings.",
                     file=stdout,
                 )
-                apply_decision(
-                    client,
-                    submission_id,
-                    "reject",
-                    dry_run=dry_run,
-                    stdin=stdin,
-                    stdout=stdout,
-                    suggested_rejection_message=suggested_rejection_message,
-                )
                 completed_reviews += 1
+                try:
+                    apply_decision(
+                        client,
+                        submission_id,
+                        "reject",
+                        dry_run=dry_run,
+                        stdin=stdin,
+                        stdout=stdout,
+                        suggested_rejection_message=suggested_rejection_message,
+                    )
+                except UserFacingError as exc:
+                    review_errors += 1
+                    skipped_ids.add(submission_id)
+                    print(
+                        f"Action failed for {submission_id}; skipping it for this run: {exc}",
+                        file=stdout,
+                    )
                 if once or (max_reviews is not None and completed_reviews >= max_reviews):
                     print("Review limit reached.", file=stdout)
                     return 1 if review_errors else 0
@@ -874,15 +885,23 @@ def review_loop(
             skipped_ids.add(submission_id)
             print(f"Skipped {submission_id} for this run.", file=stdout)
         else:
-            apply_decision(
-                client,
-                submission_id,
-                decision,
-                dry_run=dry_run,
-                stdin=stdin,
-                stdout=stdout,
-                suggested_rejection_message=suggested_rejection_message,
-            )
+            try:
+                apply_decision(
+                    client,
+                    submission_id,
+                    decision,
+                    dry_run=dry_run,
+                    stdin=stdin,
+                    stdout=stdout,
+                    suggested_rejection_message=suggested_rejection_message,
+                )
+            except UserFacingError as exc:
+                review_errors += 1
+                skipped_ids.add(submission_id)
+                print(
+                    f"Action failed for {submission_id}; skipping it for this run: {exc}",
+                    file=stdout,
+                )
 
         completed_reviews += 1
         if once or (max_reviews is not None and completed_reviews >= max_reviews):
