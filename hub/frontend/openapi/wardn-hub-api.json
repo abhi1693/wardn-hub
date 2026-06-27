@@ -3903,7 +3903,6 @@
           "scopes": {
             "items": {
               "enum": [
-                "admin:write",
                 "audit:read",
                 "catalog:read",
                 "namespaces:write",
@@ -4022,7 +4021,6 @@
           "scopes": {
             "items": {
               "enum": [
-                "admin:write",
                 "audit:read",
                 "catalog:read",
                 "namespaces:write",
@@ -4144,7 +4142,6 @@
               {
                 "items": {
                   "enum": [
-                    "admin:write",
                     "audit:read",
                     "catalog:read",
                     "namespaces:write",

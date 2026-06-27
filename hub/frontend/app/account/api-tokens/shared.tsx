@@ -86,11 +86,6 @@ export const scopeOptions: { description: string; label: string; value: APIToken
     label: "Users write",
     value: "users:write",
   },
-  {
-    description: "Perform superuser-only actions.",
-    label: "Admin write",
-    value: "admin:write",
-  },
 ];
 
 export const defaultScopes: APITokenScope[] = [

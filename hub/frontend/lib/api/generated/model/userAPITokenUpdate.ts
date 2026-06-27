@@ -11,5 +11,5 @@ export interface UserAPITokenUpdate {
   is_active?: boolean | null;
   name?: string | null;
   organizationIds?: string[] | null;
-  scopes?: ('admin:write' | 'audit:read' | 'catalog:read' | 'namespaces:write' | 'partners:write' | 'registry:write' | 'submissions:read' | 'submissions:write' | 'submissions:moderate' | 'submissions:publish' | 'tokens:read' | 'tokens:write' | 'users:read' | 'users:write')[] | null;
+  scopes?: ('audit:read' | 'catalog:read' | 'namespaces:write' | 'partners:write' | 'registry:write' | 'submissions:read' | 'submissions:write' | 'submissions:moderate' | 'submissions:publish' | 'tokens:read' | 'tokens:write' | 'users:read' | 'users:write')[] | null;
 }

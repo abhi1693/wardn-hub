@@ -9,7 +9,6 @@ export type UserAPITokenCreateScopesItem = typeof UserAPITokenCreateScopesItem[k
 
 
 export const UserAPITokenCreateScopesItem = {
-  'admin:write': 'admin:write',
   'audit:read': 'audit:read',
   'catalog:read': 'catalog:read',
   'namespaces:write': 'namespaces:write',

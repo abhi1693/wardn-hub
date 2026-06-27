@@ -9,7 +9,6 @@ export type UserAPITokenReadScopesItem = typeof UserAPITokenReadScopesItem[keyof
 
 
 export const UserAPITokenReadScopesItem = {
-  'admin:write': 'admin:write',
   'audit:read': 'audit:read',
   'catalog:read': 'catalog:read',
   'namespaces:write': 'namespaces:write',

@@ -15,9 +15,6 @@ from app.modules.users.service import authenticate_api_token, get_or_create_exte
 
 API_TOKEN_STATE_KEY = "wardn_hub_api_token"
 CLERK_SESSION_COOKIE_NAME = "__session"
-DEFAULT_SUPERUSER_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = ("admin:write",)
-DEFAULT_MODERATOR_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = ("submissions:moderate",)
-DEFAULT_PARTNER_MANAGER_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = ("partners:write",)
 
 
 def get_request_api_token(request: Request) -> UserAPIToken | None:
@@ -121,7 +118,6 @@ def require_api_token_scopes(
 
     return dependency
 
-
 def ensure_superuser(current_user: User) -> None:
     if not current_user.is_superuser:
         raise HTTPException(
@@ -186,30 +182,3 @@ def require_global_partner_manager_scopes(
         return current_user
 
     return dependency
-
-
-async def require_superuser(
-    request: Request,
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> User:
-    ensure_superuser(current_user)
-    require_request_api_token_scopes(request, *DEFAULT_SUPERUSER_API_TOKEN_SCOPES)
-    return current_user
-
-
-async def require_global_moderator(
-    request: Request,
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> User:
-    ensure_global_moderator(current_user)
-    require_request_api_token_scopes(request, *DEFAULT_MODERATOR_API_TOKEN_SCOPES)
-    return current_user
-
-
-async def require_global_partner_manager(
-    request: Request,
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> User:
-    ensure_global_partner_manager(current_user)
-    require_request_api_token_scopes(request, *DEFAULT_PARTNER_MANAGER_API_TOKEN_SCOPES)
-    return current_user
