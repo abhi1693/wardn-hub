@@ -110,15 +110,20 @@ function apiBaseUrl() {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = await authBearerToken();
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+  if (!headers.has("Authorization")) {
+    const token = await authBearerToken();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
   const response = await fetch(`${apiBaseUrl()}${path}`, {
     ...init,
     credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
+    headers,
   });
   const body = await response.text();
   const contentType = response.headers.get("content-type") ?? "";
@@ -149,9 +154,10 @@ async function clerkSessionToken() {
 
 async function authBearerToken() {
   if (typeof window === "undefined") return "";
+  const clerkToken = await clerkSessionToken();
+  if (clerkToken) return clerkToken;
   const localToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
-  if (localToken) return localToken;
-  return clerkSessionToken();
+  return localToken;
 }
 
 function query(params: Record<string, string | number | boolean | undefined>) {
