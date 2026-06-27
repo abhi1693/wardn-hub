@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ClipboardEvent, FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
 
 import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog";
@@ -71,8 +71,19 @@ import {
 } from "./submission-draft";
 import { useSubmissionDraft } from "./use-submission-draft";
 
-export default function SubmitServerPage() {
+function safeReturnTo(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "";
+  }
+  return value;
+}
+
+function SubmitServerPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = safeReturnTo(searchParams.get("returnTo"));
+  const submissionReturnPath = returnTo || "/submissions";
+  const defaultReturnPath = returnTo || "/";
   const [user, setUser] = useState<UserRead | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState("");
@@ -450,7 +461,7 @@ export default function SubmitServerPage() {
       if (isEditingPublishedServer) {
         await updateServerVersion(lockedServerName, lockedVersion, serverJson);
         setSourceImportMessage("");
-        router.push("/");
+        router.push(defaultReturnPath);
         return;
       }
 
@@ -458,7 +469,7 @@ export default function SubmitServerPage() {
         if (canManagePublishedServers) {
           await createServerVersion(serverJson);
           setSourceImportMessage("");
-          router.push("/");
+          router.push(defaultReturnPath);
           return;
         }
         const draft = await createSubmission({
@@ -468,7 +479,7 @@ export default function SubmitServerPage() {
         });
         await submissionAction(draft.id, "submit");
         setSourceImportMessage("");
-        router.push("/submissions");
+        router.push(submissionReturnPath);
         return;
       }
 
@@ -489,7 +500,7 @@ export default function SubmitServerPage() {
       setEditingSubmissionType(draft.submissionType);
       await submissionAction(draft.id, "submit");
       setSourceImportMessage("");
-      router.push("/submissions");
+      router.push(submissionReturnPath);
     } catch (caught) {
       if (caught instanceof HubApiError) {
         setError(caught.message);
@@ -1433,7 +1444,7 @@ export default function SubmitServerPage() {
               ) : null}
               <div className="flex justify-end gap-2">
                 <Button asChild type="button" variant="outline">
-                  <Link href="/">Cancel</Link>
+                  <Link href={defaultReturnPath}>Cancel</Link>
                 </Button>
                 <Button disabled={isSubmitting} type="submit">
                   <Save className="size-4" />
@@ -1453,5 +1464,13 @@ export default function SubmitServerPage() {
         submissionId={editingSubmissionId}
       />
     </>
+  );
+}
+
+export default function SubmitServerPage() {
+  return (
+    <Suspense fallback={null}>
+      <SubmitServerPageContent />
+    </Suspense>
   );
 }

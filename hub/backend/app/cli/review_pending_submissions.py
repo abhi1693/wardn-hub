@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
+import re
 import shlex
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,8 +30,12 @@ USER_AGENT_ENV = "WARDN_HUB_USER_AGENT"
 REVIEW_COMMAND_ENV = "WARDN_HUB_REVIEW_COMMAND"
 REVIEW_MODEL_ENV = "WARDN_HUB_REVIEW_MODEL"
 REVIEW_THINKING_ENV = "WARDN_HUB_REVIEW_THINKING"
+REVIEW_PROGRESS_INTERVAL_ENV = "WARDN_HUB_REVIEW_PROGRESS_INTERVAL"
 DEFAULT_USER_AGENT = "WardnHubReviewCLI/0.1"
-DEFAULT_REVIEW_COMMAND = "codex --search exec --skip-git-repo-check -"
+DEFAULT_REVIEW_COMMAND = (
+    "codex --search exec --sandbox danger-full-access --ignore-user-config "
+    "--skip-git-repo-check -"
+)
 THINKING_LEVELS = ("low", "medium", "high", "xhigh")
 
 API_ACCESS_INSTRUCTIONS = """Required API access:
@@ -56,6 +64,16 @@ class UserFacingError(Exception):
     """Error that should be shown without a traceback."""
 
 
+def int_from_env(name: str, default: int) -> int:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise UserFacingError(f"${name} must be an integer") from exc
+
+
 @dataclass
 class HubApiError(UserFacingError):
     status: int
@@ -76,6 +94,13 @@ class SubprocessReviewer:
     command: list[str]
     timeout_seconds: int
     cwd: Path | None = None
+    progress_stream: TextIO | None = None
+    progress_interval_seconds: int = 15
+    stream_stdout: bool = False
+
+    def _progress_stream_is_tty(self) -> bool:
+        isatty = getattr(self.progress_stream, "isatty", None)
+        return bool(isatty and isatty())
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         command = self.command
@@ -96,22 +121,13 @@ class SubprocessReviewer:
             input_text = None
 
         try:
-            completed = subprocess.run(
+            return self._run_review_command(
                 command,
-                input=input_text,
-                text=True,
-                capture_output=True,
-                cwd=self.cwd,
-                env=environment,
-                timeout=self.timeout_seconds,
-                check=False,
+                input_text=input_text,
+                environment=environment,
             )
         except FileNotFoundError as exc:
             raise UserFacingError(f"review command not found: {command[0]}") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise UserFacingError(
-                f"review command timed out after {self.timeout_seconds} seconds"
-            ) from exc
         finally:
             if prompt_path is not None:
                 try:
@@ -119,13 +135,130 @@ class SubprocessReviewer:
                 except FileNotFoundError:
                     pass
 
-        if completed.returncode != 0:
-            stderr = completed.stderr.strip()
-            stdout = completed.stdout.strip()
-            detail = stderr or stdout or f"exit code {completed.returncode}"
-            raise UserFacingError(f"review command failed: {detail}")
+    def _run_review_command(
+        self,
+        command: list[str],
+        *,
+        input_text: str | None,
+        environment: dict[str, str],
+    ) -> str:
+        progress_stream = self.progress_stream
+        if progress_stream is not None:
+            print(
+                "Review command started. Waiting for reviewer output; long source checks can take several minutes.",
+                file=progress_stream,
+                flush=True,
+            )
 
-        output = completed.stdout.strip()
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE if input_text is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=self.cwd,
+            env=environment,
+            bufsize=1,
+        )
+        output_queue: queue.Queue[tuple[str, str]] = queue.Queue()
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def enqueue_output(name: str, stream: TextIO | None) -> None:
+            if stream is None:
+                return
+            try:
+                for line in iter(stream.readline, ""):
+                    output_queue.put((name, line))
+            finally:
+                stream.close()
+
+        stdout_thread = threading.Thread(
+            target=enqueue_output,
+            args=("stdout", process.stdout),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=enqueue_output,
+            args=("stderr", process.stderr),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+
+        if input_text is not None and process.stdin is not None:
+            try:
+                process.stdin.write(input_text)
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+
+        deadline = time.monotonic() + self.timeout_seconds
+        last_progress = time.monotonic()
+        status_line_open = False
+
+        def clear_status_line() -> None:
+            nonlocal status_line_open
+            if progress_stream is not None and status_line_open and self._progress_stream_is_tty():
+                print("\r\033[K", end="", file=progress_stream, flush=True)
+                status_line_open = False
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                clear_status_line()
+                process.kill()
+                process.wait()
+                raise UserFacingError(
+                    f"review command timed out after {self.timeout_seconds} seconds"
+                )
+
+            try:
+                name, chunk = output_queue.get(timeout=min(0.5, remaining))
+            except queue.Empty:
+                if (
+                    progress_stream is not None
+                    and self.progress_interval_seconds > 0
+                    and time.monotonic() - last_progress >= self.progress_interval_seconds
+                    and process.poll() is None
+                ):
+                    elapsed = int(time.monotonic() - (deadline - self.timeout_seconds))
+                    message = f"Review command still running after {elapsed}s..."
+                    if self._progress_stream_is_tty():
+                        print(f"\r\033[K{message}", end="", file=progress_stream, flush=True)
+                        status_line_open = True
+                    elif not status_line_open:
+                        print(message, file=progress_stream, flush=True)
+                        status_line_open = True
+                    last_progress = time.monotonic()
+
+                if (
+                    process.poll() is not None
+                    and output_queue.empty()
+                    and not stdout_thread.is_alive()
+                    and not stderr_thread.is_alive()
+                ):
+                    break
+                continue
+
+            if name == "stdout":
+                stdout_chunks.append(chunk)
+                if self.stream_stdout and progress_stream is not None:
+                    clear_status_line()
+                    print(chunk, end="", file=progress_stream, flush=True)
+            else:
+                stderr_chunks.append(chunk)
+                if progress_stream is not None:
+                    clear_status_line()
+                    print(chunk, end="", file=progress_stream, flush=True)
+
+        clear_status_line()
+        return_code = process.wait()
+        output = "".join(stdout_chunks).strip()
+        stderr = "".join(stderr_chunks).strip()
+        if return_code != 0:
+            detail = stderr or output or f"exit code {return_code}"
+            raise UserFacingError(f"review command failed: {detail}")
         if not output:
             raise UserFacingError("review command completed without findings")
         return output
@@ -553,6 +686,42 @@ def read_rejection_message(stdin: TextIO, stdout: TextIO) -> str:
         print("Message must be between 1 and 2000 characters.", file=stdout)
 
 
+def normalize_suggested_rejection_message(message: str) -> str | None:
+    message = message.strip()
+    if not message:
+        return None
+    lowered = message.lower().strip(".")
+    if lowered in {"none", "n/a", "not applicable", "no rejection message"}:
+        return None
+    if len(message) > 2000:
+        return message[:2000].rstrip()
+    return message
+
+
+def extract_suggested_rejection_message(findings: str) -> str | None:
+    match = re.search(
+        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Suggested rejection message\s*:?\s*$",
+        findings,
+    )
+    if match is None:
+        return None
+
+    remaining = findings[match.end() :].lstrip()
+    fenced = re.match(r"```[^\n]*\n(?P<message>.*?)\n```", remaining, flags=re.DOTALL)
+    if fenced is not None:
+        return normalize_suggested_rejection_message(fenced.group("message"))
+
+    next_section = re.search(
+        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?"
+        r"(?:Suggested approval note|Available actions|Decision|After the report|Submission ID|"
+        r"Server name and version|Repository/source files reviewed|Findings grouped by severity|"
+        r"Missing or incorrect environment variables|Missing or incorrect command arguments)\s*:?\s*$",
+        remaining,
+    )
+    message = remaining[: next_section.start()] if next_section is not None else remaining
+    return normalize_suggested_rejection_message(message)
+
+
 def apply_decision(
     client: WardnHubApiClient,
     submission_id: str,
@@ -561,6 +730,7 @@ def apply_decision(
     dry_run: bool,
     stdin: TextIO,
     stdout: TextIO,
+    suggested_rejection_message: str | None = None,
 ) -> None:
     if decision == "approve":
         if dry_run:
@@ -580,7 +750,11 @@ def apply_decision(
         return
 
     if decision == "reject":
-        message = read_rejection_message(stdin, stdout)
+        message = normalize_suggested_rejection_message(suggested_rejection_message or "")
+        if message:
+            print("Using suggested rejection message from LLM findings.", file=stdout)
+        else:
+            message = read_rejection_message(stdin, stdout)
         if dry_run:
             print(f"Dry run: would reject {submission_id} with: {message}", file=stdout)
             return
@@ -642,6 +816,7 @@ def review_loop(
                 dry_run=dry_run,
                 stdin=stdin,
                 stdout=stdout,
+                suggested_rejection_message=extract_suggested_rejection_message(findings),
             )
 
         completed_reviews += 1
@@ -713,6 +888,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for each LLM review command.",
     )
     parser.add_argument(
+        "--review-progress-interval",
+        type=int,
+        default=int_from_env(REVIEW_PROGRESS_INTERVAL_ENV, 15),
+        help=(
+            "Seconds between progress messages while the review command is silent. "
+            f"Set to 0 to disable. Defaults to ${REVIEW_PROGRESS_INTERVAL_ENV} or 15."
+        ),
+    )
+    parser.add_argument(
+        "--stream-review-output",
+        action="store_true",
+        help=(
+            "Print reviewer stdout while it is produced. Implies --verbose. Findings are "
+            "still captured and shown again before the moderation prompt."
+        ),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show live review command logs, stderr, and progress status.",
+    )
+    parser.add_argument(
         "--http-timeout",
         type=int,
         default=30,
@@ -738,17 +935,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    token = (args.token or os.getenv(TOKEN_ENV, "")).strip()
-    if not token:
-        print(
-            f"Missing Wardn Hub API token. Pass --token or set {TOKEN_ENV}.",
-            file=sys.stderr,
-        )
-        return 2
-
     try:
+        parser = build_parser()
+        args = parser.parse_args(argv)
+        token = (args.token or os.getenv(TOKEN_ENV, "")).strip()
+        if not token:
+            print(
+                f"Missing Wardn Hub API token. Pass --token or set {TOKEN_ENV}.",
+                file=sys.stderr,
+            )
+            return 2
+
         client = WardnHubApiClient(
             base_url=args.api_base_url,
             token=token,
@@ -756,6 +953,9 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.http_timeout,
         )
         user = validate_token(client)
+        if args.review_progress_interval < 0:
+            raise UserFacingError("--review-progress-interval must be 0 or greater")
+        verbose = bool(args.verbose or args.stream_review_output)
         reviewer = SubprocessReviewer(
             command=parse_review_command(
                 args.review_command,
@@ -764,6 +964,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             timeout_seconds=args.review_timeout,
             cwd=Path.cwd(),
+            progress_stream=sys.stdout if verbose else None,
+            progress_interval_seconds=args.review_progress_interval,
+            stream_stdout=args.stream_review_output,
         )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return review_loop(

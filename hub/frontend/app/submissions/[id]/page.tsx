@@ -111,10 +111,17 @@ function canMutateSubmission(user: UserRead | null, submission: SubmissionRead |
   );
 }
 
+function submitHref(params: Record<string, string>, returnTo: string) {
+  const queryParams = new URLSearchParams(params);
+  queryParams.set("returnTo", returnTo);
+  return `/submit?${queryParams.toString()}`;
+}
+
 export default function SubmissionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const submissionId = params.id;
+  const returnTo = `/submissions/${submissionId}`;
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -238,14 +245,14 @@ export default function SubmissionDetailPage() {
                 null
               ) : (
                 <Button asChild>
-                  <Link href={`/submit?submission=${submission.id}`}>
+                  <Link href={submitHref({ submission: submission.id }, returnTo)}>
                     Edit submission
                   </Link>
                 </Button>
               )
             ) : null}
             <Button asChild variant="outline">
-              <Link href="/submit">New submission</Link>
+              <Link href={submitHref({}, returnTo)}>New submission</Link>
             </Button>
             {submission &&
             canMutateSubmission(user, submission) &&

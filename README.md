@@ -240,8 +240,12 @@ The token must authenticate a superuser or global moderator and should include
 superuser token with `submissions:publish`. The default review command is Codex:
 
 ```sh
-codex --search exec --skip-git-repo-check -
+codex --search exec --sandbox danger-full-access --ignore-user-config --skip-git-repo-check -
 ```
+
+The default reviewer ignores Codex user config so local MCP servers do not leak
+into registry moderation, and uses a network-capable sandbox because the review
+must fetch Wardn Hub submission details and upstream source documentation.
 
 Override it with `--review-command` or `WARDN_HUB_REVIEW_COMMAND`. The prompt is
 sent on stdin unless the command includes `{prompt_file}`. The CLI uses the same
@@ -250,11 +254,21 @@ verification workflow. It fetches the first submitted review, shows the findings
 then waits for a human action: approve, approve and publish, reject with message,
 skip, or quit.
 
+When rejecting, the CLI reuses the LLM report's `Suggested rejection message`
+section when one is present. If no suggested rejection message is available, it
+prompts for one.
+
 Use `--model` or `WARDN_HUB_REVIEW_MODEL` to pass a model to the default
 `codex exec` reviewer. Use `--thinking` or `WARDN_HUB_REVIEW_THINKING` to pass
 one of `low`, `medium`, `high`, or `xhigh` as Codex reasoning effort. For other
 LLM CLIs, include the equivalent model/thinking flags directly in
 `--review-command`.
+
+Use `--verbose` to show review command logs while the LLM review command is
+running, including reviewer stderr and a refreshed terminal heartbeat status
+line. Use `--review-progress-interval 0` with `--verbose` to disable the
+heartbeat, or `--stream-review-output` to also tee reviewer stdout live while
+still capturing the final findings for the moderation prompt.
 
 If `--url` is omitted, the CLI uses `WARDN_HUB_API_BASE_URL` or local
 `http://localhost:8000/api/v1`.

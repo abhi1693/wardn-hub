@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   Archive,
@@ -20,7 +21,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog";
 import { AiSubmissionPromptDialog } from "@/components/ai-submission-prompt-dialog";
@@ -57,6 +58,7 @@ const statusOrder: SubmissionRead["status"][] = [
   "withdrawn",
   "published",
 ];
+const statusValues = new Set<StatusFilter>(["all", ...statusOrder]);
 
 const statusMeta: Record<
   SubmissionRead["status"],
@@ -150,6 +152,22 @@ function getStatusCounts(submissions: SubmissionRead[]) {
       withdrawn: 0,
     } satisfies Record<StatusFilter, number>,
   );
+}
+
+function statusFilterFromQuery(value: string | null): StatusFilter {
+  if (!value) return "all";
+  return statusValues.has(value as StatusFilter) ? (value as StatusFilter) : "all";
+}
+
+function currentPathWithQuery(pathname: string, searchParams: { toString: () => string }) {
+  const queryString = searchParams.toString();
+  return queryString ? `${pathname}?${queryString}` : pathname;
+}
+
+function submitHref(params: Record<string, string>, returnTo: string) {
+  const queryParams = new URLSearchParams(params);
+  queryParams.set("returnTo", returnTo);
+  return `/submit?${queryParams.toString()}`;
 }
 
 function sortSubmissions(submissions: SubmissionRead[]) {
@@ -254,6 +272,9 @@ function StatusBadge({ status }: { status: SubmissionRead["status"] }) {
 }
 
 function AddSubmissionMenu() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const returnTo = currentPathWithQuery(pathname, searchParams);
   const [menuOpen, setMenuOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [urlDraftPromptOpen, setUrlDraftPromptOpen] = useState(false);
@@ -283,7 +304,7 @@ function AddSubmissionMenu() {
       <div className="relative" ref={menuRef}>
         <div className="inline-flex rounded-[var(--radius)] shadow-[var(--shadow-card)]">
           <Button asChild className="rounded-r-none shadow-none">
-            <Link href="/submit">
+            <Link href={submitHref({}, returnTo)}>
               <Plus className="size-4" />
               Add submission
             </Link>
@@ -368,6 +389,9 @@ function VersionSubmissionRow({
   reviewingActionId: string;
   submission: SubmissionRead;
 }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const returnTo = currentPathWithQuery(pathname, searchParams);
   const isEditable = isEditableSubmission(submission.status);
   const isDeleteable = isDeleteableSubmission(submission.status);
   const typeLabel = submissionTypeLabels[submission.submissionType] ?? submission.submissionType;
@@ -473,8 +497,8 @@ function VersionSubmissionRow({
             <Link
               href={
                 isEditable
-                  ? `/submit?submission=${submission.id}`
-                  : `/submit?submission=${submission.id}&version=new`
+                  ? submitHref({ submission: submission.id }, returnTo)
+                  : submitHref({ submission: submission.id, version: "new" }, returnTo)
               }
             >
               {isEditable ? <Pencil className="size-4" /> : <Plus className="size-4" />}
@@ -618,7 +642,11 @@ function SubmissionGroupCard({
   );
 }
 
-export default function SubmissionsPage() {
+function SubmissionsPageContent() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const filter = statusFilterFromQuery(searchParams.get("status"));
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -630,7 +658,6 @@ export default function SubmissionsPage() {
     useState<SubmissionRead | null>(null);
   const [user, setUser] = useState<UserRead | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
-  const [filter, setFilter] = useState<StatusFilter>("all");
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -669,6 +696,17 @@ export default function SubmissionsPage() {
   const visibleStatusFilters = useMemo(() => {
     return statusOrder.filter((status) => counts[status] > 0 || filter === status);
   }, [counts, filter]);
+
+  function updateFilter(nextFilter: StatusFilter) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextFilter === "all") {
+      nextParams.delete("status");
+    } else {
+      nextParams.set("status", nextFilter);
+    }
+    const queryString = nextParams.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+  }
 
   async function handleDeleteSubmission(submission: SubmissionRead) {
     if (!isDeleteableSubmission(submission.status)) return;
@@ -794,7 +832,7 @@ export default function SubmissionsPage() {
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
-                  onClick={() => setFilter("all")}
+                  onClick={() => updateFilter("all")}
                   type="button"
                 >
                   All
@@ -809,7 +847,7 @@ export default function SubmissionsPage() {
                         : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                     key={status}
-                    onClick={() => setFilter(status)}
+                    onClick={() => updateFilter(status)}
                     type="button"
                   >
                     {statusMeta[status].label}
@@ -905,5 +943,13 @@ export default function SubmissionsPage() {
         submissionId={fixPromptSubmission?.id ?? ""}
       />
     </>
+  );
+}
+
+export default function SubmissionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SubmissionsPageContent />
+    </Suspense>
   );
 }

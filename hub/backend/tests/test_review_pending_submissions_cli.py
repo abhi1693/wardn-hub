@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from io import StringIO
 from typing import Any
 from unittest.mock import patch
@@ -7,6 +8,11 @@ from unittest.mock import patch
 import pytest
 
 from app.cli import review_pending_submissions as cli
+
+
+class TtyStringIO(StringIO):
+    def isatty(self) -> bool:
+        return True
 
 
 class FakeClient:
@@ -115,8 +121,12 @@ def test_user_agent_argument_overrides_default() -> None:
 def test_default_review_command_uses_portable_codex_exec_flags() -> None:
     args = cli.build_parser().parse_args([])
 
-    assert args.review_command == "codex --search exec --skip-git-repo-check -"
+    assert args.review_command == (
+        "codex --search exec --sandbox danger-full-access --ignore-user-config "
+        "--skip-git-repo-check -"
+    )
     assert "--ask-for-approval" not in args.review_command
+    assert "--ignore-user-config" in args.review_command
 
 
 def test_model_argument_is_inserted_into_codex_exec_command() -> None:
@@ -211,6 +221,158 @@ def test_thinking_argument_accepts_expected_levels() -> None:
         assert args.thinking == level
 
 
+def test_review_progress_arguments() -> None:
+    default_args = cli.build_parser().parse_args([])
+    args = cli.build_parser().parse_args(
+        ["--review-progress-interval", "30", "--stream-review-output", "--verbose"]
+    )
+
+    assert default_args.review_progress_interval == 15
+    assert default_args.verbose is False
+    assert default_args.stream_review_output is False
+    assert args.review_progress_interval == 30
+    assert args.stream_review_output is True
+    assert args.verbose is True
+
+
+def test_review_progress_interval_env_requires_integer(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv(cli.REVIEW_PROGRESS_INTERVAL_ENV, "soon")
+
+    assert cli.main(["--token", "wardn_hub_test_token"]) == 1
+    assert "$WARDN_HUB_REVIEW_PROGRESS_INTERVAL must be an integer" in capsys.readouterr().err
+
+
+def test_subprocess_reviewer_streams_stderr_and_captures_stdout() -> None:
+    progress = StringIO()
+    reviewer = cli.SubprocessReviewer(
+        command=[
+            sys.executable,
+            "-c",
+            "import sys; print('review progress', file=sys.stderr); print('final findings')",
+        ],
+        timeout_seconds=5,
+        progress_stream=progress,
+        progress_interval_seconds=0,
+    )
+
+    findings = reviewer.review("prompt", environment={})
+
+    assert findings == "final findings"
+    assert "Review command started" in progress.getvalue()
+    assert "review progress" in progress.getvalue()
+    assert "final findings" not in progress.getvalue()
+
+
+def test_subprocess_reviewer_can_stream_stdout_while_capturing_findings() -> None:
+    progress = StringIO()
+    reviewer = cli.SubprocessReviewer(
+        command=[sys.executable, "-c", "print('final findings')"],
+        timeout_seconds=5,
+        progress_stream=progress,
+        progress_interval_seconds=0,
+        stream_stdout=True,
+    )
+
+    findings = reviewer.review("prompt", environment={})
+
+    assert findings == "final findings"
+    assert "final findings" in progress.getvalue()
+
+
+def test_subprocess_reviewer_refreshes_tty_heartbeat_status_line() -> None:
+    progress = TtyStringIO()
+    reviewer = cli.SubprocessReviewer(
+        command=[
+            sys.executable,
+            "-c",
+            "import time; time.sleep(1.1); print('final findings')",
+        ],
+        timeout_seconds=5,
+        progress_stream=progress,
+        progress_interval_seconds=1,
+    )
+
+    findings = reviewer.review("prompt", environment={})
+    progress_output = progress.getvalue()
+
+    assert findings == "final findings"
+    assert "Review command still running after" in progress_output
+    assert "\r\033[KReview command still running after" in progress_output
+    assert "\nReview command still running after" not in progress_output
+
+
+def test_main_keeps_review_command_logs_quiet_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_reviewers: list[dict[str, Any]] = []
+
+    class FakeApiClient(FakeClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__([])
+
+    class CapturingSubprocessReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
+    monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
+
+    result = cli.main(["--token", "wardn_hub_test_token", "--once"])
+
+    assert result == 0
+    assert captured_reviewers[0]["progress_stream"] is None
+    assert captured_reviewers[0]["stream_stdout"] is False
+
+
+def test_main_enables_review_command_logs_with_verbose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_reviewers: list[dict[str, Any]] = []
+
+    class FakeApiClient(FakeClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__([])
+
+    class CapturingSubprocessReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
+    monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
+
+    result = cli.main(["--token", "wardn_hub_test_token", "--once", "--verbose"])
+
+    assert result == 0
+    assert captured_reviewers[0]["progress_stream"] is sys.stdout
+    assert captured_reviewers[0]["stream_stdout"] is False
+
+
+def test_main_stream_review_output_implies_verbose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_reviewers: list[dict[str, Any]] = []
+
+    class FakeApiClient(FakeClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__([])
+
+    class CapturingSubprocessReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
+    monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
+
+    result = cli.main(["--token", "wardn_hub_test_token", "--once", "--stream-review-output"])
+
+    assert result == 0
+    assert captured_reviewers[0]["progress_stream"] is sys.stdout
+    assert captured_reviewers[0]["stream_stdout"] is True
+
+
 def test_api_client_sends_user_agent_header() -> None:
     captured: dict[str, str] = {}
 
@@ -295,6 +457,37 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "Decision: pass, needs fixes, or cannot validate" in prompt
 
 
+def test_extract_suggested_rejection_message_from_fenced_section() -> None:
+    findings = """Decision: needs fixes
+
+Suggested rejection message:
+```text
+Please revise the metadata against upstream docs.
+The package transport args include optional flags.
+```
+
+Suggested approval note: none; submission should not be approved.
+"""
+
+    assert cli.extract_suggested_rejection_message(findings) == (
+        "Please revise the metadata against upstream docs.\n"
+        "The package transport args include optional flags."
+    )
+
+
+def test_extract_suggested_rejection_message_ignores_none() -> None:
+    findings = """Decision: pass
+
+Suggested rejection message:
+none
+
+Suggested approval note:
+Looks good.
+"""
+
+    assert cli.extract_suggested_rejection_message(findings) is None
+
+
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
     client = FakeClient()
 
@@ -328,6 +521,61 @@ def test_apply_decision_reject_reads_human_message() -> None:
     assert client.actions == [
         ("reject", "sub-1", "Missing source review evidence."),
     ]
+
+
+def test_apply_decision_reject_uses_suggested_message_without_prompting() -> None:
+    client = FakeClient()
+    stdout = StringIO()
+
+    cli.apply_decision(
+        client,
+        "sub-1",
+        "reject",
+        dry_run=False,
+        stdin=StringIO(),
+        stdout=stdout,
+        suggested_rejection_message="Use the generated rejection message.",
+    )
+
+    assert client.actions == [
+        ("reject", "sub-1", "Use the generated rejection message."),
+    ]
+    assert "Using suggested rejection message" in stdout.getvalue()
+    assert "Rejection message:" not in stdout.getvalue()
+
+
+def test_review_loop_rejects_with_suggested_message() -> None:
+    class RejectingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: needs fixes
+
+Suggested rejection message:
+```text
+Please fix the source review evidence.
+```
+"""
+
+    client = FakeClient([submitted_submission()])
+    reviewer = RejectingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        stdin=StringIO("r\n"),
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert client.actions == [
+        ("reject", "sub-1", "Please fix the source review evidence."),
+    ]
+    assert "Rejection message:" not in stdout.getvalue()
 
 
 def test_review_loop_skips_submission_for_current_run() -> None:
