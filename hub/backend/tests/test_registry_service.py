@@ -16,7 +16,12 @@ from app.modules.registry.exceptions import (
     RegistryVersionNotFoundError,
 )
 from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
-from app.modules.registry.schemas import RegistryCategoryCreate, RegistryServerVersionCreate
+from app.modules.registry.schemas import (
+    RegistryCategoryCreate,
+    RegistryListMetadata,
+    RegistryServerListResponse,
+    RegistryServerVersionCreate,
+)
 from app.modules.users.models import User
 
 
@@ -193,6 +198,61 @@ def test_version_summary_normalizes_stored_remote_query_parameters() -> None:
             ],
         }
     ]
+
+
+def test_project_list_response_fields_keeps_only_requested_server_fields() -> None:
+    server = server_model()
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    response = RegistryServerListResponse(
+        servers=[service.server_summary(server, version)],
+        metadata=RegistryListMetadata(count=1, nextCursor=""),
+    )
+
+    projected = service.project_list_response_fields(
+        response,
+        fields="id,name,title,description,icons,categories,latestVersion",
+    )
+
+    assert projected == {
+        "servers": [
+            {
+                "id": server.id,
+                "name": server.name,
+                "title": server.title,
+                "description": server.description,
+                "icons": server.icons,
+                "categories": [],
+                "latestVersion": {
+                    "id": version.id,
+                    "version": version.version,
+                    "status": version.status,
+                    "publishedAt": version.published_at,
+                    "publishedBy": None,
+                },
+            }
+        ],
+        "metadata": {"count": 1, "nextCursor": ""},
+    }
+    server_payload = projected["servers"][0]
+    assert "documentation" not in server_payload
+    assert "versions" not in server_payload
+    assert "packages" not in server_payload
+    assert "remotes" not in server_payload
+    assert "owner" not in server_payload
+    assert "partnerSupport" not in server_payload
+
+
+def test_project_list_response_fields_rejects_unknown_fields() -> None:
+    response = RegistryServerListResponse(
+        servers=[],
+        metadata=RegistryListMetadata(count=0, nextCursor=""),
+    )
+
+    with pytest.raises(ValueError, match="unknown response field"):
+        service.project_list_response_fields(response, fields="id,unknown")
+
+    with pytest.raises(ValueError, match="unknown response field"):
+        service.project_list_response_fields(response, fields="versions")
 
 
 def test_category_values_extracts_publisher_metadata() -> None:

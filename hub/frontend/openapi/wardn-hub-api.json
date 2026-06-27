@@ -5170,7 +5170,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.24"
+    "version": "0.2.30"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6818,6 +6818,22 @@
               "title": "Page",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "fields",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fields"
+            }
           }
         ],
         "responses": {
@@ -7113,6 +7129,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fields",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fields"
             }
           },
           {

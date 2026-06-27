@@ -11,8 +11,12 @@ from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
 )
 from app.modules.registry.schemas import (
+    RegistryLatestVersionSummary,
+    RegistryListMetadata,
     RegistryPageMetadata,
     RegistryPublishedServerListResponse,
+    RegistryServerListResponse,
+    RegistryServerRead,
 )
 from app.modules.users import dependencies
 
@@ -115,6 +119,103 @@ def test_published_servers_route_is_public_and_fixed_page_size(monkeypatch) -> N
         "metadata": {"page": 2, "perPage": 20, "total": 0, "pages": 0},
     }
     assert captured == {"page": 2, "per_page": 20}
+
+
+def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+
+    async def fake_session():
+        class Session:
+            pass
+
+        yield Session()
+
+    async def list_servers(*args, **kwargs):
+        return RegistryServerListResponse(
+            servers=[
+                RegistryServerRead(
+                    id=server_id,
+                    name="io.github.example/weather",
+                    title="Weather",
+                    description="Weather tools",
+                    documentation="# Large docs",
+                    websiteUrl="https://example.com",
+                    repository={"url": "https://github.com/example/weather"},
+                    icons=[{"src": "https://example.com/icon.png"}],
+                    status="active",
+                    statusMessage="",
+                    visibility="public",
+                    latestVersion=RegistryLatestVersionSummary(
+                        id=version_id,
+                        version="1.0.0",
+                        status="active",
+                        publishedAt="2026-06-23T00:00:00Z",
+                        publishedBy=None,
+                    ),
+                    categories=[],
+                    partnerSupport=[],
+                    createdAt="2026-06-23T00:00:00Z",
+                    updatedAt="2026-06-23T00:00:00Z",
+                )
+            ],
+            metadata=RegistryListMetadata(count=1, nextCursor=""),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers?fields=id,name,title,description,icons,latestVersion"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["metadata"] == {"count": 1, "nextCursor": ""}
+    assert payload["servers"] == [
+        {
+            "id": str(server_id),
+            "name": "io.github.example/weather",
+            "title": "Weather",
+            "description": "Weather tools",
+            "icons": [{"src": "https://example.com/icon.png"}],
+            "latestVersion": {
+                "id": str(version_id),
+                "version": "1.0.0",
+                "status": "active",
+                "publishedAt": "2026-06-23T00:00:00+00:00",
+                "publishedBy": None,
+            },
+        }
+    ]
+    assert "documentation" not in payload["servers"][0]
+    assert "repository" not in payload["servers"][0]
+    assert "partnerSupport" not in payload["servers"][0]
+
+
+def test_list_servers_route_rejects_unknown_fields(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        class Session:
+            pass
+
+        yield Session()
+
+    async def list_servers(*args, **kwargs):
+        return RegistryServerListResponse(
+            servers=[],
+            metadata=RegistryListMetadata(count=0, nextCursor=""),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+
+    response = TestClient(app).get("/api/v1/mcp/servers?fields=id,unknown")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid fields"
 
 
 def test_admin_create_maps_duplicate_to_conflict(monkeypatch) -> None:

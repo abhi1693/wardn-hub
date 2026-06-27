@@ -9,6 +9,21 @@ import { resolveSiteUrl } from "@/lib/site";
 
 const API_PREFIX = "/api/v1";
 const PAGE_SIZE = 100;
+const PUBLIC_CARD_FIELDS = [
+  "id",
+  "name",
+  "title",
+  "description",
+  "websiteUrl",
+  "repository",
+  "icons",
+  "status",
+  "visibility",
+  "latestVersion",
+  "categories",
+  "createdAt",
+  "updatedAt",
+].join(",");
 export const SITEMAP_CATALOG_CHUNK_SIZE = 2000;
 
 function stripTrailingSlash(value: string) {
@@ -71,6 +86,7 @@ export async function listPublishedRegistryServers(params?: {
   while (servers.length < maxServers) {
     const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
       ...(params?.category ? { category: params.category } : {}),
+      fields: PUBLIC_CARD_FIELDS,
       limit: Math.min(PAGE_SIZE, maxServers - servers.length),
       ...(cursor ? { cursor } : {}),
     });
@@ -87,6 +103,7 @@ export async function listPublishedRegistryServers(params?: {
 
 export async function countPublishedRegistryServers() {
   const response = await registryRequest<RegistryPublishedServerListResponse>("/mcp/catalog", {
+    fields: "id",
     page: 1,
   });
   return response.metadata.total;
@@ -100,6 +117,7 @@ export async function listPublishedRegistryServerSitemapChunk(chunkIndex: number
   while (servers.length < SITEMAP_CATALOG_CHUNK_SIZE) {
     const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
       cursor,
+      fields: PUBLIC_CARD_FIELDS,
       limit: Math.min(PAGE_SIZE, SITEMAP_CATALOG_CHUNK_SIZE - servers.length),
     });
 

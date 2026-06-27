@@ -61,6 +61,63 @@ EMPTY_TRUST_CONTEXT = RegistryTrustContext(
     partner_support={},
     categories={},
 )
+METADATA_FIELD = "metadata"
+
+
+def project_list_response_fields(
+    response: RegistryServerListResponse | RegistryPublishedServerListResponse,
+    *,
+    fields: str | None,
+) -> dict | None:
+    requested_fields = parse_response_fields(fields)
+    if requested_fields is None:
+        return None
+
+    allowed_fields = server_response_fields(response)
+    unknown_fields = requested_fields - allowed_fields - {METADATA_FIELD}
+    if unknown_fields:
+        unknown = ", ".join(sorted(unknown_fields))
+        raise ValueError(f"unknown response field(s): {unknown}")
+
+    item_fields = requested_fields - {METADATA_FIELD}
+    return {
+        "servers": [
+            project_model_fields(server, item_fields)
+            for server in response.servers
+        ],
+        "metadata": response.metadata.model_dump(by_alias=True),
+    }
+
+
+def parse_response_fields(fields: str | None) -> set[str] | None:
+    if fields is None:
+        return None
+
+    parsed_fields = {field.strip() for field in fields.split(",") if field.strip()}
+    if not parsed_fields:
+        raise ValueError("fields must include at least one response field")
+    return parsed_fields
+
+
+def server_response_fields(
+    response: RegistryServerListResponse | RegistryPublishedServerListResponse,
+) -> set[str]:
+    if response.servers:
+        return set(response.servers[0].model_dump(by_alias=True))
+    model = (
+        RegistryCatalogServerRead
+        if isinstance(response, RegistryPublishedServerListResponse)
+        else RegistryServerRead
+    )
+    return {
+        field.alias or field_name
+        for field_name, field in model.model_fields.items()
+    }
+
+
+def project_model_fields(model: BaseModel, fields: set[str]) -> dict:
+    payload = model.model_dump(by_alias=True)
+    return {field: payload[field] for field in fields if field in payload}
 
 
 PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"

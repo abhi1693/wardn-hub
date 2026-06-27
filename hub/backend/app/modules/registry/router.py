@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.router import bad_request, commit_response, commit_session, conflict, not_found
@@ -40,6 +42,7 @@ from app.modules.registry.service import (
     list_published_servers,
     list_servers,
     list_versions,
+    project_list_response_fields,
     set_latest_version,
     update_category,
     update_server_version,
@@ -134,6 +137,7 @@ async def list_mcp_servers(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    fields: str | None = None,
     search: str | None = None,
     updated_since: datetime | None = None,
     version: str | None = "latest",
@@ -142,9 +146,9 @@ async def list_mcp_servers(
     registry_type: str | None = None,
     transport_type: str | None = None,
     category: str | None = None,
-) -> RegistryServerListResponse:
+) -> RegistryServerListResponse | JSONResponse:
     try:
-        return await list_servers(
+        response = await list_servers(
             session,
             cursor=cursor,
             limit=limit,
@@ -157,8 +161,14 @@ async def list_mcp_servers(
             transport_type=transport_type,
             category=category,
         )
+        projected = project_list_response_fields(response, fields=fields)
+        if projected is not None:
+            return JSONResponse(content=jsonable_encoder(projected))
+        return response
     except InvalidRegistryCursorError as exc:
         raise bad_request(exc, detail="invalid cursor") from exc
+    except ValueError as exc:
+        raise bad_request(exc, detail="invalid fields") from exc
 
 
 @catalog_router.get(
@@ -169,8 +179,16 @@ async def list_mcp_servers(
 async def list_mcp_catalog(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     page: Annotated[int, Query(ge=1)] = 1,
-) -> RegistryPublishedServerListResponse:
-    return await list_published_servers(session, page=page, per_page=20)
+    fields: str | None = None,
+) -> RegistryPublishedServerListResponse | JSONResponse:
+    try:
+        response = await list_published_servers(session, page=page, per_page=20)
+        projected = project_list_response_fields(response, fields=fields)
+        if projected is not None:
+            return JSONResponse(content=jsonable_encoder(projected))
+        return response
+    except ValueError as exc:
+        raise bad_request(exc, detail="invalid fields") from exc
 
 
 @public_router.get(
