@@ -53,7 +53,7 @@ Source review workflow:
 1. Fetch and read the documentation URL.
 2. Follow linked pages that are necessary for installation, transport, configuration, authentication, environment variables, CLI arguments, prerequisites, capabilities, limitations, package identifiers, remote endpoints, and source repository.
 3. Prefer official docs, package manifests, README files, and source repository metadata over third-party summaries.
-4. Record every inspected URL or source file in serverJson._meta.sourceReview.filesRead.
+4. Record every inspected URL or source file in serverJson._meta.sourceReview.llm.filesRead.
 
 Draft creation rules:
 - Build a complete serverJson payload and create the draft with POST /submissions.
@@ -69,7 +69,7 @@ ${PACKAGE_AND_REMOTE_RULES}
 ${ENVIRONMENT_VARIABLE_RULES}
 
 ${PACKAGE_ARGUMENT_RULES}
-- Add every documented CLI argument/configurable flag to serverJson._meta.sourceReview.commandArguments even when it is not part of the default launch.
+- Add every documented CLI argument/configurable flag to serverJson._meta.sourceReview.llm.commandArguments even when it is not part of the default launch.
 
 ${SOURCE_REVIEW_EVIDENCE_REQUIREMENTS}
 
@@ -78,7 +78,7 @@ ${SOURCE_REVIEW_LIST_FORMAT}
 Before creating the draft:
 - Validate the payload shape against the Wardn Hub API/OpenAPI schema if available.
 - Ensure serverJson has title, description, documentation, websiteUrl, version, and at least one package or remote when the docs support it.
-- Ensure all documented env vars, args, prerequisites, capabilities, and limitations from inspected docs are represented or explicitly listed in sourceReview.unknowns with a reason.
+- Ensure all documented env vars, args, prerequisites, capabilities, and limitations from inspected docs are represented or explicitly listed in sourceReview.llm.unknowns with a reason.
 
 Return:
 - draft submission ID

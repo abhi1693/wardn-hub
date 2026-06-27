@@ -102,6 +102,17 @@ export const TRANSPORT_OPTIONS = [
   { value: "sse", label: "sse" },
 ];
 
+const SOURCE_REVIEW_FIELDS = [
+  "filesRead",
+  "installCommands",
+  "commandArguments",
+  "environmentVariables",
+  "prerequisites",
+  "capabilitiesReviewed",
+  "limitationsReviewed",
+  "unknowns",
+];
+
 export const PACKAGE_ARGUMENT_FORMAT_OPTIONS = [
   { value: "string", label: "Text" },
   { value: "boolean", label: "Toggle" },
@@ -167,6 +178,19 @@ export function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function hasSourceReviewEvidence(value: unknown) {
+  const sourceReview = recordValue(value);
+  if (!sourceReview) {
+    return false;
+  }
+
+  if (SOURCE_REVIEW_FIELDS.some((field) => field in sourceReview)) {
+    return true;
+  }
+
+  return Boolean(recordValue(sourceReview.human) || recordValue(sourceReview.llm));
 }
 
 export function emptyHeader(): HeaderField {
@@ -635,7 +659,93 @@ export function categoryFromServerJson(value: Record<string, unknown>) {
   ) ?? "";
 }
 
-export function serverMetaPayload(existingMeta: Record<string, unknown> | null, category: string) {
+function uniqueNonEmptyValues(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+export function humanSourceReviewPayload({
+  sourceMode,
+  repositoryUrl,
+  repositorySubfolder,
+  websiteUrl,
+  documentation,
+  packages,
+  sourceImportMessage,
+}: {
+  sourceMode: SourceMode;
+  repositoryUrl: string;
+  repositorySubfolder: string;
+  websiteUrl: string;
+  documentation: string;
+  packages: PackageTarget[];
+  sourceImportMessage: string;
+}) {
+  const repositoryReference = normalizeRepositoryReference(repositoryUrl);
+  const filesRead = uniqueNonEmptyValues([
+    sourceMode === "repository" && repositoryReference
+      ? `${repositoryReference}${repositorySubfolder.trim() ? `/${repositorySubfolder.trim()}` : ""}`
+      : "",
+    documentation.trim() ? "README.md" : "",
+    sourceImportMessage === "Registry document loaded." ? "server.json" : "",
+    sourceImportMessage === "MCP client configuration loaded." ? "mcp.json" : "",
+    websiteUrl.trim(),
+    !repositoryReference && !documentation.trim() && !websiteUrl.trim()
+      ? "Wardn Hub submission form"
+      : "",
+  ]);
+  const installCommands = uniqueNonEmptyValues(
+    packages.flatMap((packageTarget) => {
+      const command = packageTarget.command.trim();
+      const launchArgs = launchArgumentValues(packageTarget.packageArguments);
+      if (command) {
+        return [[command, ...launchArgs].join(" ")];
+      }
+      return packageTarget.identifier.trim() ? [packageTarget.identifier.trim()] : [];
+    }),
+  );
+  const commandArguments = uniqueNonEmptyValues(
+    packages.flatMap((packageTarget) => {
+      const launchArgs = launchArgumentValues(packageTarget.packageArguments);
+      const documentedArgs = packageTarget.packageArguments.flatMap((argument) => {
+        const value = argument.value.trim();
+        const flag = argument.flag.trim();
+        const name = argument.name.trim();
+        const defaultValue = argument.defaultValue.trim();
+        if (value) return [value];
+        if (flag && defaultValue) return [`${flag} ${defaultValue}`];
+        if (flag) return [flag];
+        if (name) return [name];
+        return [];
+      });
+      const values = [...launchArgs, ...documentedArgs];
+      if (values.length > 0) {
+        return values;
+      }
+      return packageTarget.identifier.trim()
+        ? [`No configurable command arguments documented for ${packageTarget.identifier.trim()}.`]
+        : [];
+    }),
+  );
+
+  return {
+    filesRead,
+    installCommands,
+    commandArguments,
+    environmentVariables: packages.flatMap((packageTarget) =>
+      publicEnvironment(packageTarget.environmentVariables),
+    ),
+    prerequisites: [],
+    capabilitiesReviewed: true,
+    limitationsReviewed: true,
+    unknowns: [],
+  };
+}
+
+export function serverMetaPayload(
+  existingMeta: Record<string, unknown> | null,
+  category: string,
+  humanSourceReview?: Record<string, unknown>,
+) {
   const meta = existingMeta ? { ...existingMeta } : {};
   if (category) {
     const publisherMeta = recordValue(meta[PUBLISHER_META_KEY]);
@@ -643,6 +753,10 @@ export function serverMetaPayload(existingMeta: Record<string, unknown> | null, 
       ...(publisherMeta ?? {}),
       category,
     };
+  }
+
+  if (humanSourceReview && !hasSourceReviewEvidence(meta.sourceReview)) {
+    meta.sourceReview = { human: humanSourceReview };
   }
 
   return Object.keys(meta).length > 0 ? meta : undefined;

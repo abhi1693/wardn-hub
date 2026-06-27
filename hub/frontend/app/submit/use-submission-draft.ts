@@ -231,7 +231,7 @@ export function useSubmissionDraft({ user, setError }: UseSubmissionDraftOptions
       setIconUrl(metadataIconUrl);
       setPackages(metadataPackages);
       setRemotes(metadataRemotes);
-      setServerMeta(null);
+      setServerMeta(recordValue(metadata.serverJson?._meta));
       setSourceImportMessage(
         metadata.source === "server.json"
           ? "Registry document loaded."

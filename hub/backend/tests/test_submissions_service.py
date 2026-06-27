@@ -175,6 +175,51 @@ def test_validation_passes_with_source_review_and_transport_details() -> None:
     assert service.validation_result_for(complete_registry_payload())["status"] == "passed"
 
 
+def test_validation_passes_with_llm_source_review_channel() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    payload.meta["sourceReview"] = {"llm": source_review}
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "passed"
+    assert any(
+        check["name"] == "sourceReview"
+        and check["status"] == "passed"
+        and "(llm)" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_does_not_mix_human_and_llm_source_review_channels() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    payload.meta["sourceReview"] = {
+        "human": {
+            "filesRead": ["README.md"],
+            "installCommands": ["npx -y @example/weather-mcp"],
+        },
+        "llm": {
+            "commandArguments": ["-y"],
+            "capabilitiesReviewed": True,
+            "limitationsReviewed": True,
+            "unknowns": [],
+        },
+    }
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "warning"
+    assert any(
+        check["name"] == "sourceReview"
+        and "human:" in check["message"]
+        and "llm:" in check["message"]
+        for check in result["checks"]
+    )
+
+
 @pytest.mark.parametrize(
     ("registry_type", "identifier"),
     [
@@ -361,6 +406,24 @@ def test_validation_rejects_unreadable_source_review_entries() -> None:
     assert any(
         check["name"] == "sourceReviewFormat"
         and "commandArguments" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_rejects_unreadable_llm_source_review_entries() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["commandArguments"] = [{"nested": {"value": "--verbose"}}]
+    payload.meta["sourceReview"] = {"llm": source_review}
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "sourceReviewFormat"
+        and "llm.commandArguments" in check["message"]
         for check in result["checks"]
     )
 

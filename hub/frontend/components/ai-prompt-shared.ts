@@ -68,30 +68,31 @@ export const ENVIRONMENT_VARIABLE_RULES = `Environment variable rules:
 - For secrets or user-specific values, use an empty string.
 - Use documented non-secret defaults when available.
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
-- Add every documented environment variable to serverJson._meta.sourceReview.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
+- Add every documented environment variable to serverJson._meta.sourceReview.llm.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
 - If an env var belongs in runtime launch config, add it to packages[].transport.env with a safe value.`;
 
 export const ENVIRONMENT_REVIEW_RULES = `Environment variable review:
 - Read README/docs for every environment variable and CLI option.
 - Do not only copy variables returned by import API.
-- Add every documented environment variable to sourceReview.environmentVariables.
+- Add every documented environment variable to sourceReview.llm.environmentVariables.
 - If an environment variable belongs in runtime launch config, add it to packages[].transport.env.
 - Use documented non-secret defaults when available.
-- If you intentionally exclude a variable from packages[].transport.env, still include it in sourceReview.environmentVariables with source and reason.`;
+- If you intentionally exclude a variable from packages[].transport.env, still include it in sourceReview.llm.environmentVariables with source and reason.`;
 
-export const SOURCE_REVIEW_EVIDENCE_REQUIREMENTS = `Source review evidence must include:
-- sourceReview.filesRead
-- sourceReview.installCommands
-- sourceReview.commandArguments
-- sourceReview.environmentVariables
-- sourceReview.prerequisites
-- sourceReview.capabilitiesReviewed = true
-- sourceReview.limitationsReviewed = true
-- sourceReview.unknowns = []`;
+export const SOURCE_REVIEW_EVIDENCE_REQUIREMENTS = `LLM source review evidence must be stored under serverJson._meta.sourceReview.llm and include:
+- sourceReview.llm.filesRead
+- sourceReview.llm.installCommands
+- sourceReview.llm.commandArguments
+- sourceReview.llm.environmentVariables
+- sourceReview.llm.prerequisites
+- sourceReview.llm.capabilitiesReviewed = true
+- sourceReview.llm.limitationsReviewed = true
+- sourceReview.llm.unknowns = []`;
 
 export const SOURCE_REVIEW_LIST_FORMAT = `Source review list format:
 - filesRead, installCommands, commandArguments, and prerequisites must be readable strings or objects with at least one of: flag, name, value, default, description.
-- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.`;
+- Do not put arbitrary nested objects in commandArguments. For CLI options, prefer strings such as "--stdio" or objects like {"flag":"--port","requiresValue":true,"description":"Port for HTTP transport."}.
+- Do not write LLM-generated review evidence into flat sourceReview fields; use sourceReview.llm so it is distinguishable from human review evidence.`;
 
 export const DRAFT_METADATA_RULES = `Metadata rules:
 - Do not use environment placeholder values that wrap names in dollar signs and braces.

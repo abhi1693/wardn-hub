@@ -170,6 +170,38 @@ def duplicate_names(values: Any) -> list[str]:
     return sorted(duplicates)
 
 
+SOURCE_REVIEW_FLAT_FIELDS = {
+    "filesRead",
+    "installCommands",
+    "commandArguments",
+    "environmentVariables",
+    "prerequisites",
+    "capabilitiesReviewed",
+    "limitationsReviewed",
+    "unknowns",
+}
+
+
+def has_flat_source_review_fields(source_review: dict[str, Any]) -> bool:
+    return any(field in source_review for field in SOURCE_REVIEW_FLAT_FIELDS)
+
+
+def source_review_channels(meta: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    source_review = (
+        meta.get("sourceReview")
+        if isinstance(meta.get("sourceReview"), dict)
+        else {}
+    )
+    channels: list[tuple[str, dict[str, Any]]] = []
+    if has_flat_source_review_fields(source_review):
+        channels.append(("human", source_review))
+    for channel in ("human", "llm"):
+        channel_review = source_review.get(channel)
+        if isinstance(channel_review, dict):
+            channels.append((channel, channel_review))
+    return channels
+
+
 def duplicate_environment_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
     data = payload.model_dump(by_alias=True, exclude_none=True)
     duplicates: list[str] = []
@@ -189,14 +221,11 @@ def duplicate_environment_check(payload: RegistryServerVersionCreate) -> dict[st
             duplicates.append(f"{label}: {', '.join(package_duplicates)}")
 
     meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
-    source_review = (
-        meta.get("sourceReview")
-        if isinstance(meta.get("sourceReview"), dict)
-        else {}
-    )
-    source_review_duplicates = duplicate_names(source_review.get("environmentVariables"))
-    if source_review_duplicates:
-        duplicates.append("sourceReview: " + ", ".join(source_review_duplicates))
+    for channel, source_review in source_review_channels(meta):
+        source_review_duplicates = duplicate_names(source_review.get("environmentVariables"))
+        if source_review_duplicates:
+            label = "sourceReview" if channel == "human" else f"sourceReview.{channel}"
+            duplicates.append(f"{label}: " + ", ".join(source_review_duplicates))
 
     if duplicates:
         return validation_check(
@@ -271,15 +300,15 @@ def readable_review_item(value: Any) -> bool:
 
 def source_review_list_quality_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
     meta = payload.meta if isinstance(payload.meta, dict) else {}
-    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
     invalid_fields: list[str] = []
 
-    for field in ("filesRead", "installCommands", "commandArguments", "prerequisites"):
-        value = source_review.get(field)
-        if not isinstance(value, list):
-            continue
-        if any(not readable_review_item(item) for item in value):
-            invalid_fields.append(field)
+    for channel, source_review in source_review_channels(meta):
+        for field in ("filesRead", "installCommands", "commandArguments", "prerequisites"):
+            value = source_review.get(field)
+            if not isinstance(value, list):
+                continue
+            if any(not readable_review_item(item) for item in value):
+                invalid_fields.append(field if channel == "human" else f"{channel}.{field}")
 
     if invalid_fields:
         return validation_check(
@@ -374,7 +403,36 @@ def documentation_detail_check(payload: RegistryServerVersionCreate) -> dict[str
 
 def source_review_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
     meta = payload.meta if isinstance(payload.meta, dict) else {}
-    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
+    channels = source_review_channels(meta)
+    if not channels:
+        channels = [("human", {})]
+
+    incomplete_channels: list[str] = []
+    for channel, source_review in channels:
+        missing = source_review_missing_fields(payload, source_review)
+        if not missing:
+            return validation_check(
+                "sourceReview",
+                "passed",
+                f"Source review evidence is complete ({channel}).",
+            )
+        incomplete_channels.append(
+            ", ".join(missing)
+            if channel == "human" and len(channels) == 1
+            else f"{channel}: " + ", ".join(missing)
+        )
+
+    return validation_check(
+        "sourceReview",
+        "warning",
+        "Source review evidence is incomplete: " + "; ".join(incomplete_channels),
+    )
+
+
+def source_review_missing_fields(
+    payload: RegistryServerVersionCreate,
+    source_review: dict[str, Any],
+) -> list[str]:
     files_read = (
         source_review.get("filesRead")
         if isinstance(source_review.get("filesRead"), list)
@@ -401,14 +459,7 @@ def source_review_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
             missing.append("installCommands")
         if not isinstance(command_arguments, list) or not command_arguments:
             missing.append("commandArguments")
-
-    if missing:
-        return validation_check(
-            "sourceReview",
-            "warning",
-            "Source review evidence is incomplete: " + ", ".join(missing),
-        )
-    return validation_check("sourceReview", "passed", "Source review evidence is complete.")
+    return missing
 
 
 def documentation_check(payload: RegistryServerVersionCreate) -> dict[str, str]:

@@ -51,7 +51,7 @@ Validation workflow for each submission:
 1. Read submission.serverJson, submission.validationResult, and submission.serverJson._meta.sourceReview.
 2. Identify the source repository from serverJson.repository.url and any source links in documentation/package metadata.
 3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
-4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
+4. Compare the source review evidence against the upstream source. Treat flat sourceReview or sourceReview.human as human/legacy evidence, and sourceReview.llm as LLM-generated evidence. Do not assume importer output is complete.
 5. ${REGISTRY_METADATA_SCOPE_RULE}
 
 Required checks:
@@ -61,15 +61,15 @@ Required checks:
 ${VALIDATION_PACKAGE_ARGUMENT_CHECKS}
 ${VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS}
 - No environment value uses placeholder syntax that wraps names in dollar signs and braces.
-- Environment variable names are unique within each package target and within sourceReview.environmentVariables.
+- Environment variable names are unique within each package target and within each source review channel's environmentVariables.
 - Secret or user-specific defaults are empty strings.
-- Every documented environment variable is represented in sourceReview.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
+- Every documented environment variable is represented in one complete source review channel's environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
 - Variables required at launch are also represented in packages[].transport.env with safe defaults.
-- CLI arguments and configurable flags are represented in sourceReview.commandArguments and packageArguments; only default launch args are represented in package transport args.
-- Prerequisites are represented in sourceReview.prerequisites.
-- sourceReview.filesRead, installCommands, commandArguments, environmentVariables, prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns are complete.
+- CLI arguments and configurable flags are represented in one complete source review channel's commandArguments and packageArguments; only default launch args are represented in package transport args.
+- Prerequisites are represented in one complete source review channel's prerequisites.
+- One source review channel is complete: filesRead, installCommands, commandArguments, environmentVariables, prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns.
 - capabilitiesReviewed and limitationsReviewed are true.
-- sourceReview.unknowns is empty unless there is a specific documented reason.
+- That channel's unknowns is empty unless there is a specific documented reason.
 - validationResult has no failing checks that remain unresolved.
 
 Report format:

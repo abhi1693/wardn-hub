@@ -52,6 +52,7 @@ import {
   emptyRemote,
   generatedServerName,
   hasEnvironmentPlaceholder,
+  humanSourceReviewPayload,
   launchArgumentValues,
   normalizeArgumentStaticValue,
   normalizeRepositoryReference,
@@ -438,7 +439,16 @@ function SubmitServerPageContent() {
             },
           ]
         : [];
-      const meta = serverMetaPayload(serverMeta, category);
+      const humanSourceReview = humanSourceReviewPayload({
+        sourceMode,
+        repositoryUrl,
+        repositorySubfolder,
+        websiteUrl,
+        documentation,
+        packages,
+        sourceImportMessage,
+      });
+      const meta = serverMetaPayload(serverMeta, category, humanSourceReview);
       const serverJson = {
         $schema: DEFAULT_SCHEMA,
         name: serverName,

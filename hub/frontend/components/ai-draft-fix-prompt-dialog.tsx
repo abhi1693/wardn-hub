@@ -47,14 +47,14 @@ Important:
 - ${REGISTRY_METADATA_SCOPE_RULE}
 
 Source review requirements:
-- Fill serverJson._meta.sourceReview.filesRead with every README/docs/source URL or file inspected.
-- Fill sourceReview.installCommands with documented install/run commands when package targets exist.
-- Fill sourceReview.commandArguments with documented CLI args/configurable flags.
-- Fill sourceReview.environmentVariables with every documented environment variable, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
-- Fill sourceReview.prerequisites with required local apps, services, accounts, API keys, browser/runtime dependencies, or external services.
-- Set sourceReview.capabilitiesReviewed = true after reviewing documented capabilities/tools/features.
-- Set sourceReview.limitationsReviewed = true after reviewing documented limitations, caveats, unsupported behavior, risks, or operational requirements.
-- Set sourceReview.unknowns = [] only when all required source-review questions are resolved. Otherwise list specific unknowns and do not submit.
+- Fill serverJson._meta.sourceReview.llm.filesRead with every README/docs/source URL or file inspected.
+- Fill sourceReview.llm.installCommands with documented install/run commands when package targets exist.
+- Fill sourceReview.llm.commandArguments with documented CLI args/configurable flags.
+- Fill sourceReview.llm.environmentVariables with every documented environment variable, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
+- Fill sourceReview.llm.prerequisites with required local apps, services, accounts, API keys, browser/runtime dependencies, or external services.
+- Set sourceReview.llm.capabilitiesReviewed = true after reviewing documented capabilities/tools/features.
+- Set sourceReview.llm.limitationsReviewed = true after reviewing documented limitations, caveats, unsupported behavior, risks, or operational requirements.
+- Set sourceReview.llm.unknowns = [] only when all required source-review questions are resolved. Otherwise list specific unknowns and do not submit.
 
 ${SOURCE_REVIEW_LIST_FORMAT}
 

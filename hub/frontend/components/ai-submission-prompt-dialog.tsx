@@ -104,7 +104,7 @@ ${SOURCE_REVIEW_EVIDENCE_REQUIREMENTS}
 
 ${SOURCE_REVIEW_LIST_FORMAT}
 
-Before submitting, verify every documented env var and CLI argument from inspected sections is represented or explicitly listed in sourceReview.unknowns with a reason.
+Before submitting, verify every documented env var and CLI argument from inspected sections is represented or explicitly listed in sourceReview.llm.unknowns with a reason.
 
 Return:
 - final submission ID
