@@ -482,12 +482,23 @@ def pending_submissions(
     *,
     skipped_ids: set[str],
 ) -> list[dict[str, Any]]:
-    return [
+    pending = [
         submission
         for submission in submissions
         if submission.get("status") == "submitted"
         and str(submission.get("id") or "") not in skipped_ids
     ]
+    indexed_pending = list(enumerate(pending))
+    indexed_pending.sort(key=lambda item: (submission_queue_timestamp(item[1]), item[0]))
+    return [submission for _, submission in indexed_pending]
+
+
+def submission_queue_timestamp(submission: dict[str, Any]) -> str:
+    for field in ("submittedAt", "submitted_at", "createdAt", "created_at", "updatedAt", "updated_at"):
+        value = submission.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "9999-12-31T23:59:59.999999Z"
 
 
 def build_review_context(client: WardnHubApiClient, submission: dict[str, Any]) -> dict[str, Any]:

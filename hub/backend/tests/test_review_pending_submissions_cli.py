@@ -471,6 +471,26 @@ def test_pending_submissions_filters_status_and_skips() -> None:
     ]
 
 
+def test_pending_submissions_orders_oldest_submitted_first() -> None:
+    submissions = [
+        {"id": "newest", "status": "submitted", "submittedAt": "2026-06-27T12:00:00Z"},
+        {"id": "draft", "status": "draft", "submittedAt": "2026-06-20T12:00:00Z"},
+        {"id": "oldest", "status": "submitted", "submittedAt": "2026-06-25T12:00:00Z"},
+        {"id": "middle", "status": "submitted", "submittedAt": "2026-06-26T12:00:00Z"},
+    ]
+
+    pending_ids = [
+        submission["id"]
+        for submission in cli.pending_submissions(submissions, skipped_ids=set())
+    ]
+
+    assert pending_ids == [
+        "oldest",
+        "middle",
+        "newest",
+    ]
+
+
 def test_validate_token_requires_review_role() -> None:
     class NonReviewerClient(FakeClient):
         def current_user(self) -> dict[str, Any]:
