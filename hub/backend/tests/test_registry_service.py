@@ -226,6 +226,7 @@ def test_project_list_response_fields_keeps_only_requested_server_fields() -> No
                     "id": version.id,
                     "version": version.version,
                     "status": version.status,
+                    "qualityScore": None,
                     "publishedAt": version.published_at,
                     "publishedBy": None,
                 },
@@ -491,6 +492,43 @@ async def test_create_existing_server_version_emits_version_event_only(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_update_version_quality_score_sets_score(monkeypatch) -> None:
+    server = server_model()
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    server.current_version_id = version.id
+
+    async def get_version(*args, **kwargs):
+        return version
+
+    async def get_server_by_id(*args, **kwargs):
+        return server
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "get_server_version", get_version)
+    monkeypatch.setattr(service.repository, "get_server_by_id", get_server_by_id)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    response = await service.update_version_quality_score(
+        FakeSession(),
+        server.name,
+        version.version,
+        96,
+    )
+
+    assert version.quality_score == 96
+    assert response.version.quality_score == 96
+    assert response.server.quality_score == 96
+    assert response.server.latest_version is not None
+    assert response.server.latest_version.quality_score == 96
+
+
+@pytest.mark.asyncio
 async def test_create_server_version_stores_json_values_on_server(monkeypatch) -> None:
     async def missing_server(*args, **kwargs):
         return None
@@ -660,8 +698,9 @@ async def test_list_published_servers_returns_full_version_data(monkeypatch) -> 
     version_payload = response.servers[0].versions[0].model_dump(by_alias=True)
     assert set(version_payload) == {
         "id",
-        "version",
-        "packages",
+            "version",
+            "qualityScore",
+            "packages",
         "remotes",
         "status",
         "statusMessage",

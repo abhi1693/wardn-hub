@@ -74,6 +74,11 @@ export const scopeOptions: { description: string; label: string; value: APIToken
     value: "registry:write",
   },
   {
+    description: "Update registry quality scores.",
+    label: "Registry score",
+    value: "registry:score",
+  },
+  {
     description: "Manage namespaces.",
     label: "Namespaces write",
     value: "namespaces:write",

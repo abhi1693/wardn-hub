@@ -612,6 +612,7 @@ def server_summary(
             id=latest_version.id,
             version=latest_version.version,
             status=latest_version.status,
+            quality_score=latest_version.quality_score,
             published_at=latest_version.published_at,
             published_by=user_actor(latest_version.publisher_user_id, trust),
         )
@@ -636,6 +637,7 @@ def server_summary(
         created_by=user_actor(server.created_by_user_id, trust),
         updated_by=user_actor(server.updated_by_user_id, trust),
         latest_version=latest,
+        quality_score=latest_version.quality_score if latest_version is not None else None,
         categories=categories_for_server(server.id, trust),
         partner_support=partner_support_summary(
             server.name,
@@ -683,6 +685,7 @@ def version_summary(
         remotes=remotes,
         icons=version.icons,
         server_json=server_json,
+        quality_score=version.quality_score,
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
@@ -711,6 +714,7 @@ def published_version_summary(version: RegistryServerVersion) -> RegistryPublish
     return RegistryPublishedServerVersionRead(
         id=version.id,
         version=version.version,
+        quality_score=version.quality_score,
         packages=public_registry_json(version.packages),
         remotes=public_registry_json(registry_remotes_json(version.remotes)),
         status=version.status,
@@ -922,6 +926,44 @@ async def update_server_version(
     trust = await build_trust_context(session, servers=[server], versions=[version])
     return RegistryServerVersionDetailResponse(
         server=server_summary(server, version if version.is_latest else None, trust=trust),
+        version=version_summary(version, trust=trust),
+    )
+
+
+async def update_version_quality_score(
+    session,
+    name: str,
+    version_name: str,
+    quality_score: int,
+) -> RegistryServerVersionDetailResponse:
+    version = await repository.get_server_version(
+        session,
+        name,
+        version_name,
+        include_deleted=True,
+    )
+    if version is None:
+        raise RegistryVersionNotFoundError("server version not found")
+
+    server = await repository.get_server_by_id(session, version.server_id)
+    if server is None:
+        raise RegistryServerNotFoundError("server not found")
+
+    version.quality_score = quality_score
+    await session.flush()
+    await session.refresh(version)
+    await session.refresh(server)
+
+    latest = version if version.is_latest else None
+    if latest is None and server.current_version_id is not None:
+        latest = await repository.get_server_version(session, server.name, "latest")
+    trust = await build_trust_context(
+        session,
+        servers=[server],
+        versions=[candidate for candidate in (version, latest) if candidate is not None],
+    )
+    return RegistryServerVersionDetailResponse(
+        server=server_summary(server, latest, trust=trust),
         version=version_summary(version, trust=trust),
     )
 

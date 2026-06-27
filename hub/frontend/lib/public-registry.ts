@@ -20,6 +20,7 @@ const PUBLIC_CARD_FIELDS = [
   "status",
   "visibility",
   "latestVersion",
+  "qualityScore",
   "categories",
   "createdAt",
   "updatedAt",

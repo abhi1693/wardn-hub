@@ -1949,6 +1949,17 @@
             "title": "Partnersupport",
             "type": "array"
           },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
+          },
           "repository": {
             "anyOf": [
               {
@@ -2328,6 +2339,17 @@
               }
             ]
           },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
+          },
           "status": {
             "enum": [
               "active",
@@ -2620,6 +2642,17 @@
             "title": "Publishedat",
             "type": "string"
           },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
+          },
           "remotes": {
             "items": {
               "additionalProperties": true,
@@ -2670,6 +2703,21 @@
           "updatedAt"
         ],
         "title": "RegistryPublishedServerVersionRead",
+        "type": "object"
+      },
+      "RegistryQualityScoreUpdate": {
+        "properties": {
+          "qualityScore": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Qualityscore",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qualityScore"
+        ],
+        "title": "RegistryQualityScoreUpdate",
         "type": "object"
       },
       "RegistryRemote": {
@@ -2979,6 +3027,17 @@
             },
             "title": "Partnersupport",
             "type": "array"
+          },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
           },
           "repository": {
             "anyOf": [
@@ -3366,6 +3425,17 @@
                 "type": "null"
               }
             ]
+          },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
           },
           "remotes": {
             "items": {
@@ -4520,6 +4590,7 @@
                 "events:write",
                 "namespaces:write",
                 "partners:write",
+                "registry:score",
                 "registry:write",
                 "submissions:read",
                 "submissions:write",
@@ -4640,6 +4711,7 @@
                 "events:write",
                 "namespaces:write",
                 "partners:write",
+                "registry:score",
                 "registry:write",
                 "submissions:read",
                 "submissions:write",
@@ -4763,6 +4835,7 @@
                     "events:write",
                     "namespaces:write",
                     "partners:write",
+                    "registry:score",
                     "registry:write",
                     "submissions:read",
                     "submissions:write",
@@ -5531,6 +5604,93 @@
           }
         },
         "summary": "Admin Set Latest Mcp Server Version",
+        "tags": [
+          "admin-mcp"
+        ]
+      }
+    },
+    "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/quality-score": {
+      "patch": {
+        "operationId": "admin_mcp_servers_update_version_quality_score",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistryQualityScoreUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerVersionDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Update Mcp Server Version Quality Score",
         "tags": [
           "admin-mcp"
         ]

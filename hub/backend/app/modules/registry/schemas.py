@@ -528,6 +528,7 @@ class RegistryLatestVersionSummary(BaseModel):
     id: UUID
     version: str
     status: RegistryVersionStatus
+    quality_score: int | None = Field(default=None, alias="qualityScore")
     published_at: datetime = Field(alias="publishedAt")
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
 
@@ -577,6 +578,7 @@ class RegistryServerRead(BaseModel):
     created_by: ActorSummary | None = Field(default=None, alias="createdBy")
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     latest_version: RegistryLatestVersionSummary | None = Field(default=None, alias="latestVersion")
+    quality_score: int | None = Field(default=None, alias="qualityScore")
     categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
@@ -602,6 +604,7 @@ class RegistryServerVersionRead(BaseModel):
     remotes: list[dict[str, Any]] = Field(default_factory=list)
     icons: list[dict[str, Any]] = Field(default_factory=list)
     server_json: dict[str, Any] = Field(alias="serverJson")
+    quality_score: int | None = Field(default=None, alias="qualityScore")
     status: RegistryVersionStatus
     status_message: str = Field(alias="statusMessage")
     is_latest: bool = Field(alias="isLatest")
@@ -626,6 +629,7 @@ class RegistryPublishedServerVersionRead(BaseModel):
 
     id: UUID
     version: str
+    quality_score: int | None = Field(default=None, alias="qualityScore")
     packages: list[dict[str, Any]] = Field(default_factory=list)
     remotes: list[dict[str, Any]] = Field(default_factory=list)
     status: RegistryVersionStatus
@@ -706,3 +710,9 @@ class RegistryServerVersionDetailResponse(BaseModel):
     version: RegistryServerVersionRead
     support: dict[str, Any] | None = None
     approval: dict[str, Any] | None = None
+
+
+class RegistryQualityScoreUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    quality_score: int = Field(alias="qualityScore", ge=0, le=100)

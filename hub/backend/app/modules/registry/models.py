@@ -80,6 +80,7 @@ class RegistryServerVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     remotes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     icons: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     server_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     status_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
     is_latest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

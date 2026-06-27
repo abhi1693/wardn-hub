@@ -5,11 +5,10 @@
  * OpenAPI spec version: 0.2.30
  */
 
-export interface OrganizationMembershipCreate {
+export interface RegistryQualityScoreUpdate {
   /**
-     * @minLength 1
-     * @maxLength 100
+     * @minimum 0
+     * @maximum 100
      */
-  roleSlug: string;
-  userId: string;
+  qualityScore: number;
 }

@@ -78,6 +78,13 @@ def test_api_token_management_requires_token_scope(monkeypatch) -> None:
             "registry:write",
         ),
         (
+            "PATCH",
+            "/api/v1/admin/mcp/servers/io.github.example/weather/versions/1.0.0/quality-score",
+            {"qualityScore": 96},
+            {"is_superuser": True},
+            "registry:score",
+        ),
+        (
             "POST",
             f"/api/v1/submissions/{uuid4()}/approve",
             None,

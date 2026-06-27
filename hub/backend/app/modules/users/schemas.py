@@ -11,6 +11,7 @@ APITokenScope = Literal[
     "events:write",
     "namespaces:write",
     "partners:write",
+    "registry:score",
     "registry:write",
     "submissions:read",
     "submissions:write",

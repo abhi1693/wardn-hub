@@ -23,6 +23,7 @@ from app.modules.registry.schemas import (
     RegistryCategoryRead,
     RegistryCategoryUpdate,
     RegistryPublishedServerListResponse,
+    RegistryQualityScoreUpdate,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerVersionCreate,
@@ -46,6 +47,7 @@ from app.modules.registry.service import (
     set_latest_version,
     update_category,
     update_server_version,
+    update_version_quality_score,
 )
 from app.modules.users.dependencies import require_superuser_scopes
 from app.modules.users.models import User
@@ -306,6 +308,31 @@ async def admin_set_latest_mcp_server_version(
 ) -> RegistryServerVersionDetailResponse:
     try:
         response = await set_latest_version(session, server_name, version)
+    except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
+        raise not_found(exc) from exc
+    return await commit_response(session, response)
+
+
+@admin_router.patch(
+    "/{server_name:path}/versions/{version}/quality-score",
+    response_model=RegistryServerVersionDetailResponse,
+    operation_id="admin_mcp_servers_update_version_quality_score",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def admin_update_mcp_server_version_quality_score(
+    server_name: str,
+    version: str,
+    payload: RegistryQualityScoreUpdate,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[User, Depends(require_superuser_scopes("registry:score"))],
+) -> RegistryServerVersionDetailResponse:
+    try:
+        response = await update_version_quality_score(
+            session,
+            server_name,
+            version,
+            payload.quality_score,
+        )
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
         raise not_found(exc) from exc
     return await commit_response(session, response)

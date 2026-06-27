@@ -19,6 +19,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/admin/mcp/servers/{server_name}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
+        "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/quality-score",
         "/api/v1/audit/events",
         "/api/v1/auth/api-tokens",
         "/api/v1/auth/api-tokens/{token_id}",

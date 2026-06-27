@@ -17,12 +17,69 @@ from app.modules.registry.schemas import (
     RegistryPublishedServerListResponse,
     RegistryServerListResponse,
     RegistryServerRead,
+    RegistryServerVersionDetailResponse,
+    RegistryServerVersionRead,
 )
 from app.modules.users import dependencies
 
 
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer wardn_hub_key.secret"}
+
+
+def registry_detail_response(server_id, version_id) -> RegistryServerVersionDetailResponse:
+    return RegistryServerVersionDetailResponse(
+        server=RegistryServerRead(
+            id=server_id,
+            name="io.github.example/weather",
+            title="Weather",
+            description="Weather tools",
+            documentation="# Large docs",
+            websiteUrl="https://example.com",
+            repository={"url": "https://github.com/example/weather"},
+            icons=[{"src": "https://example.com/icon.png"}],
+            status="active",
+            statusMessage="",
+            visibility="public",
+            latestVersion=RegistryLatestVersionSummary(
+                id=version_id,
+                version="1.0.0",
+                status="active",
+                qualityScore=96,
+                publishedAt="2026-06-23T00:00:00Z",
+                publishedBy=None,
+            ),
+            qualityScore=96,
+            categories=[],
+            partnerSupport=[],
+            createdAt="2026-06-23T00:00:00Z",
+            updatedAt="2026-06-23T00:00:00Z",
+        ),
+        version=RegistryServerVersionRead(
+            id=version_id,
+            serverId=server_id,
+            name="io.github.example/weather",
+            version="1.0.0",
+            title="Weather",
+            description="Weather tools",
+            documentation="# Large docs",
+            websiteUrl="https://example.com",
+            repository={"url": "https://github.com/example/weather"},
+            packages=[],
+            remotes=[],
+            icons=[],
+            serverJson={"name": "io.github.example/weather", "version": "1.0.0"},
+            qualityScore=96,
+            status="active",
+            statusMessage="",
+            isLatest=True,
+            partnerSupport=[],
+            publishedAt="2026-06-23T00:00:00Z",
+            statusChangedAt="2026-06-23T00:00:00Z",
+            createdAt="2026-06-23T00:00:00Z",
+            updatedAt="2026-06-23T00:00:00Z",
+        ),
+    )
 
 
 async def authenticate_registry_admin_api_token(*args, **kwargs):
@@ -38,6 +95,19 @@ async def authenticate_registry_admin_api_token(*args, **kwargs):
     )
 
 
+async def authenticate_registry_score_api_token(*args, **kwargs):
+    return (
+        SimpleNamespace(
+            id=uuid4(),
+            is_active=True,
+            is_superuser=True,
+            is_global_moderator=False,
+            is_global_partner_manager=False,
+        ),
+        SimpleNamespace(scopes=["registry:score"]),
+    )
+
+
 def test_registry_openapi_exposes_phase_one_paths() -> None:
     schema = TestClient(create_app()).get("/api/v1/openapi.json").json()
 
@@ -50,6 +120,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         "/api/v1/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}",
+        "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/quality-score",
         "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/latest",
         "/api/v1/mcp/categories/{category_slug}",
     }.issubset(set(schema["paths"]))
@@ -88,6 +159,12 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
     assert (
         schema["paths"]["/api/v1/admin/mcp/servers"]["post"]["operationId"]
         == "admin_mcp_servers_create_version"
+    )
+    assert (
+        schema["paths"][
+            "/api/v1/admin/mcp/servers/{server_name}/versions/{version}/quality-score"
+        ]["patch"]["operationId"]
+        == "admin_mcp_servers_update_version_quality_score"
     )
 
 
@@ -184,6 +261,7 @@ def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
                 "id": str(version_id),
                 "version": "1.0.0",
                 "status": "active",
+                "qualityScore": None,
                 "publishedAt": "2026-06-23T00:00:00+00:00",
                 "publishedBy": None,
             },
@@ -277,6 +355,89 @@ def test_admin_create_requires_authentication() -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_admin_update_quality_score_uses_registry_score_scope(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, object] = {}
+    server_id = uuid4()
+    version_id = uuid4()
+
+    async def fake_session():
+        class Session:
+            async def commit(self) -> None:
+                captured["committed"] = True
+
+        yield Session()
+
+    async def update_quality_score(*args, **kwargs):
+        captured["args"] = args
+        return registry_detail_response(server_id, version_id)
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_score_api_token,
+    )
+    monkeypatch.setattr(router, "update_version_quality_score", update_quality_score)
+
+    response = TestClient(app).patch(
+        "/api/v1/admin/mcp/servers/io.github.example/weather/versions/1.0.0/quality-score",
+        headers=auth_headers(),
+        json={"qualityScore": 96},
+    )
+
+    assert response.status_code == 200
+    assert captured["committed"] is True
+    assert captured["args"][1:] == ("io.github.example/weather", "1.0.0", 96)
+
+
+def test_admin_update_quality_score_requires_score_scope(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_admin_api_token,
+    )
+
+    response = TestClient(app).patch(
+        "/api/v1/admin/mcp/servers/io.github.example/weather/versions/1.0.0/quality-score",
+        headers=auth_headers(),
+        json={"qualityScore": 96},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "API token missing required scope: registry:score",
+    }
+
+
+def test_admin_update_quality_score_validates_score_range(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_score_api_token,
+    )
+
+    response = TestClient(app).patch(
+        "/api/v1/admin/mcp/servers/io.github.example/weather/versions/1.0.0/quality-score",
+        headers=auth_headers(),
+        json={"qualityScore": 101},
+    )
+
+    assert response.status_code == 422
 
 
 def test_category_create_maps_duplicate_to_conflict(monkeypatch) -> None:
