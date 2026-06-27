@@ -22,8 +22,9 @@ export async function GET() {
         priority: 0.7,
       })),
     );
-  } catch {
+  } catch (error) {
     // Keep the core sitemap valid even if the registry API is temporarily unavailable.
+    console.error("Unable to add category URLs to sitemap-main.xml.", error);
   }
 
   return sitemapResponse(urlsetXml(entries));

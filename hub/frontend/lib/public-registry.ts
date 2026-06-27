@@ -1,5 +1,6 @@
 import type {
   RegistryCategoryListResponse,
+  RegistryPublishedServerListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerRead,
@@ -7,8 +8,8 @@ import type {
 import { resolveSiteUrl } from "@/lib/site";
 
 const API_PREFIX = "/api/v1";
-const MAX_SITEMAP_PAGES = 20;
 const PAGE_SIZE = 100;
+export const SITEMAP_CATALOG_CHUNK_SIZE = 2000;
 
 function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
@@ -65,17 +66,44 @@ export async function listPublishedRegistryServers(params?: {
 }) {
   const servers: RegistryServerRead[] = [];
   let cursor = "";
-  const maxServers = params?.limit ?? MAX_SITEMAP_PAGES * PAGE_SIZE;
+  const maxServers = params?.limit ?? SITEMAP_CATALOG_CHUNK_SIZE;
 
-  for (let page = 0; page < MAX_SITEMAP_PAGES; page += 1) {
+  while (servers.length < maxServers) {
     const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
       ...(params?.category ? { category: params.category } : {}),
-      limit: PAGE_SIZE,
+      limit: Math.min(PAGE_SIZE, maxServers - servers.length),
       ...(cursor ? { cursor } : {}),
     });
 
     servers.push(...response.servers.filter((server) => Boolean(server.latestVersion)));
     if (servers.length >= maxServers) return servers.slice(0, maxServers);
+
+    cursor = response.metadata.nextCursor ?? "";
+    if (!cursor) break;
+  }
+
+  return servers;
+}
+
+export async function countPublishedRegistryServers() {
+  const response = await registryRequest<RegistryPublishedServerListResponse>("/mcp/catalog", {
+    page: 1,
+  });
+  return response.metadata.total;
+}
+
+export async function listPublishedRegistryServerSitemapChunk(chunkIndex: number) {
+  const servers: RegistryServerRead[] = [];
+  const startOffset = chunkIndex * SITEMAP_CATALOG_CHUNK_SIZE;
+  let cursor = String(startOffset);
+
+  while (servers.length < SITEMAP_CATALOG_CHUNK_SIZE) {
+    const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
+      cursor,
+      limit: Math.min(PAGE_SIZE, SITEMAP_CATALOG_CHUNK_SIZE - servers.length),
+    });
+
+    servers.push(...response.servers.filter((server) => Boolean(server.latestVersion)));
 
     cursor = response.metadata.nextCursor ?? "";
     if (!cursor) break;

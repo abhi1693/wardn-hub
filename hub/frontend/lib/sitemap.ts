@@ -34,12 +34,33 @@ function formatSitemapDate(value?: SitemapDate | null) {
 export function sitemapResponse(body: string, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/xml; charset=utf-8");
-  headers.set("Cache-Control", PUBLIC_CONTENT_CACHE_CONTROL);
+  if (!headers.has("Cache-Control")) {
+    headers.set("Cache-Control", PUBLIC_CONTENT_CACHE_CONTROL);
+  }
 
   return new Response(body, {
     ...init,
     headers,
   });
+}
+
+export function sitemapUnavailableResponse(message: string, error: unknown) {
+  console.error(message, error);
+
+  return sitemapResponse(
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      "<error>",
+      `  <message>${escapeXml(message)}</message>`,
+      "</error>",
+    ].join("\n"),
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+      status: 503,
+    },
+  );
 }
 
 export function textResponse(body: string, init?: ResponseInit) {
