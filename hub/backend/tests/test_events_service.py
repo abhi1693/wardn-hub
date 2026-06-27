@@ -317,3 +317,79 @@ async def test_create_deliveries_for_event_matches_visible_rule(monkeypatch) -> 
     assert deliveries[0].destination_url_redacted == "https://hooks.example.test/review"
     assert event.processed_at is not None
     assert rule.last_triggered_at is not None
+
+
+@pytest.mark.asyncio
+async def test_internal_registry_automation_rule_can_receive_registry_events(monkeypatch) -> None:
+    owner_user_id = uuid4()
+    event = EventRecord(
+        id=uuid4(),
+        event_type="registry.version.published",
+        subject_type="registry_server_version",
+        subject_id=str(uuid4()),
+        actor_user_id=owner_user_id,
+        owner_user_id=owner_user_id,
+        visibility_scope="owner",
+        payload={
+            "eventId": str(uuid4()),
+            "eventType": "registry.version.published",
+            "subject": {
+                "type": "registry_server_version",
+                "id": str(uuid4()),
+                "name": "io.github.example/weather",
+                "version": "1.0.0",
+            },
+            "registryVersion": {
+                "id": str(uuid4()),
+                "name": "io.github.example/weather",
+                "version": "1.0.0",
+            },
+        },
+        created_at=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+    unrelated_owner_rule = EventRule(
+        id=uuid4(),
+        owner_user_id=uuid4(),
+        name="Other owner",
+        description="",
+        is_enabled=True,
+        event_types=["registry.version.published"],
+        conditions={},
+        action_type="webhook",
+        action_config={"url": "https://hooks.example.test/review"},
+        failure_policy={},
+        created_at=datetime(2026, 6, 27, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+    internal_rule = EventRule(
+        id=uuid4(),
+        owner_user_id=None,
+        owner_organization_id=None,
+        name="Wardn Hub Scoring",
+        description="Internal scorer webhook",
+        is_enabled=True,
+        event_types=["registry.version.published"],
+        conditions={},
+        action_type="webhook",
+        action_config={
+            "url": "http://wardn-hub-scoring.wardn.svc.cluster.local:8080/webhooks/wardn/server-version",
+            "internalAutomation": True,
+            "allowPrivateDestinations": True,
+        },
+        failure_policy={},
+        created_at=datetime(2026, 6, 27, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+
+    async def list_rules(*args, **kwargs):
+        return [unrelated_owner_rule, internal_rule]
+
+    monkeypatch.setattr(service.repository, "list_enabled_rules_for_event_type", list_rules)
+    session = FakeSession()
+
+    deliveries = await service.create_deliveries_for_event(session, event)
+
+    assert len(deliveries) == 1
+    assert deliveries[0].event_rule_id == internal_rule.id
+    assert internal_rule.last_triggered_at is not None
+    assert unrelated_owner_rule.last_triggered_at is None

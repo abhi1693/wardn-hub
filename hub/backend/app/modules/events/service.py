@@ -39,6 +39,11 @@ from app.modules.organizations.service import (
 )
 from app.modules.users.models import User, UserAPIToken
 
+INTERNAL_AUTOMATION_EVENT_TYPES = {
+    "registry.server.published",
+    "registry.version.published",
+}
+
 
 def event_type_response() -> EventTypeListResponse:
     return EventTypeListResponse(
@@ -619,6 +624,12 @@ def rule_matches_event(rule: EventRule, event: EventRecord) -> bool:
 
 
 def rule_can_see_event(rule: EventRule, event: EventRecord) -> bool:
+    if (
+        rule.owner_user_id is None
+        and rule.owner_organization_id is None
+        and rule.action_config.get("internalAutomation") is True
+    ):
+        return event.event_type in INTERNAL_AUTOMATION_EVENT_TYPES
     if rule.owner_user_id is not None and event.owner_user_id == rule.owner_user_id:
         return True
     if (
