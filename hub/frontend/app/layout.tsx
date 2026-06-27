@@ -15,9 +15,6 @@ function googleAnalyticsId() {
 }
 
 export const metadata: Metadata = {
-  alternates: {
-    canonical: "/",
-  },
   description: siteConfig.description,
   keywords: [...siteConfig.keywords],
   metadataBase: new URL(siteConfig.url),

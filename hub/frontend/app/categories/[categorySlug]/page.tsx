@@ -1,12 +1,50 @@
+import type { Metadata } from "next";
+
 import { ServerCard } from "@/components/server-card";
 import { PublicHeader } from "@/components/site-header";
 import { listPublicCategories, listPublishedRegistryServers } from "@/lib/public-registry";
+import { siteConfig } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
 type CategoryDetailPageProps = {
   params: Promise<{ categorySlug?: string }>;
 };
+
+export async function generateMetadata({ params }: CategoryDetailPageProps): Promise<Metadata> {
+  const { categorySlug = "" } = await params;
+  const canonical = `/categories/${encodeURIComponent(categorySlug)}`;
+
+  try {
+    const categories = await listPublicCategories();
+    const category = categories.find((item) => item.slug === categorySlug);
+    const categoryName = category?.name ?? categorySlug;
+    const description =
+      category?.description ||
+      `Browse published MCP server definitions in the ${categoryName} category on Wardn Hub.`;
+
+    return {
+      alternates: {
+        canonical,
+      },
+      description,
+      openGraph: {
+        description,
+        title: `${categoryName} MCP servers`,
+        url: canonical,
+      },
+      title: `${categoryName} MCP servers`,
+    };
+  } catch {
+    return {
+      alternates: {
+        canonical,
+      },
+      description: siteConfig.description,
+      title: "MCP server category",
+    };
+  }
+}
 
 export default async function CategoryDetailPage({ params }: CategoryDetailPageProps) {
   const { categorySlug = "" } = await params;

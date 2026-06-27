@@ -1,10 +1,25 @@
 import { Server } from "lucide-react";
+import type { Metadata } from "next";
 
 import { ServerCard } from "@/components/server-card";
 import { PublicHeader } from "@/components/site-header";
 import { listPublishedRegistryServers } from "@/lib/public-registry";
+import { siteConfig } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+  },
+  description: siteConfig.description,
+  openGraph: {
+    description: siteConfig.description,
+    title: siteConfig.tagline,
+    url: "/",
+  },
+  title: siteConfig.tagline,
+};
 
 function EmptyState({ title, detail }: { detail: string; title: string }) {
   return (
