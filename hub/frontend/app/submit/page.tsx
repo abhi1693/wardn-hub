@@ -30,776 +30,102 @@ import {
   createServerVersion,
   createSubmission,
   currentUser,
-  getServer,
-  getSubmission,
-  importServerSource,
-  listCategories,
-  listOrganizations,
-  listPartnerOrganizations,
   submissionAction,
   updateServerVersion,
   updateSubmission,
 } from "@/lib/api/hub";
-import type {
-  OrganizationRead,
-  RegistryCategoryRead,
-  RegistryServerDetailResponse,
-  RegistryServerVersionRead,
-  SubmissionRead,
-  UserRead,
-} from "@/lib/api/generated/model";
-
-const DEFAULT_SCHEMA =
-  "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json";
-const PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided";
-const SERVER_NAME_PATTERN = /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/;
-const SERVER_VERSION_PATTERN =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-
-let generatedId = 0;
-
-type HeaderField = {
-  id: string;
-  name: string;
-  description: string;
-  required: boolean;
-  secret: boolean;
-};
-
-type EnvironmentField = HeaderField & {
-  defaultValue: string;
-  format: string;
-};
-
-type PackageArgumentField = HeaderField & {
-  defaultValue: string;
-  flag: string;
-  format: string;
-  includeInLaunch: boolean;
-  options: string;
-  value: string;
-  requiresValue: boolean;
-};
-
-type RemoteTarget = {
-  id: string;
-  type: string;
-  url: string;
-  headers: HeaderField[];
-  queryParameters: HeaderField[];
-};
-
-type PackageTarget = {
-  id: string;
-  registryType: string;
-  identifier: string;
-  version: string;
-  command: string;
-  transportType: string;
-  environmentVariables: EnvironmentField[];
-  packageArguments: PackageArgumentField[];
-};
-
-type SourceMode = "manual" | "repository";
-type SubmissionMode = "new" | "edit" | "new_version" | "server_edit" | "server_new_version";
-
-const PACKAGE_RUNTIME_OPTIONS = [
-  { value: "uvx", label: "UVX package" },
-  { value: "npm", label: "NPM package" },
-  { value: "pypi", label: "PyPI package" },
-  { value: "oci", label: "OCI image" },
-  { value: "docker", label: "Docker image" },
-  { value: "mcpb", label: "MCPB package" },
-];
-
-const GITHUB_REPOSITORY_SOURCE = "github";
-const GITHUB_HOST = "github.com";
-
-const TRANSPORT_OPTIONS = [
-  { value: "stdio", label: "stdio" },
-  { value: "streamable-http", label: "streamable-http" },
-  { value: "sse", label: "sse" },
-];
-
-const PACKAGE_ARGUMENT_FORMAT_OPTIONS = [
-  { value: "string", label: "Text" },
-  { value: "boolean", label: "Toggle" },
-  { value: "integer", label: "Number" },
-  { value: "select", label: "Select" },
-  { value: "file", label: "File" },
-];
-
-function createId(prefix: string) {
-  generatedId += 1;
-  return `${prefix}-${generatedId}`;
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" ? value : "";
-}
-
-function booleanValue(value: unknown) {
-  return value === true;
-}
-
-function hasEnvironmentPlaceholder(value: string) {
-  return value.includes("${") && value.includes("}");
-}
-
-function splitPackageIdentifierVersion(value: string) {
-  const trimmed = value.trim();
-  const lastColon = trimmed.lastIndexOf(":");
-  const lastSlash = trimmed.lastIndexOf("/");
-  if (lastColon > lastSlash && lastColon < trimmed.length - 1) {
-    return {
-      identifier: trimmed.slice(0, lastColon),
-      version: trimmed.slice(lastColon + 1),
-    };
-  }
-
-  const equalityIndex = trimmed.indexOf("==");
-  if (equalityIndex > 0 && equalityIndex < trimmed.length - 2) {
-    return {
-      identifier: trimmed.slice(0, equalityIndex),
-      version: trimmed.slice(equalityIndex + 2),
-    };
-  }
-
-  const atIndex = trimmed.lastIndexOf("@");
-  if (atIndex > 0 && atIndex < trimmed.length - 1) {
-    return {
-      identifier: trimmed.slice(0, atIndex),
-      version: trimmed.slice(atIndex + 1),
-    };
-  }
-
-  return { identifier: value, version: "" };
-}
-
-function records(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
-    : [];
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function emptyHeader(): HeaderField {
-  return {
-    id: createId("header"),
-    name: "",
-    description: "",
-    required: false,
-    secret: false,
-  };
-}
-
-function emptyEnvironment(): EnvironmentField {
-  return {
-    ...emptyHeader(),
-    id: createId("env"),
-    defaultValue: "",
-    format: "string",
-  };
-}
-
-function emptyPackageArgument(): PackageArgumentField {
-  return {
-    ...emptyHeader(),
-    id: createId("arg"),
-    defaultValue: "",
-    flag: "",
-    format: "string",
-    includeInLaunch: false,
-    options: "",
-    value: "",
-    requiresValue: false,
-  };
-}
-
-function emptyRemote(): RemoteTarget {
-  return {
-    id: createId("remote"),
-    type: "streamable-http",
-    url: "",
-    headers: [],
-    queryParameters: [],
-  };
-}
-
-function emptyPackage(): PackageTarget {
-  return {
-    id: createId("package"),
-    registryType: "npm",
-    identifier: "",
-    version: "",
-    command: "",
-    transportType: "stdio",
-    environmentVariables: [],
-    packageArguments: [],
-  };
-}
-
-function cleanPublisherPart(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\.git$/i, "")
-    .replace(/[^a-z0-9.-]+/g, "-")
-    .replace(/^[.-]+|[.-]+$/g, "");
-}
-
-function cleanNamePart(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\.git$/i, "")
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^[._-]+|[._-]+$/g, "");
-}
-
-function stripGitSuffix(value: string) {
-  return value.trim().replace(/\.git$/i, "");
-}
-
-function isGitHubHost(value: string) {
-  return value.toLowerCase().replace(/^www\./, "") === GITHUB_HOST;
-}
-
-function parseRepositoryReference(value: string) {
-  const rawValue = value.trim();
-  if (!rawValue) {
-    return null;
-  }
-
-  const rawPathParts = rawValue
-    .replace(/^\/+|\/+$/g, "")
-    .split("/")
-    .filter(Boolean);
-  if (!rawValue.includes("://") && !rawValue.includes("@") && rawPathParts.length >= 2) {
-    return {
-      host: GITHUB_HOST,
-      owner: rawPathParts[0],
-      repo: stripGitSuffix(rawPathParts[1]),
-    };
-  }
-
-  const sshMatch = rawValue.match(/^(?:git@|ssh:\/\/git@)([^/:]+)[:/]([^/]+)\/([^/?#]+)(?:[/?#].*)?$/i);
-  if (sshMatch) {
-    const host = sshMatch[1].toLowerCase().replace(/^www\./, "");
-    if (!isGitHubHost(host)) {
-      return null;
-    }
-
-    return {
-      host,
-      owner: sshMatch[2],
-      repo: stripGitSuffix(sshMatch[3]),
-    };
-  }
-
-  try {
-    const url = new URL(rawValue.includes("://") ? rawValue : `https://${rawValue}`);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (!isGitHubHost(host)) {
-      return null;
-    }
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    if (pathParts.length < 2) {
-      return null;
-    }
-
-    return {
-      host,
-      owner: pathParts[0],
-      repo: stripGitSuffix(pathParts[1]),
-    };
-  } catch {
-    if (rawPathParts.length < 2) {
-      return null;
-    }
-
-    return {
-      host: GITHUB_HOST,
-      owner: rawPathParts[0],
-      repo: stripGitSuffix(rawPathParts[1]),
-    };
-  }
-}
-
-function repositoryPublisher(host: string, owner: string) {
-  const ownerPart = cleanPublisherPart(owner);
-
-  if (host === GITHUB_HOST) {
-    return ownerPart ? `io.github.${ownerPart}` : "";
-  }
-
-  const hostPublisher = host
-    .split(".")
-    .reverse()
-    .map(cleanPublisherPart)
-    .filter(Boolean)
-    .join(".");
-
-  return [hostPublisher, ownerPart].filter(Boolean).join(".");
-}
-
-function packagePublisher(registryType: string, identifier: string) {
-  const runtime = cleanPublisherPart(registryType || "package");
-  const trimmedIdentifier = identifier.trim();
-  const scopedMatch = trimmedIdentifier.match(/^@([^/]+)\/(.+)$/);
-
-  if (scopedMatch) {
-    return {
-      publisher: ["io", runtime, cleanPublisherPart(scopedMatch[1])].filter(Boolean).join("."),
-      name: cleanNamePart(scopedMatch[2]),
-    };
-  }
-
-  return {
-    publisher: ["io", runtime].filter(Boolean).join("."),
-    name: cleanNamePart(trimmedIdentifier),
-  };
-}
-
-function normalizeRepositoryReference(value: string) {
-  return parseRepositorySource(value).repositoryUrl || value.trim();
-}
-
-function repositorySourceSubfolder(value: string) {
-  const rawValue = value.trim();
-  if (!rawValue) {
-    return "";
-  }
-
-  try {
-    const url = new URL(rawValue.includes("://") ? rawValue : `https://${rawValue}`);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (!isGitHubHost(host)) {
-      return "";
-    }
-    const pathParts = url.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
-    const viewMode = pathParts[2];
-    if (viewMode !== "tree" && viewMode !== "blob") {
-      return "";
-    }
-    return pathParts.slice(4).join("/");
-  } catch {
-    const pathParts = rawValue.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
-    const viewMode = pathParts[2];
-    if (viewMode !== "tree" && viewMode !== "blob") {
-      return "";
-    }
-    return pathParts.slice(4).join("/");
-  }
-}
-
-function parseRepositorySource(value: string) {
-  const repository = parseRepositoryReference(value);
-  if (!repository) {
-    return { repositoryUrl: value.trim(), subfolder: "" };
-  }
-
-  return {
-    repositoryUrl: `${repository.owner}/${repository.repo}`,
-    subfolder: repositorySourceSubfolder(value),
-  };
-}
-
-function repositoryWebUrl(value: string) {
-  const repository = parseRepositoryReference(value);
-  if (!repository) {
-    return "";
-  }
-
-  return `https://${GITHUB_HOST}/${repository.owner}/${repository.repo}`;
-}
-
-function generatedServerName(repositoryUrl: string, packages: PackageTarget[]) {
-  const repository = parseRepositoryReference(repositoryUrl);
-  if (repository) {
-    const publisher = repositoryPublisher(repository.host, repository.owner);
-    const serverName = cleanNamePart(repository.repo);
-    if (publisher && serverName) {
-      return `${publisher}/${serverName}`;
-    }
-  }
-
-  const packageTarget = packages.find((item) => item.identifier.trim());
-  if (packageTarget) {
-    const generatedPackage = packagePublisher(packageTarget.registryType, packageTarget.identifier);
-    if (generatedPackage.publisher && generatedPackage.name) {
-      return `${generatedPackage.publisher}/${generatedPackage.name}`;
-    }
-  }
-
-  return "";
-}
-
-function initialHeaders(value: unknown): HeaderField[] {
-  return records(value).map((header) => ({
-    id: createId("header"),
-    name: stringValue(header.name),
-    description: stringValue(header.description),
-    required: booleanValue(header.isRequired ?? header.required),
-    secret: booleanValue(header.isSecret ?? header.secret),
-  }));
-}
-
-function initialEnvironment(value: unknown): EnvironmentField[] {
-  return records(value).map((envVar) => ({
-    id: createId("env"),
-    name: stringValue(envVar.name),
-    description: stringValue(envVar.description),
-    defaultValue: stringValue(envVar.default),
-    format: stringValue(envVar.format) || "string",
-    required: booleanValue(envVar.isRequired),
-    secret: booleanValue(envVar.isSecret),
-  }));
-}
-
-function initialTransportEnvironment(value: unknown): EnvironmentField[] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-  return Object.entries(value as Record<string, unknown>).map(([name, defaultValue]) => ({
-    id: createId("env"),
-    name,
-    description: "",
-    defaultValue: String(defaultValue ?? ""),
-    format: "string",
-    required: false,
-    secret: /\b(TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL)\b/i.test(name),
-  }));
-}
-
-function mergeEnvironmentFields(environmentVariables: EnvironmentField[]) {
-  const merged = new Map<string, EnvironmentField>();
-
-  for (const envVar of environmentVariables) {
-    const name = envVar.name.trim();
-    if (!name) {
-      merged.set(envVar.id, envVar);
-      continue;
-    }
-
-    const existing = merged.get(name);
-    if (!existing) {
-      merged.set(name, { ...envVar, name });
-      continue;
-    }
-
-    merged.set(name, {
-      ...existing,
-      description: existing.description || envVar.description,
-      defaultValue: existing.defaultValue || envVar.defaultValue,
-      format: existing.format || envVar.format || "string",
-      required: existing.required || envVar.required,
-      secret: existing.secret || envVar.secret,
-    });
-  }
-
-  return [...merged.values()];
-}
-
-function duplicateEnvironmentNames(environmentVariables: EnvironmentField[]) {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-
-  for (const envVar of environmentVariables) {
-    const name = envVar.name.trim();
-    if (!name) continue;
-    if (seen.has(name)) duplicates.add(name);
-    seen.add(name);
-  }
-
-  return [...duplicates].sort();
-}
-
-function splitArgumentFlagRequiresValue(flag: string, fallbackRequiresValue = false) {
-  const trimmed = flag.trim();
-  const match = trimmed.match(/^(.*?)(?:\s*(?:=\s*)?<([^<>]+)>|\s+\[([^\[\]]+)\])$/);
-  if (!match) {
-    return { flag: trimmed, requiresValue: fallbackRequiresValue };
-  }
-
-  return {
-    flag: match[1].trim(),
-    requiresValue: true,
-  };
-}
-
-function normalizeArgumentStaticValue(value: string) {
-  const trimmed = value.trim();
-  if (/^(?:<[^<>]+>|\[[^\[\]]+\])$/.test(trimmed)) {
-    return { value: "", requiresValue: true };
-  }
-  return { value, requiresValue: false };
-}
-
-function initialPackageArguments(value: unknown): PackageArgumentField[] {
-  return records(value).map((argument) => {
-    const parsedFlag = splitArgumentFlagRequiresValue(
-      stringValue(argument.flag),
-      booleanValue(argument.requiresValue ?? argument.requires_value),
-    );
-    return {
-      id: createId("arg"),
-      name: stringValue(argument.name),
-      description: stringValue(argument.description),
-      defaultValue: stringValue(argument.default),
-      flag: parsedFlag.flag,
-      format: stringValue(argument.format) || "string",
-      includeInLaunch: booleanValue(
-        argument.includeInLaunch ?? argument.includeInCommand ?? argument.include_in_launch,
-      ),
-      options: Array.isArray(argument.options) ? argument.options.map(String).join(", ") : "",
-      required: booleanValue(argument.isRequired),
-      secret: booleanValue(argument.isSecret),
-      value: stringValue(argument.value),
-      requiresValue: parsedFlag.requiresValue,
-    };
-  });
-}
-
-function initialTransportArguments(value: unknown): PackageArgumentField[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((argument, index) => ({
-    id: createId("arg"),
-    name: "",
-    description: "",
-    defaultValue: "",
-    flag: "",
-    format: "string",
-    includeInLaunch: true,
-    options: "",
-    required: index === 0,
-    secret: false,
-    value: String(argument),
-    requiresValue: false,
-  }));
-}
-
-function importedRemotes(value: unknown): RemoteTarget[] {
-  return records(value).map((remote) => ({
-    id: createId("remote"),
-    type: stringValue(remote.type) || "streamable-http",
-    url: stringValue(remote.url),
-    headers: initialHeaders(remote.headers),
-    queryParameters: initialHeaders(remote.queryParameters ?? remote.queryParams),
-  }));
-}
-
-function importedPackages(value: unknown): PackageTarget[] {
-  return records(value).map((packageTarget) => {
-    const transport = packageTarget.transport as Record<string, unknown> | undefined;
-    const parsedPackage = splitPackageIdentifierVersion(stringValue(packageTarget.identifier));
-    const importedVersion = stringValue(packageTarget.version).replaceAll("$VERSION", "latest");
-    return {
-      id: createId("package"),
-      registryType: stringValue(packageTarget.registryType) || "npm",
-      identifier: parsedPackage.identifier.replaceAll("$VERSION", "latest"),
-      version: importedVersion || parsedPackage.version.replaceAll("$VERSION", "latest"),
-      command: stringValue(transport?.command),
-      transportType: stringValue(transport?.type) || "stdio",
-      environmentVariables: mergeEnvironmentFields([
-        ...initialTransportEnvironment(transport?.env),
-        ...initialEnvironment(packageTarget.environmentVariables),
-      ]),
-      packageArguments: [
-        ...initialTransportArguments(transport?.args),
-        ...initialPackageArguments(packageTarget.packageArguments),
-      ],
-    };
-  });
-}
-
-function firstIconUrl(value: unknown) {
-  const icon = records(value)[0];
-  return stringValue(icon?.src);
-}
-
-function categoryFromServerJson(value: Record<string, unknown>) {
-  const meta = recordValue(value._meta);
-  if (!meta) {
-    return "";
-  }
-
-  const publisherMeta = recordValue(meta[PUBLISHER_META_KEY]);
-  const publisherCategory = stringValue(publisherMeta?.category);
-  if (publisherCategory) {
-    return publisherCategory;
-  }
-
-  const publisherCategories = Array.isArray(publisherMeta?.categories)
-    ? publisherMeta.categories
-    : [];
-  const firstPublisherCategory = publisherCategories.find(
-    (item): item is string => typeof item === "string" && Boolean(item.trim()),
-  );
-  if (firstPublisherCategory) {
-    return firstPublisherCategory;
-  }
-
-  const category = stringValue(meta.category);
-  if (category) {
-    return category;
-  }
-
-  const categories = Array.isArray(meta.categories) ? meta.categories : [];
-  return categories.find(
-    (item): item is string => typeof item === "string" && Boolean(item.trim()),
-  ) ?? "";
-}
-
-function serverMetaPayload(existingMeta: Record<string, unknown> | null, category: string) {
-  const meta = existingMeta ? { ...existingMeta } : {};
-  if (category) {
-    const publisherMeta = recordValue(meta[PUBLISHER_META_KEY]);
-    meta[PUBLISHER_META_KEY] = {
-      ...(publisherMeta ?? {}),
-      category,
-    };
-  }
-
-  return Object.keys(meta).length > 0 ? meta : undefined;
-}
-
-function bumpPatchVersion(value: string) {
-  const match = value.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!match) {
-    return value;
-  }
-
-  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
-}
-
-function publicHeaders(headers: HeaderField[]) {
-  return headers
-    .filter((header) => header.name.trim())
-    .map((header) => ({
-      name: header.name.trim(),
-      description: header.description.trim(),
-      isRequired: header.required,
-      isSecret: header.secret,
-    }));
-}
-
-function publicQueryParameters(queryParameters: HeaderField[]) {
-  return queryParameters
-    .filter((parameter) => parameter.name.trim())
-    .map((parameter) => ({
-      name: parameter.name.trim(),
-      description: parameter.description.trim(),
-      isRequired: parameter.required,
-      isSecret: parameter.secret,
-    }));
-}
-
-function publicEnvironment(environmentVariables: EnvironmentField[]) {
-  return environmentVariables
-    .filter((envVar) => envVar.name.trim())
-    .map((envVar) => ({
-      name: envVar.name.trim(),
-      description: envVar.description.trim(),
-      default: envVar.defaultValue.trim(),
-      isRequired: envVar.required,
-      isSecret: envVar.secret,
-      format: envVar.format || "string",
-    }));
-}
-
-function publicPackageArguments(packageArguments: PackageArgumentField[]): Record<string, unknown>[] {
-  return packageArguments
-    .map((argument): Record<string, unknown> | null => {
-      const name = argument.name.trim();
-      const value = argument.value.trim();
-      const description = argument.description.trim();
-      if (!name && value) {
-        return {
-          value,
-          description,
-          includeInLaunch: argument.includeInLaunch,
-        };
-      }
-      if (!name) {
-        return null;
-      }
-      const options = argument.options
-        .split(",")
-        .map((option) => option.trim())
-        .filter(Boolean);
-
-      return {
-        name,
-        flag: argument.flag.trim(),
-        value: value,
-        requiresValue: argument.requiresValue,
-        description,
-        default: argument.defaultValue.trim(),
-        format: argument.format || "string",
-        includeInLaunch: argument.includeInLaunch,
-        options,
-        isRequired: argument.required,
-        isSecret: argument.secret,
-      };
-    })
-    .filter((argument): argument is Record<string, unknown> => Boolean(argument));
-}
-
-function launchArgumentValues(packageArguments: PackageArgumentField[]) {
-  return packageArguments
-    .filter((argument) => argument.includeInLaunch)
-    .flatMap((argument) => {
-      const value = argument.value.trim();
-      if (value) return [value];
-
-      const flag = argument.flag.trim();
-      if (!flag) return [];
-
-      const defaultValue = argument.defaultValue.trim();
-      if (defaultValue) return [flag, defaultValue];
-
-      return [flag];
-    });
-}
+import type { UserRead } from "@/lib/api/generated/model";
+
+import {
+  DEFAULT_SCHEMA,
+  GITHUB_REPOSITORY_SOURCE,
+  PACKAGE_ARGUMENT_FORMAT_OPTIONS,
+  PACKAGE_RUNTIME_OPTIONS,
+  SERVER_NAME_PATTERN,
+  SERVER_VERSION_PATTERN,
+  TRANSPORT_OPTIONS,
+  duplicateEnvironmentNames,
+  emptyEnvironment,
+  emptyHeader,
+  emptyPackage,
+  emptyPackageArgument,
+  emptyRemote,
+  generatedServerName,
+  hasEnvironmentPlaceholder,
+  launchArgumentValues,
+  normalizeArgumentStaticValue,
+  normalizeRepositoryReference,
+  parseRepositorySource,
+  publicEnvironment,
+  publicHeaders,
+  publicPackageArguments,
+  publicQueryParameters,
+  serverMetaPayload,
+  splitArgumentFlagRequiresValue,
+  splitPackageIdentifierVersion,
+  type EnvironmentField,
+  type HeaderField,
+  type PackageArgumentField,
+  type PackageTarget,
+  type RemoteTarget,
+} from "./submission-draft";
+import { useSubmissionDraft } from "./use-submission-draft";
 
 export default function SubmitServerPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserRead | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [submissionMode, setSubmissionMode] = useState<SubmissionMode>("new");
-  const [editingSubmissionId, setEditingSubmissionId] = useState("");
-  const [editingSubmissionType, setEditingSubmissionType] =
-    useState<SubmissionRead["submissionType"]>("new_server");
-  const [isLoadingSubmission, setIsLoadingSubmission] = useState(false);
-  const [lockedServerName, setLockedServerName] = useState("");
-  const [lockedVersion, setLockedVersion] = useState("");
-  const [name, setName] = useState("");
-  const [isNameOverrideEnabled, setIsNameOverrideEnabled] = useState(false);
-  const [title, setTitle] = useState("");
-  const [version, setVersion] = useState("1.0.0");
-  const [description, setDescription] = useState("");
-  const [documentation, setDocumentation] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [category, setCategory] = useState("");
-  const [serverMeta, setServerMeta] = useState<Record<string, unknown> | null>(null);
-  const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
-  const [partnerOwnerOrganizations, setPartnerOwnerOrganizations] = useState<OrganizationRead[]>([]);
-  const [ownerOrganizationId, setOwnerOrganizationId] = useState("");
-  const [sourceMode, setSourceMode] = useState<SourceMode>("repository");
-  const [repositoryUrl, setRepositoryUrl] = useState("");
-  const [repositorySubfolder, setRepositorySubfolder] = useState("");
-  const [iconUrl, setIconUrl] = useState("");
-  const [remotes, setRemotes] = useState<RemoteTarget[]>([]);
-  const [packages, setPackages] = useState<PackageTarget[]>([]);
   const [error, setError] = useState("");
   const [draftFixPromptOpen, setDraftFixPromptOpen] = useState(false);
-  const [sourceImportMessage, setSourceImportMessage] = useState("");
-  const [isImportingSource, setIsImportingSource] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const {
+    submissionMode,
+    setSubmissionMode,
+    editingSubmissionId,
+    setEditingSubmissionId,
+    editingSubmissionType,
+    setEditingSubmissionType,
+    isLoadingSubmission,
+    lockedServerName,
+    lockedVersion,
+    name,
+    setName,
+    isNameOverrideEnabled,
+    setIsNameOverrideEnabled,
+    title,
+    setTitle,
+    version,
+    setVersion,
+    description,
+    setDescription,
+    documentation,
+    setDocumentation,
+    websiteUrl,
+    setWebsiteUrl,
+    category,
+    setCategory,
+    serverMeta,
+    categories,
+    partnerOwnerOrganizations,
+    ownerOrganizationId,
+    setOwnerOrganizationId,
+    sourceMode,
+    setSourceMode,
+    repositoryUrl,
+    setRepositoryUrl,
+    repositorySubfolder,
+    setRepositorySubfolder,
+    iconUrl,
+    setIconUrl,
+    remotes,
+    setRemotes,
+    packages,
+    setPackages,
+    sourceImportMessage,
+    setSourceImportMessage,
+    isImportingSource,
+    handleImportSource,
+  } = useSubmissionDraft({ user, setError });
   const derivedName = generatedServerName(
     sourceMode === "repository" ? repositoryUrl : "",
     packages,
@@ -855,182 +181,6 @@ export default function SubmitServerPage() {
       .then((response) => setUser(response))
       .catch(() => setUser(null))
       .finally(() => setAuthChecked(true));
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    let active = true;
-    Promise.all([
-      listOrganizations(),
-      listPartnerOrganizations().catch(() => ({ organizations: [] })),
-    ])
-      .then(([organizationResponse, partnerResponse]) => {
-        if (!active) return;
-        const partnerIds = new Set(partnerResponse.organizations.map((partner) => partner.id));
-        const partnerOrganizations = organizationResponse.organizations.filter((organization) =>
-          partnerIds.has(organization.id),
-        );
-        setPartnerOwnerOrganizations(partnerOrganizations);
-        setOwnerOrganizationId((current) =>
-          current && partnerOrganizations.some((organization) => organization.id === current)
-            ? current
-            : "",
-        );
-      })
-      .catch(() => {
-        if (!active) return;
-        setPartnerOwnerOrganizations([]);
-        setOwnerOrganizationId("");
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
-
-  useEffect(() => {
-    listCategories()
-      .then((response) => {
-        setCategories(response.categories);
-        setCategory((current) => current || response.categories[0]?.slug || "");
-      })
-      .catch(() => {
-        setCategories([]);
-        setCategory("");
-      });
-  }, []);
-
-  function loadSubmissionIntoForm(submission: SubmissionRead, mode: SubmissionMode) {
-    const serverJson = submission.serverJson ?? {};
-    const repository = serverJson.repository && typeof serverJson.repository === "object"
-      ? (serverJson.repository as Record<string, unknown>)
-      : null;
-    const repositoryReference = normalizeRepositoryReference(stringValue(repository?.url));
-    const icons = records(serverJson.icons);
-
-    setSubmissionMode(mode);
-    setEditingSubmissionId(mode === "edit" ? submission.id : "");
-    setEditingSubmissionType(mode === "new_version" ? "new_version" : submission.submissionType);
-    setLockedServerName(mode === "new_version" ? submission.name : "");
-    setLockedVersion("");
-    setSourceMode(repositoryReference ? "repository" : "manual");
-    setRepositoryUrl(repositoryReference);
-    setRepositorySubfolder(stringValue(repository?.subfolder));
-    setName(submission.name);
-    setIsNameOverrideEnabled(true);
-    setTitle(stringValue(serverJson.title));
-    setVersion(mode === "new_version" ? bumpPatchVersion(submission.version) : submission.version);
-    setDescription(stringValue(serverJson.description));
-    setDocumentation(stringValue(serverJson.documentation));
-    setWebsiteUrl(stringValue(serverJson.websiteUrl));
-    setCategory(categoryFromServerJson(serverJson));
-    setServerMeta(recordValue(serverJson._meta));
-    setIconUrl(firstIconUrl(icons));
-    setRemotes(importedRemotes(serverJson.remotes));
-    setPackages(importedPackages(serverJson.packages));
-    setOwnerOrganizationId(submission.ownerOrganizationId ?? "");
-    setSourceImportMessage(
-      mode === "new_version"
-        ? "Published server loaded. Update the version before submitting."
-        : "Submission loaded for editing.",
-    );
-  }
-
-  function loadServerVersionIntoForm(
-    response: RegistryServerDetailResponse,
-    version: RegistryServerVersionRead,
-    mode: "server_edit" | "server_new_version",
-  ) {
-    const serverJson = version.serverJson ?? {};
-    const repository = serverJson.repository && typeof serverJson.repository === "object"
-      ? (serverJson.repository as Record<string, unknown>)
-      : null;
-    const repositoryReference = normalizeRepositoryReference(stringValue(repository?.url));
-    const icons = records(serverJson.icons);
-
-    setSubmissionMode(mode);
-    setEditingSubmissionId("");
-    setEditingSubmissionType("new_server");
-    setLockedServerName(response.server.name);
-    setLockedVersion(mode === "server_edit" ? version.version : "");
-    setSourceMode(repositoryReference ? "repository" : "manual");
-    setRepositoryUrl(repositoryReference);
-    setRepositorySubfolder(stringValue(repository?.subfolder));
-    setName(response.server.name);
-    setIsNameOverrideEnabled(true);
-    setTitle(stringValue(serverJson.title) || response.server.title);
-    setVersion(mode === "server_new_version" ? bumpPatchVersion(version.version) : version.version);
-    setDescription(stringValue(serverJson.description) || response.server.description);
-    setDocumentation(stringValue(serverJson.documentation) || response.server.documentation || "");
-    setWebsiteUrl(stringValue(serverJson.websiteUrl) || response.server.websiteUrl || "");
-    setCategory(categoryFromServerJson(serverJson));
-    setServerMeta(recordValue(serverJson._meta));
-    setIconUrl(firstIconUrl(icons));
-    setRemotes(importedRemotes(serverJson.remotes));
-    setPackages(importedPackages(serverJson.packages));
-    setOwnerOrganizationId(response.server.organization?.id ?? "");
-    setSourceImportMessage(
-      mode === "server_new_version"
-        ? "Published server loaded. Update the version before publishing."
-        : "Published server loaded for editing.",
-    );
-  }
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const searchParams = new URLSearchParams(window.location.search);
-      const submissionId = searchParams.get("submission") ?? "";
-      const serverName = searchParams.get("server") ?? "";
-      if (!submissionId && !serverName) {
-        return;
-      }
-
-      if (serverName) {
-        const requestedVersion = searchParams.get("version") ?? "latest";
-        const requestedMode = requestedVersion === "new" ? "server_new_version" : "server_edit";
-        setIsLoadingSubmission(true);
-        setError("");
-        getServer(serverName)
-          .then((response) => {
-            const versions = response.versions ?? [];
-            const version = requestedVersion === "new"
-              ? versions.find((item) => item.isLatest) ?? versions[0]
-              : versions.find((item) => item.version === requestedVersion)
-                ?? versions.find((item) => item.isLatest)
-                ?? versions[0];
-            if (!version) {
-              setError("Server version could not be loaded.");
-              return;
-            }
-            loadServerVersionIntoForm(response, version, requestedMode);
-          })
-          .catch((caught) => {
-            setError(caught instanceof Error ? caught.message : "Server could not be loaded.");
-          })
-          .finally(() => setIsLoadingSubmission(false));
-        return;
-      }
-
-      const requestedMode: SubmissionMode = searchParams.get("version") === "new" ? "new_version" : "edit";
-      setIsLoadingSubmission(true);
-      setError("");
-      getSubmission(submissionId)
-        .then((submission) => {
-          if (submission.status === "published" && requestedMode !== "new_version") {
-            setError("Published submissions cannot be edited. Add a new version instead.");
-            return;
-          }
-          loadSubmissionIntoForm(submission, requestedMode);
-        })
-        .catch((caught) => {
-          setError(caught instanceof Error ? caught.message : "Submission could not be loaded.");
-        })
-        .finally(() => setIsLoadingSubmission(false));
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
   }, []);
 
   function clearRepositoryDerivedState() {
@@ -1167,54 +317,6 @@ export default function SubmitServerPage() {
           : packageTarget,
       ),
     );
-  }
-
-  async function handleImportSource() {
-    setError("");
-    setSourceImportMessage("");
-    setIsImportingSource(true);
-
-    try {
-      const repositoryReference = normalizeRepositoryReference(repositoryUrl);
-      setRepositoryUrl(repositoryReference);
-      const metadata = await importServerSource({
-        repositoryUrl: repositoryReference,
-        subfolder: repositorySubfolder,
-      });
-      const metadataRepository = metadata.repository ?? {};
-      const metadataRepositoryReference = normalizeRepositoryReference(
-        stringValue(metadataRepository.url) || repositoryReference,
-      );
-      const metadataPackages = importedPackages(metadata.packages);
-      const metadataRemotes = importedRemotes(metadata.remotes);
-      const metadataIconUrl = metadata.iconUrl || firstIconUrl(metadata.icons);
-
-      setSourceMode("repository");
-      setRepositoryUrl(metadataRepositoryReference);
-      setRepositorySubfolder(stringValue(metadataRepository.subfolder) || repositorySubfolder);
-      setName(metadata.name || "");
-      setTitle(metadata.title || "");
-      setVersion("1.0.0");
-      setDescription(metadata.description || "");
-      setDocumentation(metadata.documentation || "");
-      setWebsiteUrl(
-        metadata.websiteUrl ||
-          repositoryWebUrl(metadataRepositoryReference),
-      );
-      setIconUrl(metadataIconUrl);
-      setPackages(metadataPackages);
-      setRemotes(metadataRemotes);
-      setServerMeta(null);
-      setSourceImportMessage(
-        metadata.source === "server.json"
-          ? "Registry document loaded."
-          : "MCP client configuration loaded.",
-      );
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Source metadata could not be loaded.");
-    } finally {
-      setIsImportingSource(false);
-    }
   }
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
