@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   Archive,
@@ -644,7 +644,6 @@ function SubmissionGroupCard({
 
 function SubmissionsPageContent() {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const filter = statusFilterFromQuery(searchParams.get("status"));
   const [state, setState] = useState<LoadState>("loading");
@@ -697,7 +696,7 @@ function SubmissionsPageContent() {
     return statusOrder.filter((status) => counts[status] > 0 || filter === status);
   }, [counts, filter]);
 
-  function updateFilter(nextFilter: StatusFilter) {
+  function filterHref(nextFilter: StatusFilter) {
     const nextParams = new URLSearchParams(searchParams.toString());
     if (nextFilter === "all") {
       nextParams.delete("status");
@@ -705,7 +704,7 @@ function SubmissionsPageContent() {
       nextParams.set("status", nextFilter);
     }
     const queryString = nextParams.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    return queryString ? `${pathname}?${queryString}` : pathname;
   }
 
   async function handleDeleteSubmission(submission: SubmissionRead) {
@@ -826,34 +825,36 @@ function SubmissionsPageContent() {
                     / {counts.all} {counts.all === 1 ? "submission" : "submissions"}
                   </span>
                 </span>
-                <button
+                <Link
                   className={cn(
                     "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
                     filter === "all"
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
-                  onClick={() => updateFilter("all")}
-                  type="button"
+                  href={filterHref("all")}
+                  replace
+                  scroll={false}
                 >
                   All
                   <span className="rounded bg-white/15 px-1.5 text-xs">{counts.all}</span>
-                </button>
+                </Link>
                 {visibleStatusFilters.map((status) => (
-                  <button
+                  <Link
                     className={cn(
                       "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
                       filter === status
                         ? "border-slate-900 bg-slate-900 text-white"
                         : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
+                    href={filterHref(status)}
                     key={status}
-                    onClick={() => updateFilter(status)}
-                    type="button"
+                    replace
+                    scroll={false}
                   >
                     {statusMeta[status].label}
                     <span className="rounded bg-current/10 px-1.5 text-xs">{counts[status]}</span>
-                  </button>
+                  </Link>
                 ))}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
