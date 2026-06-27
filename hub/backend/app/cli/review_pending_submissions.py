@@ -723,6 +723,10 @@ def should_auto_reject(findings: str) -> bool:
     return extract_review_decision(findings) in {"cannot_validate", "needs_fixes", "reject"}
 
 
+def should_auto_approve(findings: str) -> bool:
+    return extract_review_decision(findings) == "pass"
+
+
 def extract_suggested_rejection_message(findings: str) -> str | None:
     match = re.search(
         r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Suggested rejection message\s*:?\s*$",
@@ -799,6 +803,7 @@ def review_loop(
     once: bool,
     dry_run: bool,
     auto_reject: bool,
+    auto_approve: bool,
     stdin: TextIO,
     stdout: TextIO,
 ) -> int:
@@ -876,6 +881,31 @@ def review_loop(
                 "leaving this submission for manual decision.",
                 file=stdout,
             )
+
+        if auto_approve and should_auto_approve(findings):
+            print("Auto-approving LLM pass decision.", file=stdout)
+            completed_reviews += 1
+            try:
+                apply_decision(
+                    client,
+                    submission_id,
+                    "approve",
+                    dry_run=dry_run,
+                    stdin=stdin,
+                    stdout=stdout,
+                    suggested_rejection_message=suggested_rejection_message,
+                )
+            except UserFacingError as exc:
+                review_errors += 1
+                skipped_ids.add(submission_id)
+                print(
+                    f"Action failed for {submission_id}; skipping it for this run: {exc}",
+                    file=stdout,
+                )
+            if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                print("Review limit reached.", file=stdout)
+                return 1 if review_errors else 0
+            continue
 
         decision = read_decision(stdin, stdout, can_publish=can_publish)
         if decision == "quit":
@@ -1024,6 +1054,14 @@ def build_parser() -> argparse.ArgumentParser:
             "suggested rejection message is found."
         ),
     )
+    parser.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help=(
+            "Automatically approve reviews whose LLM decision is pass. This never publishes "
+            "submissions."
+        ),
+    )
     return parser
 
 
@@ -1070,6 +1108,7 @@ def main(argv: list[str] | None = None) -> int:
             once=args.once,
             dry_run=args.dry_run,
             auto_reject=args.auto_reject,
+            auto_approve=args.auto_approve,
             stdin=sys.stdin,
             stdout=sys.stdout,
         )

@@ -275,6 +275,14 @@ def test_auto_reject_argument() -> None:
     assert args.auto_reject is True
 
 
+def test_auto_approve_argument() -> None:
+    default_args = cli.build_parser().parse_args([])
+    args = cli.build_parser().parse_args(["--auto-approve"])
+
+    assert default_args.auto_approve is False
+    assert args.auto_approve is True
+
+
 def test_review_progress_interval_env_requires_integer(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -536,6 +544,12 @@ def test_extract_review_decision() -> None:
     assert cli.extract_review_decision("No decision here") is None
 
 
+def test_should_auto_approve_only_passes_clean_pass_decision() -> None:
+    assert cli.should_auto_approve("Decision: pass") is True
+    assert cli.should_auto_approve("Decision: needs fixes") is False
+    assert cli.should_auto_approve("Decision: cannot validate") is False
+
+
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
     client = FakeClient()
 
@@ -616,6 +630,7 @@ Please fix the source review evidence.
         once=True,
         dry_run=False,
         auto_reject=False,
+        auto_approve=False,
         stdin=StringIO("r\n"),
         stdout=stdout,
     )
@@ -649,6 +664,7 @@ Please add missing package transport metadata.
         once=True,
         dry_run=False,
         auto_reject=True,
+        auto_approve=False,
         stdin=StringIO(),
         stdout=stdout,
     )
@@ -684,6 +700,7 @@ none
         once=True,
         dry_run=False,
         auto_reject=True,
+        auto_approve=False,
         stdin=StringIO("s\n"),
         stdout=stdout,
     )
@@ -692,6 +709,76 @@ none
     assert client.actions == []
     output = stdout.getvalue()
     assert "Auto-reject requested, but no suggested rejection message was found" in output
+    assert "Skipped sub-1" in output
+
+
+def test_review_loop_auto_approves_llm_pass_without_publishing() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: pass
+
+Suggested approval note:
+Approved.
+"""
+
+    client = FakeClient([submitted_submission()])
+    user = client.current_user()
+    user["_wardnHubCanPublish"] = True
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=user,
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=True,
+        stdin=StringIO(),
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert client.actions == [("approve", "sub-1", None)]
+    output = stdout.getvalue()
+    assert "Auto-approving LLM pass decision." in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_auto_approve_leaves_non_pass_for_manual_decision() -> None:
+    class RejectingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: needs fixes
+
+Suggested rejection message:
+Please fix the metadata.
+"""
+
+    client = FakeClient([submitted_submission()])
+    reviewer = RejectingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=True,
+        stdin=StringIO("s\n"),
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "Auto-approving" not in output
     assert "Skipped sub-1" in output
 
 
@@ -708,6 +795,7 @@ def test_review_loop_skips_submission_for_current_run() -> None:
         once=False,
         dry_run=False,
         auto_reject=False,
+        auto_approve=False,
         stdin=StringIO("s\n"),
         stdout=stdout,
     )
@@ -743,6 +831,7 @@ def test_review_loop_continues_after_review_error() -> None:
         once=False,
         dry_run=False,
         auto_reject=False,
+        auto_approve=False,
         stdin=StringIO("a\n"),
         stdout=stdout,
     )
@@ -788,6 +877,7 @@ Please fix the metadata.
         once=False,
         dry_run=False,
         auto_reject=False,
+        auto_approve=False,
         stdin=StringIO("r\na\n"),
         stdout=stdout,
     )
@@ -818,6 +908,7 @@ def test_review_loop_once_stops_after_review_error() -> None:
         once=True,
         dry_run=False,
         auto_reject=False,
+        auto_approve=False,
         stdin=StringIO("a\n"),
         stdout=stdout,
     )
