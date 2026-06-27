@@ -778,6 +778,7 @@ def review_loop(
 ) -> int:
     skipped_ids: set[str] = set()
     completed_reviews = 0
+    review_errors = 0
     can_publish = bool(user.get("_wardnHubCanPublish"))
 
     while True:
@@ -785,7 +786,7 @@ def review_loop(
         pending = pending_submissions(submissions, skipped_ids=skipped_ids)
         if not pending:
             print("No submitted MCP server submissions remain for this run.", file=stdout)
-            return 0
+            return 1 if review_errors else 0
 
         submission = pending[0]
         submission_id = str(submission["id"])
@@ -797,14 +798,27 @@ def review_loop(
         environment[API_BASE_URL_ENV] = client.base_url
         environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] = submission_id
 
-        findings = reviewer.review(prompt, environment=environment)
+        try:
+            findings = reviewer.review(prompt, environment=environment)
+        except UserFacingError as exc:
+            review_errors += 1
+            completed_reviews += 1
+            skipped_ids.add(submission_id)
+            print(
+                f"Review failed for {submission_id}; leaving submission unchanged: {exc}",
+                file=stdout,
+            )
+            if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                print("Review limit reached.", file=stdout)
+                return 1
+            continue
         print_heading(stdout, "LLM Findings")
         print(findings, file=stdout)
 
         decision = read_decision(stdin, stdout, can_publish=can_publish)
         if decision == "quit":
             print("Stopping review loop.", file=stdout)
-            return 0
+            return 1 if review_errors else 0
         if decision == "skip":
             skipped_ids.add(submission_id)
             print(f"Skipped {submission_id} for this run.", file=stdout)
@@ -822,7 +836,7 @@ def review_loop(
         completed_reviews += 1
         if once or (max_reviews is not None and completed_reviews >= max_reviews):
             print("Review limit reached.", file=stdout)
-            return 0
+            return 1 if review_errors else 0
 
 
 def build_parser() -> argparse.ArgumentParser:

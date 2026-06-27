@@ -99,6 +99,12 @@ def submitted_submission() -> dict[str, Any]:
     }
 
 
+def submitted_submission_with_id(submission_id: str) -> dict[str, Any]:
+    submission = submitted_submission()
+    submission["id"] = submission_id
+    return submission
+
+
 def test_normalize_api_base_url_adds_default_api_prefix() -> None:
     assert cli.normalize_api_base_url("http://localhost:8000") == "http://localhost:8000/api/v1"
     assert cli.normalize_api_base_url("http://localhost:8000/api/v1/") == (
@@ -598,3 +604,66 @@ def test_review_loop_skips_submission_for_current_run() -> None:
     assert len(reviewer.prompts) == 1
     assert client.actions == []
     assert "Skipped sub-1" in stdout.getvalue()
+
+
+def test_review_loop_continues_after_review_error() -> None:
+    class FailingThenPassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            if len(self.prompts) == 1:
+                raise cli.UserFacingError("review command timed out after 900 seconds")
+            return "Decision: pass\n\nSuggested approval note:\nApproved."
+
+    client = FakeClient(
+        [
+            submitted_submission_with_id("sub-1"),
+            submitted_submission_with_id("sub-2"),
+        ]
+    )
+    reviewer = FailingThenPassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=2,
+        once=False,
+        dry_run=False,
+        stdin=StringIO("a\n"),
+        stdout=stdout,
+    )
+
+    assert result == 1
+    assert len(reviewer.prompts) == 2
+    assert client.actions == [("approve", "sub-2", None)]
+    output = stdout.getvalue()
+    assert "Review failed for sub-1" in output
+    assert "leaving submission unchanged" in output
+
+
+def test_review_loop_once_stops_after_review_error() -> None:
+    class FailingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            raise cli.UserFacingError("review command timed out after 900 seconds")
+
+    client = FakeClient([submitted_submission()])
+    reviewer = FailingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        stdin=StringIO("a\n"),
+        stdout=stdout,
+    )
+
+    assert result == 1
+    assert len(reviewer.prompts) == 1
+    assert client.actions == []
+    assert "Review failed for sub-1" in stdout.getvalue()
