@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { getPublishedRegistryServer } from "@/lib/public-registry";
 import { siteConfig } from "@/lib/site";
+import { JsonLdScript, serverDetailJsonLd } from "@/lib/structured-data";
 
 import { ServerDetailClient } from "./server-detail-client";
 
@@ -78,6 +79,7 @@ export async function generateMetadata({ params }: ServerDetailPageProps): Promi
 
 export default async function ServerDetailPage({ params }: ServerDetailPageProps) {
   const serverName = serverNameFromParams(await params);
+  const canonical = serverName ? serverCanonicalPath(serverName) : "/servers";
   const { initialDetail, initialError } = await (async () => {
     if (!serverName) {
       return { initialDetail: null, initialError: "Server route is incomplete." };
@@ -93,10 +95,18 @@ export default async function ServerDetailPage({ params }: ServerDetailPageProps
   })();
 
   return (
-    <ServerDetailClient
-      initialDetail={initialDetail}
-      initialError={initialError}
-      serverName={serverName}
-    />
+    <>
+      {initialDetail ? (
+        <JsonLdScript
+          data={serverDetailJsonLd(initialDetail, canonical)}
+          id="server-detail-json-ld"
+        />
+      ) : null}
+      <ServerDetailClient
+        initialDetail={initialDetail}
+        initialError={initialError}
+        serverName={serverName}
+      />
+    </>
   );
 }

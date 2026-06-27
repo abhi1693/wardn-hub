@@ -4,6 +4,7 @@ import { ServerCard } from "@/components/server-card";
 import { PublicHeader } from "@/components/site-header";
 import { listPublicCategories, listPublishedRegistryServers } from "@/lib/public-registry";
 import { siteConfig } from "@/lib/site";
+import { categoryDetailJsonLd, JsonLdScript } from "@/lib/structured-data";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,7 @@ export async function generateMetadata({ params }: CategoryDetailPageProps): Pro
 
 export default async function CategoryDetailPage({ params }: CategoryDetailPageProps) {
   const { categorySlug = "" } = await params;
+  const canonical = `/categories/${encodeURIComponent(categorySlug)}`;
   const { categories, error, servers } = await (async () => {
     try {
       const [categoryResponse, serverResponse] = await Promise.all([
@@ -79,6 +81,15 @@ export default async function CategoryDetailPage({ params }: CategoryDetailPageP
 
   return (
     <div className="server-detail-page">
+      <JsonLdScript
+        data={categoryDetailJsonLd({
+          canonicalPath: canonical,
+          category,
+          categoryName,
+          servers,
+        })}
+        id="category-json-ld"
+      />
       <PublicHeader />
 
       <main className="server-detail-main">

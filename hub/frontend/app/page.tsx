@@ -5,6 +5,7 @@ import { ServerCard } from "@/components/server-card";
 import { PublicHeader } from "@/components/site-header";
 import { listPublishedRegistryServers } from "@/lib/public-registry";
 import { siteConfig } from "@/lib/site";
+import { JsonLdScript, registryIndexJsonLd } from "@/lib/structured-data";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,7 @@ export default async function Home() {
 
   return (
     <main className="site-shell">
+      <JsonLdScript data={registryIndexJsonLd(servers)} id="registry-index-json-ld" />
       <PublicHeader />
       <section className="workspace">
         <div className="home-view simple-home">

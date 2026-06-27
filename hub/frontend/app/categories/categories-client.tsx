@@ -18,11 +18,17 @@ function categoryEditHref(slug: string) {
   return `/categories/${encodeURIComponent(slug)}/edit`;
 }
 
-export function CategoriesClient() {
-  const [state, setState] = useState<LoadState>("loading");
-  const [error, setError] = useState("");
+export function CategoriesClient({
+  initialCategories = [],
+  initialError = "",
+}: {
+  initialCategories?: RegistryCategoryRead[];
+  initialError?: string;
+}) {
+  const [state, setState] = useState<LoadState>(initialError ? "error" : "ready");
+  const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState("");
-  const [categories, setCategories] = useState<RegistryCategoryRead[]>([]);
+  const [categories, setCategories] = useState<RegistryCategoryRead[]>(initialCategories);
   const [user, setUser] = useState<UserRead | null>(null);
   const [deletingSlug, setDeletingSlug] = useState("");
 

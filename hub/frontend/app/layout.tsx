@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { DeferredGoogleAnalytics } from "@/components/analytics/deferred-google-analytics";
 import { AuthProvider } from "@/components/auth-provider";
 import { siteConfig } from "@/lib/site";
+import { JsonLdScript, websiteJsonLd } from "@/lib/structured-data";
 
 const defaultGoogleAnalyticsId = "G-GYYSYTBZTD";
 
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
+        <JsonLdScript data={websiteJsonLd()} id="website-json-ld" />
         <AuthProvider>{children}</AuthProvider>
         {gaId ? <DeferredGoogleAnalytics gaId={gaId} /> : null}
       </body>
