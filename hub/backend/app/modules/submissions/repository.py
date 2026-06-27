@@ -1,8 +1,9 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.organizations.models import OrganizationMembership
 from app.modules.submissions.models import ServerSubmission
 
 
@@ -24,7 +25,16 @@ async def list_submissions(
         ServerSubmission.id.desc(),
     )
     if not include_all and user_id is not None:
-        statement = statement.where(ServerSubmission.submitter_user_id == user_id)
+        organization_ids = select(OrganizationMembership.organization_id).where(
+            OrganizationMembership.user_id == user_id,
+            OrganizationMembership.is_active.is_(True),
+        )
+        statement = statement.where(
+            or_(
+                ServerSubmission.submitter_user_id == user_id,
+                ServerSubmission.owner_organization_id.in_(organization_ids),
+            )
+        )
     result = await session.execute(statement)
     return list(result.scalars().all())
 

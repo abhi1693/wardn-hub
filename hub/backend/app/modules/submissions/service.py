@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.service import emit_audit_event
+from app.modules.organizations import repository as organization_repository
 from app.modules.organizations.exceptions import (
     OrganizationAccessDeniedError,
     OrganizationNotFoundError,
@@ -550,9 +551,22 @@ def submission_response(submission: ServerSubmission) -> SubmissionRead:
     )
 
 
-def ensure_can_read_submission(user: User, submission: ServerSubmission) -> None:
-    if not can_review_submissions(user) and submission.submitter_user_id != user.id:
-        raise SubmissionAccessDeniedError("submission access denied")
+async def ensure_can_read_submission(
+    session: AsyncSession,
+    user: User,
+    submission: ServerSubmission,
+) -> None:
+    if can_review_submissions(user) or submission.submitter_user_id == user.id:
+        return
+    if submission.owner_organization_id is not None:
+        membership = await organization_repository.get_organization_membership(
+            session,
+            submission.owner_organization_id,
+            user.id,
+        )
+        if membership is not None:
+            return
+    raise SubmissionAccessDeniedError("submission access denied")
 
 
 def ensure_can_own_or_manage_submission(user: User, submission: ServerSubmission) -> None:
@@ -604,7 +618,7 @@ async def get_submission(
     submission = await repository.get_submission_by_id(session, submission_id)
     if submission is None:
         raise SubmissionNotFoundError("submission not found")
-    ensure_can_read_submission(user, submission)
+    await ensure_can_read_submission(session, user, submission)
     ensure_api_token_submission_access(api_token, submission)
     return submission_response(submission)
 

@@ -564,6 +564,60 @@ async def test_global_moderator_can_read_any_submission(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_organization_member_can_read_organization_submission(monkeypatch) -> None:
+    user = current_user()
+    organization_id = uuid4()
+    submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_organization_id=organization_id,
+        status="submitted",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def get_membership(*args, **kwargs):
+        return object()
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(
+        service.organization_repository,
+        "get_organization_membership",
+        get_membership,
+    )
+
+    response = await service.get_submission(FakeSession(), user, submission.id)
+
+    assert response.id == submission.id
+
+
+@pytest.mark.asyncio
+async def test_non_member_cannot_read_organization_submission(monkeypatch) -> None:
+    user = current_user()
+    submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_organization_id=uuid4(),
+        status="submitted",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def get_membership(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(
+        service.organization_repository,
+        "get_organization_membership",
+        get_membership,
+    )
+
+    with pytest.raises(SubmissionAccessDeniedError, match="submission access denied"):
+        await service.get_submission(FakeSession(), user, submission.id)
+
+
+@pytest.mark.asyncio
 async def test_global_moderator_cannot_submit_other_user_draft(monkeypatch) -> None:
     moderator = current_user(is_global_moderator=True)
     submission = service.repository.ServerSubmission(

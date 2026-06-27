@@ -1,0 +1,54 @@
+from uuid import uuid4
+
+import pytest
+from sqlalchemy.dialects import postgresql
+
+from app.modules.submissions import repository
+
+
+class EmptyScalarResult:
+    def all(self) -> list[object]:
+        return []
+
+
+class EmptyExecuteResult:
+    def scalars(self) -> EmptyScalarResult:
+        return EmptyScalarResult()
+
+
+class CaptureSession:
+    def __init__(self) -> None:
+        self.statements: list[object] = []
+
+    async def execute(self, statement) -> EmptyExecuteResult:
+        self.statements.append(statement)
+        return EmptyExecuteResult()
+
+
+def sql(statement: object) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_submissions_includes_owned_organization_memberships() -> None:
+    user_id = uuid4()
+    session = CaptureSession()
+
+    submissions = await repository.list_submissions(
+        session,
+        user_id=user_id,
+        include_all=False,
+    )
+
+    statement = sql(session.statements[0])
+    assert submissions == []
+    assert f"server_submissions.submitter_user_id = '{user_id}'" in statement
+    assert "server_submissions.owner_organization_id IN" in statement
+    assert "organization_memberships.organization_id" in statement
+    assert f"organization_memberships.user_id = '{user_id}'" in statement
+    assert "organization_memberships.is_active IS true" in statement
