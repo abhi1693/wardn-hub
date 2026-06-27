@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LoaderCircle } from "lucide-react";
 
 export type ProtectedRouteStatus = "loading" | "auth" | "denied" | "error";
 
@@ -33,6 +34,18 @@ export function ProtectedRouteState({
   title?: string;
 }) {
   const text = defaultText[status];
+
+  if (status === "loading") {
+    return (
+      <div
+        aria-label={title ?? text.title}
+        className="grid min-h-[190px] place-items-center p-6"
+        role="status"
+      >
+        <LoaderCircle aria-hidden="true" className="size-7 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="empty-state">

@@ -6,6 +6,7 @@ import pytest
 
 from app.modules.events.models import EventRecord
 from app.modules.organizations.exceptions import OrganizationAccessDeniedError
+from app.modules.registry.models import RegistryServer
 from app.modules.registry.schemas import RegistryEnvironmentVariable, RegistryServerVersionCreate
 from app.modules.submissions import service
 from app.modules.submissions.exceptions import (
@@ -26,6 +27,12 @@ class FakeSession:
 
     def add(self, instance: object) -> None:
         self.added.append(instance)
+
+    async def execute(self, *args, **kwargs):
+        return SimpleNamespace(
+            scalar_one_or_none=lambda: None,
+            scalars=lambda: SimpleNamespace(all=lambda: []),
+        )
 
     async def delete(self, instance: object) -> None:
         self.deleted.append(instance)
@@ -85,6 +92,32 @@ def submission_record(
         server_json=complete_registry_payload().model_dump(by_alias=True),
         validation_result={},
         rejection_message="",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def registry_server(
+    *,
+    owner_user_id=None,
+    owner_organization_id=None,
+    status: str = "active",
+) -> RegistryServer:
+    now = datetime(2026, 6, 23, tzinfo=UTC)
+    return RegistryServer(
+        id=uuid4(),
+        name="io.github.example/weather",
+        owner_user_id=owner_user_id,
+        owner_organization_id=owner_organization_id,
+        title="Weather",
+        description="Weather tools for forecasts",
+        documentation="# Weather MCP",
+        website_url="https://example.com/weather",
+        repository=None,
+        icons=[],
+        status=status,
+        status_message="",
+        visibility="public",
         created_at=now,
         updated_at=now,
     )
@@ -447,6 +480,115 @@ async def test_new_version_submission_requires_published_server(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_new_server_submission_rejects_existing_server_name(monkeypatch) -> None:
+    async def existing_server(*args, **kwargs):
+        return registry_server(owner_user_id=uuid4())
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+
+    with pytest.raises(SubmissionValidationError, match="server already exists"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(serverJson=complete_registry_payload()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_new_version_submission_rejects_non_owner_personal_server(monkeypatch) -> None:
+    existing_owner_id = uuid4()
+
+    async def existing_server(*args, **kwargs):
+        return registry_server(owner_user_id=existing_owner_id)
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="server owner"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(
+                submissionType="new_version",
+                serverJson=complete_registry_payload(version="1.0.1"),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_new_version_submission_allows_personal_server_owner(monkeypatch) -> None:
+    owner = current_user()
+
+    async def existing_server(*args, **kwargs):
+        return registry_server(owner_user_id=owner.id)
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+
+    response = await service.create_submission(
+        FakeSession(),
+        owner,
+        SubmissionCreate(
+            submissionType="new_version",
+            serverJson=complete_registry_payload(version="1.0.1"),
+        ),
+    )
+
+    assert response.submission_type == "new_version"
+    assert response.owner_user_id == owner.id
+
+
+@pytest.mark.asyncio
+async def test_new_version_submission_requires_existing_owner_organization(monkeypatch) -> None:
+    existing_organization_id = uuid4()
+
+    async def existing_server(*args, **kwargs):
+        return registry_server(owner_organization_id=existing_organization_id)
+
+    async def allow_permission(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(service, "require_organization_permission", allow_permission)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="server owner organization"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(
+                ownerOrganizationId=uuid4(),
+                submissionType="new_version",
+                serverJson=complete_registry_payload(version="1.0.1"),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_new_version_submission_requires_update_permission_for_owner_organization(
+    monkeypatch,
+) -> None:
+    organization_id = uuid4()
+
+    async def existing_server(*args, **kwargs):
+        return registry_server(owner_organization_id=organization_id)
+
+    async def deny_update_permission(*args, **kwargs):
+        raise OrganizationAccessDeniedError("servers.update permission required")
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(service, "require_organization_permission", deny_update_permission)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="owner organization"):
+        await service.create_submission(
+            FakeSession(),
+            current_user(),
+            SubmissionCreate(
+                ownerOrganizationId=organization_id,
+                submissionType="new_version",
+                serverJson=complete_registry_payload(version="1.0.1"),
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_create_submission_rejects_invalid_remote_target() -> None:
     invalid_payload = RegistryServerVersionCreate(
         **{
@@ -770,6 +912,33 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
         "updated_by_user_id": moderator.id,
         "publisher_user_id": moderator.id,
     }
+
+
+@pytest.mark.asyncio
+async def test_publish_submission_rejects_stale_new_server_for_existing_name(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def existing_server(*args, **kwargs):
+        return registry_server(owner_user_id=uuid4())
+
+    async def publish_version(*args, **kwargs):
+        raise AssertionError("publish should not be called")
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+
+    with pytest.raises(SubmissionValidationError, match="server already exists"):
+        await service.publish_submission(FakeSession(), moderator, submission.id)
 
 
 @pytest.mark.asyncio

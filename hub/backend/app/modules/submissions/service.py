@@ -749,15 +749,50 @@ async def ensure_version_not_published(
 
 async def ensure_submission_type_allowed(
     session: AsyncSession,
+    user: User | None,
     submission_type: str,
     name: str,
+    owner_user_id: uuid.UUID | None,
+    owner_organization_id: uuid.UUID | None,
 ) -> None:
-    if submission_type != "new_version":
+    server = await registry_repository.get_server(session, name)
+
+    if submission_type == "new_server":
+        if server is not None:
+            raise SubmissionValidationError("server already exists; submit a new version")
         return
 
-    server = await registry_repository.get_server(session, name)
     if server is None:
         raise SubmissionValidationError("new version submissions require a published server")
+
+    if server.owner_user_id is not None:
+        if owner_user_id != server.owner_user_id:
+            raise SubmissionAccessDeniedError("server owner access denied")
+        if user is not None and not user.is_superuser and user.id != server.owner_user_id:
+            raise SubmissionAccessDeniedError("server owner access denied")
+        return
+
+    if server.owner_organization_id is not None:
+        if owner_organization_id != server.owner_organization_id:
+            raise SubmissionAccessDeniedError("server owner organization access denied")
+        if user is not None:
+            try:
+                await require_organization_permission(
+                    session,
+                    user,
+                    server.owner_organization_id,
+                    "servers.update",
+                )
+            except OrganizationNotFoundError as exc:
+                raise SubmissionValidationError("server owner organization not found") from exc
+            except OrganizationAccessDeniedError as exc:
+                raise SubmissionAccessDeniedError(
+                    "server owner organization access denied"
+                ) from exc
+        return
+
+    if user is not None and not user.is_superuser:
+        raise SubmissionAccessDeniedError("server owner access denied")
 
 
 async def get_submission(
@@ -811,8 +846,11 @@ async def create_submission(
     )
     await ensure_submission_type_allowed(
         session,
+        user,
         payload.submission_type,
         payload.server_json.name,
+        owner_user_id,
+        owner_organization_id,
     )
     await ensure_version_not_published(
         session,
@@ -869,7 +907,6 @@ async def update_submission(
         submission.validation_result = validation_result
     if payload.submission_type is not None:
         submission.submission_type = payload.submission_type
-    await ensure_submission_type_allowed(session, submission.submission_type, submission.name)
     next_owner_user_id = (
         payload.owner_user_id
         if "owner_user_id" in payload.model_fields_set
@@ -887,6 +924,14 @@ async def update_submission(
         owner_organization_id=next_owner_organization_id,
         permission="servers.update",
         api_token=api_token,
+    )
+    await ensure_submission_type_allowed(
+        session,
+        user,
+        submission.submission_type,
+        submission.name,
+        next_owner_user_id,
+        next_owner_organization_id,
     )
     submission.owner_user_id = next_owner_user_id
     submission.owner_organization_id = next_owner_organization_id
@@ -948,6 +993,14 @@ async def submit_submission(
     validation_result = validation_result_for(payload)
     ensure_ready_for_review(validation_result)
     submission.validation_result = validation_result
+    await ensure_submission_type_allowed(
+        session,
+        user,
+        submission.submission_type,
+        submission.name,
+        submission.owner_user_id,
+        submission.owner_organization_id,
+    )
     await ensure_version_not_published(session, submission.name, submission.version)
     submission.status = "submitted"
     submission.submitted_at = datetime.now(UTC)
@@ -1006,6 +1059,14 @@ async def approve_submission(
     ensure_api_token_submission_access(api_token, submission)
     if submission.status != "submitted":
         raise InvalidSubmissionTransitionError("only submitted submissions can be approved")
+    await ensure_submission_type_allowed(
+        session,
+        None,
+        submission.submission_type,
+        submission.name,
+        submission.owner_user_id,
+        submission.owner_organization_id,
+    )
     await ensure_version_not_published(session, submission.name, submission.version)
     submission.status = "approved"
     submission.approved_at = datetime.now(UTC)
@@ -1067,6 +1128,14 @@ async def publish_submission(
     ensure_api_token_submission_access(api_token, submission)
     if submission.status != "approved":
         raise InvalidSubmissionTransitionError("only approved submissions can be published")
+    await ensure_submission_type_allowed(
+        session,
+        None,
+        submission.submission_type,
+        submission.name,
+        submission.owner_user_id,
+        submission.owner_organization_id,
+    )
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
     try:
         published = await registry_service.create_server_version(
