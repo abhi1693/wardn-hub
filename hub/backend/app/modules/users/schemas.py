@@ -22,6 +22,24 @@ APITokenScope = Literal[
     "users:read",
     "users:write",
 ]
+ALL_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = (
+    "audit:read",
+    "catalog:read",
+    "events:read",
+    "events:write",
+    "namespaces:write",
+    "partners:write",
+    "registry:score",
+    "registry:write",
+    "submissions:read",
+    "submissions:write",
+    "submissions:moderate",
+    "submissions:publish",
+    "tokens:read",
+    "tokens:write",
+    "users:read",
+    "users:write",
+)
 AuthProviderKey = Literal["local", "clerk"]
 
 DEFAULT_API_TOKEN_SCOPES: list[APITokenScope] = [

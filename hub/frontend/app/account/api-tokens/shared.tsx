@@ -14,7 +14,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { UserAPITokenCreate, UserAPITokenRead } from "@/lib/api/generated/model";
+import type { UserAPITokenCreate, UserAPITokenRead, UserRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
 export type LoadState = "loading" | "ready" | "error" | "auth";
@@ -105,6 +105,16 @@ export const scopeOptions: { description: string; label: string; value: APIToken
   },
 ];
 
+const baseUserScopes: APITokenScope[] = [
+  "catalog:read",
+  "events:read",
+  "events:write",
+  "submissions:read",
+  "submissions:write",
+  "tokens:read",
+  "tokens:write",
+];
+
 export const defaultScopes: APITokenScope[] = [
   "catalog:read",
   "submissions:read",
@@ -122,6 +132,31 @@ export const reviewScopes: APITokenScope[] = [
   "submissions:read",
   "submissions:moderate",
 ];
+
+export function allowedScopesForUser(user: UserRead | null) {
+  if (user?.is_superuser) {
+    return scopeOptions.map((option) => option.value);
+  }
+
+  const scopes = new Set(baseUserScopes);
+  if (user?.is_global_moderator) {
+    scopes.add("submissions:moderate");
+  }
+  if (user?.is_global_partner_manager) {
+    scopes.add("partners:write");
+  }
+  return [...scopes];
+}
+
+export function scopeOptionsForUser(user: UserRead | null) {
+  const allowed = new Set(allowedScopesForUser(user));
+  return scopeOptions.filter((option) => allowed.has(option.value));
+}
+
+export function filterScopesForUser(scopes: APITokenScope[], user: UserRead | null) {
+  const allowed = new Set(allowedScopesForUser(user));
+  return scopes.filter((scope) => allowed.has(scope));
+}
 
 export function formatDate(value?: string | null) {
   if (!value) return "Never";
@@ -282,6 +317,7 @@ export function ScopeCheckbox({
 }
 
 export function ApiTokenForm({
+  availableScopeOptions = scopeOptions,
   description,
   descriptionPlaceholder = "",
   expiresOn,
@@ -303,6 +339,7 @@ export function ApiTokenForm({
   submittingIcon,
   submittingLabel,
 }: {
+  availableScopeOptions?: typeof scopeOptions;
   description: string;
   descriptionPlaceholder?: string;
   expiresOn: string;
@@ -324,6 +361,13 @@ export function ApiTokenForm({
   submittingIcon: React.ReactNode;
   submittingLabel: string;
 }) {
+  const availableScopeValues = availableScopeOptions.map((scope) => scope.value);
+
+  function applyPreset(preset: APITokenScope[]) {
+    const available = new Set(availableScopeValues);
+    onScopesChange(preset.filter((scope) => available.has(scope)));
+  }
+
   function setScope(scope: APITokenScope, enabled: boolean) {
     if (enabled) {
       onScopesChange([...new Set([...scopes, scope])]);
@@ -405,17 +449,17 @@ export function ApiTokenForm({
               <p className="text-sm text-muted-foreground">Use a preset or select individual scopes.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => onScopesChange(readOnlyScopes)} size="sm" type="button" variant="outline">
+              <Button onClick={() => applyPreset(readOnlyScopes)} size="sm" type="button" variant="outline">
                 Read only
               </Button>
-              <Button onClick={() => onScopesChange(defaultScopes)} size="sm" type="button" variant="outline">
+              <Button onClick={() => applyPreset(defaultScopes)} size="sm" type="button" variant="outline">
                 Submission
               </Button>
-              <Button onClick={() => onScopesChange(reviewScopes)} size="sm" type="button" variant="outline">
+              <Button onClick={() => applyPreset(reviewScopes)} size="sm" type="button" variant="outline">
                 Review
               </Button>
               <Button
-                onClick={() => onScopesChange(scopeOptions.map((scope) => scope.value))}
+                onClick={() => onScopesChange(availableScopeValues)}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -425,7 +469,7 @@ export function ApiTokenForm({
             </div>
           </div>
           <div className="grid gap-1 rounded-lg border border-border p-2 md:grid-cols-2 xl:grid-cols-3">
-            {scopeOptions.map((scope) => (
+            {availableScopeOptions.map((scope) => (
               <ScopeCheckbox
                 checked={scopes.includes(scope.value)}
                 description={scope.description}

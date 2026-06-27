@@ -17,6 +17,7 @@ from app.modules.users.auth_providers import ExternalIdentityClaims, enabled_aut
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
+    InvalidAPITokenScopeError,
     InvalidLoginError,
     InvalidUserRoleUpdateError,
     UserAPITokenNotFoundError,
@@ -24,6 +25,7 @@ from app.modules.users.exceptions import (
 )
 from app.modules.users.models import LocalAuthCredential, User, UserAPIToken, UserExternalIdentity
 from app.modules.users.schemas import (
+    ALL_API_TOKEN_SCOPES,
     APITokenScope,
     AuthProviderListResponse,
     AuthProviderRead,
@@ -33,6 +35,19 @@ from app.modules.users.schemas import (
     UserAPITokenUpdate,
     UserCreate,
 )
+
+BASE_API_TOKEN_SCOPES: set[APITokenScope] = {
+    "catalog:read",
+    "events:read",
+    "events:write",
+    "submissions:read",
+    "submissions:write",
+    "tokens:read",
+    "tokens:write",
+}
+MODERATOR_API_TOKEN_SCOPES: set[APITokenScope] = {"submissions:moderate"}
+PARTNER_MANAGER_API_TOKEN_SCOPES: set[APITokenScope] = {"partners:write"}
+SUPERUSER_API_TOKEN_SCOPES: set[APITokenScope] = set(ALL_API_TOKEN_SCOPES)
 
 
 def normalize_email(email: str) -> str:
@@ -45,6 +60,26 @@ def unique_uuid_strings(values: list[uuid.UUID]) -> list[str]:
 
 def unique_scope_strings(values: list[APITokenScope]) -> list[str]:
     return sorted(set(values))
+
+
+def allowed_api_token_scopes(user: User) -> set[APITokenScope]:
+    if user.is_superuser:
+        return SUPERUSER_API_TOKEN_SCOPES.copy()
+
+    scopes = BASE_API_TOKEN_SCOPES.copy()
+    if user.is_global_moderator:
+        scopes.update(MODERATOR_API_TOKEN_SCOPES)
+    if user.is_global_partner_manager:
+        scopes.update(PARTNER_MANAGER_API_TOKEN_SCOPES)
+    return scopes
+
+
+def validate_api_token_scopes(user: User, scopes: list[APITokenScope]) -> None:
+    denied = sorted(set(scopes) - allowed_api_token_scopes(user))
+    if denied:
+        raise InvalidAPITokenScopeError(
+            f"API token scope not allowed for current user: {', '.join(denied)}"
+        )
 
 
 def auth_provider_label(provider: str) -> str:
@@ -214,6 +249,7 @@ async def create_user_api_token(
     user = await repository.get_user_by_id(session, user_id)
     if user is None:
         raise UserNotFoundError("user not found")
+    validate_api_token_scopes(user, payload.scopes)
 
     token_prefix, token = generate_api_token()
     record = UserAPIToken(
@@ -242,6 +278,9 @@ async def update_user_api_token(
     token_id: uuid.UUID,
     payload: UserAPITokenUpdate,
 ) -> UserAPIToken:
+    user = await repository.get_user_by_id(session, user_id)
+    if user is None:
+        raise UserNotFoundError("user not found")
     token = await repository.get_user_api_token_by_id(session, user_id, token_id)
     if token is None:
         raise UserAPITokenNotFoundError("API token not found")
@@ -250,6 +289,7 @@ async def update_user_api_token(
     if payload.description is not None:
         token.description = payload.description.strip()
     if payload.scopes is not None:
+        validate_api_token_scopes(user, payload.scopes)
         token.scopes = unique_scope_strings(payload.scopes)
     if "expires_at" in payload.model_fields_set:
         token.expires_at = payload.expires_at

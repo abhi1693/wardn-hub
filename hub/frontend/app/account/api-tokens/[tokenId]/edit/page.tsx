@@ -8,14 +8,16 @@ import { useParams, useRouter } from "next/navigation";
 import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
-import { HubApiError, listApiTokens, updateApiToken } from "@/lib/api/hub";
-import type { UserAPITokenRead } from "@/lib/api/generated/model";
+import { currentUser, HubApiError, listApiTokens, updateApiToken } from "@/lib/api/hub";
+import type { UserAPITokenRead, UserRead } from "@/lib/api/generated/model";
 import {
   APITokenScope,
   ApiTokenForm,
   expiryToIso,
+  filterScopesForUser,
   isoToDateInput,
   LoadState,
+  scopeOptionsForUser,
   StatePanel,
 } from "../../shared";
 
@@ -32,11 +34,12 @@ export default function EditApiTokenPage() {
   const [expiresOn, setExpiresOn] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [scopes, setScopes] = useState<APITokenScope[]>([]);
+  const [user, setUser] = useState<UserRead | null>(null);
 
   useEffect(() => {
     let active = true;
-    listApiTokens()
-      .then((response) => {
+    Promise.all([listApiTokens(), currentUser()])
+      .then(([response, currentUserRecord]) => {
         if (!active) return;
         const record = response.tokens.find((item) => item.id === tokenId) ?? null;
         if (!record) {
@@ -44,12 +47,13 @@ export default function EditApiTokenPage() {
           setError("API token not found.");
           return;
         }
+        setUser(currentUserRecord);
         setToken(record);
         setName(record.name);
         setDescription(record.description);
         setExpiresOn(isoToDateInput(record.expires_at));
         setIsActive(record.is_active);
-        setScopes(record.scopes);
+        setScopes(filterScopesForUser(record.scopes, currentUserRecord));
         setState("ready");
       })
       .catch((caught) => {
@@ -133,6 +137,7 @@ export default function EditApiTokenPage() {
                 </div>
               ) : null}
               <ApiTokenForm
+                availableScopeOptions={scopeOptionsForUser(user)}
                 description={description}
                 expiresOn={expiresOn}
                 isActive={isActive}

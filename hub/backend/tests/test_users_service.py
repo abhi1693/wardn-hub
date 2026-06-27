@@ -9,11 +9,18 @@ from app.modules.users.auth_providers import ExternalIdentityClaims
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
+    InvalidAPITokenScopeError,
     InvalidLoginError,
     InvalidUserRoleUpdateError,
 )
-from app.modules.users.models import User, UserExternalIdentity
-from app.modules.users.schemas import LoginRequest, UserAdminUpdate, UserAPITokenCreate, UserCreate
+from app.modules.users.models import User, UserAPIToken, UserExternalIdentity
+from app.modules.users.schemas import (
+    LoginRequest,
+    UserAdminUpdate,
+    UserAPITokenCreate,
+    UserAPITokenUpdate,
+    UserCreate,
+)
 
 
 class FakeSession:
@@ -298,3 +305,97 @@ async def test_create_user_api_token_deduplicates_custom_scopes(monkeypatch) -> 
     )
 
     assert record.scopes == ["catalog:read", "submissions:read"]
+
+
+@pytest.mark.asyncio
+async def test_create_user_api_token_rejects_admin_scope_for_regular_user(monkeypatch) -> None:
+    user = User(email="user@example.com")
+    user.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return user
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    with pytest.raises(InvalidAPITokenScopeError):
+        await service.create_user_api_token(
+            FakeSession(),
+            user.id,
+            UserAPITokenCreate(name="Scorer", scopes=["registry:score"]),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_user_api_token_allows_admin_scope_for_superuser(monkeypatch) -> None:
+    user = User(email="admin@example.com", is_superuser=True)
+    user.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return user
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    record, _token = await service.create_user_api_token(
+        FakeSession(),
+        user.id,
+        UserAPITokenCreate(name="Scorer", scopes=["registry:score"]),
+    )
+
+    assert record.scopes == ["registry:score"]
+
+
+@pytest.mark.asyncio
+async def test_create_user_api_token_allows_moderator_scope(
+    monkeypatch,
+) -> None:
+    user = User(email="moderator@example.com", is_global_moderator=True)
+    user.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return user
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+
+    record, _token = await service.create_user_api_token(
+        FakeSession(),
+        user.id,
+        UserAPITokenCreate(name="Review", scopes=["submissions:moderate"]),
+    )
+
+    assert record.scopes == ["submissions:moderate"]
+
+
+@pytest.mark.asyncio
+async def test_update_user_api_token_rejects_admin_scope_for_regular_user(monkeypatch) -> None:
+    user = User(email="user@example.com")
+    user.id = uuid4()
+    token = UserAPIToken(
+        user_id=user.id,
+        name="Automation",
+        description="",
+        token_prefix="wardn",
+        token_hash="hash",
+        scopes=["catalog:read"],
+        organization_ids=[],
+        is_active=True,
+    )
+    token.id = uuid4()
+
+    async def get_user(*args, **kwargs):
+        return user
+
+    async def get_token(*args, **kwargs):
+        return token
+
+    monkeypatch.setattr(service.repository, "get_user_by_id", get_user)
+    monkeypatch.setattr(service.repository, "get_user_api_token_by_id", get_token)
+
+    with pytest.raises(InvalidAPITokenScopeError):
+        await service.update_user_api_token(
+            FakeSession(),
+            user.id,
+            token.id,
+            UserAPITokenUpdate(scopes=["registry:score"]),
+        )
+
+    assert token.scopes == ["catalog:read"]

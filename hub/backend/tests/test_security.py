@@ -14,7 +14,8 @@ from app.core.security import (
 )
 from app.db.session import get_db_session
 from app.main import create_app
-from app.modules.users import dependencies
+from app.modules.users import auth_router, dependencies
+from app.modules.users.exceptions import InvalidAPITokenScopeError
 
 
 def test_api_token_generation_and_verification() -> None:
@@ -57,6 +58,45 @@ def test_api_token_management_requires_token_scope(monkeypatch) -> None:
     assert response.status_code == 403
     assert response.json() == {
         "detail": "API token missing required scope: tokens:read",
+    }
+
+
+def test_api_token_create_rejects_disallowed_scope(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    async def authenticate_api_token(*args, **kwargs):
+        return (
+            SimpleNamespace(
+                id=uuid4(),
+                is_active=True,
+                is_superuser=False,
+                is_global_moderator=False,
+                is_global_partner_manager=False,
+            ),
+            SimpleNamespace(scopes=["tokens:write"]),
+        )
+
+    async def create_user_api_token(*args, **kwargs):
+        raise InvalidAPITokenScopeError(
+            "API token scope not allowed for current user: registry:score"
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_api_token)
+    monkeypatch.setattr(auth_router, "create_user_api_token", create_user_api_token)
+
+    response = TestClient(app).post(
+        "/api/v1/auth/api-tokens",
+        headers={"Authorization": "Bearer wardn_hub_key.secret"},
+        json={"name": "Scorer", "scopes": ["registry:score"]},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "API token scope not allowed for current user: registry:score",
     }
 
 

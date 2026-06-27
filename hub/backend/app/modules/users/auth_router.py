@@ -24,6 +24,7 @@ from app.modules.users.dependencies import (
 )
 from app.modules.users.exceptions import (
     DuplicateUserError,
+    InvalidAPITokenScopeError,
     InvalidLoginError,
     UserAPITokenNotFoundError,
 )
@@ -153,7 +154,10 @@ async def create_api_token(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("tokens:write"))],
 ) -> UserAPITokenCreated:
-    record, token = await create_user_api_token(session, current_user.id, payload)
+    try:
+        record, token = await create_user_api_token(session, current_user.id, payload)
+    except InvalidAPITokenScopeError as exc:
+        raise forbidden(exc, detail=str(exc)) from exc
     record = await commit_and_refresh(session, record)
     return UserAPITokenCreated(
         token=token,
@@ -190,6 +194,8 @@ async def update_api_token(
 ) -> UserAPITokenRead:
     try:
         record = await update_user_api_token(session, current_user.id, token_id, payload)
+    except InvalidAPITokenScopeError as exc:
+        raise forbidden(exc, detail=str(exc)) from exc
     except UserAPITokenNotFoundError as exc:
         raise not_found(exc) from exc
     return UserAPITokenRead.model_validate(await commit_and_refresh(session, record))

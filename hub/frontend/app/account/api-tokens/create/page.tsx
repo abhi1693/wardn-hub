@@ -10,11 +10,14 @@ import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { createApiToken, HubApiError, currentUser } from "@/lib/api/hub";
+import type { UserRead } from "@/lib/api/generated/model";
 import {
   ApiTokenForm,
   defaultScopes,
   expiryToIso,
+  filterScopesForUser,
   LoadState,
+  scopeOptionsForUser,
   TOKEN_CREATED_STORAGE_KEY,
 } from "../shared";
 
@@ -27,12 +30,15 @@ export default function CreateApiTokenPage() {
   const [expiresOn, setExpiresOn] = useState("");
   const [scopes, setScopes] = useState(defaultScopes);
   const [state, setState] = useState<LoadState>("loading");
+  const [user, setUser] = useState<UserRead | null>(null);
 
   useEffect(() => {
     let active = true;
     currentUser()
-      .then(() => {
+      .then((record) => {
         if (!active) return;
+        setUser(record);
+        setScopes(filterScopesForUser(defaultScopes, record));
         setState("ready");
       })
       .catch((caught) => {
@@ -108,6 +114,7 @@ export default function CreateApiTokenPage() {
 
           {state === "ready" ? (
           <ApiTokenForm
+            availableScopeOptions={scopeOptionsForUser(user)}
             description={description}
             descriptionPlaceholder="Used by release automation"
             expiresOn={expiresOn}
