@@ -2,9 +2,11 @@
 
 import type {
   AuditEventListResponse,
+  AuditEventsListParams,
   AuthProviderListResponse,
   BootstrapUserCreate,
   LoginRequest,
+  McpServersListParams,
   OrganizationCreate,
   OrganizationMembershipCreate,
   OrganizationMembershipListResponse,
@@ -48,6 +50,67 @@ import type {
   UserDirectoryRead,
   UserRead,
 } from "@/lib/api/generated/model";
+import {
+  getAdminMcpServersCreateVersionUrl,
+  getAdminMcpServersDeleteUrl,
+  getAdminMcpServersUpdateVersionUrl,
+} from "@/lib/api/generated/admin-mcp/admin-mcp";
+import { getAuditEventsListUrl } from "@/lib/api/generated/audit/audit";
+import {
+  getAuthCreateApiTokenUrl,
+  getAuthDeleteApiTokenUrl,
+  getAuthListApiTokensUrl,
+  getAuthListProvidersUrl,
+  getAuthLoginUrl,
+  getAuthLogoutUrl,
+  getAuthMeUrl,
+  getAuthRegisterUrl,
+  getAuthUpdateApiTokenUrl,
+} from "@/lib/api/generated/auth/auth";
+import { getImportsServerSourceUrl } from "@/lib/api/generated/imports/imports";
+import {
+  getMcpCategoriesCreateUrl,
+  getMcpCategoriesDeleteUrl,
+  getMcpCategoriesListUrl,
+  getMcpCategoriesUpdateUrl,
+} from "@/lib/api/generated/mcp-categories/mcp-categories";
+import {
+  getMcpServersGetUrl,
+  getMcpServersListUrl,
+} from "@/lib/api/generated/mcp/mcp";
+import {
+  getOrganizationMembershipsListUrl,
+  getOrganizationMembershipsUpdateUrl,
+  getOrganizationMembershipsUpsertUrl,
+  getOrganizationRolesListUrl,
+  getOrganizationsCreateUrl,
+  getOrganizationsListUrl,
+} from "@/lib/api/generated/organizations/organizations";
+import {
+  getPartnersListUrl,
+  getPartnersServerSupportCreateUrl,
+  getPartnersServerSupportListUrl,
+  getPartnersServerSupportUpdateUrl,
+  getPartnersUpdateOrganizationUrl,
+} from "@/lib/api/generated/partners/partners";
+import {
+  getSubmissionsApproveUrl,
+  getSubmissionsCreateUrl,
+  getSubmissionsDeleteUrl,
+  getSubmissionsGetUrl,
+  getSubmissionsListUrl,
+  getSubmissionsPublishUrl,
+  getSubmissionsRejectUrl,
+  getSubmissionsSubmitUrl,
+  getSubmissionsUpdateUrl,
+  getSubmissionsWithdrawUrl,
+} from "@/lib/api/generated/submissions/submissions";
+import {
+  getUsersBootstrapUrl,
+  getUsersGetUrl,
+  getUsersListUrl,
+  getUsersUpdateAdminFlagsUrl,
+} from "@/lib/api/generated/users/users";
 
 export type RegistryUserRead = UserDirectoryRead;
 
@@ -145,6 +208,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+function generatedPath(generatedUrl: string) {
+  const url = new URL(generatedUrl, "http://wardn-hub.local");
+  const path = url.pathname.startsWith(API_PREFIX)
+    ? url.pathname.slice(API_PREFIX.length) || "/"
+    : url.pathname;
+  return `${path}${url.search}`;
+}
+
+function generatedRequest<T>(generatedUrl: string, init?: RequestInit) {
+  return request<T>(generatedPath(generatedUrl), init);
+}
+
+function optionalQueryString(value?: string) {
+  return value === "" ? undefined : value;
+}
+
 async function clerkSessionToken() {
   if (typeof window === "undefined") return "";
   const clerk = (window as ClerkWindow).Clerk;
@@ -158,17 +237,6 @@ async function authBearerToken() {
   if (clerkToken) return clerkToken;
   const localToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
   return localToken;
-}
-
-function query(params: Record<string, string | number | boolean | undefined>) {
-  const search = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== "") {
-      search.set(key, String(value));
-    }
-  });
-  const value = search.toString();
-  return value ? `?${value}` : "";
 }
 
 function pathValue(value: string) {
@@ -187,15 +255,14 @@ export function listServers(params: {
   category?: string;
   limit?: number;
 }) {
-  return request<RegistryServerListResponse>(
-    `/mcp/servers${query({
-      search: params.search,
-      support_level: params.supportLevel,
-      partner: params.partner,
-      category: params.category,
-      limit: params.limit ?? 25,
-    })}`,
-  );
+  const generatedParams: McpServersListParams = {
+    search: optionalQueryString(params.search),
+    support_level: optionalQueryString(params.supportLevel),
+    partner: params.partner,
+    category: optionalQueryString(params.category),
+    limit: params.limit ?? 25,
+  };
+  return generatedRequest<RegistryServerListResponse>(getMcpServersListUrl(generatedParams));
 }
 
 export async function listPublishedServers(params: {
@@ -213,11 +280,11 @@ export async function listPublishedServers(params: {
 }
 
 export function listCategories() {
-  return request<RegistryCategoryListResponse>("/mcp/categories");
+  return generatedRequest<RegistryCategoryListResponse>(getMcpCategoriesListUrl());
 }
 
 export function createCategory(payload: RegistryCategoryCreate) {
-  return request<RegistryCategoryRead>("/mcp/categories", {
+  return generatedRequest<RegistryCategoryRead>(getMcpCategoriesCreateUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -225,21 +292,24 @@ export function createCategory(payload: RegistryCategoryCreate) {
 }
 
 export function updateCategory(categorySlug: string, payload: RegistryCategoryUpdate) {
-  return request<RegistryCategoryRead>(`/mcp/categories/${encodeURIComponent(categorySlug)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<RegistryCategoryRead>(
+    getMcpCategoriesUpdateUrl(encodeURIComponent(categorySlug)),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function deleteCategory(categorySlug: string) {
-  return request<void>(`/mcp/categories/${encodeURIComponent(categorySlug)}`, {
+  return generatedRequest<void>(getMcpCategoriesDeleteUrl(encodeURIComponent(categorySlug)), {
     method: "DELETE",
   });
 }
 
 export function listUsers() {
-  return request<UserDirectoryListResponse>("/users");
+  return generatedRequest<UserDirectoryListResponse>(getUsersListUrl());
 }
 
 export function listRegistryUsers() {
@@ -247,21 +317,22 @@ export function listRegistryUsers() {
 }
 
 export function getRegistryUser(userId: string) {
-  return request<RegistryUserDetailResponse>(`/users/${encodeURIComponent(userId)}`);
+  return generatedRequest<RegistryUserDetailResponse>(getUsersGetUrl(encodeURIComponent(userId)));
 }
 
 export function getServer(serverName: string) {
-  return request<RegistryServerDetailResponse>(
-    `/mcp/servers/${pathValue(serverName)}`,
-  );
+  return generatedRequest<RegistryServerDetailResponse>(getMcpServersGetUrl(pathValue(serverName)));
 }
 
 export function createServerVersion(payload: RegistryServerVersionCreate) {
-  return request<RegistryServerVersionDetailResponse>("/admin/mcp/servers", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<RegistryServerVersionDetailResponse>(
+    getAdminMcpServersCreateVersionUrl(),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function updateServerVersion(
@@ -269,8 +340,8 @@ export function updateServerVersion(
   version: string,
   payload: RegistryServerVersionUpdate,
 ) {
-  return request<RegistryServerVersionDetailResponse>(
-    `/admin/mcp/servers/${pathValue(serverName)}/versions/${encodeURIComponent(version)}`,
+  return generatedRequest<RegistryServerVersionDetailResponse>(
+    getAdminMcpServersUpdateVersionUrl(pathValue(serverName), encodeURIComponent(version)),
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -280,7 +351,7 @@ export function updateServerVersion(
 }
 
 export function deleteServer(serverName: string) {
-  return request<void>(`/admin/mcp/servers/${pathValue(serverName)}`, {
+  return generatedRequest<void>(getAdminMcpServersDeleteUrl(pathValue(serverName)), {
     method: "DELETE",
   });
 }
@@ -290,15 +361,15 @@ export function archiveServer(serverName: string) {
 }
 
 export function listSubmissions() {
-  return request<SubmissionListResponse>("/submissions");
+  return generatedRequest<SubmissionListResponse>(getSubmissionsListUrl());
 }
 
 export function getSubmission(submissionId: string) {
-  return request<SubmissionRead>(`/submissions/${submissionId}`);
+  return generatedRequest<SubmissionRead>(getSubmissionsGetUrl(encodeURIComponent(submissionId)));
 }
 
 export function createSubmission(payload: SubmissionCreate) {
-  return request<SubmissionRead>("/submissions", {
+  return generatedRequest<SubmissionRead>(getSubmissionsCreateUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -306,7 +377,7 @@ export function createSubmission(payload: SubmissionCreate) {
 }
 
 export function importServerSource(payload: ServerSourceImportRequest) {
-  return request<ServerSourceImportResponse>("/imports/server-source", {
+  return generatedRequest<ServerSourceImportResponse>(getImportsServerSourceUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -314,31 +385,34 @@ export function importServerSource(payload: ServerSourceImportRequest) {
 }
 
 export function updateSubmission(submissionId: string, payload: SubmissionUpdate) {
-  return request<SubmissionRead>(`/submissions/${submissionId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<SubmissionRead>(
+    getSubmissionsUpdateUrl(encodeURIComponent(submissionId)),
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function deleteSubmission(submissionId: string) {
-  return request<void>(`/submissions/${submissionId}`, {
+  return generatedRequest<void>(getSubmissionsDeleteUrl(encodeURIComponent(submissionId)), {
     method: "DELETE",
   });
 }
 
 export function listPartnerOrganizations() {
-  return request<PartnerOrganizationListResponse>("/partners");
+  return generatedRequest<PartnerOrganizationListResponse>(getPartnersListUrl());
 }
 
 export function listPartnerSupport(organizationId: string) {
-  return request<PartnerServerSupportListResponse>(
-    `/partners/organizations/${organizationId}/server-support`,
+  return generatedRequest<PartnerServerSupportListResponse>(
+    getPartnersServerSupportListUrl(encodeURIComponent(organizationId)),
   );
 }
 
 export function createOrganization(payload: OrganizationCreate) {
-  return request<OrganizationRead>("/organizations", {
+  return generatedRequest<OrganizationRead>(getOrganizationsCreateUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -346,16 +420,18 @@ export function createOrganization(payload: OrganizationCreate) {
 }
 
 export function listOrganizations() {
-  return request<OrganizationListResponse>("/organizations");
+  return generatedRequest<OrganizationListResponse>(getOrganizationsListUrl());
 }
 
 export function listOrganizationRoles(organizationId: string) {
-  return request<OrganizationRoleListResponse>(`/organizations/${organizationId}/roles`);
+  return generatedRequest<OrganizationRoleListResponse>(
+    getOrganizationRolesListUrl(encodeURIComponent(organizationId)),
+  );
 }
 
 export function listOrganizationMemberships(organizationId: string) {
-  return request<OrganizationMembershipListResponse>(
-    `/organizations/${organizationId}/memberships`,
+  return generatedRequest<OrganizationMembershipListResponse>(
+    getOrganizationMembershipsListUrl(encodeURIComponent(organizationId)),
   );
 }
 
@@ -363,11 +439,14 @@ export function upsertOrganizationMembership(
   organizationId: string,
   payload: OrganizationMembershipCreate,
 ) {
-  return request<OrganizationMembershipRead>(`/organizations/${organizationId}/memberships`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<OrganizationMembershipRead>(
+    getOrganizationMembershipsUpsertUrl(encodeURIComponent(organizationId)),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function updateOrganizationMembership(
@@ -375,8 +454,11 @@ export function updateOrganizationMembership(
   userId: string,
   payload: OrganizationMembershipUpdate,
 ) {
-  return request<OrganizationMembershipRead>(
-    `/organizations/${organizationId}/memberships/${userId}`,
+  return generatedRequest<OrganizationMembershipRead>(
+    getOrganizationMembershipsUpdateUrl(
+      encodeURIComponent(organizationId),
+      encodeURIComponent(userId),
+    ),
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -386,7 +468,8 @@ export function updateOrganizationMembership(
 }
 
 export function listAuditEvents() {
-  return request<AuditEventListResponse>("/audit/events?limit=50");
+  const params: AuditEventsListParams = { limit: 50 };
+  return generatedRequest<AuditEventListResponse>(getAuditEventsListUrl(params));
 }
 
 export function setApiToken(token: string) {
@@ -402,11 +485,11 @@ export function getApiToken() {
 }
 
 export function listAuthProviders() {
-  return request<AuthProviderListResponse>("/auth/providers");
+  return generatedRequest<AuthProviderListResponse>(getAuthListProvidersUrl());
 }
 
 export function login(payload: LoginRequest) {
-  return request<UserRead>("/auth/login", {
+  return generatedRequest<UserRead>(getAuthLoginUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -414,7 +497,7 @@ export function login(payload: LoginRequest) {
 }
 
 export function registerUser(payload: UserCreate) {
-  return request<UserRead>("/auth/register", {
+  return generatedRequest<UserRead>(getAuthRegisterUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -422,17 +505,17 @@ export function registerUser(payload: UserCreate) {
 }
 
 export function currentUser() {
-  return request<UserRead>("/auth/me");
+  return generatedRequest<UserRead>(getAuthMeUrl());
 }
 
 export function currentUserWithToken(token: string) {
-  return request<UserRead>("/auth/me", {
+  return generatedRequest<UserRead>(getAuthMeUrl(), {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 export function bootstrap(payload: BootstrapUserCreate) {
-  return request<UserRead>("/users/bootstrap", {
+  return generatedRequest<UserRead>(getUsersBootstrapUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -440,15 +523,18 @@ export function bootstrap(payload: BootstrapUserCreate) {
 }
 
 export function updateUserAdminFlags(userId: string, payload: UserAdminUpdate) {
-  return request<UserDirectoryRead>(`/users/${encodeURIComponent(userId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<UserDirectoryRead>(
+    getUsersUpdateAdminFlagsUrl(encodeURIComponent(userId)),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function logout() {
-  return request<void>("/auth/logout", { method: "POST" });
+  return generatedRequest<void>(getAuthLogoutUrl(), { method: "POST" });
 }
 
 export async function signOutExternalAuth(options?: ClerkSignOutOptions) {
@@ -457,11 +543,11 @@ export async function signOutExternalAuth(options?: ClerkSignOutOptions) {
 }
 
 export function listApiTokens() {
-  return request<UserAPITokenListResponse>("/auth/api-tokens");
+  return generatedRequest<UserAPITokenListResponse>(getAuthListApiTokensUrl());
 }
 
 export function createApiToken(payload: UserAPITokenCreate) {
-  return request<UserAPITokenCreated>("/auth/api-tokens", {
+  return generatedRequest<UserAPITokenCreated>(getAuthCreateApiTokenUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -469,15 +555,18 @@ export function createApiToken(payload: UserAPITokenCreate) {
 }
 
 export function updateApiToken(tokenId: string, payload: UserAPITokenUpdate) {
-  return request<UserAPITokenRead>(`/auth/api-tokens/${encodeURIComponent(tokenId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<UserAPITokenRead>(
+    getAuthUpdateApiTokenUrl(encodeURIComponent(tokenId)),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function deleteApiToken(tokenId: string) {
-  return request<void>(`/auth/api-tokens/${encodeURIComponent(tokenId)}`, {
+  return generatedRequest<void>(getAuthDeleteApiTokenUrl(encodeURIComponent(tokenId)), {
     method: "DELETE",
   });
 }
@@ -486,34 +575,50 @@ export function submissionAction(
   submissionId: string,
   action: "submit" | "withdraw" | "approve" | "publish",
 ) {
-  return request<SubmissionRead>(`/submissions/${submissionId}/${action}`, { method: "POST" });
+  const encodedSubmissionId = encodeURIComponent(submissionId);
+  type SubmissionAction = typeof action;
+  const urlByAction = {
+    submit: getSubmissionsSubmitUrl,
+    withdraw: getSubmissionsWithdrawUrl,
+    approve: getSubmissionsApproveUrl,
+    publish: getSubmissionsPublishUrl,
+  } satisfies Record<SubmissionAction, (submissionId: string) => string>;
+  return generatedRequest<SubmissionRead>(urlByAction[action](encodedSubmissionId), {
+    method: "POST",
+  });
 }
 
 export function rejectSubmission(submissionId: string, payload: SubmissionRejectRequest) {
-  return request<SubmissionRead>(`/submissions/${submissionId}/reject`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<SubmissionRead>(
+    getSubmissionsRejectUrl(encodeURIComponent(submissionId)),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function updatePartnerOrganization(
   organizationId: string,
   payload: PartnerOrganizationUpdate,
 ) {
-  return request<PartnerOrganizationRead>(`/partners/organizations/${organizationId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<PartnerOrganizationRead>(
+    getPartnersUpdateOrganizationUrl(encodeURIComponent(organizationId)),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function createPartnerSupport(
   organizationId: string,
   payload: PartnerServerSupportCreate,
 ) {
-  return request<PartnerServerSupportRead>(
-    `/partners/organizations/${organizationId}/server-support`,
+  return generatedRequest<PartnerServerSupportRead>(
+    getPartnersServerSupportCreateUrl(encodeURIComponent(organizationId)),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -523,11 +628,14 @@ export function createPartnerSupport(
 }
 
 export function updatePartnerSupport(supportId: string, payload: PartnerServerSupportUpdate) {
-  return request<PartnerServerSupportRead>(`/partners/server-support/${supportId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return generatedRequest<PartnerServerSupportRead>(
+    getPartnersServerSupportUpdateUrl(encodeURIComponent(supportId)),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export { API_PREFIX as DEFAULT_API_BASE_URL };
