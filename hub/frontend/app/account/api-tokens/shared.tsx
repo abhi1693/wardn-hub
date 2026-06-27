@@ -12,6 +12,8 @@ import {
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { UserAPITokenCreate, UserAPITokenRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
@@ -261,6 +263,176 @@ export function ScopeCheckbox({
         <span className="text-sm leading-5 text-muted-foreground">{description}</span>
       </span>
     </label>
+  );
+}
+
+export function ApiTokenForm({
+  description,
+  descriptionPlaceholder = "",
+  expiresOn,
+  isActive,
+  name,
+  namePlaceholder = "",
+  onActiveChange,
+  onDescriptionChange,
+  onExpiresOnChange,
+  onNameChange,
+  onScopesChange,
+  onSubmit,
+  scopes,
+  setupDetail,
+  setupIcon,
+  submitIcon,
+  submitLabel,
+  submitting,
+  submittingIcon,
+  submittingLabel,
+}: {
+  description: string;
+  descriptionPlaceholder?: string;
+  expiresOn: string;
+  isActive?: boolean;
+  name: string;
+  namePlaceholder?: string;
+  onActiveChange?: (enabled: boolean) => void;
+  onDescriptionChange: (value: string) => void;
+  onExpiresOnChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+  onScopesChange: (scopes: APITokenScope[]) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  scopes: APITokenScope[];
+  setupDetail: React.ReactNode;
+  setupIcon: React.ReactNode;
+  submitIcon: React.ReactNode;
+  submitLabel: string;
+  submitting: boolean;
+  submittingIcon: React.ReactNode;
+  submittingLabel: string;
+}) {
+  function setScope(scope: APITokenScope, enabled: boolean) {
+    if (enabled) {
+      onScopesChange([...new Set([...scopes, scope])]);
+      return;
+    }
+    onScopesChange(scopes.filter((value) => value !== scope));
+  }
+
+  return (
+    <form
+      className="overflow-hidden rounded-lg border border-border bg-white shadow-[var(--shadow-card)]"
+      onSubmit={onSubmit}
+    >
+      <section className="grid gap-6 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex size-10 items-center justify-center rounded-md bg-slate-100 text-slate-700">
+              {setupIcon}
+            </span>
+            <div className="grid gap-1">
+              <h2 className="text-lg font-bold text-foreground">Token setup</h2>
+              <p className="text-sm text-muted-foreground">{setupDetail}</p>
+            </div>
+          </div>
+          <span className="inline-flex min-h-8 items-center rounded-full border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700">
+            {scopes.length} selected
+          </span>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-2 lg:col-span-2">
+            <Label htmlFor="token-name">Name</Label>
+            <Input
+              id="token-name"
+              maxLength={100}
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder={namePlaceholder}
+              required
+              value={name}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="token-expiry">Expires on</Label>
+            <Input
+              id="token-expiry"
+              onChange={(event) => onExpiresOnChange(event.target.value)}
+              type="date"
+              value={expiresOn}
+            />
+          </div>
+          <div className="grid gap-2 lg:col-span-3">
+            <Label htmlFor="token-description">Description</Label>
+            <Input
+              id="token-description"
+              maxLength={200}
+              onChange={(event) => onDescriptionChange(event.target.value)}
+              placeholder={descriptionPlaceholder}
+              value={description}
+            />
+          </div>
+        </div>
+
+        {onActiveChange ? (
+          <label className="flex cursor-pointer items-center gap-3 rounded-md border border-border bg-white p-3">
+            <input
+              checked={Boolean(isActive)}
+              className="size-4"
+              onChange={(event) => onActiveChange(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="text-sm font-bold text-foreground">Active</span>
+          </label>
+        ) : null}
+
+        <div className="grid gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-bold text-foreground">Permissions</h3>
+              <p className="text-sm text-muted-foreground">Use a preset or select individual scopes.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => onScopesChange(readOnlyScopes)} size="sm" type="button" variant="outline">
+                Read only
+              </Button>
+              <Button onClick={() => onScopesChange(defaultScopes)} size="sm" type="button" variant="outline">
+                Submission
+              </Button>
+              <Button onClick={() => onScopesChange(reviewScopes)} size="sm" type="button" variant="outline">
+                Review
+              </Button>
+              <Button
+                onClick={() => onScopesChange(scopeOptions.map((scope) => scope.value))}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Full access
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-1 rounded-lg border border-border p-2 md:grid-cols-2 xl:grid-cols-3">
+            {scopeOptions.map((scope) => (
+              <ScopeCheckbox
+                checked={scopes.includes(scope.value)}
+                description={scope.description}
+                key={scope.value}
+                label={scope.label}
+                onChange={(enabled) => setScope(scope.value, enabled)}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border bg-slate-50 px-5 py-4">
+        <Button asChild type="button" variant="outline">
+          <Link href="/account/api-tokens">Cancel</Link>
+        </Button>
+        <Button disabled={submitting || !name.trim() || scopes.length === 0} type="submit">
+          {submitting ? submittingIcon : submitIcon}
+          {submitting ? submittingLabel : submitLabel}
+        </Button>
+      </div>
+    </form>
   );
 }
 
