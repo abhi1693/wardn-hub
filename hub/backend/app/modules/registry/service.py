@@ -833,7 +833,6 @@ async def list_servers(
     *,
     cursor: str | None,
     limit: int,
-    include_deleted: bool,
     search: str | None = None,
     updated_since=None,
     version: str | None = "latest",
@@ -849,7 +848,7 @@ async def list_servers(
         session,
         offset=offset,
         limit=limit,
-        include_deleted=include_deleted,
+        include_deleted=False,
         search=search,
         updated_since=updated_since,
         version=version,
@@ -1022,17 +1021,11 @@ async def seed_default_categories(session) -> RegistryCategoryListResponse:
 async def get_server_detail(
     session,
     name: str,
-    *,
-    include_deleted: bool = False,
 ) -> RegistryServerDetailResponse:
-    server = await repository.get_server(session, name, include_deleted=include_deleted)
+    server = await repository.get_published_server(session, name)
     if server is None:
         raise RegistryServerNotFoundError("server not found")
-    versions = await repository.list_server_versions(
-        session,
-        name,
-        include_deleted=include_deleted,
-    )
+    versions = await repository.list_published_server_versions(session, server)
     latest = next((candidate for candidate in versions if candidate.is_latest), None)
     trust = await build_trust_context(session, servers=[server], versions=versions)
     return RegistryServerDetailResponse(
@@ -1047,16 +1040,11 @@ async def get_server_detail(
 async def list_versions(
     session,
     name: str,
-    *,
-    include_deleted: bool = False,
 ) -> RegistryServerVersionListResponse:
-    versions = await repository.list_server_versions(
-        session,
-        name,
-        include_deleted=include_deleted,
-    )
-    if not versions and await repository.count_versions_for_name(session, name) == 0:
+    server = await repository.get_published_server(session, name)
+    if server is None:
         raise RegistryServerNotFoundError("server not found")
+    versions = await repository.list_published_server_versions(session, server)
     trust = await build_trust_context(session, versions=versions)
     return RegistryServerVersionListResponse(
         versions=[
@@ -1071,24 +1059,17 @@ async def get_version_detail(
     session,
     name: str,
     version_name: str,
-    *,
-    include_deleted: bool = False,
 ) -> RegistryServerVersionDetailResponse:
-    version = await repository.get_server_version(
-        session,
-        name,
-        version_name,
-        include_deleted=include_deleted,
-    )
-    if version is None:
-        raise RegistryVersionNotFoundError("server version not found")
-    server = await repository.get_server_by_id(session, version.server_id)
+    server = await repository.get_published_server(session, name)
     if server is None:
         raise RegistryServerNotFoundError("server not found")
+    version = await repository.get_published_server_version(session, server, version_name)
+    if version is None:
+        raise RegistryVersionNotFoundError("server version not found")
     latest = (
         version
         if version.is_latest
-        else await repository.get_server_version(session, name, "latest")
+        else await repository.get_published_server_version(session, server, "latest")
     )
     trust = await build_trust_context(
         session,

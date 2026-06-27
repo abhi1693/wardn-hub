@@ -180,7 +180,6 @@ export function listServers(params: {
   partner?: boolean;
   category?: string;
   limit?: number;
-  status?: string;
 }) {
   return request<RegistryServerListResponse>(
     `/mcp/servers${query({
@@ -189,7 +188,6 @@ export function listServers(params: {
       partner: params.partner,
       category: params.category,
       limit: params.limit ?? 25,
-      status: params.status,
     })}`,
   );
 }
@@ -201,7 +199,7 @@ export async function listPublishedServers(params: {
   category?: string;
   limit?: number;
 }) {
-  const response = await listServers({ ...params, status: "active" });
+  const response = await listServers(params);
   return {
     ...response,
     servers: response.servers.filter((server) => Boolean(server.latestVersion)),

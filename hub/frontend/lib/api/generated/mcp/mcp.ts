@@ -8,10 +8,7 @@ import type {
   ErrorResponse,
   HTTPValidationError,
   McpCatalogListParams,
-  McpServersGetParams,
-  McpServersGetVersionParams,
   McpServersListParams,
-  McpServersListVersionsParams,
   RegistryPublishedServerListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
@@ -156,29 +153,20 @@ export type mcpServersGetResponseError = (mcpServersGetResponse404 | mcpServersG
 
 export type mcpServersGetResponse = (mcpServersGetResponseSuccess | mcpServersGetResponseError)
 
-export const getMcpServersGetUrl = (serverName: string,
-    params?: McpServersGetParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getMcpServersGetUrl = (serverName: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `http://localhost:8000/api/v1/mcp/servers/${serverName}?${stringifiedParams}` : `http://localhost:8000/api/v1/mcp/servers/${serverName}`
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}`
 }
 
 /**
  * @summary Get Mcp Server
  */
-export const mcpServersGet = async (serverName: string,
-    params?: McpServersGetParams, options?: RequestInit): Promise<mcpServersGetResponse> => {
+export const mcpServersGet = async (serverName: string, options?: RequestInit): Promise<mcpServersGetResponse> => {
 
-  const res = await fetch(getMcpServersGetUrl(serverName,params),
+  const res = await fetch(getMcpServersGetUrl(serverName),
   {
     ...options,
     method: 'GET'
@@ -219,29 +207,20 @@ export type mcpServersListVersionsResponseError = (mcpServersListVersionsRespons
 
 export type mcpServersListVersionsResponse = (mcpServersListVersionsResponseSuccess | mcpServersListVersionsResponseError)
 
-export const getMcpServersListVersionsUrl = (serverName: string,
-    params?: McpServersListVersionsParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getMcpServersListVersionsUrl = (serverName: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `http://localhost:8000/api/v1/mcp/servers/${serverName}/versions?${stringifiedParams}` : `http://localhost:8000/api/v1/mcp/servers/${serverName}/versions`
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/versions`
 }
 
 /**
  * @summary List Mcp Server Versions
  */
-export const mcpServersListVersions = async (serverName: string,
-    params?: McpServersListVersionsParams, options?: RequestInit): Promise<mcpServersListVersionsResponse> => {
+export const mcpServersListVersions = async (serverName: string, options?: RequestInit): Promise<mcpServersListVersionsResponse> => {
 
-  const res = await fetch(getMcpServersListVersionsUrl(serverName,params),
+  const res = await fetch(getMcpServersListVersionsUrl(serverName),
   {
     ...options,
     method: 'GET'
@@ -283,30 +262,21 @@ export type mcpServersGetVersionResponseError = (mcpServersGetVersionResponse404
 export type mcpServersGetVersionResponse = (mcpServersGetVersionResponseSuccess | mcpServersGetVersionResponseError)
 
 export const getMcpServersGetVersionUrl = (serverName: string,
-    version: string,
-    params?: McpServersGetVersionParams,) => {
-  const normalizedParams = new URLSearchParams();
+    version: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `http://localhost:8000/api/v1/mcp/servers/${serverName}/versions/${version}?${stringifiedParams}` : `http://localhost:8000/api/v1/mcp/servers/${serverName}/versions/${version}`
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/versions/${version}`
 }
 
 /**
  * @summary Get Mcp Server Version
  */
 export const mcpServersGetVersion = async (serverName: string,
-    version: string,
-    params?: McpServersGetVersionParams, options?: RequestInit): Promise<mcpServersGetVersionResponse> => {
+    version: string, options?: RequestInit): Promise<mcpServersGetVersionResponse> => {
 
-  const res = await fetch(getMcpServersGetVersionUrl(serverName,version,params),
+  const res = await fetch(getMcpServersGetVersionUrl(serverName,version),
   {
     ...options,
     method: 'GET'

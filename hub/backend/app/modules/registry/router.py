@@ -144,20 +144,17 @@ async def list_mcp_servers(
     search: str | None = None,
     updated_since: datetime | None = None,
     version: str | None = "latest",
-    include_deleted: bool = False,
     support_level: str | None = None,
     partner: bool | None = None,
     registry_type: str | None = None,
     transport_type: str | None = None,
     category: str | None = None,
-    status_filter: str | None = Query(default=None, alias="status"),
 ) -> RegistryServerListResponse:
     try:
         return await list_servers(
             session,
             cursor=cursor,
             limit=limit,
-            include_deleted=include_deleted,
             search=search,
             updated_since=updated_since,
             version=version,
@@ -166,7 +163,6 @@ async def list_mcp_servers(
             registry_type=registry_type,
             transport_type=transport_type,
             category=category,
-            status=status_filter,
         )
     except InvalidRegistryCursorError as exc:
         raise HTTPException(
@@ -196,10 +192,9 @@ async def list_mcp_catalog(
 async def list_mcp_server_versions(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    include_deleted: bool = False,
 ) -> RegistryServerVersionListResponse:
     try:
-        return await list_versions(session, server_name, include_deleted=include_deleted)
+        return await list_versions(session, server_name)
     except RegistryServerNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -217,15 +212,9 @@ async def get_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    include_deleted: bool = False,
 ) -> RegistryServerVersionDetailResponse:
     try:
-        return await get_version_detail(
-            session,
-            server_name,
-            version,
-            include_deleted=include_deleted,
-        )
+        return await get_version_detail(session, server_name, version)
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -242,10 +231,9 @@ async def get_mcp_server_version(
 async def get_mcp_server(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    include_deleted: bool = False,
 ) -> RegistryServerDetailResponse:
     try:
-        return await get_server_detail(session, server_name, include_deleted=include_deleted)
+        return await get_server_detail(session, server_name)
     except RegistryServerNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

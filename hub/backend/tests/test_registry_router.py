@@ -60,6 +60,21 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         == "mcp_categories_update"
     )
     assert schema["paths"]["/api/v1/mcp/servers"]["get"]["operationId"] == "mcp_servers_list"
+    server_list_params = {
+        parameter["name"]
+        for parameter in schema["paths"]["/api/v1/mcp/servers"]["get"].get("parameters", [])
+    }
+    assert "include_deleted" not in server_list_params
+    assert "status" not in server_list_params
+    for path in (
+        "/api/v1/mcp/servers/{server_name}",
+        "/api/v1/mcp/servers/{server_name}/versions",
+        "/api/v1/mcp/servers/{server_name}/versions/{version}",
+    ):
+        params = {
+            parameter["name"] for parameter in schema["paths"][path]["get"].get("parameters", [])
+        }
+        assert "include_deleted" not in params
     assert (
         schema["paths"]["/api/v1/mcp/catalog"]["get"]["operationId"]
         == "mcp_catalog_list"

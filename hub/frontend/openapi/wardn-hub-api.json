@@ -5898,16 +5898,6 @@
           },
           {
             "in": "query",
-            "name": "include_deleted",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Deleted",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
             "name": "support_level",
             "required": false,
             "schema": {
@@ -5985,22 +5975,6 @@
               ],
               "title": "Category"
             }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
           }
         ],
         "responses": {
@@ -6042,16 +6016,6 @@
             "schema": {
               "title": "Server Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_deleted",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Deleted",
-              "type": "boolean"
             }
           }
         ],
@@ -6104,16 +6068,6 @@
             "schema": {
               "title": "Server Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_deleted",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Deleted",
-              "type": "boolean"
             }
           }
         ],
@@ -6175,16 +6129,6 @@
             "schema": {
               "title": "Version",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_deleted",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Deleted",
-              "type": "boolean"
             }
           }
         ],

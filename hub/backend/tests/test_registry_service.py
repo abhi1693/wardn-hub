@@ -11,6 +11,7 @@ from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
 from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
@@ -818,6 +819,17 @@ async def test_update_rejects_path_mismatch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_server_detail_hides_unpublished_server(monkeypatch) -> None:
+    async def missing_server(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_published_server", missing_server)
+
+    with pytest.raises(RegistryServerNotFoundError):
+        await service.get_server_detail(FakeSession(), "io.github.example/weather")
+
+
+@pytest.mark.asyncio
 async def test_get_server_detail_includes_partner_support(monkeypatch) -> None:
     now = datetime(2026, 6, 23, tzinfo=UTC)
     organization = Organization(
@@ -884,8 +896,8 @@ async def test_get_server_detail_includes_partner_support(monkeypatch) -> None:
             ]
         }
 
-    monkeypatch.setattr(service.repository, "get_server", get_server)
-    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "get_published_server", get_server)
+    monkeypatch.setattr(service.repository, "list_published_server_versions", list_versions)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", partner_support)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", categories)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", organizations)
@@ -968,8 +980,8 @@ async def test_get_server_detail_omits_private_source_evidence(monkeypatch) -> N
             ]
         }
 
-    monkeypatch.setattr(service.repository, "get_server", get_server)
-    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "get_published_server", get_server)
+    monkeypatch.setattr(service.repository, "list_published_server_versions", list_versions)
     monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
     monkeypatch.setattr(service.repository, "list_categories_for_servers", categories)
     monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
