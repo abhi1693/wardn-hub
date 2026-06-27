@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { currentUser, listCategories, updateCategory } from "@/lib/api/hub";
 import type { RegistryCategoryRead } from "@/lib/api/generated/model";
+import { protectedStateFromError, type ProtectedLoadState } from "@/lib/protected-route";
 
 import { CategoryForm } from "../../category-form";
 
-type AccessState = "loading" | "allowed" | "denied";
+type AccessState = Exclude<ProtectedLoadState, "ready"> | "allowed";
 
 export default function EditCategoryPage() {
   const params = useParams<{ categorySlug?: string }>();
@@ -38,7 +40,7 @@ export default function EditCategoryPage() {
       })
       .catch((caught) => {
         setError(caught instanceof Error ? caught.message : "Unable to load category.");
-        setAccessState("denied");
+        setAccessState(protectedStateFromError(caught));
       });
   }, []);
 
@@ -52,29 +54,10 @@ export default function EditCategoryPage() {
       <PublicHeader />
 
       <main className="server-detail-main">
-        <section className="category-page-header">
-          <div>
-            <h1>Edit Category</h1>
-            <p>{category?.name ?? categorySlug}</p>
-          </div>
-          <Link className="site-action-link" href="/categories">
-            Categories
-          </Link>
-        </section>
-
-        {accessState === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Checking category access.</div>
-          </div>
-        ) : null}
-
-        {accessState === "denied" ? (
-          <div className="empty-state">
-            <div className="empty-title">Access denied</div>
-            <div className="empty-detail">{error}</div>
-          </div>
-        ) : null}
+        {accessState === "loading" ? <ProtectedRouteState status="loading" /> : null}
+        {accessState === "auth" ? <ProtectedRouteState status="auth" /> : null}
+        {accessState === "denied" ? <ProtectedRouteState detail={error} status="denied" /> : null}
+        {accessState === "error" ? <ProtectedRouteState detail={error} status="error" /> : null}
 
         {accessState === "allowed" && !category ? (
           <div className="empty-state">
@@ -85,6 +68,15 @@ export default function EditCategoryPage() {
 
         {accessState === "allowed" && category ? (
           <>
+            <section className="category-page-header">
+              <div>
+                <h1>Edit Category</h1>
+                <p>{category.name}</p>
+              </div>
+              <Link className="site-action-link" href="/categories">
+                Categories
+              </Link>
+            </section>
             {error ? <div className="error-banner">{error}</div> : null}
             <CategoryForm
               initialValues={{

@@ -5,6 +5,7 @@ import { AlertCircle, KeyRound, RefreshCw, Save } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { HubApiError, listApiTokens, updateApiToken } from "@/lib/api/hub";
@@ -93,35 +94,28 @@ export default function EditApiTokenPage() {
         }}
       >
         <div className="grid gap-5">
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="grid gap-1">
-              <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
-                <KeyRound className="size-6 text-muted-foreground" />
-                <span>Edit API token</span>
-              </h1>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Update token metadata, scopes, expiry, or active state.
-              </p>
-            </div>
-            <Button asChild variant="outline">
-              <Link href="/account/api-tokens">All tokens</Link>
-            </Button>
-          </header>
+          {state === "ready" && token ? (
+            <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="grid gap-1">
+                <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
+                  <KeyRound className="size-6 text-muted-foreground" />
+                  <span>Edit API token</span>
+                </h1>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Update token metadata, scopes, expiry, or active state.
+                </p>
+              </div>
+              <Button asChild variant="outline">
+                <Link href="/account/api-tokens">All tokens</Link>
+              </Button>
+            </header>
+          ) : null}
 
           {state === "loading" ? (
-            <StatePanel detail="Fetching API token details." icon={RefreshCw} title="Loading token" />
+            <ProtectedRouteState status="loading" />
           ) : null}
           {state === "auth" ? (
-            <StatePanel
-              action={
-                <Button asChild size="sm">
-                  <Link href="/login">Sign in</Link>
-                </Button>
-              }
-              detail="Authentication is required before API tokens can be edited."
-              icon={KeyRound}
-              title="Sign in required"
-            />
+            <ProtectedRouteState status="auth" />
           ) : null}
           {state === "error" ? (
             <StatePanel

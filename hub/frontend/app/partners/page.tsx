@@ -3,11 +3,17 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
-import { currentUser, listPartnerOrganizations, updatePartnerOrganization } from "@/lib/api/hub";
+import {
+  currentUser,
+  listPartnerOrganizations,
+  updatePartnerOrganization,
+} from "@/lib/api/hub";
 import type { PartnerOrganizationRead } from "@/lib/api/generated/model";
+import { protectedStateFromError, type ProtectedLoadState } from "@/lib/protected-route";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = ProtectedLoadState;
 
 function formatDate(value?: string | null) {
   if (!value) return "Not available";
@@ -34,17 +40,20 @@ export default function PartnersPage() {
       currentUser()
         .then(async (user) => {
           if (!canManagePartners(user)) {
-            throw new Error("Partner management requires partner manager access.");
+            setError("Partner management requires partner manager access.");
+            setState("denied");
+            return null;
           }
           return listPartnerOrganizations();
         })
         .then((response) => {
+          if (!response) return;
           setPartners(response.organizations);
           setState("ready");
         })
         .catch((caught) => {
           setError(caught instanceof Error ? caught.message : "Unable to load partners.");
-          setState("error");
+          setState(protectedStateFromError(caught));
         });
     }, 0);
 
@@ -77,31 +86,26 @@ export default function PartnersPage() {
       <PublicHeader />
 
       <main className="server-detail-main">
-        <section className="category-page-header">
-          <div>
-            <h1>Partners</h1>
-            <p>Manage partner organizations and the users who can publish servers for them.</p>
-          </div>
-          <Link className="site-nav-cta" href="/partners/create">
-            Create Partner
-          </Link>
-        </section>
-
-        {state === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Fetching partner organizations.</div>
-          </div>
-        ) : null}
-
+        {state === "loading" ? <ProtectedRouteState status="loading" /> : null}
+        {state === "auth" ? <ProtectedRouteState status="auth" /> : null}
+        {state === "denied" ? <ProtectedRouteState detail={error} status="denied" /> : null}
         {state === "error" ? (
-          <div className="empty-state">
-            <div className="empty-title">Partners unavailable</div>
-            <div className="empty-detail">{error}</div>
-          </div>
+          <ProtectedRouteState detail={error} status="error" title="Partners unavailable" />
         ) : null}
 
         {state === "ready" && error ? <div className="error-banner">{error}</div> : null}
+
+        {state === "ready" ? (
+          <section className="category-page-header">
+            <div>
+              <h1>Partners</h1>
+              <p>Manage partner organizations and the users who can publish servers for them.</p>
+            </div>
+            <Link className="site-nav-cta" href="/partners/create">
+              Create Partner
+            </Link>
+          </section>
+        ) : null}
 
         {state === "ready" && partners.length === 0 ? (
           <div className="empty-state">

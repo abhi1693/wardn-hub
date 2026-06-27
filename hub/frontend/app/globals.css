@@ -3080,6 +3080,12 @@ button {
   color: var(--muted-foreground);
 }
 
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
 @media (max-width: 980px) {
   .site-header {
     position: static;

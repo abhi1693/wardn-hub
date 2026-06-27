@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, Archive, FileCheck2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +15,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { archiveServer, currentUser, deleteSubmission, getSubmission } from "@/lib/api/hub";
+import {
+  HubApiError,
+  archiveServer,
+  currentUser,
+  deleteSubmission,
+  getSubmission,
+} from "@/lib/api/hub";
 import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = "loading" | "ready" | "error" | "auth";
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
@@ -148,7 +155,7 @@ export default function SubmissionDetailPage() {
         })
         .catch((caught) => {
           setError(caught instanceof Error ? caught.message : "Unable to load submission.");
-          setState("error");
+          setState(caught instanceof HubApiError && caught.status === 401 ? "auth" : "error");
         });
     }, 0);
     return () => window.clearTimeout(timeoutId);
@@ -228,6 +235,16 @@ export default function SubmissionDetailPage() {
       <PublicHeader />
       <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
       <div className="mx-auto grid w-full max-w-[var(--content-max-width)] gap-5">
+        {state === "loading" ? <ProtectedRouteState status="loading" /> : null}
+        {state === "auth" ? (
+          <ProtectedRouteState signInHref="/login?next=submissions" status="auth" />
+        ) : null}
+        {state === "error" ? (
+          <ProtectedRouteState detail={error} status="error" title="Submission unavailable" />
+        ) : null}
+
+        {state === "ready" && submission ? (
+          <>
         <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {submission ? (
@@ -299,16 +316,6 @@ export default function SubmissionDetailPage() {
             ) : null}
           </CardHeader>
           <CardContent>
-            {state === "loading" ? (
-              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                Loading submission.
-              </div>
-            ) : null}
-            {state === "error" ? (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
-              </div>
-            ) : null}
             {state === "ready" && submission ? (
               <div className="grid gap-5">
                 <div className="grid gap-3 md:grid-cols-4">
@@ -505,6 +512,8 @@ export default function SubmissionDetailPage() {
             ) : null}
           </CardContent>
         </Card>
+        </>
+        ) : null}
         </div>
       </main>
     </>

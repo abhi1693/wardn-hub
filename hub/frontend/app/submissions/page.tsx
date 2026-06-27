@@ -15,7 +15,6 @@ import {
   GitBranch,
   Pencil,
   Plus,
-  RefreshCw,
   SearchX,
   Sparkles,
   Trash2,
@@ -27,6 +26,7 @@ import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog"
 import { AiSubmissionPromptDialog } from "@/components/ai-submission-prompt-dialog";
 import { AiUrlDraftPromptDialog } from "@/components/ai-url-draft-prompt-dialog";
 import { AiValidationPromptDialog } from "@/components/ai-validation-prompt-dialog";
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
@@ -793,30 +793,31 @@ function SubmissionsPageContent() {
         }}
       >
         <div className="grid gap-5">
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="grid gap-1">
-              <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
-                <FileCheck2 className="size-6 text-muted-foreground" />
-                <span>
-                  Submission review
-                </span>
-              </h1>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                Track MCP server drafts, reviews, and published versions.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <AddSubmissionMenu />
-            </div>
-          </header>
+          {state === "ready" ? (
+            <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="grid gap-1">
+                <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
+                  <FileCheck2 className="size-6 text-muted-foreground" />
+                  <span>Submission review</span>
+                </h1>
+                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Track MCP server drafts, reviews, and published versions.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <AddSubmissionMenu />
+              </div>
+            </header>
+          ) : null}
 
           <section className="grid gap-4">
-            {actionError ? (
+            {state === "ready" && actionError ? (
               <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {actionError}
               </div>
             ) : null}
-            <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
+            {state === "ready" ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="mr-1 text-sm font-bold text-foreground">
                   {allGroupedSubmissions.length}{" "}
@@ -859,26 +860,14 @@ function SubmissionsPageContent() {
                 <CalendarClock className="size-4" />
                 Sorted by latest update
               </div>
-            </div>
+              </div>
+            ) : null}
 
             {state === "loading" ? (
-              <StatePanel
-                detail="Fetching the latest submission records for your account."
-                icon={RefreshCw}
-                title="Loading submissions"
-              />
+              <ProtectedRouteState status="loading" />
             ) : null}
             {state === "auth" ? (
-              <StatePanel
-                action={
-                  <Button asChild size="sm">
-                    <Link href="/login?next=submissions">Sign in</Link>
-                  </Button>
-                }
-                detail="Authentication is required before submission records can be shown."
-                icon={FileCheck2}
-                title="Sign in required"
-              />
+              <ProtectedRouteState signInHref="/login?next=submissions" status="auth" />
             ) : null}
             {state === "error" ? (
               <StatePanel detail={error} icon={AlertCircle} title="Unable to load submissions" tone="danger" />

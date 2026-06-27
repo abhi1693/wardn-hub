@@ -5,16 +5,17 @@ import { useParams, useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import {
   createPartnerSupport,
+  currentUser,
   listOrganizationMemberships,
   listOrganizationRoles,
   listPartnerOrganizations,
   listPartnerSupport,
   listRegistryUsers,
   type RegistryUserRead,
-  currentUser,
   updatePartnerOrganization,
   updatePartnerSupport,
   updateOrganizationMembership,
@@ -29,8 +30,9 @@ import type {
   PartnerServerSupportRead,
   PartnerServerSupportUpdate,
 } from "@/lib/api/generated/model";
+import { protectedStateFromError, type ProtectedLoadState } from "@/lib/protected-route";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = ProtectedLoadState;
 type PartnerStatus = NonNullable<PartnerOrganizationUpdate["partnerStatus"]>;
 type PartnerTier = NonNullable<PartnerOrganizationUpdate["partnerTier"]>;
 type PartnerSupportLevel = NonNullable<PartnerOrganizationUpdate["partnerSupportLevel"]>;
@@ -125,7 +127,9 @@ export default function EditPartnerPage() {
     setError("");
     const user = await currentUser();
     if (!canManagePartners(user)) {
-      throw new Error("Partner management requires partner manager access.");
+      setError("Partner management requires partner manager access.");
+      setState("denied");
+      return;
     }
     const [
       partnerResponse,
@@ -173,7 +177,7 @@ export default function EditPartnerPage() {
     const timeoutId = window.setTimeout(() => {
       refresh().catch((caught) => {
         setError(caught instanceof Error ? caught.message : "Unable to load partner.");
-        setState("error");
+        setState(protectedStateFromError(caught));
       });
     }, 0);
     return () => window.clearTimeout(timeoutId);
@@ -366,31 +370,25 @@ export default function EditPartnerPage() {
       <PublicHeader />
 
       <main className="server-detail-main">
-        <section className="category-page-header">
-          <div>
-            <h1>{partner?.name ?? "Edit Partner"}</h1>
-            <p>{partner ? `${partner.slug} · updated ${formatDate(partner.updatedAt)}` : "Manage partner metadata."}</p>
-          </div>
-          <Link className="site-action-link" href="/partners">
-            Partners
-          </Link>
-        </section>
-
-        {state === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Fetching partner details.</div>
-          </div>
-        ) : null}
-
+        {state === "loading" ? <ProtectedRouteState status="loading" /> : null}
+        {state === "auth" ? <ProtectedRouteState status="auth" /> : null}
+        {state === "denied" ? <ProtectedRouteState detail={error} status="denied" /> : null}
         {state === "error" ? (
-          <div className="empty-state">
-            <div className="empty-title">Partner unavailable</div>
-            <div className="empty-detail">{error}</div>
-          </div>
+          <ProtectedRouteState detail={error} status="error" title="Partner unavailable" />
         ) : null}
 
         {state === "ready" ? (
+          <>
+          <section className="category-page-header">
+            <div>
+              <h1>{partner?.name ?? "Edit Partner"}</h1>
+              <p>{partner ? `${partner.slug} · updated ${formatDate(partner.updatedAt)}` : ""}</p>
+            </div>
+            <Link className="site-action-link" href="/partners">
+              Partners
+            </Link>
+          </section>
+
           <div className="partner-edit-layout">
             <div className="partner-edit-main">
               {error ? <div className="error-banner">{error}</div> : null}
@@ -790,6 +788,7 @@ export default function EditPartnerPage() {
             </div>
 
           </div>
+          </>
         ) : null}
       </main>
     </div>

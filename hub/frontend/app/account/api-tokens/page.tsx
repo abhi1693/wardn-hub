@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, KeyRound, Plus, RefreshCw } from "lucide-react";
+import { AlertCircle, KeyRound, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { HubApiError, listApiTokens } from "@/lib/api/hub";
@@ -58,44 +59,33 @@ export default function ApiTokensPage() {
         }}
       >
         <div className="grid gap-5">
-          <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="grid gap-1">
-              <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
-                <KeyRound className="size-6 text-muted-foreground" />
-                <span>API tokens</span>
-              </h1>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                Create and manage scoped bearer tokens for API access.
-              </p>
-            </div>
-            <Button asChild>
-              <Link href="/account/api-tokens/create">
-                <Plus className="size-4" />
-                Create token
-              </Link>
-            </Button>
-          </header>
+          {state === "ready" ? (
+            <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="grid gap-1">
+                <h1 className="flex items-center gap-2 text-3xl font-black tracking-normal text-foreground">
+                  <KeyRound className="size-6 text-muted-foreground" />
+                  <span>API tokens</span>
+                </h1>
+                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Create and manage scoped bearer tokens for API access.
+                </p>
+              </div>
+              <Button asChild>
+                <Link href="/account/api-tokens/create">
+                  <Plus className="size-4" />
+                  Create token
+                </Link>
+              </Button>
+            </header>
+          ) : null}
 
-          {createdToken ? <TokenValuePanel token={createdToken} /> : null}
+          {state === "ready" && createdToken ? <TokenValuePanel token={createdToken} /> : null}
 
           {state === "loading" ? (
-            <StatePanel
-              detail="Fetching API token records for your account."
-              icon={RefreshCw}
-              title="Loading API tokens"
-            />
+            <ProtectedRouteState status="loading" />
           ) : null}
           {state === "auth" ? (
-            <StatePanel
-              action={
-                <Button asChild size="sm">
-                  <Link href="/login">Sign in</Link>
-                </Button>
-              }
-              detail="Authentication is required before API tokens can be shown."
-              icon={KeyRound}
-              title="Sign in required"
-            />
+            <ProtectedRouteState status="auth" />
           ) : null}
           {state === "error" ? (
             <StatePanel

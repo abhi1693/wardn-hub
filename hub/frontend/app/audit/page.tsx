@@ -3,6 +3,7 @@
 import { AlertCircle, History } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { HubApiError, listAuditEvents } from "@/lib/api/hub";
 import type { AuditEventRead } from "@/lib/api/generated/model";
@@ -60,19 +61,21 @@ export default function AuditPage() {
       <PublicHeader />
       <section className="workspace">
         <div className="view">
-          <header className="view-header">
-            <div>
-              <p className="eyebrow">Operations</p>
-              <h1>Audit events</h1>
-            </div>
-            <div className="header-icon">
-              <History size={18} />
-            </div>
-          </header>
+          {state === "ready" ? (
+            <header className="view-header">
+              <div>
+                <p className="eyebrow">Operations</p>
+                <h1>Audit events</h1>
+              </div>
+              <div className="header-icon">
+                <History size={18} />
+              </div>
+            </header>
+          ) : null}
           <div className="table-surface roomy">
-            {state === "loading" ? <EmptyState title="Loading" detail="Fetching audit events." /> : null}
+            {state === "loading" ? <ProtectedRouteState status="loading" /> : null}
             {state === "auth" ? (
-              <EmptyState title="Authentication required" detail="Audit events are protected." />
+              <ProtectedRouteState status="auth" />
             ) : null}
             {state === "error" ? (
               <EmptyState title="Unable to load audit events" detail={error || "Request failed."} />

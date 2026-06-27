@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, KeyRound, RefreshCw, Trash2 } from "lucide-react";
+import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,32 +73,25 @@ export default function DeleteApiTokenPage() {
         }}
       >
         <div className="mx-auto grid w-full max-w-3xl gap-5">
-          <header className="grid justify-items-center gap-3 text-center">
-            <div className="grid justify-items-center gap-1">
-              <h1 className="flex items-center justify-center gap-2 text-3xl font-black tracking-normal text-foreground">
-                <Trash2 className="size-6 text-muted-foreground" />
-                <span>Delete API token</span>
-              </h1>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Permanently revoke a token from API access.
-              </p>
-            </div>
-          </header>
+          {state === "ready" && token ? (
+            <header className="grid justify-items-center gap-3 text-center">
+              <div className="grid justify-items-center gap-1">
+                <h1 className="flex items-center justify-center gap-2 text-3xl font-black tracking-normal text-foreground">
+                  <Trash2 className="size-6 text-muted-foreground" />
+                  <span>Delete API token</span>
+                </h1>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Permanently revoke a token from API access.
+                </p>
+              </div>
+            </header>
+          ) : null}
 
           {state === "loading" ? (
-            <StatePanel detail="Fetching API token details." icon={RefreshCw} title="Loading token" />
+            <ProtectedRouteState status="loading" />
           ) : null}
           {state === "auth" ? (
-            <StatePanel
-              action={
-                <Button asChild size="sm">
-                  <Link href="/login">Sign in</Link>
-                </Button>
-              }
-              detail="Authentication is required before API tokens can be deleted."
-              icon={KeyRound}
-              title="Sign in required"
-            />
+            <ProtectedRouteState status="auth" />
           ) : null}
           {state === "error" ? (
             <StatePanel
