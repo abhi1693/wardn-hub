@@ -21,13 +21,14 @@ _global_instrumentation_configured = False
 _sqlalchemy_instrumented = False
 
 
-def configure_telemetry(app: FastAPI) -> None:
+def configure_telemetry(app: FastAPI | None = None) -> None:
     settings = get_settings()
     if not settings.otel_enabled:
         return
 
     _configure_tracer_provider(settings)
-    _instrument_app(app, settings)
+    if app is not None:
+        _instrument_app(app, settings)
     _instrument_global_libraries()
     _instrument_sqlalchemy()
 
