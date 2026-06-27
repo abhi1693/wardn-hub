@@ -23,9 +23,6 @@ const footerSections = [
   },
   {
     links: [
-      { href: "/sitemap.xml", label: "Sitemap" },
-      { href: "/llms.txt", label: "LLMs.txt" },
-      { href: "/robots.txt", label: "Robots.txt" },
       { href: "https://github.com/abhi1693/wardn-hub", label: "GitHub" },
       { href: "https://x.com/abhi16_93", label: "X / Twitter" },
     ],
@@ -72,8 +69,6 @@ export function SiteFooter() {
 
         <div className="site-footer-bottom">
           <span>© {year} Wardn AI</span>
-          <span>Public registry metadata only</span>
-          <span>Canonical catalog: hub.wardnai.dev</span>
         </div>
       </div>
     </footer>
