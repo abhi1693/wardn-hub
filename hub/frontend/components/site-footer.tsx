@@ -10,7 +10,7 @@ const footerSections = [
       { href: "/users", label: "Users" },
       { href: "/partners", label: "Partners" },
     ],
-    title: "Registry",
+    title: "Discover",
   },
   {
     links: [
@@ -41,7 +41,7 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div className="site-footer-brand">
-          <span className="site-footer-kicker">MCP registry</span>
+          <span className="site-footer-kicker">MCP community</span>
           <strong>{siteConfig.name}</strong>
           <span>{siteConfig.tagline}</span>
         </div>

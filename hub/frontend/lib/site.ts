@@ -26,18 +26,19 @@ const SITE_URL = computeSiteUrl();
 
 export const siteConfig = {
   description:
-    "Wardn Hub is a public registry and submission workflow for Model Context Protocol server definitions.",
+    "Wardn Hub is a community-driven directory for discovering, comparing, and sharing Model Context Protocol servers.",
   keywords: [
     "MCP registry",
     "Model Context Protocol",
     "MCP servers",
+    "MCP server aggregator",
     "server.json",
     "MCP server directory",
-    "MCP server submissions",
+    "community MCP servers",
     "AI tool registry",
   ],
   name: "Wardn Hub",
-  tagline: "Registry and review workflow for MCP server definitions.",
+  tagline: "Community directory for MCP servers.",
   url: SITE_URL,
 } as const;
 

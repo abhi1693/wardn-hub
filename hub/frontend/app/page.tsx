@@ -71,7 +71,7 @@ export default async function Home() {
                   </span>
                 </span>
                 <span className="server-card-description">
-                  Once submissions are approved and published, this page will show one card per MCP
+                  Once community listings are published, this page will show one card per MCP
                   server.
                 </span>
               </article>

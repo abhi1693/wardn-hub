@@ -116,7 +116,7 @@ export function categoryIndexJsonLd(categories: RegistryCategoryRead[]) {
       {
         "@id": `${url}#collection`,
         "@type": "CollectionPage",
-        description: "Browse published Model Context Protocol server definitions by category on Wardn Hub.",
+        description: "Browse community-curated Model Context Protocol servers by category on Wardn Hub.",
         isPartOf: { "@id": `${absoluteUrl("/")}#website` },
         mainEntity: {
           "@id": `${url}#item-list`,
@@ -200,7 +200,7 @@ export function categoryDetailJsonLd(params: {
         "@type": "CollectionPage",
         description:
           params.category?.description ||
-          `Published MCP server definitions in the ${params.categoryName} category on Wardn Hub.`,
+          `Community-curated MCP servers in the ${params.categoryName} category on Wardn Hub.`,
         isPartOf: { "@id": `${absoluteUrl("/")}#website` },
         mainEntity: {
           "@id": `${url}#item-list`,

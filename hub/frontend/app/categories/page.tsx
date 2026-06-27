@@ -7,7 +7,7 @@ import { categoryIndexJsonLd, JsonLdScript } from "@/lib/structured-data";
 import { CategoriesClient } from "./categories-client";
 
 const title = "MCP server categories";
-const description = "Browse published Model Context Protocol server definitions by category on Wardn Hub.";
+const description = "Browse community-curated Model Context Protocol servers by category on Wardn Hub.";
 
 export const metadata: Metadata = {
   alternates: {

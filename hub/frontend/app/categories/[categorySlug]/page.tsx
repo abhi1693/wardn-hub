@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: CategoryDetailPageProps): Pro
     const title = `${categoryName} MCP servers`;
     const description =
       category?.description ||
-      `Browse published MCP server definitions in the ${categoryName} category on Wardn Hub.`;
+      `Browse community-curated MCP servers in the ${categoryName} category on Wardn Hub.`;
 
     return {
       alternates: {
