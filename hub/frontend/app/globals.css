@@ -180,9 +180,39 @@ button {
   line-height: 22px;
 }
 
+.site-footer-social {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.site-footer-social a {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dbe3ee;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  text-decoration: none;
+}
+
+.site-footer-social a:hover,
+.site-footer-social a:focus-visible {
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.site-footer-social svg {
+  width: 18px;
+  height: 18px;
+}
+
 .site-footer-nav {
   display: grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
   gap: 28px;
 }
 
