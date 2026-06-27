@@ -214,12 +214,52 @@ Backend-only commands:
 cd hub/backend
 uv run alembic upgrade head
 uv run python -m app.manage seed-categories
+uv run python -m app.cli.review_pending_submissions --once --dry-run
 uv run pytest
 uv run ruff check .
 ```
 
 Regenerate the frontend API client after changing backend routes, schemas, or
 OpenAPI metadata.
+
+### Pending Submission Review CLI
+
+Submitted MCP server reviews can be assisted by an LLM while keeping moderation
+actions human-driven:
+
+```sh
+cd hub/backend
+WARDN_HUB_TOKEN=wardn_hub_key... uv run python -m app.cli.review_pending_submissions \
+  --url https://hub.example.com/api/v1 \
+  --model gpt-5 \
+  --thinking xhigh
+```
+
+The token must authenticate a superuser or global moderator and should include
+`submissions:read` and `submissions:moderate`; publishing also requires a
+superuser token with `submissions:publish`. The default review command is Codex:
+
+```sh
+codex exec --sandbox read-only --skip-git-repo-check -
+```
+
+Override it with `--review-command` or `WARDN_HUB_REVIEW_COMMAND`. The prompt is
+sent on stdin unless the command includes `{prompt_file}`. The CLI fetches the
+first submitted review, sends submission context to the LLM, shows the findings,
+then waits for a human action: approve, approve and publish, reject with message,
+skip, or quit.
+
+Use `--model` or `WARDN_HUB_REVIEW_MODEL` to pass a model to the default
+`codex exec` reviewer. Use `--thinking` or `WARDN_HUB_REVIEW_THINKING` to pass
+one of `low`, `medium`, `high`, or `xhigh` as Codex reasoning effort. For other
+LLM CLIs, include the equivalent model/thinking flags directly in
+`--review-command`.
+
+If `--url` is omitted, the CLI uses `WARDN_HUB_API_BASE_URL` or local
+`http://localhost:8000/api/v1`.
+The CLI sends `WardnHubReviewCLI/0.1` as its HTTP user agent by default; override
+it with `--user-agent` or `WARDN_HUB_USER_AGENT` if an edge proxy requires a
+specific API-client signature.
 
 ## Containers
 
