@@ -240,12 +240,13 @@ The token must authenticate a superuser or global moderator and should include
 superuser token with `submissions:publish`. The default review command is Codex:
 
 ```sh
-codex exec --sandbox read-only --skip-git-repo-check -
+codex --search exec --skip-git-repo-check -
 ```
 
 Override it with `--review-command` or `WARDN_HUB_REVIEW_COMMAND`. The prompt is
-sent on stdin unless the command includes `{prompt_file}`. The CLI fetches the
-first submitted review, sends submission context to the LLM, shows the findings,
+sent on stdin unless the command includes `{prompt_file}`. The CLI uses the same
+validation prompt text as the web UI, including the upstream source/release
+verification workflow. It fetches the first submitted review, shows the findings,
 then waits for a human action: approve, approve and publish, reject with message,
 skip, or quit.
 

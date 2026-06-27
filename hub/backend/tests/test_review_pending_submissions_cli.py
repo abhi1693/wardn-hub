@@ -115,7 +115,7 @@ def test_user_agent_argument_overrides_default() -> None:
 def test_default_review_command_uses_portable_codex_exec_flags() -> None:
     args = cli.build_parser().parse_args([])
 
-    assert args.review_command == "codex exec --sandbox read-only --skip-git-repo-check -"
+    assert args.review_command == "codex --search exec --skip-git-repo-check -"
     assert "--ask-for-approval" not in args.review_command
 
 
@@ -127,6 +127,25 @@ def test_model_argument_is_inserted_into_codex_exec_command() -> None:
 
     assert command == [
         "codex",
+        "exec",
+        "--model",
+        "gpt-5",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "-",
+    ]
+
+
+def test_model_argument_is_inserted_after_codex_exec_with_top_level_flags() -> None:
+    command = cli.parse_review_command(
+        "codex --search exec --sandbox read-only --skip-git-repo-check -",
+        model="gpt-5",
+    )
+
+    assert command == [
+        "codex",
+        "--search",
         "exec",
         "--model",
         "gpt-5",
@@ -257,15 +276,23 @@ def test_validate_token_requires_review_role() -> None:
 def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     context = {
         "submission": submitted_submission(),
+        "apiBaseUrl": "https://hub.example.com/api/v1",
         "apiTokenEnvironmentVariable": cli.TOKEN_ENV,
     }
 
     prompt = cli.build_review_prompt(context)
 
-    assert "Wardn Hub MCP server submission" in prompt
+    assert "Validate one Wardn Hub MCP server version that is currently in review." in prompt
+    assert "Wardn Hub API base URL: https://hub.example.com/api/v1" in prompt
     assert "io.github.example/weather" in prompt
     assert "wardn_hub_test_token" not in prompt
-    assert "Do not call POST, PUT, PATCH, or DELETE" in prompt
+    assert "Read the upstream README and relevant docs/files" in prompt
+    assert "Do not assume importer output is complete." in prompt
+    assert "packages[].transport.args contains only the concrete default launch arguments" in prompt
+    assert "Optional CLI flags/configurable arguments are represented" in prompt
+    assert "Every documented environment variable is represented" in prompt
+    assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt
+    assert "Decision: pass, needs fixes, or cannot validate" in prompt
 
 
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:

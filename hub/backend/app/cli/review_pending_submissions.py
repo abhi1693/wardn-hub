@@ -1,3 +1,5 @@
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import argparse
@@ -7,7 +9,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import textwrap
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,8 +27,29 @@ REVIEW_COMMAND_ENV = "WARDN_HUB_REVIEW_COMMAND"
 REVIEW_MODEL_ENV = "WARDN_HUB_REVIEW_MODEL"
 REVIEW_THINKING_ENV = "WARDN_HUB_REVIEW_THINKING"
 DEFAULT_USER_AGENT = "WardnHubReviewCLI/0.1"
-DEFAULT_REVIEW_COMMAND = "codex exec --sandbox read-only --skip-git-repo-check -"
+DEFAULT_REVIEW_COMMAND = "codex --search exec --skip-git-repo-check -"
 THINKING_LEVELS = ("low", "medium", "high", "xhigh")
+
+API_ACCESS_INSTRUCTIONS = """Required API access:
+- Use WARDN_HUB_TOKEN as the Wardn Hub bearer token.
+- If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
+- Do not call the Wardn Hub API until a token is available."""
+
+REGISTRY_METADATA_SCOPE_RULE = (
+    "Treat this as registry metadata review only. Do not install workspace MCP servers, "
+    "invoke MCP tools, or manage runtime infrastructure."
+)
+
+VALIDATION_PACKAGE_ARGUMENT_CHECKS = """- packages[].transport.args contains only the concrete default launch arguments in runnable order, not every documented optional CLI flag.
+- Optional CLI flags/configurable arguments are represented in packages[].packageArguments with includeInLaunch false.
+- Flags that take user-supplied values are represented with packageArguments[].requiresValue true, not placeholder text in transport.args.
+- packageArguments[].value does not contain placeholder examples such as "<host>", "[url]", "host", or "url"; requiresValue is the metadata for that.
+- packageArguments[].flag does not contain placeholders. For docs that show "--host <host>", the correct shape is flag "--host" and requiresValue true.
+- Package arguments that are part of the default launch command have includeInLaunch true."""
+
+VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = """- Remote endpoint URLs do not include configurable query strings such as ?apiKey={apiKey}.
+- Remote URL query parameters are represented in remotes[].queryParameters, not remotes[].authentication.queryParameters.
+- If docs show a hosted URL with query authentication, the base endpoint is stored in remotes[].url and the query auth fields are stored in remotes[].queryParameters."""
 
 
 class UserFacingError(Exception):
@@ -332,88 +354,112 @@ def pending_submissions(
     ]
 
 
-def compact_context_for_prompt(context: dict[str, Any]) -> str:
-    return json.dumps(context, indent=2, sort_keys=True, ensure_ascii=False)
-
-
 def build_review_context(client: WardnHubApiClient, submission: dict[str, Any]) -> dict[str, Any]:
     submission_id = str(submission["id"])
     fresh_submission = client.get_submission(submission_id)
-    name = str(fresh_submission.get("name") or "")
-    context: dict[str, Any] = {
+    return {
+        "apiBaseUrl": client.base_url,
         "submission": fresh_submission,
-        "availableReadApis": [
-            {"method": "GET", "path": "/auth/me"},
-            {"method": "GET", "path": "/submissions"},
-            {"method": "GET", "path": f"/submissions/{submission_id}"},
-            {"method": "GET", "path": "/mcp/categories"},
-            {"method": "GET", "path": f"/mcp/servers/{name}"},
-            {"method": "GET", "path": f"/mcp/servers/{name}/versions"},
-        ],
         "apiBaseUrlEnvironmentVariable": API_BASE_URL_ENV,
         "apiTokenEnvironmentVariable": TOKEN_ENV,
     }
 
-    categories = client.list_categories()
-    if categories is not None:
-        context["categories"] = categories
-
-    if name:
-        existing_server = client.get_server(name)
-        existing_versions = client.list_versions(name)
-        if existing_server is not None:
-            context["existingPublishedServer"] = existing_server
-        if existing_versions is not None:
-            context["existingPublishedVersions"] = existing_versions
-
-    return context
-
 
 def build_review_prompt(context: dict[str, Any]) -> str:
-    return textwrap.dedent(
-        f"""
-        You are reviewing a Wardn Hub MCP server submission for registry moderation.
+    submission = context.get("submission") if isinstance(context.get("submission"), dict) else {}
+    submission_id = str(submission.get("id") or "")
+    server_name = str(submission.get("name") or "")
+    version = str(submission.get("version") or "")
+    id_list = f"- {submission_id}" if submission_id else "- none"
+    expected_version = version or "the listed version"
 
-        Wardn Hub is a registry and submission product for MCP server definitions. It is
-        not a runtime product. Do not recommend adding workspace MCP installs, MCP tool
-        invocation routes, Kubernetes runtime management, or a gateway execution plane.
+    return f"""Validate one Wardn Hub MCP server version that is currently in review.
 
-        Use the supplied JSON context first. If you need to verify something else, you may
-        make read-only GET requests to the Wardn Hub API using `{API_BASE_URL_ENV}` and
-        `{TOKEN_ENV}` from the environment. Do not call POST, PUT, PATCH, or DELETE. The
-        CLI will apply moderator decisions after a human chooses an action.
+Wardn Hub API base URL: {context.get("apiBaseUrl") or DEFAULT_API_BASE_URL}
+Server: {server_name}
+Version: {version or "unknown"}
+In-review submission ID shown in UI:
+{id_list}
 
-        Review the submission for:
-        - Accurate name, version, submission type, owner, and category metadata.
-        - Complete source-review evidence: files read, install commands, command args,
-          environment variables, prerequisites, capabilities, limitations, and unknowns.
-        - Package and remote target correctness, including no version embedded in package
-          identifiers and no secret/plaintext placeholder values.
-        - Documentation quality for setup, configuration, authentication, capabilities,
-          limitations, and support.
-        - Consistency with validationResult and any existing published server context.
-        - Publication risk that should lead to rejection or a specific rejection message.
+{API_ACCESS_INSTRUCTIONS}
+- The token must belong to an admin or moderator account with review-system access and must be able to read the submitted queue.
+- The token must include submissions:read to inspect submissions and submissions:moderate to approve or reject submissions.
+- To publish, the token must belong to a superuser and include submissions:publish.
+- Moderator tokens may approve or reject submitted versions. Publishing and archiving require a superuser token.
+- If GET /submissions does not expose submitted records for review, stop and report that the token does not have review access.
+- Do not approve, reject, publish, update, or delete anything before presenting your validation report and receiving explicit user approval for the exact action.
 
-        Return concise Markdown with these sections:
+Scope:
+1. Validate only the in-review submission ID listed above.
+2. Call GET /submissions/{{id}} before reviewing details.
+3. Confirm the fetched submission has status "submitted", name "{server_name}", and version "{expected_version}". In the Wardn Hub UI, this status is shown as "In review".
+4. Ignore any other submissions returned by the API, including drafts, approved submissions, rejected submissions, withdrawn submissions, published submissions, other versions, and submissions for other servers.
+5. If the listed ID cannot be fetched as an in-review submission for this version, report that clearly and stop.
 
-        ## Summary
-        ## Findings
-        ## Recommended decision
-        Use exactly one of: approve, approve_and_publish, reject, skip.
-        ## Rejection message
-        Include a ready-to-send message only if rejection is recommended.
+Validation workflow for each submission:
+1. Read submission.serverJson, submission.validationResult, and submission.serverJson._meta.sourceReview.
+2. Identify the source repository from serverJson.repository.url and any source links in documentation/package metadata.
+3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
+4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
+5. {REGISTRY_METADATA_SCOPE_RULE}
 
-        Context JSON:
+Required checks:
+- Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.
+- Package identifiers and versions are split correctly. No package identifier contains a version or tag.
+- Transport command, args, env, and transport type match documented install/run instructions.
+{VALIDATION_PACKAGE_ARGUMENT_CHECKS}
+{VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS}
+- No environment value uses placeholder syntax that wraps names in dollar signs and braces.
+- Environment variable names are unique within each package target and within sourceReview.environmentVariables.
+- Secret or user-specific defaults are empty strings.
+- Every documented environment variable is represented in sourceReview.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
+- Variables required at launch are also represented in packages[].transport.env with safe defaults.
+- CLI arguments and configurable flags are represented in sourceReview.commandArguments and packageArguments; only default launch args are represented in package transport args.
+- Prerequisites are represented in sourceReview.prerequisites.
+- sourceReview.filesRead, installCommands, commandArguments, environmentVariables, prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns are complete.
+- capabilitiesReviewed and limitationsReviewed are true.
+- sourceReview.unknowns is empty unless there is a specific documented reason.
+- validationResult has no failing checks that remain unresolved.
 
-        ```json
-        {compact_context_for_prompt(context)}
-        ```
-        """
-    ).strip()
+Report format:
+- Submission ID
+- Server name and version
+- Repository/source files reviewed
+- Decision: pass, needs fixes, or cannot validate
+- Findings grouped by severity
+- Missing or incorrect environment variables
+- Missing or incorrect command arguments
+- Suggested rejection message if the submission should be rejected
+- Suggested approval note if the submission passes
+
+After the report:
+- Ask the user exactly what action to take using lettered options so they can reply with a single letter. If the token has moderator-only access, display:
+  A. Approve
+  B. Reject with the suggested message
+  C. Leave unchanged
+- If the token has superuser publishing access, display:
+  A. Approve
+  B. Approve and publish
+  C. Reject with the suggested message
+  D. Leave unchanged
+- Do not take action from your own recommendation alone.
+- Only after the user explicitly chooses one lettered option or the exact action text, call the corresponding Wardn Hub API endpoint.
+- If the user chooses approve, call POST /submissions/{{id}}/approve.
+- If the user chooses approve and publish, first call POST /submissions/{{id}}/approve, then call POST /submissions/{{id}}/publish on the approved submission. Only offer and perform this when the token has superuser publishing access.
+- If the user chooses reject, call POST /submissions/{{id}}/reject with a clear message.
+- Do not publish unless the user explicitly chose approve and publish.
+- After performing an approved action, return the endpoints called, final submission status, and any API error.
+
+Do not mark a submission as passing if source review evidence is incomplete, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified."""
 
 
-def is_codex_exec_command(command: list[str]) -> bool:
-    return len(command) >= 2 and Path(command[0]).name == "codex" and command[1] == "exec"
+def codex_exec_index(command: list[str]) -> int | None:
+    if not command or Path(command[0]).name != "codex":
+        return None
+    try:
+        return command.index("exec", 1)
+    except ValueError:
+        return None
 
 
 def parse_review_command(value: str, *, model: str = "", thinking: str = "") -> list[str]:
@@ -427,7 +473,8 @@ def parse_review_command(value: str, *, model: str = "", thinking: str = "") -> 
     thinking = thinking.strip()
     if not model and not thinking:
         return command
-    if not is_codex_exec_command(command):
+    exec_index = codex_exec_index(command)
+    if exec_index is None:
         raise UserFacingError(
             "--model and --thinking are only applied automatically to `codex exec`; include "
             "equivalent flags inside --review-command for other LLM CLIs"
@@ -437,7 +484,8 @@ def parse_review_command(value: str, *, model: str = "", thinking: str = "") -> 
         codex_options.extend(["--model", model])
     if thinking:
         codex_options.extend(["-c", f'model_reasoning_effort="{thinking}"'])
-    return [*command[:2], *codex_options, *command[2:]]
+    insert_at = exec_index + 1
+    return [*command[:insert_at], *codex_options, *command[insert_at:]]
 
 
 def submission_label(submission: dict[str, Any]) -> str:
