@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Check, Clipboard, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -11,18 +12,17 @@ import remarkGfm from "remark-gfm";
 
 import { ServerIcon, serverIconUrl } from "@/components/server-icon";
 import { PublicHeader } from "@/components/site-header";
-import { claimServerOwnership, currentUser, getServer } from "@/lib/api/hub";
+import { claimServerOwnership, currentUser, getServerDetailTab } from "@/lib/api/hub";
 import type {
-  RegistryServerDetailResponse,
-  RegistryServerVersionRead,
   RegistryTrustReport,
   RegistryTrustReportComponent,
   UserRead,
 } from "@/lib/api/generated/model";
+import type { DetailTab, ServerDetailTabResponse, ServerTabVersion } from "@/lib/server-detail-tabs";
+import { detailTabs, serverDetailTabPath } from "@/lib/server-detail-tabs";
 import { publicRegistryUrl } from "@/lib/site";
 
 type LoadState = "loading" | "ready" | "error";
-type DetailTab = "overview" | "schema" | "score";
 type DetailItem = { label: string; value: ReactNode; wide?: boolean };
 type RepositoryReference = {
   branch?: string;
@@ -57,7 +57,7 @@ function strings(value: unknown) {
     : [];
 }
 
-function versionTargets(version?: RegistryServerVersionRead) {
+function versionTargets(version?: ServerTabVersion) {
   return {
     packages: records(version?.packages),
     remotes: records(version?.remotes),
@@ -1228,12 +1228,6 @@ function ManifestMetadataPanel({
   );
 }
 
-const detailTabs: { id: DetailTab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "schema", label: "Schema" },
-  { id: "score", label: "Score" },
-];
-
 function EmptyDetailPanel({ detail, title }: { detail: string; title: string }) {
   return (
     <section className="server-detail-card">
@@ -1246,39 +1240,55 @@ function EmptyDetailPanel({ detail, title }: { detail: string; title: string }) 
 export function ServerDetailClient({
   initialDetail,
   initialError = "",
+  initialTab,
   serverName,
 }: {
-  initialDetail: RegistryServerDetailResponse | null;
+  initialDetail: ServerDetailTabResponse | null;
   initialError?: string;
+  initialTab: DetailTab;
   serverName: string;
 }) {
-  const [state, setState] = useState<LoadState>(initialDetail ? "ready" : "error");
-  const [error, setError] = useState(initialError);
-  const [detail, setDetail] = useState<RegistryServerDetailResponse | null>(initialDetail);
-  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const router = useRouter();
+  const [detailsByTab, setDetailsByTab] = useState<Partial<Record<DetailTab, ServerDetailTabResponse>>>(
+    () => (initialDetail ? { [initialTab]: initialDetail } : {}),
+  );
+  const [errorsByTab, setErrorsByTab] = useState<Partial<Record<DetailTab, string>>>(
+    () => (initialError ? { [initialTab]: initialError } : {}),
+  );
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [currentAccount, setCurrentAccount] = useState<UserRead | null>(null);
   const [claimingOwnership, setClaimingOwnership] = useState(false);
   const [claimError, setClaimError] = useState("");
   const [claimNotice, setClaimNotice] = useState("");
+  const activeTab = initialTab;
+  const detail = detailsByTab[activeTab] ?? (initialTab === activeTab ? initialDetail : null);
+  const error =
+    errorsByTab[activeTab] ?? (initialTab === activeTab && !initialDetail ? initialError : "");
+  const state: LoadState = error ? "error" : detail ? "ready" : "loading";
 
   useEffect(() => {
-    if (initialDetail || !serverName) return;
-    const timeoutId = window.setTimeout(() => {
-      setState("loading");
-      setError("");
-      getServer(serverName)
-        .then((response) => {
-          setDetail(response);
-          setState("ready");
-        })
-        .catch((caught) => {
-          setError(caught instanceof Error ? caught.message : "Unable to load server.");
-          setState("error");
-        });
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [initialDetail, serverName]);
+    if (!serverName) return;
+    if (detail || errorsByTab[activeTab]) return;
+
+    let cancelled = false;
+    getServerDetailTab(serverName, activeTab)
+      .then((response) => {
+        if (cancelled) return;
+        setDetailsByTab((current) => ({ ...current, [activeTab]: response }));
+        setErrorsByTab((current) => ({ ...current, [activeTab]: "" }));
+      })
+      .catch((caught) => {
+        if (cancelled) return;
+        setErrorsByTab((current) => ({
+          ...current,
+          [activeTab]: caught instanceof Error ? caught.message : "Unable to load server.",
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, detail, errorsByTab, serverName]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -1305,7 +1315,7 @@ export function ServerDetailClient({
   const repoUrl = repositoryUrl(selectedVersion?.repository ?? server?.repository);
   const title = selectedVersion?.title || server?.title || server?.name || "MCP Server";
   const description = selectedVersion?.description || server?.description || "";
-  const documentation = selectedVersion?.documentation || server?.documentation || "";
+  const documentation = selectedVersion?.documentation || "";
   const websiteUrl = selectedVersion?.websiteUrl || server?.websiteUrl || "";
   const category = server?.categories?.[0];
   const categoryName = category?.name ?? "";
@@ -1315,11 +1325,11 @@ export function ServerDetailClient({
   const badgeMarkdown = server?.name
     ? `[![Wardn Score](${badgeUrl})](${publicRegistryUrl(`/servers/${encodePath(server.name)}`)})`
     : "";
-  const qualityScore = selectedVersion?.qualityScore ?? server?.qualityScore ?? null;
-  const trustReport = selectedVersion?.trustReport ?? server?.trustReport ?? null;
+  const qualityScore = selectedVersion?.qualityScore ?? null;
+  const trustReport = selectedVersion?.trustReport ?? null;
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
-    : server?.partnerSupport ?? [];
+    : detail?.partnerSupport ?? [];
   const manifest = isRecord(selectedVersion?.serverJson) ? selectedVersion.serverJson : null;
   const isOwnershipClaimed = isWardnOwnershipClaimed(trustReport);
   const hasDocumentation = Boolean(documentation.trim());
@@ -1331,15 +1341,11 @@ export function ServerDetailClient({
         isLatest: version.isLatest,
         version: version.version,
       }))
-    : server?.latestVersion
-      ? [
-          {
-            id: server.latestVersion.id,
-            isLatest: true,
-            version: server.latestVersion.version,
-          },
-        ]
-      : [];
+    : [];
+
+  function navigateToTab(tab: DetailTab) {
+    router.push(serverDetailTabPath(serverName, tab), { scroll: false });
+  }
 
   async function claimOwnership() {
     if (!server?.name || !currentAccount?.id) return;
@@ -1347,8 +1353,9 @@ export function ServerDetailClient({
     setClaimError("");
     setClaimNotice("");
     try {
-      const response = await claimServerOwnership(server.name);
-      setDetail({ server: response.server, versions: response.versions });
+      await claimServerOwnership(server.name);
+      const response = await getServerDetailTab(server.name, "score");
+      setDetailsByTab((current) => ({ ...current, score: response }));
       setClaimNotice("Ownership verified from wardn.json.");
     } catch (caught) {
       setClaimError(caught instanceof Error ? caught.message : "Unable to verify wardn.json.");
@@ -1409,7 +1416,7 @@ export function ServerDetailClient({
                   aria-selected={activeTab === tab.id}
                   className={activeTab === tab.id ? "active" : ""}
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigateToTab(tab.id)}
                   role="tab"
                   type="button"
                 >

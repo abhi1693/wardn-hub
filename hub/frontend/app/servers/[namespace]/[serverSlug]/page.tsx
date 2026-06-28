@@ -1,13 +1,8 @@
-import type { Metadata } from "next";
-
 import {
-  getPublishedRegistryServer,
-  listPublishedRegistryServers,
-} from "@/lib/public-registry";
-import { siteConfig } from "@/lib/site";
-import { JsonLdScript, serverDetailJsonLd } from "@/lib/structured-data";
-
-import { ServerDetailClient } from "./server-detail-client";
+  generateServerDetailMetadata,
+  generateServerDetailOverviewStaticParams,
+  ServerDetailPageTemplate,
+} from "./server-detail-page-template";
 
 export const revalidate = 3600;
 
@@ -15,114 +10,12 @@ type ServerDetailPageProps = {
   params: Promise<{ namespace?: string; serverSlug?: string }>;
 };
 
-export async function generateStaticParams() {
-  try {
-    const servers = await listPublishedRegistryServers();
-    return servers.flatMap((server) => {
-      const [namespace, serverSlug] = server.name.split("/");
-      return namespace && serverSlug ? [{ namespace, serverSlug }] : [];
-    });
-  } catch (error) {
-    console.error("Unable to prebuild server detail pages from the registry API.", error);
-    return [];
-  }
+export const generateStaticParams = generateServerDetailOverviewStaticParams;
+
+export function generateMetadata({ params }: ServerDetailPageProps) {
+  return generateServerDetailMetadata({ fixedTab: "overview", params });
 }
 
-function serverNameFromParams(params: { namespace?: string; serverSlug?: string }) {
-  const namespace = params.namespace ?? "";
-  const serverSlug = params.serverSlug ?? "";
-  return namespace && serverSlug ? `${namespace}/${serverSlug}` : "";
-}
-
-function serverCanonicalPath(serverName: string) {
-  return `/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`;
-}
-
-export async function generateMetadata({ params }: ServerDetailPageProps): Promise<Metadata> {
-  const serverName = serverNameFromParams(await params);
-  const canonical = serverName ? serverCanonicalPath(serverName) : "/servers";
-
-  if (!serverName) {
-    const title = "MCP server";
-    return {
-      alternates: {
-        canonical,
-      },
-      title,
-      twitter: {
-        card: "summary",
-        title: `${title} | ${siteConfig.name}`,
-      },
-    };
-  }
-
-  try {
-    const detail = await getPublishedRegistryServer(serverName);
-    const server = detail.server;
-    const title = server.title || server.name;
-    const description = server.description;
-
-    return {
-      alternates: {
-        canonical,
-      },
-      description,
-      openGraph: {
-        description,
-        title: `${title} | ${siteConfig.name}`,
-        url: canonical,
-      },
-      title,
-      twitter: {
-        card: "summary",
-        description,
-        title: `${title} | ${siteConfig.name}`,
-      },
-    };
-  } catch {
-    return {
-      alternates: {
-        canonical,
-      },
-      title: serverName,
-      twitter: {
-        card: "summary",
-        title: `${serverName} | ${siteConfig.name}`,
-      },
-    };
-  }
-}
-
-export default async function ServerDetailPage({ params }: ServerDetailPageProps) {
-  const serverName = serverNameFromParams(await params);
-  const canonical = serverName ? serverCanonicalPath(serverName) : "/servers";
-  const { initialDetail, initialError } = await (async () => {
-    if (!serverName) {
-      return { initialDetail: null, initialError: "Server route is incomplete." };
-    }
-    try {
-      return { initialDetail: await getPublishedRegistryServer(serverName), initialError: "" };
-    } catch (caught) {
-      return {
-        initialDetail: null,
-        initialError: caught instanceof Error ? caught.message : "Unable to load server.",
-      };
-    }
-  })();
-
-  return (
-    <>
-      {initialDetail ? (
-        <JsonLdScript
-          data={serverDetailJsonLd(initialDetail, canonical)}
-          id="server-detail-json-ld"
-        />
-      ) : null}
-      <ServerDetailClient
-        initialDetail={initialDetail}
-        initialError={initialError}
-        serverName={serverName}
-      />
-    </>
-  );
+export default function ServerDetailPage({ params }: ServerDetailPageProps) {
+  return <ServerDetailPageTemplate fixedTab="overview" params={params} />;
 }

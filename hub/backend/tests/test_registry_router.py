@@ -145,6 +145,10 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         "/api/v1/mcp/catalog",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/{server_name}",
+        "/api/v1/mcp/servers/{server_name}/summary",
+        "/api/v1/mcp/servers/{server_name}/tabs/overview",
+        "/api/v1/mcp/servers/{server_name}/tabs/schema",
+        "/api/v1/mcp/servers/{server_name}/tabs/score",
         "/api/v1/mcp/servers/{server_name}/versions",
         "/api/v1/mcp/servers/{server_name}/versions/{version}",
         "/api/v1/admin/mcp/servers",
@@ -164,6 +168,26 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         == "mcp_categories_update"
     )
     assert schema["paths"]["/api/v1/mcp/servers"]["get"]["operationId"] == "mcp_servers_list"
+    assert (
+        schema["paths"]["/api/v1/mcp/servers/{server_name}/summary"]["get"]["operationId"]
+        == "mcp_servers_get_summary"
+    )
+    assert (
+        schema["paths"]["/api/v1/mcp/servers/{server_name}/tabs/overview"]["get"][
+            "operationId"
+        ]
+        == "mcp_servers_get_overview_tab"
+    )
+    assert (
+        schema["paths"]["/api/v1/mcp/servers/{server_name}/tabs/schema"]["get"][
+            "operationId"
+        ]
+        == "mcp_servers_get_schema_tab"
+    )
+    assert (
+        schema["paths"]["/api/v1/mcp/servers/{server_name}/tabs/score"]["get"]["operationId"]
+        == "mcp_servers_get_score_tab"
+    )
     server_list_params = {
         parameter["name"]
         for parameter in schema["paths"]["/api/v1/mcp/servers"]["get"].get("parameters", [])
@@ -437,6 +461,84 @@ def test_quality_score_badge_renders_svg(monkeypatch) -> None:
     assert response.headers["cache-control"] == "public, max-age=300"
     assert "Wardn Score" in response.text
     assert "96/100" in response.text
+
+
+def test_server_schema_tab_route_preserves_server_name(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_schema_tab(_session, server_name):
+        captured["server_name"] = server_name
+        return {
+            "server": {
+                "id": str(server_id),
+                "name": "io.github.example/weather",
+                "title": "Weather",
+                "description": "Weather tools",
+                "websiteUrl": "https://example.com",
+                "repository": {"url": "https://github.com/example/weather"},
+                "icons": [],
+                "categories": [],
+                "updatedAt": "2026-06-23T00:00:00Z",
+            },
+            "versions": [
+                {
+                    "id": str(version_id),
+                    "version": "1.0.0",
+                    "title": "Weather",
+                    "isLatest": True,
+                    "packages": [{"registryType": "npm"}],
+                    "remotes": [],
+                    "serverJson": {"name": "io.github.example/weather"},
+                }
+            ],
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_schema_tab", get_schema_tab)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers/io.github.example/weather/tabs/schema"
+    )
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    body = response.json()
+    assert body["versions"][0]["serverJson"]["name"] == "io.github.example/weather"
+    assert set(body["server"]) == {"id", "name", "title", "icons"}
+
+
+def test_server_summary_route_returns_minimal_metadata(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_summary(_session, server_name):
+        captured["server_name"] = server_name
+        return {
+            "id": str(server_id),
+            "name": "io.github.example/weather",
+            "title": "Weather",
+            "description": "Weather tools",
+            "icons": [{"src": "https://example.com/icon.png"}],
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_summary", get_summary)
+
+    response = TestClient(app).get("/api/v1/mcp/servers/io.github.example/weather/summary")
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    assert set(response.json()) == {"id", "name", "title", "description", "icons"}
 
 
 def test_quality_score_badge_supports_pending_score(monkeypatch) -> None:

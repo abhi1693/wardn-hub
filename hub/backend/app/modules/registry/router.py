@@ -30,6 +30,10 @@ from app.modules.registry.schemas import (
     RegistryQualityScoreUpdate,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
+    RegistryServerOverviewTabResponse,
+    RegistryServerSchemaTabResponse,
+    RegistryServerScoreTabResponse,
+    RegistryServerSummaryResponse,
     RegistryServerVersionCreate,
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
@@ -43,6 +47,10 @@ from app.modules.registry.service import (
     delete_server,
     delete_server_version,
     get_server_detail,
+    get_server_overview_tab,
+    get_server_schema_tab,
+    get_server_score_tab,
+    get_server_summary,
     get_version_detail,
     list_categories,
     list_published_servers,
@@ -364,6 +372,70 @@ async def claim_mcp_server_ownership(
     except RegistryOwnershipClaimError as exc:
         raise bad_request(exc, detail=str(exc)) from exc
     return await commit_response(session, response)
+
+
+@public_router.get(
+    "/{server_name:path}/summary",
+    response_model=RegistryServerSummaryResponse,
+    operation_id="mcp_servers_get_summary",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_server_summary(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryServerSummaryResponse:
+    try:
+        return await get_server_summary(session, server_name)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
+
+
+@public_router.get(
+    "/{server_name:path}/tabs/overview",
+    response_model=RegistryServerOverviewTabResponse,
+    operation_id="mcp_servers_get_overview_tab",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_server_overview_tab(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryServerOverviewTabResponse:
+    try:
+        return await get_server_overview_tab(session, server_name)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
+
+
+@public_router.get(
+    "/{server_name:path}/tabs/schema",
+    response_model=RegistryServerSchemaTabResponse,
+    operation_id="mcp_servers_get_schema_tab",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_server_schema_tab(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryServerSchemaTabResponse:
+    try:
+        return await get_server_schema_tab(session, server_name)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
+
+
+@public_router.get(
+    "/{server_name:path}/tabs/score",
+    response_model=RegistryServerScoreTabResponse,
+    operation_id="mcp_servers_get_score_tab",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_server_score_tab(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryServerScoreTabResponse:
+    try:
+        return await get_server_score_tab(session, server_name)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
 
 
 @public_router.get(

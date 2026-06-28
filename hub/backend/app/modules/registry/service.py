@@ -43,7 +43,16 @@ from app.modules.registry.schemas import (
     RegistryPublishedServerVersionRead,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
+    RegistryServerOverviewServerRead,
+    RegistryServerOverviewTabResponse,
+    RegistryServerOverviewVersionRead,
     RegistryServerRead,
+    RegistryServerSchemaTabResponse,
+    RegistryServerSchemaVersionRead,
+    RegistryServerScoreTabResponse,
+    RegistryServerScoreVersionRead,
+    RegistryServerSummaryResponse,
+    RegistryServerTabServerRead,
     RegistryServerVersionCreate,
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
@@ -2206,6 +2215,143 @@ async def get_server_detail(
         server=server_summary(server, latest, trust=trust),
         versions=[
             version_summary(version, include_private_metadata=False, trust=trust)
+            for version in versions
+        ],
+    )
+
+
+async def published_server_with_versions(
+    session,
+    name: str,
+) -> tuple[RegistryServer, list[RegistryServerVersion]]:
+    server = await repository.get_published_server(session, name)
+    if server is None:
+        raise RegistryServerNotFoundError("server not found")
+    versions = await repository.list_published_server_versions(session, server)
+    return server, versions
+
+
+def server_tab_summary(
+    server: RegistryServer,
+) -> RegistryServerTabServerRead:
+    return RegistryServerTabServerRead(
+        id=server.id,
+        name=server.name,
+        title=server.title,
+        icons=server.icons,
+    )
+
+
+def server_overview_tab_summary(
+    server: RegistryServer,
+    *,
+    trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
+) -> RegistryServerOverviewServerRead:
+    return RegistryServerOverviewServerRead(
+        id=server.id,
+        name=server.name,
+        title=server.title,
+        icons=server.icons,
+        description=server.description,
+        website_url=server.website_url,
+        repository=server.repository,
+        categories=categories_for_server(server.id, trust),
+        updated_at=server.updated_at,
+    )
+
+
+async def get_server_summary(
+    session,
+    name: str,
+) -> RegistryServerSummaryResponse:
+    server = await repository.get_published_server(session, name)
+    if server is None:
+        raise RegistryServerNotFoundError("server not found")
+    return RegistryServerSummaryResponse(
+        id=server.id,
+        name=server.name,
+        title=server.title,
+        description=server.description,
+        icons=server.icons,
+    )
+
+
+async def get_server_overview_tab(
+    session,
+    name: str,
+) -> RegistryServerOverviewTabResponse:
+    server, versions = await published_server_with_versions(session, name)
+    trust = await build_trust_context(session, servers=[server], versions=versions)
+    return RegistryServerOverviewTabResponse(
+        server=server_overview_tab_summary(server, trust=trust),
+        versions=[
+            RegistryServerOverviewVersionRead(
+                id=version.id,
+                version=version.version,
+                title=version.title,
+                description=version.description,
+                documentation=version.documentation,
+                website_url=version.website_url,
+                repository=version.repository,
+                is_latest=version.is_latest,
+                partner_support=partner_support_summary(
+                    version.name,
+                    trust,
+                    version.owner_organization_id,
+                ),
+                published_at=version.published_at,
+                updated_at=version.updated_at,
+                published_by=user_actor(version.publisher_user_id, trust),
+            )
+            for version in versions
+        ],
+        partnerSupport=partner_support_summary(
+            server.name,
+            trust,
+            server.owner_organization_id,
+        ),
+    )
+
+
+async def get_server_schema_tab(
+    session,
+    name: str,
+) -> RegistryServerSchemaTabResponse:
+    server, versions = await published_server_with_versions(session, name)
+    return RegistryServerSchemaTabResponse(
+        server=server_tab_summary(server),
+        versions=[
+            RegistryServerSchemaVersionRead(
+                id=version.id,
+                version=version.version,
+                title=version.title,
+                is_latest=version.is_latest,
+                packages=public_registry_json(version.packages),
+                remotes=public_registry_json(registry_remotes_json(version.remotes)),
+                server_json=public_registry_json(version.server_json),
+            )
+            for version in versions
+        ],
+    )
+
+
+async def get_server_score_tab(
+    session,
+    name: str,
+) -> RegistryServerScoreTabResponse:
+    server, versions = await published_server_with_versions(session, name)
+    trust = await build_trust_context(session, servers=[server], versions=versions)
+    return RegistryServerScoreTabResponse(
+        server=server_tab_summary(server),
+        versions=[
+            RegistryServerScoreVersionRead(
+                id=version.id,
+                version=version.version,
+                title=version.title,
+                is_latest=version.is_latest,
+                quality_score=version.quality_score,
+                trust_report=trust_report_for_version(version, trust=trust),
+            )
             for version in versions
         ],
     )

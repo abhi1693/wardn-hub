@@ -134,6 +134,8 @@ import {
   getUsersListUrl,
   getUsersUpdateAdminFlagsUrl,
 } from "@/lib/api/generated/users/users";
+import type { DetailTab, ServerDetailTabResponse } from "@/lib/server-detail-tabs";
+import { serverTabApiPath } from "@/lib/server-detail-tabs";
 
 export type RegistryUserRead = UserDirectoryRead;
 
@@ -351,6 +353,10 @@ export function getRegistryUser(userId: string) {
 
 export function getServer(serverName: string) {
   return generatedRequest<RegistryServerDetailResponse>(getMcpServersGetUrl(pathValue(serverName)));
+}
+
+export function getServerDetailTab(serverName: string, tab: DetailTab) {
+  return request<ServerDetailTabResponse>(serverTabApiPath(serverName, tab));
 }
 
 export function claimServerOwnership(serverName: string) {

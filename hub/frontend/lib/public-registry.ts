@@ -6,6 +6,12 @@ import type {
   RegistryServerRead,
 } from "@/lib/api/generated/model";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
+import type {
+  DetailTab,
+  ServerDetailTabResponse,
+  ServerSummaryResponse,
+} from "@/lib/server-detail-tabs";
+import { serverTabApiPath } from "@/lib/server-detail-tabs";
 import { resolveSiteUrl } from "@/lib/site";
 
 const API_PREFIX = "/api/v1";
@@ -139,6 +145,16 @@ export async function getPublishedRegistryServer(serverName: string) {
     `/mcp/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`,
   );
   return response;
+}
+
+export async function getPublishedRegistryServerTab(serverName: string, tab: DetailTab) {
+  return registryRequest<ServerDetailTabResponse>(serverTabApiPath(serverName, tab));
+}
+
+export async function getPublishedRegistryServerSummary(serverName: string) {
+  return registryRequest<ServerSummaryResponse>(
+    `/mcp/servers/${serverName.split("/").map(encodeURIComponent).join("/")}/summary`,
+  );
 }
 
 export function serverDetailPath(serverName: string) {

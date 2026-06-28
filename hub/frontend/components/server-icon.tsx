@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 
 import type { RegistryServerRead } from "@/lib/api/generated/model";
 
-export function serverIconUrl(server: RegistryServerRead) {
+type ServerIconSource = Pick<RegistryServerRead, "icons">;
+
+export function serverIconUrl(server: ServerIconSource) {
   const icon = server.icons?.find((item) => {
     const src = typeof item.src === "string" ? item.src : "";
     const url = typeof item.url === "string" ? item.url : "";

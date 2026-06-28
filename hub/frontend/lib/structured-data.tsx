@@ -4,6 +4,7 @@ import type {
   RegistryServerRead,
 } from "@/lib/api/generated/model";
 import { serverDetailPath } from "@/lib/public-registry";
+import type { ServerDetailTabResponse } from "@/lib/server-detail-tabs";
 import { absoluteUrl, siteConfig } from "@/lib/site";
 
 type JsonLdValue =
@@ -261,16 +262,21 @@ function remoteTargetJsonLd(remoteTarget: Record<string, unknown>, index: number
   };
 }
 
-export function serverDetailJsonLd(detail: RegistryServerDetailResponse, canonicalPath: string) {
+export function serverDetailJsonLd(
+  detail: RegistryServerDetailResponse | ServerDetailTabResponse,
+  canonicalPath: string,
+) {
   const server = detail.server;
   const latestVersion =
     detail.versions?.find((version) => version.isLatest) ?? detail.versions?.[0];
   const repository = latestVersion?.repository ?? server.repository;
   const repositoryHref = repositoryUrl(repository);
-  const documentation = latestVersion?.documentation || server.documentation || "";
+  const serverDocumentation = "documentation" in server ? server.documentation : "";
+  const documentation = latestVersion?.documentation || serverDocumentation || "";
   const documentationHref = urlValue(documentation);
   const websiteUrl = latestVersion?.websiteUrl || server.websiteUrl || "";
-  const version = latestVersion?.version || server.latestVersion?.version || "";
+  const serverLatestVersion = "latestVersion" in server ? server.latestVersion : null;
+  const version = latestVersion?.version || serverLatestVersion?.version || "";
   const packages = records(latestVersion?.packages);
   const remotes = records(latestVersion?.remotes);
   const categories = server.categories ?? [];

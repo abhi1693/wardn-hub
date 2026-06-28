@@ -732,6 +732,95 @@ class RegistryServerDetailResponse(BaseModel):
     versions: list[RegistryServerVersionRead] = Field(default_factory=list)
 
 
+class RegistryServerTabServerRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    name: str
+    title: str
+    icons: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RegistryServerSummaryResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    name: str
+    title: str
+    description: str
+    icons: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RegistryServerOverviewServerRead(RegistryServerTabServerRead):
+    description: str
+    website_url: str = Field(alias="websiteUrl")
+    repository: dict[str, Any] | None = None
+    categories: list[RegistryCategoryRead] = Field(default_factory=list)
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class RegistryServerOverviewVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    title: str
+    description: str
+    documentation: str = ""
+    website_url: str = Field(alias="websiteUrl")
+    repository: dict[str, Any] | None = None
+    is_latest: bool = Field(alias="isLatest")
+    partner_support: list[PartnerSupportSummary] = Field(
+        default_factory=list,
+        alias="partnerSupport",
+    )
+    published_at: datetime = Field(alias="publishedAt")
+    updated_at: datetime = Field(alias="updatedAt")
+    published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
+
+
+class RegistryServerSchemaVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    title: str
+    is_latest: bool = Field(alias="isLatest")
+    packages: list[dict[str, Any]] = Field(default_factory=list)
+    remotes: list[dict[str, Any]] = Field(default_factory=list)
+    server_json: dict[str, Any] = Field(default_factory=dict, alias="serverJson")
+
+
+class RegistryServerScoreVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    title: str
+    is_latest: bool = Field(alias="isLatest")
+    quality_score: int | None = Field(default=None, alias="qualityScore")
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
+
+
+class RegistryServerOverviewTabResponse(BaseModel):
+    server: RegistryServerOverviewServerRead
+    versions: list[RegistryServerOverviewVersionRead] = Field(default_factory=list)
+    partner_support: list[PartnerSupportSummary] = Field(
+        default_factory=list,
+        alias="partnerSupport",
+    )
+
+
+class RegistryServerSchemaTabResponse(BaseModel):
+    server: RegistryServerTabServerRead
+    versions: list[RegistryServerSchemaVersionRead] = Field(default_factory=list)
+
+
+class RegistryServerScoreTabResponse(BaseModel):
+    server: RegistryServerTabServerRead
+    versions: list[RegistryServerScoreVersionRead] = Field(default_factory=list)
+
+
 class RegistryOwnershipClaimResponse(RegistryServerDetailResponse):
     verified: bool = True
     verification_source: str = Field(alias="verificationSource")

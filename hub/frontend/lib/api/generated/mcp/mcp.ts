@@ -14,6 +14,10 @@ import type {
   RegistryPublishedServerListResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
+  RegistryServerOverviewTabResponse,
+  RegistryServerSchemaTabResponse,
+  RegistryServerScoreTabResponse,
+  RegistryServerSummaryResponse,
   RegistryServerVersionDetailResponse,
   RegistryServerVersionListResponse
 } from '../model';
@@ -313,6 +317,222 @@ export const mcpServersClaimOwnership = async (serverName: string, options?: Req
 
   const data: mcpServersClaimOwnershipResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as mcpServersClaimOwnershipResponse
+}
+
+
+export type mcpServersGetSummaryResponse200 = {
+  data: RegistryServerSummaryResponse
+  status: 200
+}
+
+export type mcpServersGetSummaryResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetSummaryResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetSummaryResponseSuccess = (mcpServersGetSummaryResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetSummaryResponseError = (mcpServersGetSummaryResponse404 | mcpServersGetSummaryResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetSummaryResponse = (mcpServersGetSummaryResponseSuccess | mcpServersGetSummaryResponseError)
+
+export const getMcpServersGetSummaryUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/summary`
+}
+
+/**
+ * @summary Get Mcp Server Summary
+ */
+export const mcpServersGetSummary = async (serverName: string, options?: RequestInit): Promise<mcpServersGetSummaryResponse> => {
+
+  const res = await fetch(getMcpServersGetSummaryUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetSummaryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetSummaryResponse
+}
+
+
+export type mcpServersGetOverviewTabResponse200 = {
+  data: RegistryServerOverviewTabResponse
+  status: 200
+}
+
+export type mcpServersGetOverviewTabResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetOverviewTabResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetOverviewTabResponseSuccess = (mcpServersGetOverviewTabResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetOverviewTabResponseError = (mcpServersGetOverviewTabResponse404 | mcpServersGetOverviewTabResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetOverviewTabResponse = (mcpServersGetOverviewTabResponseSuccess | mcpServersGetOverviewTabResponseError)
+
+export const getMcpServersGetOverviewTabUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/tabs/overview`
+}
+
+/**
+ * @summary Get Mcp Server Overview Tab
+ */
+export const mcpServersGetOverviewTab = async (serverName: string, options?: RequestInit): Promise<mcpServersGetOverviewTabResponse> => {
+
+  const res = await fetch(getMcpServersGetOverviewTabUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetOverviewTabResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetOverviewTabResponse
+}
+
+
+export type mcpServersGetSchemaTabResponse200 = {
+  data: RegistryServerSchemaTabResponse
+  status: 200
+}
+
+export type mcpServersGetSchemaTabResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetSchemaTabResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetSchemaTabResponseSuccess = (mcpServersGetSchemaTabResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetSchemaTabResponseError = (mcpServersGetSchemaTabResponse404 | mcpServersGetSchemaTabResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetSchemaTabResponse = (mcpServersGetSchemaTabResponseSuccess | mcpServersGetSchemaTabResponseError)
+
+export const getMcpServersGetSchemaTabUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/tabs/schema`
+}
+
+/**
+ * @summary Get Mcp Server Schema Tab
+ */
+export const mcpServersGetSchemaTab = async (serverName: string, options?: RequestInit): Promise<mcpServersGetSchemaTabResponse> => {
+
+  const res = await fetch(getMcpServersGetSchemaTabUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetSchemaTabResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetSchemaTabResponse
+}
+
+
+export type mcpServersGetScoreTabResponse200 = {
+  data: RegistryServerScoreTabResponse
+  status: 200
+}
+
+export type mcpServersGetScoreTabResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetScoreTabResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetScoreTabResponseSuccess = (mcpServersGetScoreTabResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetScoreTabResponseError = (mcpServersGetScoreTabResponse404 | mcpServersGetScoreTabResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetScoreTabResponse = (mcpServersGetScoreTabResponseSuccess | mcpServersGetScoreTabResponseError)
+
+export const getMcpServersGetScoreTabUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/tabs/score`
+}
+
+/**
+ * @summary Get Mcp Server Score Tab
+ */
+export const mcpServersGetScoreTab = async (serverName: string, options?: RequestInit): Promise<mcpServersGetScoreTabResponse> => {
+
+  const res = await fetch(getMcpServersGetScoreTabUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetScoreTabResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetScoreTabResponse
 }
 
 

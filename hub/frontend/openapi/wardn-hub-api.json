@@ -3010,6 +3010,184 @@
         "title": "RegistryServerListResponse",
         "type": "object"
       },
+      "RegistryServerOverviewServerRead": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "websiteUrl": {
+            "title": "Websiteurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "title",
+          "description",
+          "websiteUrl",
+          "updatedAt"
+        ],
+        "title": "RegistryServerOverviewServerRead",
+        "type": "object"
+      },
+      "RegistryServerOverviewTabResponse": {
+        "properties": {
+          "partnerSupport": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerSupportSummary"
+            },
+            "title": "Partnersupport",
+            "type": "array"
+          },
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerOverviewServerRead"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerOverviewVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "RegistryServerOverviewTabResponse",
+        "type": "object"
+      },
+      "RegistryServerOverviewVersionRead": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "partnerSupport": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerSupportSummary"
+            },
+            "title": "Partnersupport",
+            "type": "array"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "title": "Publishedat",
+            "type": "string"
+          },
+          "publishedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "websiteUrl": {
+            "title": "Websiteurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "description",
+          "websiteUrl",
+          "isLatest",
+          "publishedAt",
+          "updatedAt"
+        ],
+        "title": "RegistryServerOverviewVersionRead",
+        "type": "object"
+      },
       "RegistryServerRead": {
         "properties": {
           "categories": {
@@ -3190,6 +3368,213 @@
           "updatedAt"
         ],
         "title": "RegistryServerRead",
+        "type": "object"
+      },
+      "RegistryServerSchemaTabResponse": {
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerTabServerRead"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerSchemaVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "RegistryServerSchemaTabResponse",
+        "type": "object"
+      },
+      "RegistryServerSchemaVersionRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "packages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "remotes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Remotes",
+            "type": "array"
+          },
+          "serverJson": {
+            "additionalProperties": true,
+            "title": "Serverjson",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "isLatest"
+        ],
+        "title": "RegistryServerSchemaVersionRead",
+        "type": "object"
+      },
+      "RegistryServerScoreTabResponse": {
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerTabServerRead"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerScoreVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "RegistryServerScoreTabResponse",
+        "type": "object"
+      },
+      "RegistryServerScoreVersionRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "isLatest"
+        ],
+        "title": "RegistryServerScoreVersionRead",
+        "type": "object"
+      },
+      "RegistryServerSummaryResponse": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "title",
+          "description"
+        ],
+        "title": "RegistryServerSummaryResponse",
+        "type": "object"
+      },
+      "RegistryServerTabServerRead": {
+        "properties": {
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "title"
+        ],
+        "title": "RegistryServerTabServerRead",
         "type": "object"
       },
       "RegistryServerVersionCreate": {
@@ -7861,6 +8246,214 @@
           }
         },
         "summary": "Claim Mcp Server Ownership",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/summary": {
+      "get": {
+        "operationId": "mcp_servers_get_summary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Summary",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/tabs/overview": {
+      "get": {
+        "operationId": "mcp_servers_get_overview_tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerOverviewTabResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Overview Tab",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/tabs/schema": {
+      "get": {
+        "operationId": "mcp_servers_get_schema_tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerSchemaTabResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Schema Tab",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/tabs/score": {
+      "get": {
+        "operationId": "mcp_servers_get_score_tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerScoreTabResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Score Tab",
         "tags": [
           "mcp"
         ]
