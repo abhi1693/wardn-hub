@@ -15,6 +15,12 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request, status
 
 from app.cli import fix_rejected_submissions
+from app.cli.webhook_queue import (
+    QueueConfigurationError,
+    RedisReliableWebhookQueue,
+    WebhookQueue,
+    durable_queue_requested,
+)
 from app.modules.events.security import verify_webhook_signature
 
 WEBHOOK_SECRET_ENV = "WARDN_HUB_FIX_REJECTED_WEBHOOK_SECRET"
@@ -108,6 +114,29 @@ class RejectedSubmissionFixQueue:
                 self._jobs.task_done()
 
 
+def fix_job_from_payload(payload: dict[str, Any]) -> FixJob:
+    return FixJob(
+        submission_id=str(payload.get("submission_id") or "").strip(),
+        delivery_id=str(payload.get("delivery_id") or "").strip(),
+        event_id=str(payload.get("event_id") or "").strip(),
+    )
+
+
+def build_fix_queue(settings: WebhookSettings) -> WebhookQueue[FixJob]:
+    if not durable_queue_requested():
+        return RejectedSubmissionFixQueue(settings)
+
+    def process_job(job: FixJob) -> int:
+        return fix_rejected_submissions.main(build_fix_args(settings, job))
+
+    return RedisReliableWebhookQueue(
+        name="rejected-submission-fix",
+        job_from_payload=fix_job_from_payload,
+        process_job=process_job,
+        log_prefix="submission fix webhook",
+    )
+
+
 def build_fix_args(settings: WebhookSettings, job: FixJob) -> list[str]:
     args = [
         "--url",
@@ -157,11 +186,11 @@ def verify_request_signature(raw_body: bytes, signature: str, settings: WebhookS
 def create_app(
     settings: WebhookSettings,
     *,
-    fix_queue: RejectedSubmissionFixQueue | None = None,
+    fix_queue: WebhookQueue[FixJob] | None = None,
     start_worker: bool = True,
     path: str = DEFAULT_WEBHOOK_PATH,
 ) -> FastAPI:
-    jobs = fix_queue or RejectedSubmissionFixQueue(settings)
+    jobs = fix_queue or build_fix_queue(settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -371,6 +400,9 @@ def main(argv: list[str] | None = None) -> int:
         uvicorn.run(app, host=args.host, port=port)
         return 0
     except WebhookConfigurationError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except QueueConfigurationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
