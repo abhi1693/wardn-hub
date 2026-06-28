@@ -276,16 +276,21 @@ def submission_key(value: dict[str, Any]) -> tuple[str, str]:
 
 
 def existing_submissions_by_key(hub: HubClient) -> dict[tuple[str, str], dict[str, Any]]:
-    active_statuses = {"draft", "submitted", "approved"}
+    active_statuses = {"draft", "submitted", "approved", "rejected"}
+    status_rank = {"approved": 0, "submitted": 1, "draft": 2, "rejected": 3}
     submissions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     for submission in hub.list_submissions():
         if not isinstance(submission, dict):
             continue
-        if str(submission.get("status") or "") not in active_statuses:
+        status = str(submission.get("status") or "")
+        if status not in active_statuses:
             continue
         key = submission_key(submission)
         if all(key):
-            submissions_by_key[key] = submission
+            existing = submissions_by_key.get(key)
+            existing_status = str(existing.get("status") or "") if existing else ""
+            if existing is None or status_rank[status] < status_rank.get(existing_status, 99):
+                submissions_by_key[key] = submission
     return submissions_by_key
 
 
@@ -590,10 +595,10 @@ def import_entry(
             "submissionType": "new_version" if server_detail is not None else "new_server",
             "serverJson": payload,
         }
-        if existing_status == "draft":
+        if existing_status in {"draft", "rejected"}:
             submission_id = str(existing_submission.get("id") or "").strip()
             if not submission_id:
-                raise ValueError("existing draft submission missing id")
+                raise ValueError(f"existing {existing_status} submission missing id")
             submission = hub.update_submission(submission_id, submission_payload)
         else:
             submission = hub.create_submission(submission_payload)

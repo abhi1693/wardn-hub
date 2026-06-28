@@ -31,7 +31,7 @@ class FakeSession:
     async def execute(self, *args, **kwargs):
         return SimpleNamespace(
             scalar_one_or_none=lambda: None,
-            scalars=lambda: SimpleNamespace(all=lambda: []),
+            scalars=lambda: SimpleNamespace(all=lambda: [], first=lambda: None),
         )
 
     async def delete(self, instance: object) -> None:
@@ -490,6 +490,32 @@ async def test_new_server_submission_rejects_existing_server_name(monkeypatch) -
         await service.create_submission(
             FakeSession(),
             current_user(),
+            SubmissionCreate(serverJson=complete_registry_payload()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_submission_rejects_active_duplicate_submission(monkeypatch) -> None:
+    user = current_user()
+    existing_submission = submission_record(submitter_user_id=user.id, status="submitted")
+
+    async def missing_server(*args, **kwargs):
+        return None
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    async def active_submission(*args, **kwargs):
+        return existing_submission
+
+    monkeypatch.setattr(service.registry_repository, "get_server", missing_server)
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+    monkeypatch.setattr(service.repository, "get_submission_by_name_version", active_submission)
+
+    with pytest.raises(SubmissionValidationError, match="active submission already exists"):
+        await service.create_submission(
+            FakeSession(),
+            user,
             SubmissionCreate(serverJson=complete_registry_payload()),
         )
 

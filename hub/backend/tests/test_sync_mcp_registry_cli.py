@@ -340,6 +340,31 @@ def test_import_entry_updates_and_submits_existing_draft_submission() -> None:
     assert hub.submitted == ["submission-1"]
 
 
+def test_import_entry_updates_and_submits_existing_rejected_submission() -> None:
+    hub = FakeHub()
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_submissions={
+            ("io.github.example/weather", "1.0.0"): {
+                "id": "submission-1",
+                "name": "io.github.example/weather",
+                "version": "1.0.0",
+                "status": "rejected",
+            }
+        },
+    )
+
+    assert outcome == cli.ImportOutcome("submitted", "submission_id=submission-1")
+    assert hub.created_submissions == []
+    assert hub.updated_submissions[0][0] == "submission-1"
+    assert hub.submitted == ["submission-1"]
+
+
 def test_sync_registry_paginates_and_counts_duplicate_skips() -> None:
     registry = FakeRegistry(
         [

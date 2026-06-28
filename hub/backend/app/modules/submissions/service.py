@@ -34,6 +34,8 @@ from app.modules.submissions.schemas import (
 )
 from app.modules.users.models import User, UserAPIToken
 
+UNIQUE_ACTIVE_SUBMISSION_STATUSES = {"draft", "submitted", "approved", "rejected"}
+
 
 def validation_check(name: str, status: str, message: str = "") -> dict[str, str]:
     return {"name": name, "status": status, "message": message}
@@ -748,6 +750,26 @@ async def ensure_version_not_published(
         raise DuplicatePublishedVersionError("server version already published")
 
 
+async def ensure_no_active_submission_for_version(
+    session: AsyncSession,
+    name: str,
+    version: str,
+    *,
+    exclude_id: uuid.UUID | None = None,
+) -> None:
+    existing = await repository.get_submission_by_name_version(
+        session,
+        name=name,
+        version=version,
+        statuses=UNIQUE_ACTIVE_SUBMISSION_STATUSES,
+        exclude_id=exclude_id,
+    )
+    if existing is not None:
+        raise SubmissionValidationError(
+            f"active submission already exists for {name}@{version}; update that submission instead"
+        )
+
+
 async def ensure_submission_type_allowed(
     session: AsyncSession,
     user: User | None,
@@ -858,6 +880,11 @@ async def create_submission(
         payload.server_json.name,
         payload.server_json.version,
     )
+    await ensure_no_active_submission_for_version(
+        session,
+        payload.server_json.name,
+        payload.server_json.version,
+    )
     submission = ServerSubmission(
         name=payload.server_json.name,
         version=payload.server_json.version,
@@ -902,6 +929,12 @@ async def update_submission(
         validation_result = validation_result_for(server_json)
         ensure_validation_passed(validation_result)
         await ensure_version_not_published(session, server_json.name, server_json.version)
+        await ensure_no_active_submission_for_version(
+            session,
+            server_json.name,
+            server_json.version,
+            exclude_id=submission.id,
+        )
         submission.name = server_json.name
         submission.version = server_json.version
         submission.server_json = server_json.model_dump(by_alias=True, exclude_none=True)
@@ -1003,6 +1036,12 @@ async def submit_submission(
         submission.owner_organization_id,
     )
     await ensure_version_not_published(session, submission.name, submission.version)
+    await ensure_no_active_submission_for_version(
+        session,
+        submission.name,
+        submission.version,
+        exclude_id=submission.id,
+    )
     submission.status = "submitted"
     submission.submitted_at = datetime.now(UTC)
     submission.rejection_message = ""
@@ -1069,6 +1108,12 @@ async def approve_submission(
         submission.owner_organization_id,
     )
     await ensure_version_not_published(session, submission.name, submission.version)
+    await ensure_no_active_submission_for_version(
+        session,
+        submission.name,
+        submission.version,
+        exclude_id=submission.id,
+    )
     submission.status = "approved"
     submission.approved_at = datetime.now(UTC)
     submission.approver_user_id = approver.id
