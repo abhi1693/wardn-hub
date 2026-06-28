@@ -1,12 +1,17 @@
 import argparse
 import asyncio
+import os
 
 from opentelemetry import trace
+from prometheus_client import start_http_server
 
 from app.core.telemetry import configure_telemetry
 from app.db.session import AsyncSessionLocal
 from app.modules.events.service import dispatch_due_deliveries, process_pending_events
 from app.modules.metrics import service as metrics_service
+
+METRICS_PORT_ENV = "WARDN_HUB_EVENTS_WORKER_METRICS_PORT"
+DEFAULT_METRICS_PORT = 8092
 
 
 async def run_once(*, limit: int) -> tuple[int, int]:
@@ -51,9 +56,21 @@ def main() -> None:
         help="Maximum records to process per batch.",
     )
     parser.add_argument("--interval", type=float, default=5.0, help="Polling interval in seconds.")
+    parser.add_argument(
+        "--metrics-port",
+        type=int,
+        default=int(os.getenv(METRICS_PORT_ENV, str(DEFAULT_METRICS_PORT))),
+        help=(
+            "Prometheus metrics listener port. Set to 0 to disable. "
+            f"Defaults to ${METRICS_PORT_ENV} or {DEFAULT_METRICS_PORT}."
+        ),
+    )
     args = parser.parse_args()
 
     configure_telemetry()
+    if args.metrics_port > 0:
+        start_http_server(args.metrics_port)
+        print(f"events worker: metrics listening on :{args.metrics_port}/metrics")
 
     try:
         asyncio.run(run_worker(once=args.once, limit=args.limit, interval=args.interval))
