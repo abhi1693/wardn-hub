@@ -281,3 +281,6 @@ MCP_SERVERS_CATEGORY_SEEDS: tuple[CategorySeed, ...] = (
         1000,
     ),
 )
+
+DEFAULT_CATEGORY_SLUG = "other-tools-integrations"
+MCP_SERVERS_CATEGORY_SLUGS = frozenset(category.slug for category in MCP_SERVERS_CATEGORY_SEEDS)

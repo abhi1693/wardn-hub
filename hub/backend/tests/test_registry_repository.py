@@ -30,6 +30,7 @@ class EmptyExecuteResult:
 class CaptureSession:
     def __init__(self) -> None:
         self.statements: list[object] = []
+        self.added: list[object] = []
 
     async def execute(self, statement) -> EmptyExecuteResult:
         self.statements.append(statement)
@@ -38,6 +39,9 @@ class CaptureSession:
     async def scalar(self, statement) -> int:
         self.statements.append(statement)
         return 0
+
+    def add(self, instance: object) -> None:
+        self.added.append(instance)
 
 
 def sql(statement: object) -> str:
@@ -151,6 +155,40 @@ async def test_public_registry_users_require_public_current_versions() -> None:
     assert "mcp_servers.current_version_id IS NOT NULL" in statement
     assert "mcp_server_versions.status = 'active'" in statement
     assert "mcp_server_versions.is_latest IS true" in statement
+
+
+@pytest.mark.asyncio
+async def test_sync_server_categories_does_not_create_unknown_category_slugs() -> None:
+    session = CaptureSession()
+
+    await repository.sync_server_categories(
+        session,
+        uuid4(),
+        ["ai-and-llm-integration", "not-in-wardn-taxonomy"],
+    )
+
+    statement = sql(session.statements[1])
+    assert "other-tools-integrations" in statement
+    assert "ai-and-llm-integration" not in statement
+    assert "not-in-wardn-taxonomy" not in statement
+    assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_sync_server_categories_ignores_unknown_slugs_when_known_slugs_exist() -> None:
+    session = CaptureSession()
+
+    await repository.sync_server_categories(
+        session,
+        uuid4(),
+        ["developer-tools", "ai-and-llm-integration"],
+    )
+
+    statement = sql(session.statements[1])
+    assert "developer-tools" in statement
+    assert "ai-and-llm-integration" not in statement
+    assert "other-tools-integrations" not in statement
+    assert session.added == []
 
 
 @pytest.mark.asyncio

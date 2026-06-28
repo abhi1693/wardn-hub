@@ -8,7 +8,11 @@ from sqlalchemy.orm import aliased
 
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
-from app.modules.registry.category_seed import CategorySeed
+from app.modules.registry.category_seed import (
+    DEFAULT_CATEGORY_SLUG,
+    MCP_SERVERS_CATEGORY_SLUGS,
+    CategorySeed,
+)
 from app.modules.registry.models import (
     RegistryCategory,
     RegistryServer,
@@ -16,10 +20,6 @@ from app.modules.registry.models import (
     RegistryServerVersion,
 )
 from app.modules.users.models import User
-
-
-def category_name_from_slug(slug: str) -> str:
-    return " ".join(part.capitalize() for part in slug.split("-") if part) or "Other"
 
 
 def visible_servers_query(include_deleted: bool) -> Select[tuple[RegistryServer]]:
@@ -598,31 +598,19 @@ async def sync_server_categories(
     if not category_slugs:
         return
 
+    allowed_slugs = [slug for slug in category_slugs if slug in MCP_SERVERS_CATEGORY_SLUGS]
+    if not allowed_slugs:
+        allowed_slugs = [DEFAULT_CATEGORY_SLUG]
+
     result = await session.execute(
         select(RegistryCategory).where(
-            RegistryCategory.slug.in_(category_slugs),
+            RegistryCategory.slug.in_(allowed_slugs),
             RegistryCategory.status == "active",
         )
     )
     categories_by_slug = {category.slug: category for category in result.scalars().all()}
-    created_missing = False
-    for slug in category_slugs:
-        if slug not in categories_by_slug:
-            category = RegistryCategory(
-                slug=slug,
-                name=category_name_from_slug(slug),
-                description="",
-                sort_order=1000,
-                status="active",
-            )
-            session.add(category)
-            categories_by_slug[slug] = category
-            created_missing = True
 
-    if created_missing:
-        await session.flush()
-
-    for slug in category_slugs:
+    for slug in allowed_slugs:
         category = categories_by_slug.get(slug)
         if category is not None:
             session.add(
