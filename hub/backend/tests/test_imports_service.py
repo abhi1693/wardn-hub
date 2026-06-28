@@ -62,13 +62,17 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
     assert serialized["packages"][0]["registryType"] == "npm"
     assert serialized["packages"][0]["registryBaseUrl"] == "https://registry.npmjs.org"
     assert serialized["packages"][0]["environmentVariables"][0]["isSecret"] is True
-    assert response.server_json.meta == {"categories": ["weather"]}
+    assert response.server_json.meta is not None
+    assert response.server_json.meta["categories"] == ["weather"]
+    assert response.server_json.meta["sourceReview"]["llm"]["filesRead"] == [
+        "README.md",
+        "server.json",
+    ]
     assert response.submission_payload.server_json == response.server_json
     assert response.evidence.files == ["README.md", "server.json"]
     assert response.evidence.missing == [
         "package transport command",
         "package transport args",
-        "source review evidence",
     ]
 
 
@@ -96,7 +100,9 @@ def test_import_server_source_returns_readme_fallback_when_metadata_missing(monk
     assert response.source == "github"
     assert response.title == "weather-mcp"
     assert response.server_json.documentation == "# Weather MCP\n\nWeather forecast tools."
-    assert response.evidence.missing == ["packages or remotes", "source review evidence"]
+    assert response.server_json.meta is not None
+    assert response.server_json.meta["sourceReview"]["llm"]["filesRead"] == ["README.md"]
+    assert response.evidence.missing == ["packages or remotes"]
 
 
 def test_import_server_source_derives_subfolder_from_github_tree_url(monkeypatch) -> None:
@@ -199,7 +205,12 @@ def test_import_server_source_enriches_server_json_with_readme_config(monkeypatc
 
     package = response.server_json.packages[0]
     assert response.source == "server.json"
-    assert response.evidence.missing == ["source review evidence"]
+    assert response.evidence.missing == []
+    assert response.server_json.meta is not None
+    assert response.server_json.meta["sourceReview"]["llm"]["filesRead"] == [
+        "README.md",
+        "server.json",
+    ]
     assert package.version == "0.18.4"
     assert package.transport is not None
     assert package.transport.type_ == "stdio"
@@ -248,7 +259,9 @@ def test_import_server_source_extracts_readme_mcp_server_config(monkeypatch) -> 
 
     package = response.server_json.packages[0]
     assert response.source == "mcp.json"
-    assert response.evidence.missing == ["source review evidence"]
+    assert response.evidence.missing == []
+    assert response.server_json.meta is not None
+    assert response.server_json.meta["sourceReview"]["llm"]["filesRead"] == ["README.md"]
     assert package.registry_type == "npm"
     assert package.identifier == "@ankimcp/anki-mcp-server"
     assert package.transport is not None

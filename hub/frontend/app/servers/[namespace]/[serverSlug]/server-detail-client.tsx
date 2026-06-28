@@ -37,6 +37,7 @@ const packageHiddenFields = new Set([
   "identifier",
   "packageArguments",
   "registryType",
+  "runtimeHint",
   "transport",
   "version",
 ]);

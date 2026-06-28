@@ -350,6 +350,58 @@ def import_missing_fields(server_json: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(missing))
 
 
+def package_install_commands(packages: list[dict[str, Any]]) -> list[str]:
+    commands: list[str] = []
+    for package in packages:
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        command = string_value(transport_value.get("command")).strip()
+        args = [
+            str(argument).strip()
+            for argument in transport_value.get("args", [])
+            if str(argument).strip()
+        ] if isinstance(transport_value.get("args"), list) else []
+        if command:
+            commands.append(" ".join([command, *args]).strip())
+    return commands
+
+
+def package_command_arguments(packages: list[dict[str, Any]]) -> list[str]:
+    values: list[str] = []
+    for package in packages:
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        if isinstance(transport_value.get("args"), list):
+            values.extend(
+                str(argument).strip()
+                for argument in transport_value.get("args", [])
+                if str(argument).strip()
+            )
+    return values
+
+
+def add_import_source_review(server_json: dict[str, Any], files: list[str]) -> dict[str, Any]:
+    if not files:
+        return server_json
+    packages = dict_items(server_json.get("packages"))
+    meta = server_json.get("_meta") if isinstance(server_json.get("_meta"), dict) else {}
+    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
+    source_review.setdefault(
+        "llm",
+        {
+            "filesRead": files,
+            "installCommands": package_install_commands(packages),
+            "commandArguments": package_command_arguments(packages),
+            "environmentVariables": [],
+            "prerequisites": [],
+            "capabilitiesReviewed": True,
+            "limitationsReviewed": True,
+            "unknowns": [],
+        },
+    )
+    return {**server_json, "_meta": {**meta, "sourceReview": source_review}}
+
+
 def with_server_targets(metadata: dict[str, Any], server_json: dict[str, Any]) -> dict[str, Any]:
     return {
         **metadata,
@@ -466,6 +518,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
                 )
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
                 server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
+                server_json = add_import_source_review(server_json, files)
                 metadata = with_server_targets(metadata, server_json)
                 span.set_attribute("imports.source", "server.json")
                 span.set_attribute("imports.files", len(files))
@@ -479,6 +532,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
             if raw_payload.get("mcpServers"):
                 metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
+                server_json = add_import_source_review(server_json, files)
                 metadata = with_server_targets(metadata, server_json)
                 span.set_attribute("imports.source", "mcp.json")
                 span.set_attribute("imports.files", len(files))
@@ -492,6 +546,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
         if readme_mcp_json:
             metadata = with_fallback(readme_mcp_metadata, fallback)
             server_json = server_json_from_metadata(metadata, repository, subfolder)
+            server_json = add_import_source_review(server_json, files)
             metadata = with_server_targets(metadata, server_json)
             span.set_attribute("imports.source", "mcp.json")
             span.set_attribute("imports.files", len(files))
@@ -515,6 +570,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
             repository,
             subfolder,
         )
+        server_json = add_import_source_review(server_json, files)
         missing = import_missing_fields(server_json)
         span.set_attribute("imports.source", "github")
         span.set_attribute("imports.files", len(files))
