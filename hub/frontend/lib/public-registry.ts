@@ -107,10 +107,12 @@ export async function listPublishedRegistryServerPage(params?: {
   category?: string;
   cursor?: string;
   limit?: number;
+  search?: string;
 }) {
   const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
     ...(params?.category ? { category: params.category } : {}),
     ...(params?.cursor ? { cursor: params.cursor } : {}),
+    ...(params?.search ? { search: params.search } : {}),
     fields: PUBLIC_CARD_FIELDS,
     limit: params?.limit ?? PAGE_SIZE,
   });
