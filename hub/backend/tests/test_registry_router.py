@@ -144,6 +144,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         "/api/v1/mcp/badges/quality/{server_name}",
         "/api/v1/mcp/catalog",
         "/api/v1/mcp/servers",
+        "/api/v1/mcp/servers/search",
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/summary",
         "/api/v1/mcp/servers/{server_name}/tabs/overview",
@@ -168,6 +169,10 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         == "mcp_categories_update"
     )
     assert schema["paths"]["/api/v1/mcp/servers"]["get"]["operationId"] == "mcp_servers_list"
+    assert (
+        schema["paths"]["/api/v1/mcp/servers/search"]["get"]["operationId"]
+        == "mcp_servers_search"
+    )
     assert (
         schema["paths"]["/api/v1/mcp/servers/{server_name}/summary"]["get"]["operationId"]
         == "mcp_servers_get_summary"
@@ -352,6 +357,92 @@ def test_list_servers_route_rejects_unknown_fields(monkeypatch) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid fields"
+
+
+def test_search_servers_route_forwards_query_and_filters(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    captured: dict[str, object] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def list_servers(*args, **kwargs):
+        captured.update(kwargs)
+        return RegistryServerListResponse(
+            servers=[
+                RegistryServerRead(
+                    id=server_id,
+                    name="io.github.example/weather",
+                    title="Weather",
+                    description="Weather tools",
+                    documentation="",
+                    websiteUrl="https://example.com",
+                    repository={"url": "https://github.com/example/weather"},
+                    icons=[],
+                    status="active",
+                    statusMessage="",
+                    visibility="public",
+                    latestVersion=None,
+                    categories=[],
+                    partnerSupport=[],
+                    createdAt="2026-06-23T00:00:00Z",
+                    updatedAt="2026-06-23T00:00:00Z",
+                )
+            ],
+            metadata=RegistryListMetadata(count=1, nextCursor="5"),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers/search"
+        "?q=%20weather%20&limit=5&cursor=0&category=weather&partner=true"
+        "&fields=name,title,description"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "servers": [
+            {
+                "name": "io.github.example/weather",
+                "title": "Weather",
+                "description": "Weather tools",
+            }
+        ],
+        "metadata": {"count": 1, "nextCursor": "5"},
+    }
+    assert captured["search"] == "weather"
+    assert captured["limit"] == 5
+    assert captured["cursor"] == "0"
+    assert captured["category"] == "weather"
+    assert captured["partner"] is True
+
+
+def test_search_servers_route_rejects_blank_query(monkeypatch) -> None:
+    app = create_app()
+    called = False
+
+    async def fake_session():
+        yield object()
+
+    async def list_servers(*args, **kwargs):
+        nonlocal called
+        called = True
+        return RegistryServerListResponse(
+            servers=[],
+            metadata=RegistryListMetadata(count=0, nextCursor=""),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+
+    response = TestClient(app).get("/api/v1/mcp/servers/search?q=%20%20")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "search query required"
+    assert called is False
 
 
 def test_claim_ownership_requires_registry_write_scope_for_api_token(monkeypatch) -> None:

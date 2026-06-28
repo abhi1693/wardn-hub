@@ -274,6 +274,50 @@ async def list_mcp_servers(
         raise bad_request(exc, detail="invalid fields") from exc
 
 
+@public_router.get(
+    "/search",
+    response_model=RegistryServerListResponse,
+    operation_id="mcp_servers_search",
+)
+async def search_mcp_servers(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    q: Annotated[str, Query(min_length=1, max_length=200)],
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    fields: str | None = None,
+    version: str | None = "latest",
+    support_level: str | None = None,
+    partner: bool | None = None,
+    registry_type: str | None = None,
+    transport_type: str | None = None,
+    category: str | None = None,
+) -> RegistryServerListResponse | JSONResponse:
+    search_query = q.strip()
+    if not search_query:
+        raise bad_request(ValueError("search query required"), detail="search query required")
+    try:
+        response = await list_servers(
+            session,
+            cursor=cursor,
+            limit=limit,
+            search=search_query,
+            version=version,
+            support_level=support_level,
+            partner=partner,
+            registry_type=registry_type,
+            transport_type=transport_type,
+            category=category,
+        )
+        projected = project_list_response_fields(response, fields=fields)
+        if projected is not None:
+            return JSONResponse(content=jsonable_encoder(projected))
+        return response
+    except InvalidRegistryCursorError as exc:
+        raise bad_request(exc, detail="invalid cursor") from exc
+    except ValueError as exc:
+        raise bad_request(exc, detail="invalid fields") from exc
+
+
 @catalog_router.get(
     "",
     response_model=RegistryPublishedServerListResponse,
