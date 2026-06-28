@@ -612,9 +612,6 @@ function TrustReportPanel({ report }: { report: RegistryTrustReport }) {
     <section className="server-detail-card server-detail-trust-card">
       <div className="server-detail-card-title-row">
         <h2>Trust Report</h2>
-        <TechnicalPill tone={reportTone === "failed" ? "warning" : "structured"}>
-          {trustSourceLabel(report.scoreSource)}
-        </TechnicalPill>
       </div>
       <div className="trust-report-score">
         <div className="trust-report-score-heading">
