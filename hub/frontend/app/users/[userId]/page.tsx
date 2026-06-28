@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { User } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PageLoader } from "@/components/page-loader";
 import { ServerCard } from "@/components/server-card";
 import { PublicHeader } from "@/components/site-header";
 import {
@@ -98,12 +99,7 @@ export default function UserDetailPage() {
           </div>
         </section>
 
-        {state === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Fetching user servers.</div>
-          </div>
-        ) : null}
+        {state === "loading" ? <PageLoader label="Loading user servers" /> : null}
 
         {state === "error" ? (
           <div className="empty-state">

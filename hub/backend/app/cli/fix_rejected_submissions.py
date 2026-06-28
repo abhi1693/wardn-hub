@@ -108,6 +108,9 @@ class FixStats:
     failed: int = 0
 
 
+REPAIRABLE_STATUSES = {"draft", "rejected"}
+
+
 def submission_field(submission: dict[str, Any], snake_case: str, camel_case: str) -> Any:
     if camel_case in submission:
         return submission.get(camel_case)
@@ -138,20 +141,20 @@ def ensure_active_user(client: FixApiClient) -> dict[str, Any]:
     return user
 
 
-def rejected_submissions(
+def repairable_submissions(
     submissions: Iterable[dict[str, Any]],
     *,
     skipped_ids: set[str],
 ) -> list[dict[str, Any]]:
-    rejected = [
+    repairable = [
         submission
         for submission in submissions
-        if submission.get("status") == "rejected"
+        if submission.get("status") in REPAIRABLE_STATUSES
         and str(submission.get("id") or "") not in skipped_ids
     ]
-    indexed_rejected = list(enumerate(rejected))
-    indexed_rejected.sort(key=lambda item: (submission_queue_timestamp(item[1]), item[0]))
-    return [submission for _, submission in indexed_rejected]
+    indexed_repairable = list(enumerate(repairable))
+    indexed_repairable.sort(key=lambda item: (submission_queue_timestamp(item[1]), item[0]))
+    return [submission for _, submission in indexed_repairable]
 
 
 def submission_queue_timestamp(submission: dict[str, Any]) -> str:
@@ -174,7 +177,7 @@ def can_fix_submission_for_user(submission: dict[str, Any], user_id: str) -> tup
     return True, ""
 
 
-def next_rejected_submission_to_fix(
+def next_submission_to_fix(
     client: FixApiClient,
     *,
     user_id: str,
@@ -192,8 +195,12 @@ def next_rejected_submission_to_fix(
                 print(f"Submission {submission_id} was not found.", file=stdout)
                 return None
             raise
-        if submission.get("status") != "rejected":
-            print(f"Submission {submission_id} is not rejected; skipping.", file=stdout)
+        status = str(submission.get("status") or "")
+        if status not in REPAIRABLE_STATUSES:
+            print(
+                f"Submission {submission_id} is not draft or rejected; skipping.",
+                file=stdout,
+            )
             skipped_ids.add(submission_id)
             return None
         can_fix, reason = can_fix_submission_for_user(submission, user_id)
@@ -203,7 +210,7 @@ def next_rejected_submission_to_fix(
             return None
         return submission
 
-    for submission in rejected_submissions(client.list_submissions(), skipped_ids=skipped_ids):
+    for submission in repairable_submissions(client.list_submissions(), skipped_ids=skipped_ids):
         submission_id_value = str(submission.get("id") or "")
         can_fix, reason = can_fix_submission_for_user(submission, user_id)
         if can_fix:
@@ -238,31 +245,33 @@ def build_fix_prompt(context: dict[str, Any]) -> str:
     rejection_message = str(
         submission.get("rejectionMessage") or submission.get("rejection_message") or "unknown"
     )
+    status = str(submission.get("status") or "unknown")
     expected_owner_user_id = str(context.get("expectedOwnerUserId") or "")
 
-    return f"""Fix this Wardn Hub rejected submission so it can be submitted for review.
+    return f"""Fix this Wardn Hub draft or rejected submission so it can be submitted for review.
 
 Wardn Hub API base URL: {context.get("apiBaseUrl") or DEFAULT_API_BASE_URL}
-Rejected submission ID: {submission_id}
+Submission ID: {submission_id}
 Server name: {server_name or "unknown"}
 Version: {version or "unknown"}
+Current status: {status}
 Expected ownerUserId for this token: {expected_owner_user_id}
 Current submit/review feedback: {rejection_message or "unknown"}
 
 {API_ACCESS_INSTRUCTIONS}
 
 Goal:
-- Fetch the rejected submission with GET /submissions/{submission_id}.
-- Confirm the fetched submission has status "rejected" and ownerUserId "{expected_owner_user_id}" before doing any source review or update work.
+- Fetch the submission with GET /submissions/{submission_id}.
+- Confirm the fetched submission has status "draft" or "rejected" and ownerUserId "{expected_owner_user_id}" before doing any source review or update work.
 - If ownerUserId is absent, different, or organization-owned, stop immediately and report the mismatch. Do not fix it.
-- Validate the rejected submission against the submit/review feedback and Wardn Hub review requirements.
+- Validate the submission against any submit/review feedback and Wardn Hub review requirements.
 - Read the upstream source/docs needed to fix missing or incomplete metadata.
 - Update the same submission with PUT /submissions/{submission_id}.
 - Retry POST /submissions/{submission_id}/submit.
 - If submission still fails, repeat the fix/update/submit loop until it passes or the required information cannot be found.
 
 Important:
-- Do not create a new submission. Fix this existing rejected submission only.
+- Do not create a new submission. Fix this existing draft or rejected submission only.
 - Do not approve, reject, publish, withdraw, delete, or otherwise moderate this submission.
 - Do not update submissions owned by any other user or organization.
 - Do not guess source-review evidence. It must reflect URLs/files actually inspected.
@@ -311,7 +320,7 @@ def fix_loop(
 
     while True:
         skipped_before = len(skipped_ids)
-        submission = next_rejected_submission_to_fix(
+        submission = next_submission_to_fix(
             client,
             user_id=user_id,
             skipped_ids=skipped_ids,
@@ -321,9 +330,12 @@ def fix_loop(
         stats.skipped += len(skipped_ids) - skipped_before
         if submission is None:
             if submission_id:
-                print(f"No eligible rejected submission found for {submission_id}.", file=stdout)
+                print(
+                    f"No eligible draft or rejected submission found for {submission_id}.",
+                    file=stdout,
+                )
             else:
-                print("No eligible rejected submissions remain for this user.", file=stdout)
+                print("No eligible draft or rejected submissions remain for this user.", file=stdout)
             print_stats(stats, stdout)
             return 1 if stats.failed else 0
 
@@ -342,11 +354,11 @@ def fix_loop(
             context = build_fix_context(client, submission, user_id=user_id)
             fresh_submission = context["submission"]
             can_fix, reason = can_fix_submission_for_user(fresh_submission, user_id)
-            if fresh_submission.get("status") != "rejected" or not can_fix:
+            fresh_status = str(fresh_submission.get("status") or "")
+            if fresh_status not in REPAIRABLE_STATUSES or not can_fix:
                 stats.skipped += 1
                 skipped_ids.add(current_submission_id)
-                status = fresh_submission.get("status")
-                suffix = reason or f"status is {status}"
+                suffix = reason or f"status is {fresh_status or '<unknown>'}"
                 print(f"Skipping {current_submission_id}: {suffix}.", file=stdout)
             else:
                 prompt = build_fix_prompt(context)
@@ -390,7 +402,7 @@ def fix_loop(
 
 def print_stats(stats: FixStats, stdout: TextIO) -> None:
     print(
-        "rejected submission fixes: "
+        "submission fixes: "
         f"seen={stats.seen} candidate={stats.candidate} fixed={stats.fixed} "
         f"skipped={stats.skipped} failed={stats.failed}",
         file=stdout,
@@ -400,7 +412,7 @@ def print_stats(stats: FixStats, stdout: TextIO) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Fix rejected Wardn Hub MCP server submissions owned by the authenticated user, "
+            "Fix draft or rejected Wardn Hub MCP server submissions owned by the authenticated user, "
             "then resubmit them for review."
         )
     )
@@ -486,17 +498,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-fixes",
         type=int,
         default=None,
-        help="Maximum number of rejected submissions to fix in this run.",
+        help="Maximum number of draft or rejected submissions to fix in this run.",
     )
     parser.add_argument(
         "--submission-id",
         default="",
-        help="Fix exactly one rejected submission ID.",
+        help="Fix exactly one draft or rejected submission ID.",
     )
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Fix one rejected submission and exit.",
+        help="Fix one draft or rejected submission and exit.",
     )
     parser.add_argument(
         "--dry-run",

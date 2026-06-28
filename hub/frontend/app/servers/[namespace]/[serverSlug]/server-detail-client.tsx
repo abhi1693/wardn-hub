@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Clipboard, ExternalLink } from "lucide-react";
@@ -10,6 +11,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
+import { PageLoader } from "@/components/page-loader";
 import { ServerIcon, serverIconUrl } from "@/components/server-icon";
 import { PublicHeader } from "@/components/site-header";
 import { claimServerOwnership, currentUser, getServerDetailTab } from "@/lib/api/hub";
@@ -513,6 +515,13 @@ function CopyButton({ label = "Copy target", value }: { label?: string; value: s
   );
 }
 
+function imageDimension(value: number | string | undefined, fallback: number) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  if (typeof value !== "string") return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function QualityBadgePanel({
   badgePreviewUrl,
   badgeUrl,
@@ -531,11 +540,12 @@ function QualityBadgePanel({
         <CopyButton label="Copy Markdown" value={markdown} />
       </div>
       <a className="server-detail-badge-preview" href={badgeUrl} rel="noreferrer" target="_blank">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Image
           alt={`Wardn Score: ${typeof score === "number" ? `${score}/100` : "pending"}`}
           height={20}
           src={badgePreviewUrl}
+          unoptimized
+          width={160}
         />
       </a>
       <div className="server-detail-markdown-snippet">
@@ -865,14 +875,17 @@ function DocumentationBlock({
           },
           img: ({ alt, height, src, title, width }) => {
             const imageSrc = typeof src === "string" ? src : undefined;
+            const resolvedSrc = resolveRepositoryImageUrl(imageSrc, repository);
+            if (!resolvedSrc) return null;
             return (
-              <img
+              <Image
                 alt={alt ?? ""}
-                height={height}
-                loading="lazy"
-                src={resolveRepositoryImageUrl(imageSrc, repository)}
+                height={imageDimension(height, 400)}
+                src={resolvedSrc}
+                style={{ height: "auto", maxWidth: "100%" }}
                 title={title}
-                width={width}
+                unoptimized
+                width={imageDimension(width, 800)}
               />
             );
           },
@@ -1367,12 +1380,7 @@ export function ServerDetailClient({
       <PublicHeader />
 
       <main className="server-detail-main">
-        {state === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Fetching server details.</div>
-          </div>
-        ) : null}
+        {state === "loading" ? <PageLoader label="Loading server details" /> : null}
 
         {state === "error" ? (
           <div className="empty-state">

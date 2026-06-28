@@ -191,7 +191,7 @@ def test_import_entry_creates_and_submits_new_server_submission() -> None:
     assert hub.submitted == ["submission-1"]
 
 
-def test_import_entry_rejects_new_server_import_that_breaks_initial_version_rule() -> None:
+def test_import_entry_skips_new_server_import_that_breaks_initial_version_rule() -> None:
     hub = FakeHub()
 
     outcome = cli.import_entry(
@@ -204,8 +204,8 @@ def test_import_entry_rejects_new_server_import_that_breaks_initial_version_rule
     )
 
     assert outcome == cli.ImportOutcome(
-        "invalid",
-        "new server submissions must start at version 1.0.0",
+        "skipped",
+        "new_server_requires_initial_version=1.0.0; upstream_version=1.0.1",
     )
     assert hub.created_submissions == []
     assert hub.submitted == []
@@ -233,6 +233,23 @@ def test_import_entry_creates_new_version_submission_for_existing_server() -> No
     assert outcome == cli.ImportOutcome("submitted", "submission_id=submission-1")
     assert hub.created_submissions[0]["submissionType"] == "new_version"
     assert hub.created_submissions[0]["ownerUserId"] == "49a69100-26be-49b1-be9b-69619aaaf311"
+
+
+def test_import_entry_allows_non_initial_version_for_existing_server() -> None:
+    hub = FakeHub(existing_server={"server": {"owner": {"id": "owner-1"}}})
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(version="1.2.3"),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_submissions={},
+    )
+
+    assert outcome == cli.ImportOutcome("submitted", "submission_id=submission-1")
+    assert hub.created_submissions[0]["submissionType"] == "new_version"
+    assert hub.created_submissions[0]["serverJson"]["version"] == "1.2.3"
 
 
 def test_import_entry_keeps_draft_when_submit_validation_blocks_review() -> None:

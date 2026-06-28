@@ -7,6 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
 
 import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog";
+import { PageLoader } from "@/components/page-loader";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -560,9 +561,7 @@ function SubmitServerPageContent() {
         {authChecked && user && (
           <form className="space-y-5" onSubmit={submitForm}>
             {isLoadingSubmission ? (
-              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                Loading submission.
-              </div>
+              <PageLoader className="rounded-md border border-dashed" compact label="Loading submission" />
             ) : null}
 
             {canChoosePartnerOwner ? (

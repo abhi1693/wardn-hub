@@ -114,6 +114,34 @@ def test_rejected_submission_webhook_verifies_signature_and_queues_submission() 
     ]
 
 
+def test_rejected_submission_webhook_queues_draft_events() -> None:
+    settings = webhook_settings()
+    fix_queue = CapturingQueue()
+    app = webhook.create_app(
+        settings,
+        fix_queue=fix_queue,  # type: ignore[arg-type]
+        start_worker=False,
+    )
+    payload = {
+        "eventId": "event-1",
+        "eventType": "submission.created",
+        "submission": {"id": "sub-1"},
+    }
+    raw_body, headers = signed_headers(payload, event_type="submission.created")
+
+    response = TestClient(app).post(
+        webhook.DEFAULT_WEBHOOK_PATH,
+        content=raw_body,
+        headers=headers,
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "queued", "queued": True}
+    assert fix_queue.jobs == [
+        webhook.FixJob(submission_id="sub-1", delivery_id="delivery-1", event_id="event-1")
+    ]
+
+
 def test_rejected_submission_webhook_ignores_other_event_types() -> None:
     settings = webhook_settings()
     fix_queue = CapturingQueue()
@@ -124,10 +152,10 @@ def test_rejected_submission_webhook_ignores_other_event_types() -> None:
     )
     payload = {
         "eventId": "event-1",
-        "eventType": "submission.submitted",
+        "eventType": "submission.approved",
         "submission": {"id": "sub-1"},
     }
-    raw_body, headers = signed_headers(payload, event_type="submission.submitted")
+    raw_body, headers = signed_headers(payload, event_type="submission.approved")
 
     response = TestClient(app).post(
         webhook.DEFAULT_WEBHOOK_PATH,

@@ -24,6 +24,7 @@ WEBHOOK_PORT_ENV = "WARDN_HUB_FIX_REJECTED_WEBHOOK_PORT"
 DEFAULT_WEBHOOK_PATH = "/webhooks/wardn/rejected-submission-fix"
 DEFAULT_WEBHOOK_HOST = "0.0.0.0"
 DEFAULT_WEBHOOK_PORT = 8091
+REPAIRABLE_EVENT_TYPES = {"submission.created", "submission.updated", "submission.rejected"}
 
 
 class WebhookConfigurationError(Exception):
@@ -92,13 +93,14 @@ class RejectedSubmissionFixQueue:
                 exit_code = fix_rejected_submissions.main(build_fix_args(self.settings, job))
                 if exit_code != 0:
                     print(
-                        f"fix rejected webhook: fix job for {job.submission_id} exited {exit_code}",
+                        "submission fix webhook: "
+                        f"fix job for {job.submission_id} exited {exit_code}",
                         file=sys.stderr,
                         flush=True,
                     )
             except Exception as exc:  # noqa: BLE001 - worker must keep consuming jobs.
                 print(
-                    f"fix rejected webhook: fix job for {job.submission_id} failed: {exc}",
+                    f"submission fix webhook: fix job for {job.submission_id} failed: {exc}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -171,7 +173,7 @@ def create_app(
             if start_worker:
                 jobs.stop()
 
-    app = FastAPI(title="Wardn rejected submission fix webhook", lifespan=lifespan)
+    app = FastAPI(title="Wardn submission fix webhook", lifespan=lifespan)
 
     @app.get("/health/live")
     async def health_live() -> dict[str, str]:
@@ -200,7 +202,7 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid payload")
 
         event_type = str(payload.get("eventType") or request.headers.get("Wardn-Event") or "")
-        if event_type != "submission.rejected":
+        if event_type not in REPAIRABLE_EVENT_TYPES:
             return {"status": "ignored", "queued": False}
 
         submission_id = extract_submission_id(payload)
@@ -262,7 +264,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli.fix_rejected_submission_webhook",
         description=(
-            "Receive Wardn submission.rejected webhooks and enqueue single-submission fix jobs."
+            "Receive Wardn submission draft/rejected webhooks and enqueue "
+            "single-submission fix jobs."
         ),
     )
     parser.add_argument(

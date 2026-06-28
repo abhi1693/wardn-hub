@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { SignInButton, SignUpButton, useClerk } from "@clerk/nextjs";
 import { Suspense, useEffect, useState } from "react";
 
+import { PageLoader } from "@/components/page-loader";
 import { Button } from "@/components/ui/button";
 import { PublicHeader } from "@/components/site-header";
 import {
@@ -182,10 +183,7 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
         <PublicHeader />
         <main className="flex min-h-[calc(100dvh-64px)] items-center justify-center bg-background p-5">
           <ClerkRedirect isRegister={isRegister} nextPath={nextPath} />
-          <div className="empty-state">
-            <div className="empty-title">Redirecting</div>
-            <div className="empty-detail">Opening account sign-in.</div>
-          </div>
+          <PageLoader compact label="Redirecting to account sign-in" />
         </main>
       </>
     );

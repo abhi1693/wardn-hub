@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Pencil, RotateCcw, Trash2, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PageLoader } from "@/components/page-loader";
 import { PublicHeader } from "@/components/site-header";
 import {
   currentUser,
@@ -177,12 +178,7 @@ export default function UsersPage() {
         {notice ? <div className="notice">{notice}</div> : null}
         {state === "ready" && error ? <div className="error-banner">{error}</div> : null}
 
-        {state === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Fetching users.</div>
-          </div>
-        ) : null}
+        {state === "loading" ? <PageLoader label="Loading users" /> : null}
 
         {state === "error" ? (
           <div className="empty-state">

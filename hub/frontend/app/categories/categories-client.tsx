@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { PageLoader } from "@/components/page-loader";
 import { PublicHeader } from "@/components/site-header";
 import { currentUser, deleteCategory, HubApiError, listCategories } from "@/lib/api/hub";
 import type { RegistryCategoryRead, UserRead } from "@/lib/api/generated/model";
@@ -104,12 +105,7 @@ export function CategoriesClient({
         {notice ? <div className="notice">{notice}</div> : null}
         {state === "ready" && error ? <div className="error-banner">{error}</div> : null}
 
-        {state === "loading" ? (
-          <div className="empty-state">
-            <div className="empty-title">Loading</div>
-            <div className="empty-detail">Fetching categories.</div>
-          </div>
-        ) : null}
+        {state === "loading" ? <PageLoader label="Loading categories" /> : null}
 
         {state === "error" ? (
           <div className="empty-state">

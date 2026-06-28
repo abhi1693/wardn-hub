@@ -10,7 +10,10 @@ FROM python:3.13-slim-bookworm
 COPY --from=uv /uv /uvx /bin/
 COPY --from=codex /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl git jq && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     HOME="/app" \

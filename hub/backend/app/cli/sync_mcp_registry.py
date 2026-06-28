@@ -19,6 +19,7 @@ API_PREFIX = "/api/v1"
 DEFAULT_HUB_API_BASE_URL = "http://localhost:8000/api/v1"
 DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0.1/servers"
 DEFAULT_CATEGORY = "other-tools-integrations"
+INITIAL_SERVER_VERSION = "1.0.0"
 HUB_TOKEN_ENV = "WARDN_HUB_TOKEN"
 HUB_API_BASE_URL_ENV = "WARDN_HUB_API_BASE_URL"
 REGISTRY_URL_ENV = "WARDN_HUB_MCP_REGISTRY_URL"
@@ -372,6 +373,10 @@ def join_or_none(values: list[str]) -> str:
     return ", ".join(values) if values else "None declared."
 
 
+def starts_at_initial_version(version: str) -> bool:
+    return version == INITIAL_SERVER_VERSION
+
+
 def documentation_has_review_sections(value: str) -> bool:
     lower = value.lower()
     required_terms = {
@@ -564,6 +569,16 @@ def import_entry(
 
     try:
         server_detail = hub.get_server(name)
+        if (
+            server_detail is None
+            and version
+            and not starts_at_initial_version(version)
+        ):
+            return ImportOutcome(
+                "skipped",
+                f"new_server_requires_initial_version={INITIAL_SERVER_VERSION}; "
+                f"upstream_version={version}",
+            )
         submission_payload = {
             **submission_owner_fields(server_detail),
             "submissionType": "new_version" if server_detail is not None else "new_server",

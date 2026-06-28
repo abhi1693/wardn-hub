@@ -89,11 +89,12 @@ def test_build_fix_prompt_copies_frontend_repair_instructions_without_token() ->
 
     prompt = cli.build_fix_prompt(context)
 
-    assert "Fix this Wardn Hub rejected submission" in prompt
-    assert "Rejected submission ID: sub-1" in prompt
+    assert "Fix this Wardn Hub draft or rejected submission" in prompt
+    assert "Submission ID: sub-1" in prompt
     assert "Expected ownerUserId for this token: user-1" in prompt
     assert "Current submit/review feedback: Add complete source review evidence." in prompt
-    assert "Fetch the rejected submission with GET /submissions/sub-1" in prompt
+    assert "Fetch the submission with GET /submissions/sub-1" in prompt
+    assert 'status "draft" or "rejected"' in prompt
     assert "Update the same submission with PUT /submissions/sub-1" in prompt
     assert "Retry POST /submissions/sub-1/submit" in prompt
     assert "Do not create a new submission" in prompt
@@ -103,11 +104,12 @@ def test_build_fix_prompt_copies_frontend_repair_instructions_without_token() ->
     assert "wardn_hub_test_token" not in prompt
 
 
-def test_fix_loop_only_processes_rejected_submissions_owned_by_current_user() -> None:
+def test_fix_loop_processes_draft_or_rejected_submissions_owned_by_current_user() -> None:
     client = FakeClient(
         [
             rejected_submission(submission_id="other-user", owner_user_id="user-2"),
             rejected_submission(submission_id="org-owned", owner_organization_id="org-1"),
+            rejected_submission(submission_id="approved", status="approved"),
             rejected_submission(submission_id="draft", status="draft"),
             rejected_submission(submission_id="owned"),
         ]
@@ -127,11 +129,38 @@ def test_fix_loop_only_processes_rejected_submissions_owned_by_current_user() ->
 
     assert result == 0
     assert len(reviewer.prompts) == 1
-    assert "Rejected submission ID: owned" in reviewer.prompts[0]
+    assert "Submission ID: draft" in reviewer.prompts[0]
     output = stdout.getvalue()
     assert "owned by different user user-2" in output
     assert "owned by organization org-1" in output
-    assert "Submitted owned for review." in output
+    assert "Submitted draft for review." in output
+
+
+def test_fix_loop_processes_rejected_after_drafts() -> None:
+    client = FakeClient(
+        [
+            rejected_submission(submission_id="draft", status="draft"),
+            rejected_submission(submission_id="owned"),
+        ]
+    )
+    reviewer = FakeReviewer(client)
+    stdout = StringIO()
+
+    result = cli.fix_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_fixes=None,
+        once=False,
+        dry_run=False,
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert len(reviewer.prompts) == 2
+    assert "Submission ID: draft" in reviewer.prompts[0]
+    assert "Submission ID: owned" in reviewer.prompts[1]
+    assert "fixed=2" in stdout.getvalue()
 
 
 def test_fix_loop_skips_exact_submission_owned_by_different_user() -> None:
@@ -192,7 +221,7 @@ def test_dry_run_prints_prompt_without_running_reviewer() -> None:
 
     assert result == 0
     assert reviewer.prompts == []
-    assert "Fix this Wardn Hub rejected submission" in stdout.getvalue()
+    assert "Fix this Wardn Hub draft or rejected submission" in stdout.getvalue()
     assert client.submissions[0]["status"] == "rejected"
 
 
