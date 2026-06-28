@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BellRing,
+  Building2,
   ChevronDown,
   FileCheck2,
   KeyRound,
   LogIn,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -43,26 +45,13 @@ const publicItems: HeaderItem[] = [
   { href: "/", label: "Explore" },
   { href: "/categories", label: "Categories" },
   { href: "/users", label: "Users" },
+  { href: "/advertise", label: "Advertise" },
 ];
-
-const adminItems: HeaderItem[] = [
-  { href: "/submissions", label: "Submissions" },
-];
-
-const partnerManagerItems: HeaderItem[] = [{ href: "/partners", label: "Partners" }];
-
-const superuserItems: HeaderItem[] = [{ href: "/audit", label: "Audit" }];
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   if (href.startsWith("/?")) return false;
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function isAdminUser(user: UserRead | null) {
-  return Boolean(
-    user?.is_superuser || user?.is_global_moderator || user?.is_global_partner_manager,
-  );
 }
 
 function canAccessAudit(user: UserRead | null) {
@@ -210,6 +199,28 @@ export function HeaderUserMenu({
               <FileCheck2 size={18} />
               <span>My submissions</span>
             </Link>
+            {canManagePartners(user) ? (
+              <Link
+                className="site-user-menu-item"
+                href="/partners"
+                onClick={() => setOpen(false)}
+                role="menuitem"
+              >
+                <Building2 size={18} />
+                <span>Partners</span>
+              </Link>
+            ) : null}
+            {canAccessAudit(user) ? (
+              <Link
+                className="site-user-menu-item"
+                href="/audit"
+                onClick={() => setOpen(false)}
+                role="menuitem"
+              >
+                <ShieldCheck size={18} />
+                <span>Audit</span>
+              </Link>
+            ) : null}
             <Link
               className="site-user-menu-item"
               href="/account/api-tokens"
@@ -297,17 +308,11 @@ function PublicHeaderContent({
   onLogout: () => Promise<void>;
   user: UserRead | null;
 }) {
-  const navItems = [
-    ...publicItems,
-    ...(isAdminUser(user) ? adminItems : []),
-    ...(canManagePartners(user) ? partnerManagerItems : []),
-    ...(canAccessAudit(user) ? superuserItems : []),
-  ];
   const isAuthenticated = Boolean(user);
 
   return (
     <SiteHeader
-      items={navItems}
+      items={publicItems}
       actions={
         isAuthenticated ? (
           <HeaderUserMenu onLogout={onLogout} user={user} />

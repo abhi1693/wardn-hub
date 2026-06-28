@@ -8,6 +8,7 @@ export async function GET() {
   const now = new Date();
   const entries: SitemapUrlEntry[] = [
     { changefreq: "daily", lastmod: now, loc: absoluteUrl("/"), priority: 1 },
+    { changefreq: "monthly", lastmod: now, loc: absoluteUrl("/advertise"), priority: 0.6 },
     { changefreq: "weekly", lastmod: now, loc: absoluteUrl("/categories"), priority: 0.8 },
   ];
 

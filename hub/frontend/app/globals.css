@@ -735,6 +735,261 @@ button {
   line-height: 24px;
 }
 
+.advertise-page {
+  display: grid;
+  gap: 40px;
+  padding-top: 42px;
+}
+
+.advertise-hero {
+  display: grid;
+  padding: 36px 0 8px;
+}
+
+.advertise-hero-copy {
+  display: grid;
+  align-content: center;
+  gap: 18px;
+}
+
+.advertise-hero h1 {
+  max-width: 820px;
+  margin: 0;
+  color: #0f172a;
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 54px;
+}
+
+.advertise-hero p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 0;
+  color: #536070;
+  font-size: 18px;
+  line-height: 29px;
+}
+
+.advertise-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.advertise-card {
+  display: grid;
+  min-height: 258px;
+  align-content: start;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 32px;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.advertise-card:hover {
+  border-color: #0f172a;
+  transform: translateY(-2px);
+}
+
+.advertise-card-top {
+  display: grid;
+  gap: 24px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.advertise-card-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.advertise-card h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 31px;
+}
+
+.advertise-card p {
+  margin: 0;
+  color: #536070;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.advertise-visual {
+  position: relative;
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 330px;
+  overflow: hidden;
+  background: #101214;
+}
+
+.advertise-visual::after {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 8%) 0 1px, transparent 1px 96px),
+    linear-gradient(180deg, transparent, rgb(0 0 0 / 45%));
+  content: "";
+}
+
+.advertise-visual-racks {
+  position: absolute;
+  inset: 34px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.advertise-visual-racks span {
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 12%) 0 2px, transparent 2px 28px),
+    linear-gradient(90deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 1%));
+  box-shadow: inset 0 0 28px rgb(255 255 255 / 4%);
+}
+
+.advertise-visual-label {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.advertise-visual-label span {
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 92%);
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 18px;
+  padding: 18px 22px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.advertise-partnership-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 5fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.advertise-process {
+  display: grid;
+  gap: 24px;
+}
+
+.advertise-process h2,
+.advertise-partnership-card h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 39px;
+}
+
+.advertise-process-list {
+  display: grid;
+  gap: 0;
+}
+
+.advertise-process-item {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 24px;
+  border-top: 1px solid var(--border);
+  padding: 24px 0;
+}
+
+.advertise-process-item:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.advertise-process-item > span {
+  color: #c6c6c6;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 31px;
+}
+
+.advertise-process-item h3 {
+  margin: 0 0 6px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 18px;
+  text-transform: uppercase;
+}
+
+.advertise-process-item p {
+  margin: 0;
+  color: #536070;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.advertise-partnership-card {
+  display: grid;
+  gap: 20px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #eeeeef;
+  padding: 32px;
+}
+
+.advertise-partnership-card p {
+  margin: 0;
+  color: #536070;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.advertise-partnership-card ul {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.advertise-partnership-card li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.advertise-partnership-card svg {
+  flex: 0 0 auto;
+}
+
 .category-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3691,6 +3946,72 @@ button {
     font-size: 15px;
     line-height: 22px;
     padding: 14px 0;
+  }
+
+  .advertise-page {
+    gap: 24px;
+    padding-top: 24px;
+  }
+
+  .advertise-hero {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 18px 0 26px;
+  }
+
+  .advertise-hero h1 {
+    font-size: 34px;
+    line-height: 40px;
+  }
+
+  .advertise-hero p:not(.eyebrow) {
+    font-size: 16px;
+    line-height: 25px;
+  }
+
+  .advertise-grid,
+  .advertise-partnership-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .advertise-card,
+  .advertise-partnership-card {
+    padding: 18px;
+  }
+
+  .advertise-card {
+    min-height: 0;
+  }
+
+  .advertise-visual {
+    min-height: 260px;
+  }
+
+  .advertise-visual-racks {
+    inset: 22px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .advertise-visual-label {
+    padding: 18px;
+  }
+
+  .advertise-visual-label span {
+    padding: 14px 16px;
+  }
+
+  .advertise-process h2,
+  .advertise-partnership-card h2 {
+    font-size: 24px;
+    line-height: 31px;
+  }
+
+  .advertise-process-item {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 14px;
+    padding: 18px 0;
   }
 
   .hero-section {
