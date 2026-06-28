@@ -382,12 +382,111 @@ def starts_at_initial_version(version: str) -> bool:
     return version == INITIAL_SERVER_VERSION
 
 
-def normalize_initial_import_version(payload: dict[str, Any]) -> str | None:
-    upstream_version = str(payload.get("version") or "").strip()
-    if not upstream_version or starts_at_initial_version(upstream_version):
+def semver_key(version: str) -> tuple[int, int, int] | None:
+    base = version.split("-", 1)[0].split("+", 1)[0]
+    parts = base.split(".")
+    if len(parts) != 3:
         return None
-    payload["version"] = INITIAL_SERVER_VERSION
-    return upstream_version
+    try:
+        major, minor, patch = (int(part) for part in parts)
+    except ValueError:
+        return None
+    return major, minor, patch
+
+
+def next_patch_version(version: str) -> str:
+    key = semver_key(version)
+    if key is None:
+        return INITIAL_SERVER_VERSION
+    major, minor, patch = key
+    return f"{major}.{minor}.{patch + 1}"
+
+
+def server_detail_versions(server_detail: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(server_detail, dict):
+        return []
+    versions = server_detail.get("versions")
+    if not isinstance(versions, list):
+        return []
+    return [version for version in versions if isinstance(version, dict)]
+
+
+def import_upstream_version_from_payload(payload: dict[str, Any]) -> str:
+    meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}
+    import_meta = meta.get(IMPORT_META_KEY) if isinstance(meta.get(IMPORT_META_KEY), dict) else {}
+    return str(import_meta.get("upstreamVersion") or payload.get("version") or "").strip()
+
+
+def import_upstream_version_from_submission(submission: dict[str, Any]) -> str:
+    server_json = submission.get("serverJson")
+    if not isinstance(server_json, dict):
+        server_json = submission.get("server_json")
+    payload = server_json if isinstance(server_json, dict) else {}
+    return import_upstream_version_from_payload(payload)
+
+
+def import_upstream_version_from_version(version: dict[str, Any]) -> str:
+    server_json = version.get("serverJson")
+    if not isinstance(server_json, dict):
+        server_json = version.get("server_json")
+    payload = server_json if isinstance(server_json, dict) else {}
+    return import_upstream_version_from_payload(payload)
+
+
+def published_import_upstream_versions(server_detail: dict[str, Any] | None) -> set[str]:
+    return {
+        upstream_version
+        for upstream_version in (
+            import_upstream_version_from_version(version)
+            for version in server_detail_versions(server_detail)
+        )
+        if upstream_version
+    }
+
+
+def next_wardn_import_version(server_detail: dict[str, Any] | None) -> str:
+    versions = []
+    for version in server_detail_versions(server_detail):
+        candidate = str(version.get("version") or "").strip()
+        key = semver_key(candidate)
+        if key is not None and key[0] >= 1:
+            versions.append((key, candidate))
+    if not versions:
+        return INITIAL_SERVER_VERSION
+    return next_patch_version(max(versions, key=lambda item: item[0])[1])
+
+
+def apply_wardn_import_version(
+    payload: dict[str, Any],
+    *,
+    server_detail: dict[str, Any] | None,
+) -> str | None:
+    upstream_version = import_upstream_version_from_payload(payload)
+    wardn_version = (
+        next_wardn_import_version(server_detail)
+        if server_detail is not None
+        else INITIAL_SERVER_VERSION
+    )
+    if payload.get("version") == wardn_version:
+        return None
+    payload["version"] = wardn_version
+    return upstream_version or None
+
+
+def find_existing_submission_by_upstream_version(
+    existing_submissions: dict[tuple[str, str], dict[str, Any]],
+    *,
+    name: str,
+    upstream_version: str,
+) -> dict[str, Any] | None:
+    if not upstream_version:
+        return None
+    for (submission_name, _), submission in existing_submissions.items():
+        if submission_name != name:
+            continue
+        if import_upstream_version_from_submission(submission) == upstream_version:
+            return submission
+    return None
 
 
 def documentation_has_review_sections(value: str) -> bool:
@@ -576,19 +675,38 @@ def import_entry(
 
     try:
         server_detail = hub.get_server(name)
-        normalized_upstream_version = None
-        if server_detail is None:
-            normalized_upstream_version = normalize_initial_import_version(payload)
-            version = str(payload.get("version") or "").strip()
+        upstream_version = import_upstream_version_from_payload(payload)
+        published_upstream_versions = published_import_upstream_versions(server_detail)
+        if upstream_version and upstream_version in published_upstream_versions:
+            return ImportOutcome(
+                "skipped",
+                f"upstream_version_already_published={upstream_version}",
+            )
+
+        normalized_upstream_version = apply_wardn_import_version(
+            payload,
+            server_detail=server_detail,
+        )
+        version = str(payload.get("version") or "").strip()
 
         existing_submission = existing_submissions.get((name, version))
+        if existing_submission is None:
+            existing_submission = find_existing_submission_by_upstream_version(
+                existing_submissions,
+                name=name,
+                upstream_version=upstream_version,
+            )
         existing_status = (
             str(existing_submission.get("status") or "").strip()
             if existing_submission is not None
             else ""
         )
         if existing_status in {"submitted", "approved"}:
-            return ImportOutcome("skipped", f"pending_submission_status={existing_status}")
+            existing_version = str(existing_submission.get("version") or "").strip()
+            reason = f"pending_submission_status={existing_status}"
+            if existing_version and existing_version != version:
+                reason += f"; wardn_version={existing_version}; target_wardn_version={version}"
+            return ImportOutcome("skipped", reason)
 
         submission_payload = {
             **submission_owner_fields(server_detail),

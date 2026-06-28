@@ -197,7 +197,7 @@ def test_import_entry_normalizes_first_official_registry_version_to_initial_vers
 
     outcome = cli.import_entry(
         hub,
-        registry_entry(version="1.0.1"),
+        registry_entry(version="0.22.0"),
         registry_url=cli.DEFAULT_REGISTRY_URL,
         synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
         dry_run=False,
@@ -206,15 +206,15 @@ def test_import_entry_normalizes_first_official_registry_version_to_initial_vers
 
     assert outcome == cli.ImportOutcome(
         "submitted",
-        "submission_id=submission-1; wardn_version=1.0.0; upstream_version=1.0.1",
+        "submission_id=submission-1; wardn_version=1.0.0; upstream_version=0.22.0",
     )
     assert hub.created_submissions[0]["submissionType"] == "new_server"
     assert hub.created_submissions[0]["serverJson"]["version"] == "1.0.0"
     assert (
         hub.created_submissions[0]["serverJson"]["_meta"][cli.IMPORT_META_KEY]["upstreamVersion"]
-        == "1.0.1"
+        == "0.22.0"
     )
-    assert hub.created_submissions[0]["serverJson"]["packages"][0]["version"] == "1.0.1"
+    assert hub.created_submissions[0]["serverJson"]["packages"][0]["version"] == "0.22.0"
     assert hub.submitted == ["submission-1"]
 
 
@@ -242,21 +242,147 @@ def test_import_entry_creates_new_version_submission_for_existing_server() -> No
     assert hub.created_submissions[0]["ownerUserId"] == "49a69100-26be-49b1-be9b-69619aaaf311"
 
 
-def test_import_entry_allows_non_initial_version_for_existing_server() -> None:
-    hub = FakeHub(existing_server={"server": {"owner": {"id": "owner-1"}}})
+def test_import_entry_uses_next_wardn_version_for_existing_server() -> None:
+    hub = FakeHub(
+        existing_server={
+            "server": {"owner": {"id": "owner-1"}},
+            "versions": [
+                {
+                    "version": "1.0.0",
+                    "serverJson": {
+                        "_meta": {
+                            cli.IMPORT_META_KEY: {
+                                "upstreamVersion": "0.21.0",
+                            }
+                        }
+                    },
+                }
+            ],
+        }
+    )
 
     outcome = cli.import_entry(
         hub,
-        registry_entry(version="1.2.3"),
+        registry_entry(version="0.22.0"),
         registry_url=cli.DEFAULT_REGISTRY_URL,
         synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
         dry_run=False,
         existing_submissions={},
     )
 
-    assert outcome == cli.ImportOutcome("submitted", "submission_id=submission-1")
+    assert outcome == cli.ImportOutcome(
+        "submitted",
+        "submission_id=submission-1; wardn_version=1.0.1; upstream_version=0.22.0",
+    )
     assert hub.created_submissions[0]["submissionType"] == "new_version"
-    assert hub.created_submissions[0]["serverJson"]["version"] == "1.2.3"
+    assert hub.created_submissions[0]["serverJson"]["version"] == "1.0.1"
+    assert (
+        hub.created_submissions[0]["serverJson"]["_meta"][cli.IMPORT_META_KEY]["upstreamVersion"]
+        == "0.22.0"
+    )
+    assert hub.created_submissions[0]["serverJson"]["packages"][0]["version"] == "0.22.0"
+
+
+def test_import_entry_skips_already_published_upstream_import() -> None:
+    hub = FakeHub(
+        existing_server={
+            "server": {"owner": {"id": "owner-1"}},
+            "versions": [
+                {
+                    "version": "1.0.0",
+                    "serverJson": {
+                        "_meta": {
+                            cli.IMPORT_META_KEY: {
+                                "upstreamVersion": "0.22.0",
+                            }
+                        }
+                    },
+                }
+            ],
+        }
+    )
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(version="0.22.0"),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_submissions={},
+    )
+
+    assert outcome == cli.ImportOutcome("skipped", "upstream_version_already_published=0.22.0")
+    assert hub.created_submissions == []
+
+
+def test_import_entry_updates_existing_rejected_submission_by_upstream_version() -> None:
+    hub = FakeHub()
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(version="0.22.0"),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_submissions={
+            ("io.github.example/weather", "0.22.0"): {
+                "id": "submission-1",
+                "name": "io.github.example/weather",
+                "version": "0.22.0",
+                "status": "rejected",
+                "serverJson": {
+                    "_meta": {
+                        cli.IMPORT_META_KEY: {
+                            "upstreamVersion": "0.22.0",
+                        }
+                    }
+                },
+            }
+        },
+    )
+
+    assert outcome == cli.ImportOutcome(
+        "submitted",
+        "submission_id=submission-1; wardn_version=1.0.0; upstream_version=0.22.0",
+    )
+    assert hub.created_submissions == []
+    assert hub.updated_submissions[0][0] == "submission-1"
+    assert hub.updated_submissions[0][1]["serverJson"]["version"] == "1.0.0"
+    assert hub.submitted == ["submission-1"]
+
+
+def test_import_entry_skips_existing_submitted_submission_by_upstream_version() -> None:
+    hub = FakeHub()
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(version="0.22.0"),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_submissions={
+            ("io.github.example/weather", "0.22.0"): {
+                "id": "submission-1",
+                "name": "io.github.example/weather",
+                "version": "0.22.0",
+                "status": "submitted",
+                "serverJson": {
+                    "_meta": {
+                        cli.IMPORT_META_KEY: {
+                            "upstreamVersion": "0.22.0",
+                        }
+                    }
+                },
+            }
+        },
+    )
+
+    assert outcome == cli.ImportOutcome(
+        "skipped",
+        "pending_submission_status=submitted; wardn_version=0.22.0; target_wardn_version=1.0.0",
+    )
+    assert hub.created_submissions == []
+    assert hub.updated_submissions == []
 
 
 def test_import_entry_keeps_draft_when_submit_validation_blocks_review() -> None:
