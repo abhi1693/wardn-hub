@@ -15,6 +15,8 @@ from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
     RegistryCategoryNotFoundError,
+    RegistryOwnershipClaimConflictError,
+    RegistryOwnershipClaimError,
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
@@ -23,6 +25,7 @@ from app.modules.registry.schemas import (
     RegistryCategoryListResponse,
     RegistryCategoryRead,
     RegistryCategoryUpdate,
+    RegistryOwnershipClaimResponse,
     RegistryPublishedServerListResponse,
     RegistryQualityScoreUpdate,
     RegistryServerDetailResponse,
@@ -33,6 +36,7 @@ from app.modules.registry.schemas import (
     RegistryServerVersionUpdate,
 )
 from app.modules.registry.service import (
+    claim_server_ownership,
     create_category,
     create_server_version,
     delete_category,
@@ -50,7 +54,7 @@ from app.modules.registry.service import (
     update_server_version,
     update_version_quality_score,
 )
-from app.modules.users.dependencies import require_superuser_scopes
+from app.modules.users.dependencies import require_api_token_scopes, require_superuser_scopes
 from app.modules.users.models import User
 
 catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
@@ -336,6 +340,32 @@ async def get_mcp_server_version(
         raise not_found(exc, detail="server version not found") from exc
 
 
+@public_router.post(
+    "/{server_name:path}/claim",
+    response_model=RegistryOwnershipClaimResponse,
+    operation_id="mcp_servers_claim_ownership",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+    },
+)
+async def claim_mcp_server_ownership(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("registry:write"))],
+) -> RegistryOwnershipClaimResponse:
+    try:
+        response = await claim_server_ownership(session, server_name, current_user)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
+    except RegistryOwnershipClaimConflictError as exc:
+        raise conflict(exc, detail=str(exc)) from exc
+    except RegistryOwnershipClaimError as exc:
+        raise bad_request(exc, detail=str(exc)) from exc
+    return await commit_response(session, response)
+
+
 @public_router.get(
     "/{server_name:path}",
     response_model=RegistryServerDetailResponse,
@@ -442,6 +472,7 @@ async def admin_update_mcp_server_version_quality_score(
             server_name,
             version,
             payload.quality_score,
+            trust_report=payload.trust_report,
         )
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
         raise not_found(exc) from exc

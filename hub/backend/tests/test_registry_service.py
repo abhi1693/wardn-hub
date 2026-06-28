@@ -12,6 +12,7 @@ from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryOwnershipClaimError,
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
@@ -200,6 +201,73 @@ def test_version_summary_normalizes_stored_remote_query_parameters() -> None:
     ]
 
 
+def test_trust_report_explains_quality_score_components() -> None:
+    version = version_model(uuid4(), "1.0.0", is_latest=True)
+    version.quality_score = 96
+    version.documentation = (
+        "## Installation\nRun npx.\n\n"
+        "## Configuration\nSet WEATHER_API_TOKEN.\n\n"
+        "## Capabilities\nProvides forecast tools."
+    )
+    version.packages = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "transport": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@example/weather-mcp"],
+                "env": {"WEATHER_API_TOKEN": ""},
+            },
+            "environmentVariables": [
+                {
+                    "name": "WEATHER_API_TOKEN",
+                    "description": "Weather API token.",
+                    "isRequired": True,
+                    "isSecret": True,
+                }
+            ],
+        }
+    ]
+    version.server_json = {
+        **version.server_json,
+        "documentation": version.documentation,
+        "license": "MIT",
+        "packages": version.packages,
+        "_meta": {
+            "categories": ["weather"],
+            "maintenance": {"lastCommitAt": "2026-06-01T00:00:00Z"},
+            "securityReview": {"status": "reviewed"},
+            "sourceReview": {
+                "human": {
+                    "filesRead": ["README.md"],
+                    "installCommands": ["npx -y @example/weather-mcp"],
+                    "commandArguments": ["-y @example/weather-mcp"],
+                    "capabilitiesReviewed": True,
+                    "limitationsReviewed": True,
+                    "unknowns": [],
+                }
+            },
+        },
+    }
+
+    report = service.trust_report_for_version(version)
+
+    assert report.overall_score == 96
+    assert report.score_source == "manual"
+    assert {component.key for component in report.components} == {
+        "schemaCompleteness",
+        "documentation",
+        "sourceReview",
+        "targetMetadata",
+        "license",
+        "maintenance",
+        "ownerVerification",
+        "securityReview",
+    }
+    assert report.components[0].evidence
+
+
 def test_project_list_response_fields_keeps_only_requested_server_fields() -> None:
     server = server_model()
     version = version_model(server.id, "1.0.0", is_latest=True)
@@ -227,6 +295,9 @@ def test_project_list_response_fields_keeps_only_requested_server_fields() -> No
                     "version": version.version,
                     "status": version.status,
                     "qualityScore": None,
+                    "trustReport": service.trust_report_for_version(version).model_dump(
+                        by_alias=True
+                    ),
                     "publishedAt": version.published_at,
                     "publishedBy": None,
                 },
@@ -519,10 +590,29 @@ async def test_update_version_quality_score_sets_score(monkeypatch) -> None:
         server.name,
         version.version,
         96,
+        trust_report=service.RegistryTrustReport(
+            overallScore=96,
+            scoreSource="manual",
+            status="passed",
+            summary="Scorer report.",
+            components=[
+                {
+                    "key": "documentation",
+                    "label": "Documentation",
+                    "score": 90,
+                    "status": "passed",
+                    "summary": "Documentation is strong.",
+                    "evidence": ["docs.setup passed."],
+                }
+            ],
+        ),
     )
 
     assert version.quality_score == 96
+    assert version.server_json["_meta"]["wardnTrustReport"]["overallScore"] == 96
     assert response.version.quality_score == 96
+    assert response.version.trust_report is not None
+    assert response.version.trust_report.summary == "Scorer report."
     assert response.server.quality_score == 96
     assert response.server.latest_version is not None
     assert response.server.latest_version.quality_score == 96
@@ -700,8 +790,9 @@ async def test_list_published_servers_returns_full_version_data(monkeypatch) -> 
         "id",
             "version",
             "qualityScore",
+            "trustReport",
             "packages",
-        "remotes",
+            "remotes",
         "status",
         "statusMessage",
         "isLatest",
@@ -870,6 +961,194 @@ async def test_create_server_version_sets_owner_and_actor_metadata(monkeypatch) 
     assert version.created_by_user_id == creator_id
     assert version.updated_by_user_id == updater_id
     assert version.publisher_user_id == publisher_id
+
+
+@pytest.mark.asyncio
+async def test_claim_server_ownership_with_wardn_json_sets_verified_owner(monkeypatch) -> None:
+    owner_user_id = uuid4()
+    server = server_model()
+    server.repository = {"source": "github", "url": "example/weather-mcp"}
+    latest = version_model(server.id, "1.0.0", is_latest=True)
+    latest.repository = {"source": "github", "url": "https://github.com/example/weather-mcp"}
+    current_user = User(
+        id=owner_user_id,
+        email="owner@example.com",
+        first_name="Owner",
+        last_name="User",
+        is_active=True,
+    )
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [latest]
+
+    async def manifest(*args, **kwargs):
+        return service.WardnOwnershipManifest(
+            payload={"servers": {server.name: {"owners": [{"userId": str(owner_user_id)}]}}},
+            source_url="https://raw.githubusercontent.com/example/weather-mcp/main/wardn.json",
+        )
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    async def users_by_id(*args, **kwargs):
+        return {owner_user_id: current_user}
+
+    session = FakeSession()
+    monkeypatch.setattr(service.repository, "get_published_server", get_server)
+    monkeypatch.setattr(service.repository, "list_published_server_versions", list_versions)
+    monkeypatch.setattr(service, "fetch_wardn_ownership_manifest", manifest)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", users_by_id)
+
+    response = await service.claim_server_ownership(session, server.name, current_user)
+
+    assert session.flushed is True
+    assert server.owner_user_id == owner_user_id
+    assert latest.owner_user_id == owner_user_id
+    assert response.verified is True
+    assert response.server.owner is not None
+    assert response.server.owner.id == owner_user_id
+    ownership = latest.server_json["_meta"]["wardnOwnership"]
+    assert ownership["verified"] is True
+    assert ownership["userId"] == str(owner_user_id)
+    report = response.server.trust_report
+    assert report is not None
+    owner_component = next(
+        component for component in report.components if component.key == "ownerVerification"
+    )
+    assert owner_component.score == 100
+
+
+@pytest.mark.asyncio
+async def test_claim_server_ownership_with_website_root_wardn_json(monkeypatch) -> None:
+    owner_user_id = uuid4()
+    server = server_model()
+    server.website_url = "https://weather.example/docs"
+    latest = version_model(server.id, "1.0.0", is_latest=True)
+    latest.repository = None
+    latest.website_url = "https://weather.example/mcp"
+    current_user = User(
+        id=owner_user_id,
+        email="owner@example.com",
+        first_name="Owner",
+        last_name="User",
+        is_active=True,
+    )
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [latest]
+
+    async def manifest(website_url, *args, **kwargs):
+        assert website_url == latest.website_url
+        return service.WardnOwnershipManifest(
+            payload={"servers": {server.name: {"owners": [{"userId": str(owner_user_id)}]}}},
+            source_url="https://weather.example/wardn.json",
+        )
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    async def users_by_id(*args, **kwargs):
+        return {owner_user_id: current_user}
+
+    session = FakeSession()
+    monkeypatch.setattr(service.repository, "get_published_server", get_server)
+    monkeypatch.setattr(service.repository, "list_published_server_versions", list_versions)
+    monkeypatch.setattr(service, "fetch_wardn_ownership_manifest_from_website", manifest)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", users_by_id)
+
+    response = await service.claim_server_ownership(session, server.name, current_user)
+
+    assert session.flushed is True
+    assert server.owner_user_id == owner_user_id
+    assert latest.owner_user_id == owner_user_id
+    ownership = latest.server_json["_meta"]["wardnOwnership"]
+    assert ownership["source"] == "https://weather.example/wardn.json"
+    assert response.verification_source == "https://weather.example/wardn.json"
+
+
+@pytest.mark.asyncio
+async def test_website_wardn_json_rejects_private_initial_host() -> None:
+    with pytest.raises(RegistryOwnershipClaimError, match="public address"):
+        await service.fetch_wardn_ownership_manifest_from_website("http://127.0.0.1:8000")
+
+
+@pytest.mark.asyncio
+async def test_website_wardn_json_rejects_private_redirect_target(monkeypatch) -> None:
+    requested_urls: list[str] = []
+
+    class RedirectResponse:
+        status_code = 302
+        headers = {"location": "http://127.0.0.1:8000/wardn.json"}
+        url = "http://93.184.216.34/wardn.json"
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url, *args, **kwargs):
+            requested_urls.append(url)
+            return RedirectResponse()
+
+    monkeypatch.setattr(service.httpx, "AsyncClient", FakeClient)
+
+    with pytest.raises(RegistryOwnershipClaimError, match="public address"):
+        await service.fetch_wardn_ownership_manifest_from_website("http://93.184.216.34")
+
+    assert requested_urls == ["http://93.184.216.34/wardn.json"]
+
+
+@pytest.mark.asyncio
+async def test_claim_server_ownership_rejects_missing_user_uuid(monkeypatch) -> None:
+    current_user = User(
+        id=uuid4(),
+        email="owner@example.com",
+        first_name="Owner",
+        last_name="User",
+        is_active=True,
+    )
+    server = server_model()
+    server.repository = {"source": "github", "url": "example/weather-mcp"}
+    latest = version_model(server.id, "1.0.0", is_latest=True)
+    latest.repository = {"source": "github", "url": "example/weather-mcp"}
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [latest]
+
+    async def manifest(*args, **kwargs):
+        return service.WardnOwnershipManifest(
+            payload={"owners": [{"userId": str(uuid4())}]},
+            source_url="https://raw.githubusercontent.com/example/weather-mcp/main/wardn.json",
+        )
+
+    monkeypatch.setattr(service.repository, "get_published_server", get_server)
+    monkeypatch.setattr(service.repository, "list_published_server_versions", list_versions)
+    monkeypatch.setattr(service, "fetch_wardn_ownership_manifest", manifest)
+
+    with pytest.raises(RegistryOwnershipClaimError):
+        await service.claim_server_ownership(FakeSession(), server.name, current_user)
 
 
 @pytest.mark.asyncio

@@ -942,6 +942,30 @@ async def test_publish_submission_rejects_stale_new_server_for_existing_name(mon
 
 
 @pytest.mark.asyncio
+async def test_publish_submission_rejects_stale_payload_missing_categories(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+    submission.server_json["_meta"].pop("categories", None)
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def allow_submission_type(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service, "ensure_submission_type_allowed", allow_submission_type)
+
+    with pytest.raises(SubmissionValidationError, match="at least one category is required"):
+        await service.publish_submission(FakeSession(), moderator, submission.id)
+
+
+@pytest.mark.asyncio
 async def test_submit_submission_emits_event_record(monkeypatch) -> None:
     submitter = current_user()
     submission = submission_record(

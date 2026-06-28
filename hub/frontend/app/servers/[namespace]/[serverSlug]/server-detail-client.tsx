@@ -11,15 +11,18 @@ import remarkGfm from "remark-gfm";
 
 import { ServerIcon, serverIconUrl } from "@/components/server-icon";
 import { PublicHeader } from "@/components/site-header";
-import { getServer } from "@/lib/api/hub";
+import { claimServerOwnership, currentUser, getServer } from "@/lib/api/hub";
 import type {
   RegistryServerDetailResponse,
   RegistryServerVersionRead,
+  RegistryTrustReport,
+  RegistryTrustReportComponent,
+  UserRead,
 } from "@/lib/api/generated/model";
 import { publicRegistryUrl } from "@/lib/site";
 
 type LoadState = "loading" | "ready" | "error";
-type DetailTab = "overview" | "technical";
+type DetailTab = "overview" | "schema" | "score";
 type DetailItem = { label: string; value: ReactNode; wide?: boolean };
 type RepositoryReference = {
   branch?: string;
@@ -103,6 +106,125 @@ function qualityBadgePath(serverName: string, version?: string) {
 
 function qualityBadgeUrl(serverName: string, version?: string) {
   return publicRegistryUrl(qualityBadgePath(serverName, version));
+}
+
+function wardnOwnershipSnippet(serverName: string, userId: string) {
+  return JSON.stringify(
+    {
+      $schema: "https://wardn.ai/schemas/wardn.json",
+      servers: {
+        [serverName]: {
+          owners: [{ userId }],
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function trustScoreLabel(score?: number | null) {
+  return typeof score === "number" ? `${score}/100` : "Pending";
+}
+
+function trustSourceLabel(source?: string) {
+  if (source === "manual") return "Scorer evidence";
+  if (source === "calculated") return "Hub fallback";
+  return "Pending";
+}
+
+function trustSourceDetail(source?: string) {
+  if (source === "manual") return "Based on scorer-collected registry, source, package, and metadata evidence.";
+  if (source === "calculated") return "Based on available Hub registry metadata while scorer evidence is incomplete.";
+  return "This report is waiting for enough evidence to produce a trust assessment.";
+}
+
+function trustScorePercent(score?: number | null) {
+  if (typeof score !== "number") return 0;
+  return Math.max(0, Math.min(100, score));
+}
+
+function trustScoreBand(score?: number | null) {
+  if (typeof score !== "number") return "Pending";
+  if (score >= 90) return "Strong";
+  if (score >= 70) return "Good";
+  if (score >= 40) return "Limited";
+  return "Weak";
+}
+
+function trustStatusTone(status?: string, score?: number | null) {
+  if (status === "passed" || (typeof score === "number" && score >= 90)) return "passed";
+  if (status === "failed" || (typeof score === "number" && score < 40)) return "failed";
+  if (status === "warning" || (typeof score === "number" && score < 70)) return "warning";
+  return "unknown";
+}
+
+function trustEvidenceCount(components: RegistryTrustReportComponent[]) {
+  return components.reduce((total, component) => total + (component.evidence?.length ?? 0), 0);
+}
+
+function isWardnOwnershipClaimed(report: RegistryTrustReport | null) {
+  const ownerVerification = report?.components?.find(
+    (component) => component.key === "ownerVerification",
+  );
+  if (!ownerVerification) return false;
+  const text = [ownerVerification.summary, ...(ownerVerification.evidence ?? [])]
+    .join(" ")
+    .toLowerCase();
+  return text.includes("wardn.json");
+}
+
+function shouldOpenTrustComponent(component: RegistryTrustReportComponent) {
+  return (
+    component.status !== "passed" ||
+    typeof component.score !== "number" ||
+    component.score < 90 ||
+    (component.evidence?.length ?? 0) === 0
+  );
+}
+
+const trustComponentGuidance: Record<string, { missing: string; improve: string }> = {
+  schemaCompleteness: {
+    missing: "Manifest fields, package/remotes, or structured capability metadata may be incomplete.",
+    improve: "Publish complete server metadata, transport details, package targets, capabilities, and version fields.",
+  },
+  documentation: {
+    missing: "Setup, configuration, examples, or operational notes may not be complete enough for evaluation.",
+    improve: "Add installation steps, configuration requirements, examples, expected transports, and troubleshooting notes.",
+  },
+  sourceReview: {
+    missing: "Wardn may have limited source files, repository structure, or review evidence.",
+    improve: "Expose a reachable source repository and include reviewable README, package, lockfile, and workflow files.",
+  },
+  targetMetadata: {
+    missing: "Package or remote endpoint metadata may be incomplete or not independently inspectable.",
+    improve: "Publish package registry identifiers, versions, transport metadata, and remote URLs where applicable.",
+  },
+  license: {
+    missing: "A machine-readable license was not found in enough registry, package, or repository metadata.",
+    improve: "Publish an SPDX license in the repository, package metadata, or submitted manifest.",
+  },
+  maintenance: {
+    missing: "Recent commit, release, or update signals may be stale or unavailable.",
+    improve: "Keep source/package metadata current and expose recent commit, release, or published update evidence.",
+  },
+  ownerVerification: {
+    missing: "Organization ownership, official partner support, or source/domain ownership proof has not been added.",
+    improve: "Claim the server under an organization or add official-source verification through partner/support metadata.",
+  },
+  securityReview: {
+    missing: "Security review, secret handling, dependency review, or vulnerability evidence may be incomplete.",
+    improve: "Publish security review status, SECURITY.md, lockfiles, CI checks, and secret-safe environment metadata.",
+  },
+};
+
+function trustGuidanceFor(component: RegistryTrustReportComponent) {
+  return (
+    trustComponentGuidance[component.key] ?? {
+      missing: "Wardn does not have enough structured evidence to fully explain this component.",
+      improve: "Add structured registry metadata and source evidence for this area.",
+    }
+  );
 }
 
 function githubRef(repository: RepositoryReference | null) {
@@ -419,6 +541,179 @@ function QualityBadgePanel({
         <code>{markdown}</code>
       </div>
     </section>
+  );
+}
+
+function OwnershipClaimPanel({
+  claimed,
+  error,
+  notice,
+  onClaim,
+  claiming,
+  serverName,
+  userId,
+}: {
+  claimed: boolean;
+  error: string;
+  notice: string;
+  onClaim: () => void;
+  claiming: boolean;
+  serverName: string;
+  userId: string;
+}) {
+  const snippet = wardnOwnershipSnippet(serverName, userId);
+
+  return (
+    <section className="server-detail-card server-detail-claim-card">
+      <div className="server-detail-card-title-row">
+        <h2>{claimed ? "Ownership Claimed" : "Claim Ownership"}</h2>
+        {!claimed ? (
+          <button
+            className="server-detail-claim-button"
+            disabled={claiming}
+            onClick={onClaim}
+            type="button"
+          >
+            {claiming ? "Verifying" : "Claim"}
+          </button>
+        ) : null}
+      </div>
+      {claimed ? (
+        <p className="server-detail-muted">
+          Ownership is verified from wardn.json.
+        </p>
+      ) : (
+        <>
+          <p className="server-detail-muted">
+            Add this file at the root of the linked GitHub repository or website, then verify
+            ownership.
+          </p>
+          <div className="server-detail-card-title-row compact">
+            <span className="server-detail-muted">wardn.json template</span>
+            <CopyButton label="Copy wardn.json" value={snippet} />
+          </div>
+          <div className="server-detail-markdown-snippet ownership-snippet">
+            <code>{snippet}</code>
+          </div>
+        </>
+      )}
+      {notice ? <div className="notice compact">{notice}</div> : null}
+      {error ? <div className="error-banner compact">{error}</div> : null}
+    </section>
+  );
+}
+
+function TrustReportPanel({ report }: { report: RegistryTrustReport }) {
+  const components = report.components ?? [];
+  const evidenceCount = trustEvidenceCount(components);
+  const reportTone = trustStatusTone(report.status, report.overallScore);
+
+  return (
+    <section className="server-detail-card server-detail-trust-card">
+      <div className="server-detail-card-title-row">
+        <h2>Trust Report</h2>
+        <TechnicalPill tone={reportTone === "failed" ? "warning" : "structured"}>
+          {trustSourceLabel(report.scoreSource)}
+        </TechnicalPill>
+      </div>
+      <div className="trust-report-score">
+        <div className="trust-report-score-heading">
+          <strong>{trustScoreLabel(report.overallScore)}</strong>
+          <span className={`trust-report-grade status-${reportTone}`}>{trustScoreBand(report.overallScore)}</span>
+        </div>
+        <span>{report.summary || "Trust report is pending."}</span>
+        <span className="trust-report-track">
+          <span
+            className={`trust-report-fill status-${reportTone}`}
+            style={{ width: `${trustScorePercent(report.overallScore)}%` }}
+          />
+        </span>
+      </div>
+      <div className="trust-report-meta-grid">
+        <div>
+          <span>Source</span>
+          <strong>{trustSourceLabel(report.scoreSource)}</strong>
+          <p>{trustSourceDetail(report.scoreSource)}</p>
+        </div>
+        <div>
+          <span>Evidence</span>
+          <strong>
+            {evidenceCount} item{evidenceCount === 1 ? "" : "s"}
+          </strong>
+          <p>
+            Across {components.length} component{components.length === 1 ? "" : "s"} in this version report.
+          </p>
+        </div>
+      </div>
+      <div className="trust-report-legend" aria-label="Score ranges">
+        <span>
+          <strong>90-100</strong> Strong
+        </span>
+        <span>
+          <strong>70-89</strong> Good
+        </span>
+        <span>
+          <strong>40-69</strong> Limited
+        </span>
+        <span>
+          <strong>0-39</strong> Weak
+        </span>
+      </div>
+      {components.length > 0 ? (
+        <div className="trust-report-components">
+          {components.map((component) => (
+            <TrustReportComponentRow component={component} key={component.key} />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function TrustReportComponentRow({ component }: { component: RegistryTrustReportComponent }) {
+  const [open, setOpen] = useState(() => shouldOpenTrustComponent(component));
+  const guidance = trustGuidanceFor(component);
+  const componentTone = trustStatusTone(component.status, component.score);
+  const evidence = component.evidence ?? [];
+
+  return (
+    <details
+      className={`trust-report-component status-${componentTone}`}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={open}
+    >
+      <summary>
+        <span>
+          <strong>{component.label}</strong>
+          <em>{component.summary}</em>
+        </span>
+        <span className={`trust-report-component-grade status-${componentTone}`}>
+          {trustScoreBand(component.score)}
+        </span>
+      </summary>
+      <div className="trust-report-component-body">
+        <div>
+          <h3>What Wardn Found</h3>
+          {evidence.length ? (
+            <ul>
+              {evidence.map((item, index) => (
+                <li key={`${component.key}-${index}`}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>No evidence item was published for this component.</p>
+          )}
+        </div>
+        <div>
+          <h3>Missing Signals</h3>
+          <p>{guidance.missing}</p>
+        </div>
+        <div>
+          <h3>Improve By</h3>
+          <p>{guidance.improve}</p>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -933,6 +1228,21 @@ function ManifestMetadataPanel({
   );
 }
 
+const detailTabs: { id: DetailTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "schema", label: "Schema" },
+  { id: "score", label: "Score" },
+];
+
+function EmptyDetailPanel({ detail, title }: { detail: string; title: string }) {
+  return (
+    <section className="server-detail-card">
+      <h2>{title}</h2>
+      <p className="server-detail-muted">{detail}</p>
+    </section>
+  );
+}
+
 export function ServerDetailClient({
   initialDetail,
   initialError = "",
@@ -947,6 +1257,10 @@ export function ServerDetailClient({
   const [detail, setDetail] = useState<RegistryServerDetailResponse | null>(initialDetail);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [selectedVersionId, setSelectedVersionId] = useState("");
+  const [currentAccount, setCurrentAccount] = useState<UserRead | null>(null);
+  const [claimingOwnership, setClaimingOwnership] = useState(false);
+  const [claimError, setClaimError] = useState("");
+  const [claimNotice, setClaimNotice] = useState("");
 
   useEffect(() => {
     if (initialDetail || !serverName) return;
@@ -965,6 +1279,15 @@ export function ServerDetailClient({
     }, 0);
     return () => window.clearTimeout(timeoutId);
   }, [initialDetail, serverName]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      currentUser()
+        .then((user) => setCurrentAccount(user))
+        .catch(() => setCurrentAccount(null));
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   const server = detail?.server;
   const versions = useMemo(() => detail?.versions ?? [], [detail?.versions]);
@@ -993,10 +1316,12 @@ export function ServerDetailClient({
     ? `[![Wardn Score](${badgeUrl})](${publicRegistryUrl(`/servers/${encodePath(server.name)}`)})`
     : "";
   const qualityScore = selectedVersion?.qualityScore ?? server?.qualityScore ?? null;
+  const trustReport = selectedVersion?.trustReport ?? server?.trustReport ?? null;
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
     : server?.partnerSupport ?? [];
   const manifest = isRecord(selectedVersion?.serverJson) ? selectedVersion.serverJson : null;
+  const isOwnershipClaimed = isWardnOwnershipClaimed(trustReport);
   const hasDocumentation = Boolean(documentation.trim());
   const hasPartnerSupport = partnerSupport.length > 0;
   const hasVersions = versions.length > 0;
@@ -1015,6 +1340,22 @@ export function ServerDetailClient({
           },
         ]
       : [];
+
+  async function claimOwnership() {
+    if (!server?.name || !currentAccount?.id) return;
+    setClaimingOwnership(true);
+    setClaimError("");
+    setClaimNotice("");
+    try {
+      const response = await claimServerOwnership(server.name);
+      setDetail({ server: response.server, versions: response.versions });
+      setClaimNotice("Ownership verified from wardn.json.");
+    } catch (caught) {
+      setClaimError(caught instanceof Error ? caught.message : "Unable to verify wardn.json.");
+    } finally {
+      setClaimingOwnership(false);
+    }
+  }
 
   return (
     <div className="server-detail-page">
@@ -1063,24 +1404,18 @@ export function ServerDetailClient({
             </section>
 
             <div className="server-detail-tabs" role="tablist" aria-label="Server detail views">
-              <button
-                aria-selected={activeTab === "overview"}
-                className={activeTab === "overview" ? "active" : ""}
-                onClick={() => setActiveTab("overview")}
-                role="tab"
-                type="button"
-              >
-                Overview
-              </button>
-              <button
-                aria-selected={activeTab === "technical"}
-                className={activeTab === "technical" ? "active" : ""}
-                onClick={() => setActiveTab("technical")}
-                role="tab"
-                type="button"
-              >
-                Technical
-              </button>
+              {detailTabs.map((tab) => (
+                <button
+                  aria-selected={activeTab === tab.id}
+                  className={activeTab === tab.id ? "active" : ""}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  role="tab"
+                  type="button"
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             <div className="server-detail-layout">
@@ -1191,18 +1526,11 @@ export function ServerDetailClient({
                       </dl>
                     </section>
 
-                    {badgeUrl && badgeMarkdown ? (
-                      <QualityBadgePanel
-                        badgePreviewUrl={badgePreviewUrl}
-                        badgeUrl={badgeUrl}
-                        markdown={badgeMarkdown}
-                        score={qualityScore}
-                      />
-                    ) : null}
-
                   </aside>
                 </>
-              ) : (
+              ) : null}
+
+              {activeTab === "schema" ? (
                 <>
                   <div className="technical-main">
                     <PackageDefinitionPanel packages={targets.packages} />
@@ -1213,7 +1541,43 @@ export function ServerDetailClient({
                     <ManifestMetadataPanel manifest={manifest} version={selectedVersion?.version} />
                   </aside>
                 </>
-              )}
+              ) : null}
+
+              {activeTab === "score" ? (
+                <>
+                  <div className="server-detail-content">
+                    {trustReport ? (
+                      <TrustReportPanel report={trustReport} />
+                    ) : (
+                      <EmptyDetailPanel
+                        detail="No trust report has been published for this version."
+                        title="Trust Report"
+                      />
+                    )}
+                  </div>
+                  <aside className="server-detail-sidebar">
+                    {server?.name && currentAccount?.id ? (
+                      <OwnershipClaimPanel
+                        claimed={isOwnershipClaimed}
+                        claiming={claimingOwnership}
+                        error={claimError}
+                        notice={claimNotice}
+                        onClaim={() => void claimOwnership()}
+                        serverName={server.name}
+                        userId={currentAccount.id}
+                      />
+                    ) : null}
+                    {badgeUrl && badgeMarkdown ? (
+                      <QualityBadgePanel
+                        badgePreviewUrl={badgePreviewUrl}
+                        badgeUrl={badgeUrl}
+                        markdown={badgeMarkdown}
+                        score={qualityScore}
+                      />
+                    ) : null}
+                  </aside>
+                </>
+              ) : null}
             </div>
           </>
         ) : null}

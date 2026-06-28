@@ -13,6 +13,7 @@ from app.modules.registry.exceptions import (
 from app.modules.registry.schemas import (
     RegistryLatestVersionSummary,
     RegistryListMetadata,
+    RegistryOwnershipClaimResponse,
     RegistryPageMetadata,
     RegistryPublishedServerListResponse,
     RegistryServerDetailResponse,
@@ -106,6 +107,32 @@ async def authenticate_registry_score_api_token(*args, **kwargs):
             is_global_partner_manager=False,
         ),
         SimpleNamespace(scopes=["registry:score"]),
+    )
+
+
+async def authenticate_registry_write_user_api_token(*args, **kwargs):
+    return (
+        SimpleNamespace(
+            id=uuid4(),
+            is_active=True,
+            is_superuser=False,
+            is_global_moderator=False,
+            is_global_partner_manager=False,
+        ),
+        SimpleNamespace(scopes=["registry:write"]),
+    )
+
+
+async def authenticate_low_scope_api_token(*args, **kwargs):
+    return (
+        SimpleNamespace(
+            id=uuid4(),
+            is_active=True,
+            is_superuser=False,
+            is_global_moderator=False,
+            is_global_partner_manager=False,
+        ),
+        SimpleNamespace(scopes=["catalog:read", "submissions:read", "submissions:write"]),
     )
 
 
@@ -268,6 +295,7 @@ def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
                 "version": "1.0.0",
                 "status": "active",
                 "qualityScore": None,
+                "trustReport": None,
                 "publishedAt": "2026-06-23T00:00:00+00:00",
                 "publishedBy": None,
             },
@@ -300,6 +328,89 @@ def test_list_servers_route_rejects_unknown_fields(monkeypatch) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid fields"
+
+
+def test_claim_ownership_requires_registry_write_scope_for_api_token(monkeypatch) -> None:
+    app = create_app()
+    called = False
+
+    async def fake_session():
+        yield object()
+
+    async def claim(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("claim service should not be called")
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_low_scope_api_token)
+    monkeypatch.setattr(router, "claim_server_ownership", claim)
+
+    response = TestClient(app).post(
+        "/api/v1/mcp/servers/io.github.example/weather/claim",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "API token missing required scope: registry:write"}
+    assert called is False
+
+
+def test_claim_ownership_accepts_registry_write_api_token(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    captured: dict[str, object] = {}
+
+    async def fake_session():
+        class Session:
+            async def commit(self) -> None:
+                captured["committed"] = True
+
+        yield Session()
+
+    async def claim(*args, **kwargs):
+        captured["args"] = args
+        return RegistryOwnershipClaimResponse(
+            server=RegistryServerRead(
+                id=server_id,
+                name="io.github.example/weather",
+                title="Weather",
+                description="Weather tools",
+                documentation="# Large docs",
+                websiteUrl="https://example.com",
+                repository={"url": "https://github.com/example/weather"},
+                icons=[],
+                status="active",
+                statusMessage="",
+                visibility="public",
+                latestVersion=None,
+                categories=[],
+                partnerSupport=[],
+                createdAt="2026-06-23T00:00:00Z",
+                updatedAt="2026-06-23T00:00:00Z",
+            ),
+            versions=[],
+            verified=True,
+            verificationSource="https://example.com/wardn.json",
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_write_user_api_token,
+    )
+    monkeypatch.setattr(router, "claim_server_ownership", claim)
+
+    response = TestClient(app).post(
+        "/api/v1/mcp/servers/io.github.example/weather/claim",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verified"] is True
+    assert captured["committed"] is True
+    assert captured["args"][1] == "io.github.example/weather"
 
 
 def test_quality_score_badge_renders_svg(monkeypatch) -> None:
@@ -446,6 +557,7 @@ def test_admin_update_quality_score_uses_registry_score_scope(monkeypatch) -> No
 
     async def update_quality_score(*args, **kwargs):
         captured["args"] = args
+        captured["kwargs"] = kwargs
         return registry_detail_response(server_id, version_id)
 
     app.dependency_overrides[get_db_session] = fake_session
@@ -459,12 +571,22 @@ def test_admin_update_quality_score_uses_registry_score_scope(monkeypatch) -> No
     response = TestClient(app).patch(
         "/api/v1/admin/mcp/servers/io.github.example/weather/versions/1.0.0/quality-score",
         headers=auth_headers(),
-        json={"qualityScore": 96},
+        json={
+            "qualityScore": 96,
+            "trustReport": {
+                "overallScore": 96,
+                "scoreSource": "manual",
+                "status": "passed",
+                "summary": "Scorer report.",
+                "components": [],
+            },
+        },
     )
 
     assert response.status_code == 200
     assert captured["committed"] is True
     assert captured["args"][1:] == ("io.github.example/weather", "1.0.0", 96)
+    assert captured["kwargs"]["trust_report"].overall_score == 96
 
 
 def test_admin_update_quality_score_requires_score_scope(monkeypatch) -> None:

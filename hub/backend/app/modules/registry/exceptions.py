@@ -24,3 +24,11 @@ class RegistryServerNotFoundError(RegistryError):
 
 class RegistryVersionNotFoundError(RegistryError):
     pass
+
+
+class RegistryOwnershipClaimError(RegistryError):
+    pass
+
+
+class RegistryOwnershipClaimConflictError(RegistryError):
+    pass

@@ -35,6 +35,7 @@ import type {
   RegistryCategoryListResponse,
   RegistryCategoryRead,
   RegistryCategoryUpdate,
+  RegistryOwnershipClaimResponse,
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerVersionCreate,
@@ -350,6 +351,13 @@ export function getRegistryUser(userId: string) {
 
 export function getServer(serverName: string) {
   return generatedRequest<RegistryServerDetailResponse>(getMcpServersGetUrl(pathValue(serverName)));
+}
+
+export function claimServerOwnership(serverName: string) {
+  return generatedRequest<RegistryOwnershipClaimResponse>(
+    `/mcp/servers/${pathValue(serverName)}/claim`,
+    { method: "POST" },
+  );
 }
 
 export function createServerVersion(payload: RegistryServerVersionCreate) {

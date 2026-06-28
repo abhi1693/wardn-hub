@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.events.service import emit_audit_and_event, subject_payload
@@ -1136,7 +1137,12 @@ async def publish_submission(
         submission.owner_user_id,
         submission.owner_organization_id,
     )
-    payload = RegistryServerVersionCreate.model_validate(submission.server_json)
+    try:
+        payload = RegistryServerVersionCreate.model_validate(submission.server_json)
+    except ValidationError as exc:
+        error = exc.errors()[0] if exc.errors() else {}
+        message = str(error.get("msg") or "submission payload validation failed")
+        raise SubmissionValidationError(message) from exc
     try:
         published = await registry_service.create_server_version(
             session,

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from datetime import datetime
 from typing import Any, Literal
@@ -447,7 +449,7 @@ class MCPServerDocument(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def require_package_or_remote(self) -> "MCPServerDocument":
+    def require_package_or_remote(self) -> MCPServerDocument:
         if not self.packages and not self.remotes:
             raise ValueError("at least one package or remote target is required")
         if not metadata_has_category(self.meta):
@@ -529,6 +531,7 @@ class RegistryLatestVersionSummary(BaseModel):
     version: str
     status: RegistryVersionStatus
     quality_score: int | None = Field(default=None, alias="qualityScore")
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
     published_at: datetime = Field(alias="publishedAt")
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
 
@@ -559,6 +562,27 @@ class RegistryCategoryRead(BaseModel):
     sort_order: int = Field(alias="sortOrder")
 
 
+class RegistryTrustReportComponent(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    key: str
+    label: str
+    score: int | None = None
+    status: Literal["passed", "warning", "failed", "unknown"]
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+
+
+class RegistryTrustReport(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    overall_score: int | None = Field(default=None, alias="overallScore")
+    score_source: Literal["manual", "calculated", "pending"] = Field(alias="scoreSource")
+    status: Literal["passed", "warning", "failed", "unknown"]
+    summary: str
+    components: list[RegistryTrustReportComponent] = Field(default_factory=list)
+
+
 class RegistryServerRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -579,6 +603,7 @@ class RegistryServerRead(BaseModel):
     updated_by: ActorSummary | None = Field(default=None, alias="updatedBy")
     latest_version: RegistryLatestVersionSummary | None = Field(default=None, alias="latestVersion")
     quality_score: int | None = Field(default=None, alias="qualityScore")
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
     categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
@@ -605,6 +630,7 @@ class RegistryServerVersionRead(BaseModel):
     icons: list[dict[str, Any]] = Field(default_factory=list)
     server_json: dict[str, Any] = Field(alias="serverJson")
     quality_score: int | None = Field(default=None, alias="qualityScore")
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
     status: RegistryVersionStatus
     status_message: str = Field(alias="statusMessage")
     is_latest: bool = Field(alias="isLatest")
@@ -630,6 +656,7 @@ class RegistryPublishedServerVersionRead(BaseModel):
     id: UUID
     version: str
     quality_score: int | None = Field(default=None, alias="qualityScore")
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
     packages: list[dict[str, Any]] = Field(default_factory=list)
     remotes: list[dict[str, Any]] = Field(default_factory=list)
     status: RegistryVersionStatus
@@ -705,6 +732,11 @@ class RegistryServerDetailResponse(BaseModel):
     versions: list[RegistryServerVersionRead] = Field(default_factory=list)
 
 
+class RegistryOwnershipClaimResponse(RegistryServerDetailResponse):
+    verified: bool = True
+    verification_source: str = Field(alias="verificationSource")
+
+
 class RegistryServerVersionDetailResponse(BaseModel):
     server: RegistryServerRead
     version: RegistryServerVersionRead
@@ -716,3 +748,4 @@ class RegistryQualityScoreUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     quality_score: int = Field(alias="qualityScore", ge=0, le=100)
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")

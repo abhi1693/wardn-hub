@@ -1990,6 +1990,16 @@
             "title": "Title",
             "type": "string"
           },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "title": "Updatedat",
@@ -2361,6 +2371,16 @@
             "title": "Status",
             "type": "string"
           },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -2391,6 +2411,35 @@
           "count"
         ],
         "title": "RegistryListMetadata",
+        "type": "object"
+      },
+      "RegistryOwnershipClaimResponse": {
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerRead"
+          },
+          "verificationSource": {
+            "title": "Verificationsource",
+            "type": "string"
+          },
+          "verified": {
+            "default": true,
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server",
+          "verificationSource"
+        ],
+        "title": "RegistryOwnershipClaimResponse",
         "type": "object"
       },
       "RegistryPackage": {
@@ -2681,6 +2730,16 @@
             "title": "Statusmessage",
             "type": "string"
           },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "title": "Updatedat",
@@ -2712,6 +2771,16 @@
             "minimum": 0.0,
             "title": "Qualityscore",
             "type": "integer"
+          },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3068,6 +3137,16 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updatedAt": {
             "format": "date-time",
@@ -3491,6 +3570,16 @@
             "title": "Title",
             "type": "string"
           },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "title": "Updatedat",
@@ -3720,6 +3809,110 @@
           }
         },
         "title": "RegistryTransport",
+        "type": "object"
+      },
+      "RegistryTrustReport": {
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryTrustReportComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "overallScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overallscore"
+          },
+          "scoreSource": {
+            "enum": [
+              "manual",
+              "calculated",
+              "pending"
+            ],
+            "title": "Scoresource",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "warning",
+              "failed",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scoreSource",
+          "status",
+          "summary"
+        ],
+        "title": "RegistryTrustReport",
+        "type": "object"
+      },
+      "RegistryTrustReportComponent": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "warning",
+              "failed",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "status",
+          "summary"
+        ],
+        "title": "RegistryTrustReportComponent",
         "type": "object"
       },
       "RegistryUserDetailResponse": {
@@ -7580,6 +7773,94 @@
           }
         },
         "summary": "Get Mcp Server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/claim": {
+      "post": {
+        "operationId": "mcp_servers_claim_ownership",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryOwnershipClaimResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Mcp Server Ownership",
         "tags": [
           "mcp"
         ]

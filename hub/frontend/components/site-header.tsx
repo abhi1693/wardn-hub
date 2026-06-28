@@ -3,7 +3,14 @@
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronDown, FileCheck2, KeyRound, LogIn, LogOut } from "lucide-react";
+import {
+  BellRing,
+  ChevronDown,
+  FileCheck2,
+  KeyRound,
+  LogIn,
+  LogOut,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 

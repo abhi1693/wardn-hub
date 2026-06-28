@@ -261,7 +261,11 @@ async def approve_submission_record(
         )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
-    except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:
+    except (
+        InvalidSubmissionTransitionError,
+        DuplicatePublishedVersionError,
+        SubmissionValidationError,
+    ) as exc:
         raise bad_request(exc) from exc
     return await commit_response(session, response)
 
@@ -313,6 +317,10 @@ async def publish_submission_record(
         )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
-    except (InvalidSubmissionTransitionError, DuplicatePublishedVersionError) as exc:
+    except (
+        InvalidSubmissionTransitionError,
+        DuplicatePublishedVersionError,
+        SubmissionValidationError,
+    ) as exc:
         raise bad_request(exc) from exc
     return await commit_response(session, response)
