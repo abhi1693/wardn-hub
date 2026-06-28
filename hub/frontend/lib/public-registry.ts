@@ -18,6 +18,16 @@ const API_PREFIX = "/api/v1";
 const PAGE_SIZE = 100;
 export const SITEMAP_CATALOG_CHUNK_SIZE = 2000;
 
+class RegistryRequestError extends Error {
+  status: number;
+
+  constructor(status: number, path: string) {
+    super(`Registry API returned ${status} from ${path}`);
+    this.name = "RegistryRequestError";
+    this.status = status;
+  }
+}
+
 function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
@@ -56,7 +66,7 @@ async function registryRequest<T>(path: string, params?: Record<string, string |
   });
 
   if (!response.ok) {
-    throw new Error(`Registry API returned ${response.status} from ${url.pathname}`);
+    throw new RegistryRequestError(response.status, url.pathname);
   }
 
   return (await response.json()) as T;
@@ -148,7 +158,14 @@ export async function getPublishedRegistryServer(serverName: string) {
 }
 
 export async function getPublishedRegistryServerTab(serverName: string, tab: DetailTab) {
-  return registryRequest<ServerDetailTabResponse>(serverTabApiPath(serverName, tab));
+  try {
+    return await registryRequest<ServerDetailTabResponse>(serverTabApiPath(serverName, tab));
+  } catch (error) {
+    if (!(error instanceof RegistryRequestError) || error.status !== 404) {
+      throw error;
+    }
+    return serverDetailTabFallback(await getPublishedRegistryServer(serverName), tab);
+  }
 }
 
 export async function getPublishedRegistryServerSummary(serverName: string) {
@@ -159,4 +176,71 @@ export async function getPublishedRegistryServerSummary(serverName: string) {
 
 export function serverDetailPath(serverName: string) {
   return `/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function serverDetailTabFallback(
+  detail: RegistryServerDetailResponse,
+  tab: DetailTab,
+): ServerDetailTabResponse {
+  const server = detail.server;
+  const baseServer = {
+    icons: server.icons,
+    id: server.id,
+    name: server.name,
+    title: server.title,
+  };
+
+  if (tab === "schema") {
+    return {
+      server: baseServer,
+      versions: detail.versions?.map((version) => ({
+        id: version.id,
+        isLatest: version.isLatest,
+        packages: version.packages,
+        remotes: version.remotes,
+        serverJson: version.serverJson,
+        title: version.title,
+        version: version.version,
+      })),
+    };
+  }
+
+  if (tab === "score") {
+    return {
+      server: baseServer,
+      versions: detail.versions?.map((version) => ({
+        id: version.id,
+        isLatest: version.isLatest,
+        qualityScore: version.qualityScore,
+        title: version.title,
+        trustReport: version.trustReport,
+        version: version.version,
+      })),
+    };
+  }
+
+  return {
+    server: {
+      ...baseServer,
+      categories: server.categories,
+      description: server.description,
+      repository: server.repository,
+      updatedAt: server.updatedAt,
+      websiteUrl: server.websiteUrl,
+    },
+    versions: detail.versions?.map((version) => ({
+      description: version.description,
+      documentation: version.documentation,
+      id: version.id,
+      isLatest: version.isLatest,
+      partnerSupport: version.partnerSupport,
+      publishedAt: version.publishedAt,
+      publishedBy: version.publishedBy,
+      repository: version.repository,
+      title: version.title,
+      updatedAt: version.updatedAt,
+      version: version.version,
+      websiteUrl: version.websiteUrl,
+    })),
+  };
 }
