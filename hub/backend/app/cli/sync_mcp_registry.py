@@ -377,6 +377,14 @@ def starts_at_initial_version(version: str) -> bool:
     return version == INITIAL_SERVER_VERSION
 
 
+def normalize_initial_import_version(payload: dict[str, Any]) -> str | None:
+    upstream_version = str(payload.get("version") or "").strip()
+    if not upstream_version or starts_at_initial_version(upstream_version):
+        return None
+    payload["version"] = INITIAL_SERVER_VERSION
+    return upstream_version
+
+
 def documentation_has_review_sections(value: str) -> bool:
     lower = value.lower()
     required_terms = {
@@ -525,6 +533,9 @@ def build_import_payload(
         "registryUrl": registry_url,
         "syncedAt": iso_z(synced_at),
     }
+    upstream_version = str(server.get("version") or "").strip()
+    if upstream_version:
+        meta[IMPORT_META_KEY]["upstreamVersion"] = upstream_version
     official = entry_meta.get(OFFICIAL_META_KEY)
     if isinstance(official, dict):
         meta[IMPORT_META_KEY]["upstreamStatus"] = official.get("status") or ""
@@ -555,30 +566,25 @@ def import_entry(
     if official_status(entry) == "deleted":
         return ImportOutcome("skipped", "upstream_deleted")
 
-    existing_submission = existing_submissions.get((name, version))
-    existing_status = (
-        str(existing_submission.get("status") or "").strip()
-        if existing_submission is not None
-        else ""
-    )
-    if existing_status in {"submitted", "approved"}:
-        return ImportOutcome("skipped", f"pending_submission_status={existing_status}")
-
     if dry_run:
         return ImportOutcome("candidate", "dry_run")
 
     try:
         server_detail = hub.get_server(name)
-        if (
-            server_detail is None
-            and version
-            and not starts_at_initial_version(version)
-        ):
-            return ImportOutcome(
-                "skipped",
-                f"new_server_requires_initial_version={INITIAL_SERVER_VERSION}; "
-                f"upstream_version={version}",
-            )
+        normalized_upstream_version = None
+        if server_detail is None:
+            normalized_upstream_version = normalize_initial_import_version(payload)
+            version = str(payload.get("version") or "").strip()
+
+        existing_submission = existing_submissions.get((name, version))
+        existing_status = (
+            str(existing_submission.get("status") or "").strip()
+            if existing_submission is not None
+            else ""
+        )
+        if existing_status in {"submitted", "approved"}:
+            return ImportOutcome("skipped", f"pending_submission_status={existing_status}")
+
         submission_payload = {
             **submission_owner_fields(server_detail),
             "submissionType": "new_version" if server_detail is not None else "new_server",
@@ -614,6 +620,12 @@ def import_entry(
         "version": version,
         "status": "submitted",
     }
+    if normalized_upstream_version is not None:
+        return ImportOutcome(
+            "submitted",
+            f"submission_id={submission_id}; "
+            f"wardn_version={version}; upstream_version={normalized_upstream_version}",
+        )
     return ImportOutcome("submitted", f"submission_id={submission_id}")
 
 

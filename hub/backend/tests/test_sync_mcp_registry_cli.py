@@ -136,6 +136,7 @@ def test_build_import_payload_adds_default_category_and_import_evidence() -> Non
         "source": "modelcontextprotocol-registry",
         "registryUrl": cli.DEFAULT_REGISTRY_URL,
         "syncedAt": "2026-06-28T12:00:00Z",
+        "upstreamVersion": "1.0.0",
         "upstreamStatus": "active",
         "upstreamPublishedAt": "2026-04-13T17:33:26.613537Z",
         "upstreamUpdatedAt": "2026-04-14T17:33:26.613537Z",
@@ -191,7 +192,7 @@ def test_import_entry_creates_and_submits_new_server_submission() -> None:
     assert hub.submitted == ["submission-1"]
 
 
-def test_import_entry_skips_new_server_import_that_breaks_initial_version_rule() -> None:
+def test_import_entry_normalizes_first_official_registry_version_to_initial_version() -> None:
     hub = FakeHub()
 
     outcome = cli.import_entry(
@@ -204,11 +205,17 @@ def test_import_entry_skips_new_server_import_that_breaks_initial_version_rule()
     )
 
     assert outcome == cli.ImportOutcome(
-        "skipped",
-        "new_server_requires_initial_version=1.0.0; upstream_version=1.0.1",
+        "submitted",
+        "submission_id=submission-1; wardn_version=1.0.0; upstream_version=1.0.1",
     )
-    assert hub.created_submissions == []
-    assert hub.submitted == []
+    assert hub.created_submissions[0]["submissionType"] == "new_server"
+    assert hub.created_submissions[0]["serverJson"]["version"] == "1.0.0"
+    assert (
+        hub.created_submissions[0]["serverJson"]["_meta"][cli.IMPORT_META_KEY]["upstreamVersion"]
+        == "1.0.1"
+    )
+    assert hub.created_submissions[0]["serverJson"]["packages"][0]["version"] == "1.0.1"
+    assert hub.submitted == ["submission-1"]
 
 
 def test_import_entry_creates_new_version_submission_for_existing_server() -> None:
