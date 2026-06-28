@@ -5,7 +5,12 @@
  * OpenAPI spec version: 0.2.54
  */
 
-export type McpServersListParams = {
+export type McpServersSearchParams = {
+/**
+ * @minLength 1
+ * @maxLength 200
+ */
+q: string;
 cursor?: string | null;
 /**
  * @minimum 1
@@ -13,8 +18,6 @@ cursor?: string | null;
  */
 limit?: number;
 fields?: string | null;
-search?: string | null;
-updated_since?: string | null;
 version?: string | null;
 support_level?: string | null;
 partner?: boolean | null;
