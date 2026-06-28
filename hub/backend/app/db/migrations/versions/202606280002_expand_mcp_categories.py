@@ -331,18 +331,41 @@ def upgrade() -> None:
         if target_row["id"] == old_row["id"]:
             continue
 
-        bind.execute(
-            sa.text(
-                """
-                INSERT INTO mcp_server_categories (server_id, category_id)
-                SELECT server_id, :target_id
-                FROM mcp_server_categories
-                WHERE category_id = :old_id
-                ON CONFLICT (server_id, category_id) DO NOTHING
-                """
-            ),
-            {"old_id": old_row["id"], "target_id": target_row["id"]},
+        links_to_move = (
+            bind.execute(
+                sa.text(
+                    """
+                    SELECT old_link.server_id, old_link.source
+                    FROM mcp_server_categories old_link
+                    WHERE old_link.category_id = :old_id
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM mcp_server_categories target_link
+                          WHERE target_link.server_id = old_link.server_id
+                            AND target_link.category_id = :target_id
+                      )
+                    """
+                ),
+                {"old_id": old_row["id"], "target_id": target_row["id"]},
+            )
+            .mappings()
+            .all()
         )
+        for link in links_to_move:
+            bind.execute(
+                sa.text(
+                    """
+                    INSERT INTO mcp_server_categories (id, server_id, category_id, source)
+                    VALUES (:id, :server_id, :category_id, :source)
+                    """
+                ),
+                {
+                    "id": uuid4(),
+                    "server_id": link["server_id"],
+                    "category_id": target_row["id"],
+                    "source": link["source"],
+                },
+            )
         bind.execute(
             sa.text("DELETE FROM mcp_server_categories WHERE category_id = :old_id"),
             {"old_id": old_row["id"]},
