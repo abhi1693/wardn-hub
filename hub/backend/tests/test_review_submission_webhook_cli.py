@@ -194,3 +194,12 @@ def test_settings_from_env_requires_token_and_secret(monkeypatch) -> None:
         assert "Missing Wardn Hub API token" in str(exc)
     else:
         raise AssertionError("expected WebhookConfigurationError")
+
+
+def test_explicit_port_ignores_kubernetes_service_port_env(monkeypatch) -> None:
+    monkeypatch.setenv(webhook.WEBHOOK_PORT_ENV, "tcp://10.43.16.137:8090")
+
+    parser = webhook.build_parser()
+    args = parser.parse_args(["--port", "8090"])
+
+    assert args.port == 8090

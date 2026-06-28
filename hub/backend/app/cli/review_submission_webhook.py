@@ -271,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--port",
         type=int,
-        default=int_from_env(WEBHOOK_PORT_ENV, DEFAULT_WEBHOOK_PORT),
+        default=None,
         help=f"Port to bind. Defaults to ${WEBHOOK_PORT_ENV} or {DEFAULT_WEBHOOK_PORT}.",
     )
     parser.add_argument(
@@ -358,7 +358,12 @@ def main(argv: list[str] | None = None) -> int:
             raise WebhookConfigurationError("--review-progress-interval must be 0 or greater")
         settings = settings_from_env(args)
         app = create_app(settings, path=args.path)
-        uvicorn.run(app, host=args.host, port=args.port)
+        port = (
+            args.port
+            if args.port is not None
+            else int_from_env(WEBHOOK_PORT_ENV, DEFAULT_WEBHOOK_PORT)
+        )
+        uvicorn.run(app, host=args.host, port=port)
         return 0
     except WebhookConfigurationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
