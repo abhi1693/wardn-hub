@@ -862,6 +862,35 @@ def test_review_loop_targets_exact_submission_id() -> None:
     assert "Skipped sub-2" in stdout.getvalue()
 
 
+def test_review_loop_skips_missing_exact_submission_id() -> None:
+    class MissingSubmissionClient(FakeClient):
+        def get_submission(self, submission_id: str) -> dict[str, Any]:
+            raise cli.HubApiError(404, "submission not found", f"/submissions/{submission_id}")
+
+    client = MissingSubmissionClient()
+    reviewer = FakeReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        auto_approve=True,
+        stdin=StringIO(),
+        stdout=stdout,
+        submission_id="missing-sub",
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert reviewer.prompts == []
+    assert "Submission missing-sub is not currently submitted for review." in stdout.getvalue()
+
+
 def test_review_loop_non_interactive_skips_without_prompt() -> None:
     class NeedsHumanReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:

@@ -695,7 +695,12 @@ def next_submission_for_review(
     if submission_id:
         if submission_id in skipped_ids:
             return None
-        submission = client.get_submission(submission_id)
+        try:
+            submission = client.get_submission(submission_id)
+        except HubApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
         if submission.get("status") != "submitted":
             return None
         return submission
