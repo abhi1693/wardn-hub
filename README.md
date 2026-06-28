@@ -256,6 +256,12 @@ codex --search exec --sandbox danger-full-access --ignore-user-config --skip-git
 The default reviewer ignores Codex user config so local MCP servers do not leak
 into registry moderation, and uses a network-capable sandbox because the review
 must fetch Wardn Hub submission details and upstream source documentation.
+The backend container image includes the `@openai/codex` CLI for the review
+commands. Before running a Codex-backed review, the CLI checks `codex login
+status`; if Codex is not logged in it runs `codex login --device-auth` and waits
+for the device login to complete. Codex persists credentials under `~/.codex`;
+inside the backend image the `app` user's home is `/app`, and `/app/.codex` is
+writable.
 
 Override it with `--review-command` or `WARDN_HUB_REVIEW_COMMAND`. The prompt is
 sent on stdin unless the command includes `{prompt_file}`. The CLI uses the same
@@ -285,6 +291,47 @@ If `--url` is omitted, the CLI uses `WARDN_HUB_API_BASE_URL` or local
 The CLI sends `WardnHubReviewCLI/0.1` as its HTTP user agent by default; override
 it with `--user-agent` or `WARDN_HUB_USER_AGENT` if an edge proxy requires a
 specific API-client signature.
+
+For automation, target one submission and avoid prompts:
+
+```sh
+WARDN_HUB_TOKEN=wardn_hub_key... uv run python -m app.cli.review_pending_submissions \
+  --url https://hub.example.com/api/v1 \
+  --submission-id 00000000-0000-0000-0000-000000000000 \
+  --non-interactive \
+  --auto-reject \
+  --auto-approve
+```
+
+In non-interactive mode, `pass` can approve, `needs fixes` or `reject` can reject
+when a suggested rejection message exists, and `cannot validate` or ambiguous
+results leave the submission unchanged.
+
+### Submission Review Webhook
+
+Wardn Hub can emit `submission.submitted` event webhooks. The review webhook
+receiver accepts those events, verifies the Wardn signature, queues the
+submission ID, returns `202`, then reviews the submission in a background worker:
+
+```sh
+cd hub/backend
+WARDN_HUB_TOKEN=wardn_hub_key... \
+WARDN_HUB_REVIEW_WEBHOOK_SECRET=event_rule_signing_secret \
+uv run python -m app.cli.review_submission_webhook \
+  --url https://hub.example.com/api/v1 \
+  --host 0.0.0.0 \
+  --port 8090
+```
+
+Create an event rule for `submission.submitted`, enable signing, and point it at
+the receiver path:
+
+```text
+/webhooks/wardn/submission-review
+```
+
+The same receiver is available from the repository root as
+`scripts/review-submission-webhook.py`.
 
 ## Containers
 

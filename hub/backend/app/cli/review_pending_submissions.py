@@ -579,6 +579,11 @@ Report format:
 - Suggested rejection message if the submission should be rejected
 - Suggested approval note if the submission passes
 
+Decision rules:
+- Use "pass" only when the submitted metadata can be verified against source evidence.
+- Use "needs fixes" or "reject" only when the submitted metadata is clearly wrong or incomplete.
+- Use "cannot validate" when source evidence is unavailable, ambiguous, or insufficient to make a safe approval/rejection decision. This leaves the submission unchanged so it can be retried or reviewed manually later.
+
 After the report:
 - Ask the user exactly what action to take using lettered options so they can reply with a single letter. If the token has moderator-only access, display:
   A. Approve
@@ -635,11 +640,69 @@ def parse_review_command(value: str, *, model: str = "", thinking: str = "") -> 
     return [*command[:insert_at], *codex_options, *command[insert_at:]]
 
 
+def command_uses_codex(command: list[str]) -> bool:
+    return bool(command and Path(command[0]).name == "codex")
+
+
+def ensure_codex_login(command: list[str], *, environment: dict[str, str], stdout: TextIO) -> None:
+    if not command_uses_codex(command):
+        return
+
+    try:
+        status = subprocess.run(
+            ["codex", "login", "status"],
+            env=environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise UserFacingError("codex command not found; install @openai/codex") from exc
+    if status.returncode == 0:
+        return
+
+    print(
+        "Codex is not logged in. Starting `codex login --device-auth`; "
+        "complete the device login shown below to continue.",
+        file=stdout,
+        flush=True,
+    )
+    try:
+        login = subprocess.run(
+            ["codex", "login", "--device-auth"],
+            env=environment,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise UserFacingError("codex command not found; install @openai/codex") from exc
+    if login.returncode != 0:
+        raise UserFacingError(f"codex login failed with exit code {login.returncode}")
+
+
 def submission_label(submission: dict[str, Any]) -> str:
     name = submission.get("name") or "<unknown>"
     version = submission.get("version") or "<unknown>"
     submission_id = submission.get("id") or "<unknown>"
     return f"{name}@{version} ({submission_id})"
+
+
+def next_submission_for_review(
+    client: WardnHubApiClient,
+    *,
+    skipped_ids: set[str],
+    submission_id: str | None,
+) -> dict[str, Any] | None:
+    if submission_id:
+        if submission_id in skipped_ids:
+            return None
+        submission = client.get_submission(submission_id)
+        if submission.get("status") != "submitted":
+            return None
+        return submission
+
+    submissions = client.list_submissions()
+    pending = pending_submissions(submissions, skipped_ids=skipped_ids)
+    return pending[0] if pending else None
 
 
 def display_user(user: dict[str, Any]) -> str:
@@ -723,15 +786,26 @@ def extract_review_decision(findings: str) -> str | None:
         return "pass"
     if decision.startswith("needs fixes") or decision.startswith("needs fix"):
         return "needs_fixes"
-    if decision.startswith("cannot validate"):
+    if (
+        decision.startswith("cannot validate")
+        or decision.startswith("cannot determine")
+        or decision.startswith("uncertain")
+        or decision.startswith("unsure")
+    ):
         return "cannot_validate"
+    if decision.startswith("skip") or decision.startswith("leave unchanged"):
+        return "skip"
     if decision.startswith("reject") or decision.startswith("rejected"):
         return "reject"
     return None
 
 
 def should_auto_reject(findings: str) -> bool:
-    return extract_review_decision(findings) in {"cannot_validate", "needs_fixes", "reject"}
+    return extract_review_decision(findings) in {"needs_fixes", "reject"}
+
+
+def should_auto_skip(findings: str) -> bool:
+    return extract_review_decision(findings) in {"cannot_validate", "skip"}
 
 
 def should_auto_approve(findings: str) -> bool:
@@ -817,6 +891,8 @@ def review_loop(
     auto_approve: bool,
     stdin: TextIO,
     stdout: TextIO,
+    submission_id: str | None = None,
+    non_interactive: bool = False,
 ) -> int:
     skipped_ids: set[str] = set()
     completed_reviews = 0
@@ -824,30 +900,38 @@ def review_loop(
     can_publish = bool(user.get("_wardnHubCanPublish"))
 
     while True:
-        submissions = client.list_submissions()
-        pending = pending_submissions(submissions, skipped_ids=skipped_ids)
-        if not pending:
-            print("No submitted MCP server submissions remain for this run.", file=stdout)
+        submission = next_submission_for_review(
+            client,
+            skipped_ids=skipped_ids,
+            submission_id=submission_id,
+        )
+        if submission is None:
+            if submission_id:
+                print(
+                    f"Submission {submission_id} is not currently submitted for review.",
+                    file=stdout,
+                )
+            else:
+                print("No submitted MCP server submissions remain for this run.", file=stdout)
             return 1 if review_errors else 0
 
-        submission = pending[0]
-        submission_id = str(submission["id"])
+        current_submission_id = str(submission["id"])
         print_heading(stdout, f"Reviewing {submission_label(submission)}")
         context = build_review_context(client, submission)
         prompt = build_review_prompt(context)
         environment = os.environ.copy()
         environment[TOKEN_ENV] = client.token
         environment[API_BASE_URL_ENV] = client.base_url
-        environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] = submission_id
+        environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] = current_submission_id
 
         try:
             findings = reviewer.review(prompt, environment=environment)
         except UserFacingError as exc:
             review_errors += 1
             completed_reviews += 1
-            skipped_ids.add(submission_id)
+            skipped_ids.add(current_submission_id)
             print(
-                f"Review failed for {submission_id}; leaving submission unchanged: {exc}",
+                f"Review failed for {current_submission_id}; leaving submission unchanged: {exc}",
                 file=stdout,
             )
             if once or (max_reviews is not None and completed_reviews >= max_reviews):
@@ -858,6 +942,19 @@ def review_loop(
         print(findings, file=stdout)
 
         suggested_rejection_message = extract_suggested_rejection_message(findings)
+        if should_auto_skip(findings):
+            completed_reviews += 1
+            skipped_ids.add(current_submission_id)
+            print(
+                f"Reviewer could not determine a safe action for {current_submission_id}; "
+                "leaving submission unchanged and skipping it for this run.",
+                file=stdout,
+            )
+            if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                print("Review limit reached.", file=stdout)
+                return 1 if review_errors else 0
+            continue
+
         if auto_reject and should_auto_reject(findings):
             if suggested_rejection_message:
                 print(
@@ -868,7 +965,7 @@ def review_loop(
                 try:
                     apply_decision(
                         client,
-                        submission_id,
+                        current_submission_id,
                         "reject",
                         dry_run=dry_run,
                         stdin=stdin,
@@ -877,9 +974,9 @@ def review_loop(
                     )
                 except UserFacingError as exc:
                     review_errors += 1
-                    skipped_ids.add(submission_id)
+                    skipped_ids.add(current_submission_id)
                     print(
-                        f"Action failed for {submission_id}; skipping it for this run: {exc}",
+                        f"Action failed for {current_submission_id}; skipping it for this run: {exc}",
                         file=stdout,
                     )
                 if once or (max_reviews is not None and completed_reviews >= max_reviews):
@@ -889,9 +986,20 @@ def review_loop(
 
             print(
                 "Auto-reject requested, but no suggested rejection message was found; "
-                "leaving this submission for manual decision.",
+                + (
+                    "leaving submission unchanged and skipping it for this run."
+                    if non_interactive
+                    else "leaving this submission for manual decision."
+                ),
                 file=stdout,
             )
+            if non_interactive:
+                completed_reviews += 1
+                skipped_ids.add(current_submission_id)
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
 
         if auto_approve and should_auto_approve(findings):
             print("Auto-approving LLM pass decision.", file=stdout)
@@ -899,7 +1007,7 @@ def review_loop(
             try:
                 apply_decision(
                     client,
-                    submission_id,
+                    current_submission_id,
                     "approve",
                     dry_run=dry_run,
                     stdin=stdin,
@@ -908,11 +1016,24 @@ def review_loop(
                 )
             except UserFacingError as exc:
                 review_errors += 1
-                skipped_ids.add(submission_id)
+                skipped_ids.add(current_submission_id)
                 print(
-                    f"Action failed for {submission_id}; skipping it for this run: {exc}",
+                    f"Action failed for {current_submission_id}; skipping it for this run: {exc}",
                     file=stdout,
                 )
+            if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                print("Review limit reached.", file=stdout)
+                return 1 if review_errors else 0
+            continue
+
+        if non_interactive:
+            completed_reviews += 1
+            skipped_ids.add(current_submission_id)
+            print(
+                f"No automatic action was safe for {current_submission_id}; "
+                "leaving submission unchanged and skipping it for this run.",
+                file=stdout,
+            )
             if once or (max_reviews is not None and completed_reviews >= max_reviews):
                 print("Review limit reached.", file=stdout)
                 return 1 if review_errors else 0
@@ -923,13 +1044,13 @@ def review_loop(
             print("Stopping review loop.", file=stdout)
             return 1 if review_errors else 0
         if decision == "skip":
-            skipped_ids.add(submission_id)
-            print(f"Skipped {submission_id} for this run.", file=stdout)
+            skipped_ids.add(current_submission_id)
+            print(f"Skipped {current_submission_id} for this run.", file=stdout)
         else:
             try:
                 apply_decision(
                     client,
-                    submission_id,
+                    current_submission_id,
                     decision,
                     dry_run=dry_run,
                     stdin=stdin,
@@ -938,9 +1059,9 @@ def review_loop(
                 )
             except UserFacingError as exc:
                 review_errors += 1
-                skipped_ids.add(submission_id)
+                skipped_ids.add(current_submission_id)
                 print(
-                    f"Action failed for {submission_id}; skipping it for this run: {exc}",
+                    f"Action failed for {current_submission_id}; skipping it for this run: {exc}",
                     file=stdout,
                 )
 
@@ -1047,6 +1168,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of submissions to review in this run.",
     )
     parser.add_argument(
+        "--submission-id",
+        default="",
+        help=(
+            "Review exactly one submitted submission ID. Useful for webhook-driven review jobs."
+        ),
+    )
+    parser.add_argument(
         "--once",
         action="store_true",
         help="Review one submitted submission and exit.",
@@ -1060,9 +1188,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--auto-reject",
         action="store_true",
         help=(
-            "Automatically reject reviews whose LLM decision is needs fixes, cannot validate, "
-            "or reject, using the suggested rejection message. Falls back to the prompt if no "
-            "suggested rejection message is found."
+            "Automatically reject reviews whose LLM decision is needs fixes or reject, using "
+            "the suggested rejection message. Cannot-validate decisions are skipped."
         ),
     )
     parser.add_argument(
@@ -1071,6 +1198,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Automatically approve reviews whose LLM decision is pass. This never publishes "
             "submissions."
+        ),
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Never prompt for a decision. If no configured automatic action is safe, leave the "
+            "submission unchanged and skip it for this run."
         ),
     )
     return parser
@@ -1098,12 +1233,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.review_progress_interval < 0:
             raise UserFacingError("--review-progress-interval must be 0 or greater")
         verbose = bool(args.verbose or args.stream_review_output)
+        review_command = parse_review_command(
+            args.review_command,
+            model=args.model,
+            thinking=args.thinking,
+        )
+        ensure_codex_login(review_command, environment=os.environ.copy(), stdout=sys.stdout)
         reviewer = SubprocessReviewer(
-            command=parse_review_command(
-                args.review_command,
-                model=args.model,
-                thinking=args.thinking,
-            ),
+            command=review_command,
             timeout_seconds=args.review_timeout,
             cwd=Path.cwd(),
             progress_stream=sys.stdout if verbose else None,
@@ -1122,6 +1259,8 @@ def main(argv: list[str] | None = None) -> int:
             auto_approve=args.auto_approve,
             stdin=sys.stdin,
             stdout=sys.stdout,
+            submission_id=args.submission_id.strip() or None,
+            non_interactive=args.non_interactive,
         )
     except UserFacingError as exc:
         print(f"Error: {exc}", file=sys.stderr)

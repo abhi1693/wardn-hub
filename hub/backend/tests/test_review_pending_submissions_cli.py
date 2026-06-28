@@ -253,6 +253,67 @@ def test_thinking_argument_accepts_expected_levels() -> None:
         assert args.thinking == level
 
 
+def test_ensure_codex_login_skips_non_codex_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        calls.append(command)
+        raise AssertionError("subprocess should not be called")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    cli.ensure_codex_login(["custom-reviewer", "-"], environment={}, stdout=StringIO())
+
+    assert calls == []
+
+
+def test_ensure_codex_login_uses_status_when_already_logged_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        calls.append(command)
+        return cli.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    cli.ensure_codex_login(["codex", "exec", "-"], environment={}, stdout=StringIO())
+
+    assert calls == [["codex", "login", "status"]]
+
+
+def test_ensure_codex_login_runs_device_auth_when_status_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        calls.append(command)
+        return cli.subprocess.CompletedProcess(command, 1 if len(calls) == 1 else 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    stdout = StringIO()
+
+    cli.ensure_codex_login(["codex", "exec", "-"], environment={}, stdout=stdout)
+
+    assert calls == [
+        ["codex", "login", "status"],
+        ["codex", "login", "--device-auth"],
+    ]
+    assert "complete the device login" in stdout.getvalue()
+
+
+def test_ensure_codex_login_reports_missing_codex(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        raise FileNotFoundError("codex")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    with pytest.raises(cli.UserFacingError, match="codex command not found"):
+        cli.ensure_codex_login(["codex", "exec", "-"], environment={}, stdout=StringIO())
+
+
 def test_review_progress_arguments() -> None:
     default_args = cli.build_parser().parse_args([])
     args = cli.build_parser().parse_args(
@@ -281,6 +342,18 @@ def test_auto_approve_argument() -> None:
 
     assert default_args.auto_approve is False
     assert args.auto_approve is True
+
+
+def test_webhook_safe_arguments() -> None:
+    default_args = cli.build_parser().parse_args([])
+    args = cli.build_parser().parse_args(
+        ["--submission-id", "sub-1", "--non-interactive"]
+    )
+
+    assert default_args.submission_id == ""
+    assert default_args.non_interactive is False
+    assert args.submission_id == "sub-1"
+    assert args.non_interactive is True
 
 
 def test_review_progress_interval_env_requires_integer(
@@ -367,6 +440,7 @@ def test_main_keeps_review_command_logs_quiet_by_default(
 
     monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
     monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
+    monkeypatch.setattr(cli, "ensure_codex_login", lambda *args, **kwargs: None)
 
     result = cli.main(["--token", "wardn_hub_test_token", "--once"])
 
@@ -390,6 +464,7 @@ def test_main_enables_review_command_logs_with_verbose(
 
     monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
     monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
+    monkeypatch.setattr(cli, "ensure_codex_login", lambda *args, **kwargs: None)
 
     result = cli.main(["--token", "wardn_hub_test_token", "--once", "--verbose"])
 
@@ -413,6 +488,7 @@ def test_main_stream_review_output_implies_verbose(
 
     monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
     monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
+    monkeypatch.setattr(cli, "ensure_codex_login", lambda *args, **kwargs: None)
 
     result = cli.main(["--token", "wardn_hub_test_token", "--once", "--stream-review-output"])
 
@@ -560,14 +636,32 @@ def test_extract_review_decision() -> None:
     assert cli.extract_review_decision("Decision: pass") == "pass"
     assert cli.extract_review_decision("Decision: needs fixes") == "needs_fixes"
     assert cli.extract_review_decision("Decision: cannot validate") == "cannot_validate"
+    assert cli.extract_review_decision("Decision: cannot determine") == "cannot_validate"
+    assert cli.extract_review_decision("Decision: uncertain") == "cannot_validate"
+    assert cli.extract_review_decision("Decision: skip") == "skip"
+    assert cli.extract_review_decision("Decision: leave unchanged") == "skip"
     assert cli.extract_review_decision("Decision: reject") == "reject"
     assert cli.extract_review_decision("No decision here") is None
+
+
+def test_should_auto_reject_does_not_reject_uncertain_decisions() -> None:
+    assert cli.should_auto_reject("Decision: needs fixes") is True
+    assert cli.should_auto_reject("Decision: reject") is True
+    assert cli.should_auto_reject("Decision: cannot validate") is False
+    assert cli.should_auto_reject("Decision: cannot determine") is False
 
 
 def test_should_auto_approve_only_passes_clean_pass_decision() -> None:
     assert cli.should_auto_approve("Decision: pass") is True
     assert cli.should_auto_approve("Decision: needs fixes") is False
     assert cli.should_auto_approve("Decision: cannot validate") is False
+
+
+def test_should_auto_skip_uncertain_decisions() -> None:
+    assert cli.should_auto_skip("Decision: cannot validate") is True
+    assert cli.should_auto_skip("Decision: cannot determine") is True
+    assert cli.should_auto_skip("Decision: skip") is True
+    assert cli.should_auto_skip("Decision: pass") is False
 
 
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
@@ -666,7 +760,7 @@ def test_review_loop_auto_rejects_llm_rejection_with_suggested_message() -> None
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: cannot validate
+            return """Decision: needs fixes
 
 Suggested rejection message:
 Please add missing package transport metadata.
@@ -695,6 +789,111 @@ Please add missing package transport metadata.
     ]
     output = stdout.getvalue()
     assert "Auto-rejecting with suggested rejection message" in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_skips_uncertain_llm_decision_without_prompt_or_action() -> None:
+    class UncertainReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: cannot validate
+
+Findings grouped by severity:
+Source repository was unavailable, so no safe approval or rejection decision can be made.
+
+Suggested rejection message:
+none
+"""
+
+    client = FakeClient([submitted_submission()])
+    reviewer = UncertainReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        auto_approve=True,
+        stdin=StringIO(),
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "could not determine a safe action" in output
+    assert "skipping it for this run" in output
+    assert "Auto-rejecting" not in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_targets_exact_submission_id() -> None:
+    client = FakeClient(
+        [
+            submitted_submission_with_id("sub-1"),
+            submitted_submission_with_id("sub-2"),
+        ]
+    )
+    reviewer = FakeReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=False,
+        stdin=StringIO("s\n"),
+        stdout=stdout,
+        submission_id="sub-2",
+    )
+
+    assert result == 0
+    assert len(reviewer.prompts) == 1
+    assert "sub-2" in reviewer.prompts[0]
+    assert "sub-1" not in reviewer.prompts[0]
+    assert "Skipped sub-2" in stdout.getvalue()
+
+
+def test_review_loop_non_interactive_skips_without_prompt() -> None:
+    class NeedsHumanReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: needs fixes
+
+Suggested rejection message:
+none
+"""
+
+    client = FakeClient([submitted_submission()])
+    reviewer = NeedsHumanReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        auto_approve=True,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "leaving submission unchanged and skipping it for this run" in output
     assert "Decision (" not in output
 
 
