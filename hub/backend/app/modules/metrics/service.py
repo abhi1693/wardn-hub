@@ -255,25 +255,16 @@ async def registry_metrics(session: AsyncSession) -> list[str]:
         RegistryServerVersion.status,
         RegistryServerVersion.is_latest,
     )
+    quality_bucket = case(
+        (RegistryServerVersion.quality_score.is_(None), "missing"),
+        (RegistryServerVersion.quality_score >= 90, "90_100"),
+        (RegistryServerVersion.quality_score >= 75, "75_89"),
+        (RegistryServerVersion.quality_score >= 50, "50_74"),
+        else_="0_49",
+    ).label("bucket")
+    quality_buckets = select(quality_bucket).subquery()
     quality_rows = await session.execute(
-        select(
-            case(
-                (RegistryServerVersion.quality_score.is_(None), "missing"),
-                (RegistryServerVersion.quality_score >= 90, "90_100"),
-                (RegistryServerVersion.quality_score >= 75, "75_89"),
-                (RegistryServerVersion.quality_score >= 50, "50_74"),
-                else_="0_49",
-            ),
-            func.count(),
-        ).group_by(
-            case(
-                (RegistryServerVersion.quality_score.is_(None), "missing"),
-                (RegistryServerVersion.quality_score >= 90, "90_100"),
-                (RegistryServerVersion.quality_score >= 75, "75_89"),
-                (RegistryServerVersion.quality_score >= 50, "50_74"),
-                else_="0_49",
-            )
-        )
+        select(quality_buckets.c.bucket, func.count()).group_by(quality_buckets.c.bucket)
     )
     category_rows = await session.execute(
         select(RegistryCategory.status, func.count()).group_by(RegistryCategory.status)
