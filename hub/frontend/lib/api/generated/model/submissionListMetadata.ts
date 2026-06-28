@@ -5,7 +5,8 @@
  * OpenAPI spec version: 0.2.55
  */
 
-export interface RegistryPageMetadata {
+export interface SubmissionListMetadata {
+  count: number;
   page: number;
   pages: number;
   perPage: number;

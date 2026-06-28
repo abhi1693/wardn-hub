@@ -28,8 +28,11 @@ from app.modules.submissions.exceptions import (
 from app.modules.submissions.models import ServerSubmission
 from app.modules.submissions.schemas import (
     SubmissionCreate,
+    SubmissionListMetadata,
     SubmissionListResponse,
     SubmissionRead,
+    SubmissionStatus,
+    SubmissionStatusCounts,
     SubmissionUpdate,
 )
 from app.modules.users.models import User, UserAPIToken
@@ -838,15 +841,34 @@ async def list_submissions(
     user: User,
     *,
     api_token: UserAPIToken | None = None,
+    page: int = 1,
+    per_page: int = 20,
+    status: SubmissionStatus | None = None,
 ) -> SubmissionListResponse:
-    submissions = await repository.list_submissions(
+    offset = (page - 1) * per_page
+    submissions, total, raw_status_counts = await repository.list_submissions(
         session,
         user_id=user.id,
         include_all=can_review_submissions(user),
+        organization_ids=api_token_organization_ids(api_token),
+        status=status,
+        offset=offset,
+        limit=per_page,
     )
-    submissions = filter_submissions_for_api_token(api_token, submissions)
+    status_counts = SubmissionStatusCounts(
+        all=sum(raw_status_counts.values()),
+        **raw_status_counts,
+    )
     return SubmissionListResponse(
-        submissions=[submission_response(submission) for submission in submissions]
+        submissions=[submission_response(submission) for submission in submissions],
+        metadata=SubmissionListMetadata(
+            page=page,
+            perPage=per_page,
+            total=total,
+            pages=(total + per_page - 1) // per_page,
+            count=len(submissions),
+        ),
+        statusCounts=status_counts,
     )
 
 

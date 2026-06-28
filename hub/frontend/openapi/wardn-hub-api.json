@@ -4882,8 +4882,47 @@
         "title": "SubmissionCreate",
         "type": "object"
       },
+      "SubmissionListMetadata": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "perPage": {
+            "title": "Perpage",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "perPage",
+          "total",
+          "pages",
+          "count"
+        ],
+        "title": "SubmissionListMetadata",
+        "type": "object"
+      },
       "SubmissionListResponse": {
         "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/SubmissionListMetadata"
+          },
+          "statusCounts": {
+            "$ref": "#/components/schemas/SubmissionStatusCounts"
+          },
           "submissions": {
             "items": {
               "$ref": "#/components/schemas/SubmissionRead"
@@ -4893,7 +4932,9 @@
           }
         },
         "required": [
-          "submissions"
+          "submissions",
+          "metadata",
+          "statusCounts"
         ],
         "title": "SubmissionListResponse",
         "type": "object"
@@ -5066,6 +5107,47 @@
           "message"
         ],
         "title": "SubmissionRejectRequest",
+        "type": "object"
+      },
+      "SubmissionStatusCounts": {
+        "properties": {
+          "all": {
+            "default": 0,
+            "title": "All",
+            "type": "integer"
+          },
+          "approved": {
+            "default": 0,
+            "title": "Approved",
+            "type": "integer"
+          },
+          "draft": {
+            "default": 0,
+            "title": "Draft",
+            "type": "integer"
+          },
+          "published": {
+            "default": 0,
+            "title": "Published",
+            "type": "integer"
+          },
+          "rejected": {
+            "default": 0,
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "submitted": {
+            "default": 0,
+            "title": "Submitted",
+            "type": "integer"
+          },
+          "withdrawn": {
+            "default": 0,
+            "title": "Withdrawn",
+            "type": "integer"
+          }
+        },
+        "title": "SubmissionStatusCounts",
         "type": "object"
       },
       "SubmissionUpdate": {
@@ -5821,7 +5903,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.54"
+    "version": "0.2.55"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -9994,6 +10076,53 @@
       "get": {
         "operationId": "submissions_list",
         "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "perPage",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Perpage",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "submitted",
+                    "approved",
+                    "rejected",
+                    "withdrawn",
+                    "published"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
           {
             "in": "header",
             "name": "authorization",

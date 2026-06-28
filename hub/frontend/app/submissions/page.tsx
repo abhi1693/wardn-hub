@@ -8,6 +8,8 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleDashed,
   Clock3,
   FileCheck2,
@@ -39,7 +41,12 @@ import {
   rejectSubmission,
   submissionAction,
 } from "@/lib/api/hub";
-import type { SubmissionRead, UserRead } from "@/lib/api/generated/model";
+import type {
+  SubmissionListMetadata,
+  SubmissionRead,
+  SubmissionStatusCounts,
+  UserRead,
+} from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
 
 type LoadState = "loading" | "ready" | "error" | "auth";
@@ -58,7 +65,17 @@ const statusOrder: SubmissionRead["status"][] = [
   "withdrawn",
   "published",
 ];
+const SUBMISSIONS_PAGE_SIZE = 20;
 const statusValues = new Set<StatusFilter>(["all", ...statusOrder]);
+const emptyStatusCounts = {
+  all: 0,
+  approved: 0,
+  draft: 0,
+  published: 0,
+  rejected: 0,
+  submitted: 0,
+  withdrawn: 0,
+} satisfies Required<SubmissionStatusCounts>;
 
 const statusMeta: Record<
   SubmissionRead["status"],
@@ -135,28 +152,14 @@ function canPublishSubmissions(user: UserRead | null) {
   return Boolean(user?.is_superuser);
 }
 
-function getStatusCounts(submissions: SubmissionRead[]) {
-  return submissions.reduce(
-    (counts, submission) => {
-      counts[submission.status] += 1;
-      counts.all += 1;
-      return counts;
-    },
-    {
-      all: 0,
-      approved: 0,
-      draft: 0,
-      published: 0,
-      rejected: 0,
-      submitted: 0,
-      withdrawn: 0,
-    } satisfies Record<StatusFilter, number>,
-  );
-}
-
 function statusFilterFromQuery(value: string | null): StatusFilter {
   if (!value) return "all";
   return statusValues.has(value as StatusFilter) ? (value as StatusFilter) : "all";
+}
+
+function pageFromQuery(value: string | null) {
+  const page = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(page) && page > 0 ? page : 1;
 }
 
 function currentPathWithQuery(pathname: string, searchParams: { toString: () => string }) {
@@ -646,6 +649,7 @@ function SubmissionsPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const filter = statusFilterFromQuery(searchParams.get("status"));
+  const page = pageFromQuery(searchParams.get("page"));
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -657,13 +661,25 @@ function SubmissionsPageContent() {
     useState<SubmissionRead | null>(null);
   const [user, setUser] = useState<UserRead | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
+  const [metadata, setMetadata] = useState<SubmissionListMetadata | null>(null);
+  const [statusCounts, setStatusCounts] =
+    useState<Required<SubmissionStatusCounts>>(emptyStatusCounts);
 
   useEffect(() => {
+    let active = true;
     const timeoutId = window.setTimeout(() => {
       setState("loading");
       setError("");
-      Promise.all([currentUser(), listSubmissions()])
+      Promise.all([
+        currentUser(),
+        listSubmissions({
+          page,
+          perPage: SUBMISSIONS_PAGE_SIZE,
+          status: filter === "all" ? undefined : filter,
+        }),
+      ])
         .then(([current, response]) => {
+          if (!active) return;
           setUser(current);
           setSubmissions(
             sortSubmissions(
@@ -672,29 +688,34 @@ function SubmissionsPageContent() {
               }),
             ),
           );
+          setMetadata(response.metadata);
+          setStatusCounts({ ...emptyStatusCounts, ...response.statusCounts });
           setState("ready");
         })
         .catch((caught) => {
+          if (!active) return;
           setError(caught instanceof Error ? caught.message : "Unable to load submissions.");
           setState(caught instanceof HubApiError && caught.status === 401 ? "auth" : "error");
         });
     }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [filter, page]);
 
-  const counts = useMemo(() => getStatusCounts(submissions), [submissions]);
-  const filteredSubmissions = useMemo(() => {
-    if (filter === "all") return submissions;
-    return submissions.filter((submission) => submission.status === filter);
-  }, [filter, submissions]);
-  const allGroupedSubmissions = useMemo(() => groupSubmissionsByServer(submissions), [submissions]);
-  const groupedSubmissions = useMemo(
-    () => groupSubmissionsByServer(filteredSubmissions),
-    [filteredSubmissions],
-  );
+  const counts = statusCounts;
+  const groupedSubmissions = useMemo(() => groupSubmissionsByServer(submissions), [submissions]);
   const visibleStatusFilters = useMemo(() => {
-    return statusOrder.filter((status) => counts[status] > 0 || filter === status);
+    return statusOrder.filter((status) => (counts[status] ?? 0) > 0 || filter === status);
   }, [counts, filter]);
+  const totalSubmissions = metadata?.total ?? submissions.length;
+  const totalPages = metadata?.pages ?? 0;
+  const firstVisibleSubmission =
+    metadata && metadata.total > 0 ? (metadata.page - 1) * metadata.perPage + 1 : 0;
+  const lastVisibleSubmission = metadata
+    ? Math.min(metadata.page * metadata.perPage, metadata.total)
+    : submissions.length;
 
   function filterHref(nextFilter: StatusFilter) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -702,6 +723,18 @@ function SubmissionsPageContent() {
       nextParams.delete("status");
     } else {
       nextParams.set("status", nextFilter);
+    }
+    nextParams.delete("page");
+    const queryString = nextParams.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }
+
+  function pageHref(nextPage: number) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextPage <= 1) {
+      nextParams.delete("page");
+    } else {
+      nextParams.set("page", String(nextPage));
     }
     const queryString = nextParams.toString();
     return queryString ? `${pathname}?${queryString}` : pathname;
@@ -819,10 +852,11 @@ function SubmissionsPageContent() {
               <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="mr-1 text-sm font-bold text-foreground">
-                  {allGroupedSubmissions.length}{" "}
-                  {allGroupedSubmissions.length === 1 ? "server" : "servers"}
+                  {groupedSubmissions.length}{" "}
+                  {groupedSubmissions.length === 1 ? "server" : "servers"}
                   <span className="ml-1 text-muted-foreground">
-                    / {counts.all} {counts.all === 1 ? "submission" : "submissions"}
+                    / {totalSubmissions}{" "}
+                    {totalSubmissions === 1 ? "submission" : "submissions"}
                   </span>
                 </span>
                 <Link
@@ -837,7 +871,7 @@ function SubmissionsPageContent() {
                   scroll={false}
                 >
                   All
-                  <span className="rounded bg-white/15 px-1.5 text-xs">{counts.all}</span>
+                  <span className="rounded bg-white/15 px-1.5 text-xs">{counts.all ?? 0}</span>
                 </Link>
                 {visibleStatusFilters.map((status) => (
                   <Link
@@ -853,13 +887,17 @@ function SubmissionsPageContent() {
                     scroll={false}
                   >
                     {statusMeta[status].label}
-                    <span className="rounded bg-current/10 px-1.5 text-xs">{counts[status]}</span>
+                    <span className="rounded bg-current/10 px-1.5 text-xs">
+                      {counts[status] ?? 0}
+                    </span>
                   </Link>
                 ))}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <CalendarClock className="size-4" />
-                Sorted by latest update
+                {metadata && metadata.total > 0
+                  ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
+                  : "Sorted by latest update"}
               </div>
               </div>
             ) : null}
@@ -873,7 +911,7 @@ function SubmissionsPageContent() {
             {state === "error" ? (
               <StatePanel detail={error} icon={AlertCircle} title="Unable to load submissions" tone="danger" />
             ) : null}
-            {state === "ready" && submissions.length === 0 ? (
+            {state === "ready" && (counts.all ?? 0) === 0 ? (
               <StatePanel
                 action={<AddSubmissionMenu />}
                 detail="Create the first registry submission for a server or version."
@@ -881,7 +919,7 @@ function SubmissionsPageContent() {
                 title="No submissions yet"
               />
             ) : null}
-            {state === "ready" && submissions.length > 0 && filteredSubmissions.length === 0 ? (
+            {state === "ready" && (counts.all ?? 0) > 0 && totalSubmissions === 0 ? (
               <StatePanel
                 detail="No submissions match the selected status."
                 icon={SearchX}
@@ -909,6 +947,48 @@ function SubmissionsPageContent() {
                     reviewingActionId={reviewingActionId}
                   />
                 ))}
+                {metadata && totalPages > 1 ? (
+                  <nav
+                    aria-label="Submission pages"
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Page {metadata.page} of {totalPages}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        aria-disabled={metadata.page <= 1}
+                        className={cn(
+                          "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
+                          metadata.page <= 1
+                            ? "pointer-events-none border-border bg-muted text-muted-foreground/60"
+                            : "border-border bg-white text-foreground hover:bg-muted",
+                        )}
+                        href={pageHref(metadata.page - 1)}
+                        replace
+                        scroll={false}
+                      >
+                        <ChevronLeft className="size-4" />
+                        Previous
+                      </Link>
+                      <Link
+                        aria-disabled={metadata.page >= totalPages}
+                        className={cn(
+                          "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
+                          metadata.page >= totalPages
+                            ? "pointer-events-none border-border bg-muted text-muted-foreground/60"
+                            : "border-border bg-white text-foreground hover:bg-muted",
+                        )}
+                        href={pageHref(metadata.page + 1)}
+                        replace
+                        scroll={false}
+                      >
+                        Next
+                        <ChevronRight className="size-4" />
+                      </Link>
+                    </div>
+                  </nav>
+                ) : null}
               </div>
             ) : null}
           </section>

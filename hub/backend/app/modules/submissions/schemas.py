@@ -109,5 +109,29 @@ class SubmissionRead(BaseModel):
     updated_at: datetime = Field(alias="updatedAt")
 
 
+class SubmissionListMetadata(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    page: int
+    per_page: int = Field(alias="perPage")
+    total: int
+    pages: int
+    count: int
+
+
+class SubmissionStatusCounts(BaseModel):
+    all: int = 0
+    draft: int = 0
+    submitted: int = 0
+    approved: int = 0
+    rejected: int = 0
+    withdrawn: int = 0
+    published: int = 0
+
+
 class SubmissionListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     submissions: list[SubmissionRead]
+    metadata: SubmissionListMetadata
+    status_counts: SubmissionStatusCounts = Field(alias="statusCounts")

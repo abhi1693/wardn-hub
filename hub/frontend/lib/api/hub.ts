@@ -49,6 +49,7 @@ import type {
   SubmissionRead,
   SubmissionListResponse,
   SubmissionUpdate,
+  SubmissionsListParams,
   UserAPITokenCreate,
   UserAPITokenCreated,
   UserAPITokenListResponse,
@@ -402,8 +403,8 @@ export function archiveServer(serverName: string) {
   return deleteServer(serverName);
 }
 
-export function listSubmissions() {
-  return generatedRequest<SubmissionListResponse>(getSubmissionsListUrl());
+export function listSubmissions(params?: SubmissionsListParams) {
+  return generatedRequest<SubmissionListResponse>(getSubmissionsListUrl(params));
 }
 
 export function getSubmission(submissionId: string) {

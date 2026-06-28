@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.2.55
  */
 
-export type SubmissionReadStatus = typeof SubmissionReadStatus[keyof typeof SubmissionReadStatus];
+export type SubmissionsListStatus = typeof SubmissionsListStatus[keyof typeof SubmissionsListStatus] | null;
 
 
-export const SubmissionReadStatus = {
+export const SubmissionsListStatus = {
   draft: 'draft',
   submitted: 'submitted',
   approved: 'approved',

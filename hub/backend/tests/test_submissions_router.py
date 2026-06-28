@@ -7,6 +7,11 @@ from app.db.session import get_db_session
 from app.main import create_app
 from app.modules.submissions import router as submissions_router
 from app.modules.submissions.exceptions import SubmissionValidationError
+from app.modules.submissions.schemas import (
+    SubmissionListMetadata,
+    SubmissionListResponse,
+    SubmissionStatusCounts,
+)
 from app.modules.users import dependencies
 from app.modules.users.models import User
 
@@ -95,6 +100,49 @@ def test_submission_delete_rejects_token_without_write_scope(monkeypatch) -> Non
     assert response.json() == {
         "detail": "API token missing required scope: submissions:write",
     }
+
+
+def test_submissions_list_passes_pagination_filters(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, object] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def authenticate_api_token(*args, **kwargs):
+        return (
+            User(id=uuid4(), email="moderator@example.com", is_global_moderator=True),
+            SimpleNamespace(id=uuid4(), scopes=["submissions:read"], organization_ids=[]),
+        )
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return SubmissionListResponse(
+            submissions=[],
+            metadata=SubmissionListMetadata(page=2, perPage=10, total=0, pages=0, count=0),
+            statusCounts=SubmissionStatusCounts(),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_api_token)
+    monkeypatch.setattr(submissions_router, "list_submissions", list_submission_records)
+
+    response = TestClient(app).get(
+        "/api/v1/submissions?page=2&perPage=10&status=submitted",
+        headers={"Authorization": "Bearer wardn_hub_key.secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["metadata"] == {
+        "page": 2,
+        "perPage": 10,
+        "total": 0,
+        "pages": 0,
+        "count": 0,
+    }
+    assert captured["page"] == 2
+    assert captured["per_page"] == 10
+    assert captured["status"] == "submitted"
 
 
 def test_publish_submission_validation_error_returns_bad_request(monkeypatch) -> None:

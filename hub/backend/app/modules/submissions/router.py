@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.router import (
@@ -26,6 +26,7 @@ from app.modules.submissions.schemas import (
     SubmissionListResponse,
     SubmissionRead,
     SubmissionRejectRequest,
+    SubmissionStatus,
     SubmissionUpdate,
 )
 from app.modules.submissions.service import (
@@ -56,8 +57,18 @@ async def list_submission_records(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_api_token_scopes("submissions:read"))],
+    page: Annotated[int, Query(ge=1)] = 1,
+    per_page: Annotated[int, Query(alias="perPage", ge=1, le=100)] = 20,
+    submission_status: Annotated[SubmissionStatus | None, Query(alias="status")] = None,
 ) -> SubmissionListResponse:
-    return await list_submissions(session, current_user, api_token=get_request_api_token(request))
+    return await list_submissions(
+        session,
+        current_user,
+        api_token=get_request_api_token(request),
+        page=page,
+        per_page=per_page,
+        status=submission_status,
+    )
 
 
 @router.post(

@@ -12,6 +12,12 @@ class EmptyScalarResult:
 
 
 class EmptyExecuteResult:
+    def all(self) -> list[object]:
+        return []
+
+    def scalar_one(self) -> int:
+        return 0
+
     def scalars(self) -> EmptyScalarResult:
         return EmptyScalarResult()
 
@@ -39,14 +45,16 @@ async def test_list_submissions_includes_owned_organization_memberships() -> Non
     user_id = uuid4()
     session = CaptureSession()
 
-    submissions = await repository.list_submissions(
+    submissions, total, status_counts = await repository.list_submissions(
         session,
         user_id=user_id,
         include_all=False,
     )
 
-    statement = sql(session.statements[0])
+    statement = sql(session.statements[2])
     assert submissions == []
+    assert total == 0
+    assert status_counts == {}
     assert f"server_submissions.submitter_user_id = '{user_id}'" in statement
     assert "server_submissions.owner_organization_id IN" in statement
     assert "organization_memberships.organization_id" in statement

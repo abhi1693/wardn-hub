@@ -693,23 +693,15 @@ async def test_create_submission_rejects_restricted_api_token_personal_owner() -
 async def test_restricted_api_token_filters_listed_submissions(monkeypatch) -> None:
     user = current_user(is_global_moderator=True)
     allowed_organization_id = uuid4()
-    denied_organization_id = uuid4()
     allowed_submission = submission_record(
         submitter_user_id=uuid4(),
         owner_organization_id=allowed_organization_id,
     )
-    denied_submission = submission_record(
-        submitter_user_id=uuid4(),
-        owner_organization_id=denied_organization_id,
-    )
-    personal_submission = submission_record(
-        submitter_user_id=user.id,
-        owner_user_id=user.id,
-        owner_organization_id=None,
-    )
+    captured: dict[str, object] = {}
 
     async def list_submission_records(*args, **kwargs):
-        return [allowed_submission, denied_submission, personal_submission]
+        captured.update(kwargs)
+        return [allowed_submission], 1, {"draft": 1}
 
     monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
 
@@ -720,6 +712,9 @@ async def test_restricted_api_token_filters_listed_submissions(monkeypatch) -> N
     )
 
     assert [submission.id for submission in response.submissions] == [allowed_submission.id]
+    assert response.metadata.total == 1
+    assert response.status_counts.draft == 1
+    assert captured["organization_ids"] == {str(allowed_organization_id)}
 
 
 @pytest.mark.asyncio
@@ -753,7 +748,7 @@ async def test_global_moderator_lists_all_submissions(monkeypatch) -> None:
 
     async def list_submission_records(*args, **kwargs):
         captured.update(kwargs)
-        return []
+        return [], 0, {}
 
     monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
 
@@ -763,7 +758,41 @@ async def test_global_moderator_lists_all_submissions(monkeypatch) -> None:
     )
 
     assert response.submissions == []
+    assert response.metadata.page == 1
+    assert response.metadata.per_page == 20
+    assert response.metadata.total == 0
     assert captured["include_all"] is True
+    assert captured["offset"] == 0
+    assert captured["limit"] == 20
+
+
+@pytest.mark.asyncio
+async def test_list_submissions_passes_pagination_and_status(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return [], 42, {"submitted": 42}
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    response = await service.list_submissions(
+        FakeSession(),
+        current_user(),
+        page=3,
+        per_page=10,
+        status="submitted",
+    )
+
+    assert response.metadata.page == 3
+    assert response.metadata.per_page == 10
+    assert response.metadata.total == 42
+    assert response.metadata.pages == 5
+    assert response.status_counts.all == 42
+    assert response.status_counts.submitted == 42
+    assert captured["offset"] == 20
+    assert captured["limit"] == 10
+    assert captured["status"] == "submitted"
 
 
 @pytest.mark.asyncio
