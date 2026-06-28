@@ -26,6 +26,10 @@ class RegistryVersionNotFoundError(RegistryError):
     pass
 
 
+class RegistryAccessDeniedError(RegistryError):
+    pass
+
+
 class RegistryOwnershipClaimError(RegistryError):
     pass
 

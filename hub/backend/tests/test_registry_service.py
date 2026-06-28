@@ -12,6 +12,7 @@ from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryAccessDeniedError,
     RegistryOwnershipClaimError,
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
@@ -1182,6 +1183,55 @@ async def test_delete_latest_promotes_replacement(monkeypatch) -> None:
     assert replacement.is_latest is True
     assert server.current_version_id == replacement.id
     assert server.title == replacement.title
+
+
+@pytest.mark.asyncio
+async def test_delete_server_allows_direct_owner(monkeypatch) -> None:
+    owner = User(id=uuid4(), email="owner@example.com", is_superuser=False)
+    server = server_model()
+    server.owner_user_id = owner.id
+    latest = version_model(server.id, "1.0.0", is_latest=True)
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [latest]
+
+    async def sync_categories(*args):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_server", get_server)
+    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "sync_server_categories", sync_categories)
+
+    await service.delete_server(
+        FakeSession(),
+        server.name,
+        current_user=owner,
+        actor_user_id=owner.id,
+    )
+
+    assert server.status == "deleted"
+    assert latest.status == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_delete_server_rejects_non_owner(monkeypatch) -> None:
+    owner = User(id=uuid4(), email="owner@example.com", is_superuser=False)
+    other_user = User(id=uuid4(), email="other@example.com", is_superuser=False)
+    server = server_model()
+    server.owner_user_id = owner.id
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    monkeypatch.setattr(service.repository, "get_server", get_server)
+
+    with pytest.raises(RegistryAccessDeniedError):
+        await service.delete_server(FakeSession(), server.name, current_user=other_user)
+
+    assert server.status == "active"
 
 
 @pytest.mark.asyncio

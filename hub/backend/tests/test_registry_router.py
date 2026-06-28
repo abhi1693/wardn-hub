@@ -644,6 +644,68 @@ def test_admin_create_requires_authentication() -> None:
     assert response.status_code == 401
 
 
+def test_public_delete_server_allows_registry_write_user_token(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, object] = {}
+
+    async def fake_session():
+        class Session:
+            async def commit(self) -> None:
+                captured["committed"] = True
+
+        yield Session()
+
+    async def delete(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_write_user_api_token,
+    )
+    monkeypatch.setattr(router, "delete_server", delete)
+
+    response = TestClient(app).delete(
+        "/api/v1/mcp/servers/io.github.example/weather",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 204
+    assert captured["committed"] is True
+    assert captured["args"][1] == "io.github.example/weather"
+    assert captured["kwargs"]["current_user"].is_superuser is False
+    assert captured["kwargs"]["api_token"].scopes == ["registry:write"]
+    assert captured["kwargs"]["actor_user_id"] == captured["kwargs"]["current_user"].id
+
+
+def test_public_delete_server_requires_registry_write_scope(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    async def delete(*args, **kwargs):
+        raise AssertionError("delete should not be called")
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_low_scope_api_token,
+    )
+    monkeypatch.setattr(router, "delete_server", delete)
+
+    response = TestClient(app).delete(
+        "/api/v1/mcp/servers/io.github.example/weather",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "API token missing required scope: registry:write"}
+
+
 def test_admin_update_quality_score_uses_registry_score_scope(monkeypatch) -> None:
     app = create_app()
     captured: dict[str, object] = {}

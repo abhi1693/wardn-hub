@@ -13,12 +13,18 @@ import httpx
 from pydantic import BaseModel
 
 from app.modules.events.service import emit_event_record, subject_payload
+from app.modules.organizations.exceptions import (
+    OrganizationAccessDeniedError,
+    OrganizationNotFoundError,
+)
+from app.modules.organizations.service import require_organization_permission
 from app.modules.registry import repository
 from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryAccessDeniedError,
     RegistryCategoryNotFoundError,
     RegistryOwnershipClaimConflictError,
     RegistryOwnershipClaimError,
@@ -66,6 +72,7 @@ from app.modules.registry.schemas import (
     normalize_remote_mapping,
 )
 from app.modules.users.exceptions import UserNotFoundError
+from app.modules.users.models import User, UserAPIToken
 
 
 @dataclass
@@ -516,6 +523,96 @@ def registry_version_event_payload(
         "publishedAt": version.published_at.isoformat().replace("+00:00", "Z"),
     }
     return payload
+
+
+def ensure_registry_api_token_organization_access(
+    api_token: UserAPIToken | None,
+    owner_organization_id: UUID | None,
+) -> None:
+    if api_token is None:
+        return
+    allowed_organization_ids = {
+        str(organization_id) for organization_id in api_token.organization_ids
+    }
+    if not allowed_organization_ids:
+        return
+    if (
+        owner_organization_id is None
+        or str(owner_organization_id) not in allowed_organization_ids
+    ):
+        raise RegistryAccessDeniedError("API token organization access denied")
+
+
+async def has_registry_owner_access(
+    session,
+    user: User,
+    *,
+    owner_user_id: UUID | None,
+    owner_organization_id: UUID | None,
+    api_token: UserAPIToken | None = None,
+) -> bool:
+    if user.is_superuser:
+        return True
+    if owner_user_id is not None and owner_user_id == user.id:
+        return True
+    if owner_organization_id is None:
+        return False
+    try:
+        await require_organization_permission(
+            session,
+            user,
+            owner_organization_id,
+            "servers.update",
+        )
+    except (OrganizationNotFoundError, OrganizationAccessDeniedError):
+        return False
+    ensure_registry_api_token_organization_access(api_token, owner_organization_id)
+    return True
+
+
+async def ensure_can_delete_registry_server(
+    session,
+    user: User,
+    server: RegistryServer,
+    *,
+    api_token: UserAPIToken | None = None,
+) -> None:
+    if await has_registry_owner_access(
+        session,
+        user,
+        owner_user_id=server.owner_user_id,
+        owner_organization_id=server.owner_organization_id,
+        api_token=api_token,
+    ):
+        return
+    raise RegistryAccessDeniedError("server owner access denied")
+
+
+async def ensure_can_delete_registry_version(
+    session,
+    user: User,
+    server: RegistryServer,
+    version: RegistryServerVersion,
+    *,
+    api_token: UserAPIToken | None = None,
+) -> None:
+    if await has_registry_owner_access(
+        session,
+        user,
+        owner_user_id=server.owner_user_id,
+        owner_organization_id=server.owner_organization_id,
+        api_token=api_token,
+    ):
+        return
+    if await has_registry_owner_access(
+        session,
+        user,
+        owner_user_id=version.owner_user_id,
+        owner_organization_id=version.owner_organization_id,
+        api_token=api_token,
+    ):
+        return
+    raise RegistryAccessDeniedError("server owner access denied")
 
 
 async def emit_registry_server_event(
@@ -1788,6 +1885,8 @@ async def delete_server_version(
     name: str,
     version_name: str,
     *,
+    current_user: User | None = None,
+    api_token: UserAPIToken | None = None,
     actor_user_id: UUID | None = None,
 ) -> None:
     version = await repository.get_server_version(
@@ -1804,6 +1903,14 @@ async def delete_server_version(
     server = await repository.get_server_by_id(session, version.server_id)
     if server is None:
         raise RegistryServerNotFoundError("server not found")
+    if current_user is not None:
+        await ensure_can_delete_registry_version(
+            session,
+            current_user,
+            server,
+            version,
+            api_token=api_token,
+        )
 
     was_latest = version.is_latest
     version.status = "deleted"
@@ -1840,6 +1947,8 @@ async def delete_server(
     session,
     name: str,
     *,
+    current_user: User | None = None,
+    api_token: UserAPIToken | None = None,
     actor_user_id: UUID | None = None,
 ) -> None:
     server = await repository.get_server(session, name, include_deleted=True)
@@ -1847,6 +1956,13 @@ async def delete_server(
         raise RegistryServerNotFoundError("server not found")
     if server.status == "deleted":
         return
+    if current_user is not None:
+        await ensure_can_delete_registry_server(
+            session,
+            current_user,
+            server,
+            api_token=api_token,
+        )
 
     now = datetime.now(UTC)
     versions = await repository.list_server_versions(

@@ -2,18 +2,26 @@ from datetime import datetime
 from html import escape
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.router import bad_request, commit_response, commit_session, conflict, not_found
+from app.core.router import (
+    bad_request,
+    commit_response,
+    commit_session,
+    conflict,
+    forbidden,
+    not_found,
+)
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.registry.exceptions import (
     DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    RegistryAccessDeniedError,
     RegistryCategoryNotFoundError,
     RegistryOwnershipClaimConflictError,
     RegistryOwnershipClaimError,
@@ -62,7 +70,11 @@ from app.modules.registry.service import (
     update_server_version,
     update_version_quality_score,
 )
-from app.modules.users.dependencies import require_api_token_scopes, require_superuser_scopes
+from app.modules.users.dependencies import (
+    get_request_api_token,
+    require_api_token_scopes,
+    require_superuser_scopes,
+)
 from app.modules.users.models import User
 
 catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
@@ -454,6 +466,68 @@ async def get_mcp_server(
         raise not_found(exc, detail="server not found") from exc
 
 
+@public_router.delete(
+    "/{server_name:path}/versions/{version}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="mcp_servers_delete_version",
+    responses={
+        status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+    },
+)
+async def delete_mcp_server_version(
+    request: Request,
+    server_name: str,
+    version: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("registry:write"))],
+) -> None:
+    try:
+        await delete_server_version(
+            session,
+            server_name,
+            version,
+            current_user=current_user,
+            api_token=get_request_api_token(request),
+            actor_user_id=current_user.id,
+        )
+    except RegistryAccessDeniedError as exc:
+        raise forbidden(exc) from exc
+    except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
+        raise not_found(exc) from exc
+    await commit_session(session)
+
+
+@public_router.delete(
+    "/{server_name:path}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="mcp_servers_delete",
+    responses={
+        status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+    },
+)
+async def delete_mcp_server(
+    request: Request,
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("registry:write"))],
+) -> None:
+    try:
+        await delete_server(
+            session,
+            server_name,
+            current_user=current_user,
+            api_token=get_request_api_token(request),
+            actor_user_id=current_user.id,
+        )
+    except RegistryAccessDeniedError as exc:
+        raise forbidden(exc) from exc
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc) from exc
+    await commit_session(session)
+
+
 @admin_router.post(
     "",
     response_model=RegistryServerVersionDetailResponse,
@@ -568,6 +642,7 @@ async def admin_delete_mcp_server_version(
             session,
             server_name,
             version,
+            current_user=current_user,
             actor_user_id=current_user.id,
         )
     except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
@@ -587,7 +662,12 @@ async def admin_delete_mcp_server(
     current_user: Annotated[User, Depends(require_superuser_scopes("registry:write"))],
 ) -> None:
     try:
-        await delete_server(session, server_name, actor_user_id=current_user.id)
+        await delete_server(
+            session,
+            server_name,
+            current_user=current_user,
+            actor_user_id=current_user.id,
+        )
     except RegistryServerNotFoundError as exc:
         raise not_found(exc) from exc
     await commit_session(session)
