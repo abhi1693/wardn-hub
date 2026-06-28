@@ -6,19 +6,30 @@ from opentelemetry import trace
 from app.core.telemetry import configure_telemetry
 from app.db.session import AsyncSessionLocal
 from app.modules.events.service import dispatch_due_deliveries, process_pending_events
+from app.modules.metrics import service as metrics_service
 
 
 async def run_once(*, limit: int) -> tuple[int, int]:
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span("events_worker.run_once") as span:
         span.set_attribute("worker.limit", limit)
-        async with AsyncSessionLocal() as session:
-            deliveries_created = await process_pending_events(session, limit=limit)
-            deliveries_sent = await dispatch_due_deliveries(session, limit=limit)
-            await session.commit()
-            span.set_attribute("events.deliveries_created", deliveries_created)
-            span.set_attribute("events.deliveries_sent", deliveries_sent)
-            return deliveries_created, deliveries_sent
+        with metrics_service.event_worker_batch_timer():
+            try:
+                async with AsyncSessionLocal() as session:
+                    deliveries_created = await process_pending_events(session, limit=limit)
+                    deliveries_sent = await dispatch_due_deliveries(session, limit=limit)
+                    await session.commit()
+                    span.set_attribute("events.deliveries_created", deliveries_created)
+                    span.set_attribute("events.deliveries_sent", deliveries_sent)
+                    metrics_service.record_event_worker_batch(
+                        result="success",
+                        deliveries_created=deliveries_created,
+                        deliveries_sent=deliveries_sent,
+                    )
+                    return deliveries_created, deliveries_sent
+            except Exception:
+                metrics_service.record_event_worker_batch(result="failed")
+                raise
 
 
 async def run_worker(*, once: bool, limit: int, interval: float) -> None:

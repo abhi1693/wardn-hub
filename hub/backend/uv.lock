@@ -838,6 +838,15 @@ wheels = [
 ]
 
 [[package]]
+name = "prometheus-client"
+version = "0.25.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1b/fb/d9aa83ffe43ce1f19e557c0971d04b90561b0cfd50762aafb01968285553/prometheus_client-0.25.0.tar.gz", hash = "sha256:5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28", size = 86035, upload-time = "2026-04-09T19:53:42.359Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/9b/d4b1e644385499c8346fa9b622a3f030dce14cd6ef8a1871c221a17a67e7/prometheus_client-0.25.0-py3-none-any.whl", hash = "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1", size = 64154, upload-time = "2026-04-09T19:53:41.324Z" },
+]
+
+[[package]]
 name = "protobuf"
 version = "7.35.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1358,7 +1367,7 @@ wheels = [
 
 [[package]]
 name = "wardn-hub-api"
-version = "0.2.47"
+version = "0.2.48"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1374,6 +1383,7 @@ dependencies = [
     { name = "opentelemetry-instrumentation-logging" },
     { name = "opentelemetry-instrumentation-sqlalchemy" },
     { name = "opentelemetry-sdk" },
+    { name = "prometheus-client" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic-settings" },
@@ -1408,6 +1418,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-logging", specifier = ">=0.51b0" },
     { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.51b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.30.0" },
+    { name = "prometheus-client", specifier = ">=0.22.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.2.1" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },

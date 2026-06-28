@@ -11,6 +11,8 @@ from typing import Any, Protocol, TypeVar
 from redis import Redis
 from redis.sentinel import Sentinel
 
+from app.modules.metrics import service as metrics_service
+
 QUEUE_BACKEND_ENV = "WARDN_HUB_WEBHOOK_QUEUE_BACKEND"
 REDIS_URL_ENV = "WARDN_HUB_WEBHOOK_REDIS_URL"
 REDIS_SENTINELS_ENV = "WARDN_HUB_WEBHOOK_REDIS_SENTINELS"
@@ -38,6 +40,8 @@ class WebhookQueue(Protocol[JobT]):
     def stop(self) -> None: ...
 
     def enqueue(self, job: JobT) -> bool: ...
+
+    def queue_depths(self) -> list[metrics_service.QueueDepth]: ...
 
 
 class QueueJob(Protocol):
@@ -198,6 +202,7 @@ class RedisReliableWebhookQueue[JobT]:
         dedupe_key = self.dedupe_key_prefix + dedupe_value
         inserted = self.redis.set(dedupe_key, "1", nx=True, ex=self.dedupe_ttl_seconds)
         if not inserted:
+            metrics_service.record_webhook_enqueue(self.name, queued=False)
             return False
         payload = serialize_job(job)  # type: ignore[arg-type]
         try:
@@ -205,7 +210,17 @@ class RedisReliableWebhookQueue[JobT]:
         except Exception:
             self.redis.delete(dedupe_key)
             raise
+        metrics_service.record_webhook_enqueue(self.name, queued=True)
         return True
+
+    def queue_depths(self) -> list[metrics_service.QueueDepth]:
+        return [
+            metrics_service.QueueDepth(
+                name=self.name,
+                pending=int(self.redis.llen(self.pending_key)),
+                processing=int(self.redis.llen(self.processing_key)),
+            )
+        ]
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -219,18 +234,23 @@ class RedisReliableWebhookQueue[JobT]:
             self._process_payload(str(payload))
 
     def _process_payload(self, payload: str) -> None:
+        result = "success"
         try:
             job = self.job_from_payload(json.loads(payload))
-            exit_code = self.process_job(job)
+            with metrics_service.webhook_job_timer(self.name):
+                exit_code = self.process_job(job)
             if exit_code != 0:
+                result = "nonzero"
                 print(
                     f"{self.log_prefix}: job exited {exit_code}",
                     file=sys.stderr,
                     flush=True,
                 )
         except Exception as exc:  # noqa: BLE001 - worker must keep consuming jobs.
+            result = "failed"
             print(f"{self.log_prefix}: job failed: {exc}", file=sys.stderr, flush=True)
         finally:
+            metrics_service.record_webhook_processed(self.name, result)
             self.redis.lrem(self.processing_key, 1, payload)
 
     def _reclaim_interrupted_jobs(self) -> None:

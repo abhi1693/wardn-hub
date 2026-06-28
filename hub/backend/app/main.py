@@ -8,6 +8,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.telemetry import configure_telemetry
+from app.modules.metrics.router import router as metrics_router
 
 
 @asynccontextmanager
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.include_router(metrics_router)
     configure_telemetry(app)
     return app
 

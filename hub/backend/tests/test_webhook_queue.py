@@ -51,6 +51,9 @@ class FakeRedis:
             return 0
         return 1
 
+    def llen(self, key: str) -> int:
+        return len(self.lists.setdefault(key, []))
+
 
 @dataclass(frozen=True)
 class ExampleJob:

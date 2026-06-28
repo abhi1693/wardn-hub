@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 
 from app.cli import fix_rejected_submissions
 from app.cli.webhook_queue import (
@@ -22,6 +22,7 @@ from app.cli.webhook_queue import (
     durable_queue_requested,
 )
 from app.modules.events.security import verify_webhook_signature
+from app.modules.metrics import service as metrics_service
 
 WEBHOOK_SECRET_ENV = "WARDN_HUB_FIX_REJECTED_WEBHOOK_SECRET"
 WEBHOOK_PATH_ENV = "WARDN_HUB_FIX_REJECTED_WEBHOOK_PATH"
@@ -85,19 +86,33 @@ class RejectedSubmissionFixQueue:
         dedupe_key = job.delivery_id or job.event_id or job.submission_id
         with self._lock:
             if dedupe_key in self._seen:
+                metrics_service.record_webhook_enqueue("rejected-submission-fix", queued=False)
                 return False
             self._seen.add(dedupe_key)
         self._jobs.put(job)
+        metrics_service.record_webhook_enqueue("rejected-submission-fix", queued=True)
         return True
+
+    def queue_depths(self) -> list[metrics_service.QueueDepth]:
+        return [
+            metrics_service.QueueDepth(
+                name="rejected-submission-fix",
+                pending=self._jobs.qsize(),
+                processing=0,
+            )
+        ]
 
     def _run(self) -> None:
         while True:
             job = self._jobs.get()
             if job is None:
                 return
+            result = "success"
             try:
-                exit_code = fix_rejected_submissions.main(build_fix_args(self.settings, job))
+                with metrics_service.webhook_job_timer("rejected-submission-fix"):
+                    exit_code = fix_rejected_submissions.main(build_fix_args(self.settings, job))
                 if exit_code != 0:
+                    result = "nonzero"
                     print(
                         "submission fix webhook: "
                         f"fix job for {job.submission_id} exited {exit_code}",
@@ -105,12 +120,14 @@ class RejectedSubmissionFixQueue:
                         flush=True,
                     )
             except Exception as exc:  # noqa: BLE001 - worker must keep consuming jobs.
+                result = "failed"
                 print(
                     f"submission fix webhook: fix job for {job.submission_id} failed: {exc}",
                     file=sys.stderr,
                     flush=True,
                 )
             finally:
+                metrics_service.record_webhook_processed("rejected-submission-fix", result)
                 self._jobs.task_done()
 
 
@@ -211,6 +228,15 @@ def create_app(
     @app.get("/health/ready")
     async def health_ready() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        return Response(
+            content=metrics_service.process_metrics_text(
+                metrics_service.queue_depth_metrics(jobs.queue_depths())
+            ),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     @app.post(path, status_code=status.HTTP_202_ACCEPTED)
     async def receive_rejected_submission_webhook(request: Request) -> dict[str, str | bool]:
