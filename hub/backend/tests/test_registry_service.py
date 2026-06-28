@@ -335,7 +335,7 @@ def test_category_values_extracts_publisher_metadata() -> None:
         service.PUBLISHER_META_KEY: {
             "category": "Development",
             "categories": ["Cloud Service", "Development"],
-        }
+        },
     }
 
     assert service.category_values(payload) == [
@@ -433,23 +433,19 @@ async def test_create_category_advances_duplicate_requested_sort_order(monkeypat
 
 
 def test_seed_categories_match_mcpservers_taxonomy() -> None:
-    assert [category.name for category in MCP_SERVERS_CATEGORY_SEEDS] == [
-        "Search",
-        "Web Scraping",
-        "Communication",
-        "Productivity",
-        "Marketing",
-        "Design",
-        "Memory",
-        "Finance",
-        "Development",
-        "Database",
-        "Cloud Service",
-        "File System",
-        "Cloud Storage",
-        "Version Control",
-        "Other",
+    assert [category.slug for category in MCP_SERVERS_CATEGORY_SEEDS[:4]] == [
+        "aggregators",
+        "art-culture",
+        "architecture-design",
+        "browser-automation",
     ]
+    assert [category.slug for category in MCP_SERVERS_CATEGORY_SEEDS[-4:]] == [
+        "travel-transportation",
+        "version-control",
+        "workplace-productivity",
+        "other-tools-integrations",
+    ]
+    assert len(MCP_SERVERS_CATEGORY_SEEDS) == 50
     assert len({category.slug for category in MCP_SERVERS_CATEGORY_SEEDS}) == len(
         MCP_SERVERS_CATEGORY_SEEDS
     )
@@ -482,8 +478,8 @@ async def test_seed_default_categories_uses_seed_taxonomy(monkeypatch) -> None:
     response = await service.seed_default_categories(FakeSession())
 
     assert captured == MCP_SERVERS_CATEGORY_SEEDS
-    assert response.categories[0].slug == "search"
-    assert response.categories[-1].slug == "other"
+    assert response.categories[0].slug == "aggregators"
+    assert response.categories[-1].slug == "other-tools-integrations"
 
 
 @pytest.mark.asyncio
@@ -521,9 +517,7 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     assert response.server.latest_version.version == "1.0.0"
     assert response.version.is_latest is True
     assert response.version.server_json["name"] == "io.github.example/weather"
-    event_types = [
-        item.event_type for item in session.added if isinstance(item, EventRecord)
-    ]
+    event_types = [item.event_type for item in session.added if isinstance(item, EventRecord)]
     assert event_types == ["registry.server.published", "registry.version.published"]
 
 
@@ -556,9 +550,7 @@ async def test_create_existing_server_version_emits_version_event_only(monkeypat
 
     await service.create_server_version(session, registry_payload("2.0.0"))
 
-    event_types = [
-        item.event_type for item in session.added if isinstance(item, EventRecord)
-    ]
+    event_types = [item.event_type for item in session.added if isinstance(item, EventRecord)]
     assert event_types == ["registry.version.published"]
 
 
@@ -788,11 +780,11 @@ async def test_list_published_servers_returns_full_version_data(monkeypatch) -> 
     version_payload = response.servers[0].versions[0].model_dump(by_alias=True)
     assert set(version_payload) == {
         "id",
-            "version",
-            "qualityScore",
-            "trustReport",
-            "packages",
-            "remotes",
+        "version",
+        "qualityScore",
+        "trustReport",
+        "packages",
+        "remotes",
         "status",
         "statusMessage",
         "isLatest",
@@ -862,8 +854,7 @@ async def test_list_published_servers_groups_versions_under_their_server(monkeyp
     response = await service.list_published_servers(FakeSession(), page=1)
 
     versions_by_server = {
-        item.name: [version.id for version in item.versions]
-        for item in response.servers
+        item.name: [version.id for version in item.versions] for item in response.servers
     }
     assert versions_by_server == {
         weather.name: [weather_v2.id, weather_v1.id],

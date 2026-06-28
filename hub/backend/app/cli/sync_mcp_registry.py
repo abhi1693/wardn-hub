@@ -18,7 +18,7 @@ from app.modules.imports.service import import_server_source
 API_PREFIX = "/api/v1"
 DEFAULT_HUB_API_BASE_URL = "http://localhost:8000/api/v1"
 DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0.1/servers"
-DEFAULT_CATEGORY = "modelcontextprotocol-registry"
+DEFAULT_CATEGORY = "other-tools-integrations"
 HUB_TOKEN_ENV = "WARDN_HUB_TOKEN"
 HUB_API_BASE_URL_ENV = "WARDN_HUB_API_BASE_URL"
 REGISTRY_URL_ENV = "WARDN_HUB_MCP_REGISTRY_URL"
@@ -709,9 +709,7 @@ def sync_registry(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli.sync_mcp_registry",
-        description=(
-            "Import official MCP registry metadata into Wardn Hub as server submissions."
-        ),
+        description=("Import official MCP registry metadata into Wardn Hub as server submissions."),
     )
     parser.add_argument(
         "--registry-url",
