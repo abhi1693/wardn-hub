@@ -45,6 +45,7 @@ const publicItems: HeaderItem[] = [
   { href: "/", label: "Explore" },
   { href: "/categories", label: "Categories" },
   { href: "/users", label: "Users" },
+  { href: "/api/v1/docs", label: "API docs" },
   { href: "/advertise", label: "Advertise" },
 ];
 

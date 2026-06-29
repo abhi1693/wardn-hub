@@ -17,6 +17,7 @@ const footerSections = [
       { href: "/submit", label: "Submit" },
       { href: "/submissions", label: "Submissions" },
       { href: "/advertise", label: "Advertise" },
+      { href: "/api/v1/docs", label: "API docs" },
       { href: "/account/api-tokens", label: "API tokens" },
       { href: "/login", label: "Sign in" },
     ],

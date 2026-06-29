@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.api.router import api_router
 from app.core.config import get_settings
@@ -26,9 +27,17 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         openapi_url=f"{settings.api_prefix}/openapi.json",
         docs_url=f"{settings.api_prefix}/docs",
-        redoc_url=None,
+        redoc_url=f"{settings.api_prefix}/redoc",
         lifespan=lifespan,
     )
+
+    @app.get("/docs", include_in_schema=False)
+    async def docs_redirect() -> RedirectResponse:
+        return RedirectResponse(f"{settings.api_prefix}/docs")
+
+    @app.get("/redoc", include_in_schema=False)
+    async def redoc_redirect() -> RedirectResponse:
+        return RedirectResponse(f"{settings.api_prefix}/redoc")
 
     app.add_middleware(
         CORSMiddleware,
