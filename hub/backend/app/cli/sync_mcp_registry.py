@@ -4,6 +4,7 @@ import argparse
 import copy
 import os
 import sys
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -18,6 +19,8 @@ from app.modules.imports.service import import_server_source
 API_PREFIX = "/api/v1"
 DEFAULT_HUB_API_BASE_URL = "http://localhost:8000/api/v1"
 DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0.1/servers"
+DEFAULT_REGISTRY_RETRIES = 3
+DEFAULT_REGISTRY_RETRY_DELAY_SECONDS = 2.0
 DEFAULT_CATEGORY = "other-tools-integrations"
 INITIAL_SERVER_VERSION = "1.0.0"
 HUB_TOKEN_ENV = "WARDN_HUB_TOKEN"
@@ -193,8 +196,12 @@ class MCPRegistryClient:
         registry_url: str,
         timeout_seconds: float,
         user_agent: str,
+        retries: int = DEFAULT_REGISTRY_RETRIES,
+        retry_delay_seconds: float = DEFAULT_REGISTRY_RETRY_DELAY_SECONDS,
     ) -> None:
         self.registry_url = registry_url.strip() or DEFAULT_REGISTRY_URL
+        self.retries = max(1, retries)
+        self.retry_delay_seconds = max(0.0, retry_delay_seconds)
         self._client = httpx.Client(
             timeout=timeout_seconds,
             headers={"Accept": "application/json", "User-Agent": user_agent or DEFAULT_USER_AGENT},
@@ -216,7 +223,23 @@ class MCPRegistryClient:
             params["cursor"] = cursor
         if updated_since:
             params["updated_since"] = updated_since
-        response = self._client.get(self.registry_url, params=params)
+
+        last_error: httpx.HTTPError | None = None
+        for attempt in range(1, self.retries + 1):
+            try:
+                response = self._client.get(self.registry_url, params=params)
+                break
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt >= self.retries:
+                    raise UserFacingError(
+                        "official MCP registry request failed after "
+                        f"{self.retries} attempt(s): {exc}"
+                    ) from exc
+                time.sleep(self.retry_delay_seconds)
+        else:
+            raise UserFacingError("official MCP registry request failed") from last_error
+
         if response.status_code >= 400:
             raise UserFacingError(
                 f"official MCP registry returned {response.status_code} from {response.url}: "
@@ -904,6 +927,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-records", type=int, default=None, help="Stop after N records.")
     parser.add_argument("--http-timeout", type=float, default=30.0, help="HTTP timeout seconds.")
     parser.add_argument(
+        "--registry-retries",
+        type=int,
+        default=DEFAULT_REGISTRY_RETRIES,
+        help="Attempts for each official registry page fetch.",
+    )
+    parser.add_argument(
+        "--registry-retry-delay",
+        type=float,
+        default=DEFAULT_REGISTRY_RETRY_DELAY_SECONDS,
+        help="Seconds to wait between official registry fetch retries.",
+    )
+    parser.add_argument(
         "--user-agent",
         default=os.getenv(USER_AGENT_ENV, DEFAULT_USER_AGENT),
         help=f"HTTP User-Agent. Defaults to ${USER_AGENT_ENV}.",
@@ -926,6 +961,10 @@ def main(argv: list[str] | None = None) -> int:
             raise UserFacingError("use either --updated-since or --since-days, not both")
         if args.since_days is not None and args.since_days <= 0:
             raise UserFacingError("--since-days must be greater than 0")
+        if args.registry_retries < 1:
+            raise UserFacingError("--registry-retries must be at least 1")
+        if args.registry_retry_delay < 0:
+            raise UserFacingError("--registry-retry-delay must be greater than or equal to 0")
 
         token = (args.token or os.getenv(HUB_TOKEN_ENV, "")).strip()
         if not token and not args.dry_run:
@@ -949,6 +988,8 @@ def main(argv: list[str] | None = None) -> int:
             registry_url=args.registry_url,
             timeout_seconds=args.http_timeout,
             user_agent=args.user_agent,
+            retries=args.registry_retries,
+            retry_delay_seconds=args.registry_retry_delay,
         )
         try:
             stats = sync_registry(

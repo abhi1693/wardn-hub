@@ -83,6 +83,37 @@ class FakeRegistry:
         return self.pages.pop(0)
 
 
+class FakeResponse:
+    def __init__(
+        self,
+        payload: Any,
+        *,
+        status_code: int = 200,
+        url: str = "https://registry.test",
+    ) -> None:
+        self.payload = payload
+        self.status_code = status_code
+        self.url = url
+
+    def json(self) -> Any:
+        return self.payload
+
+
+class FlakyHttpClient:
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+        self.requests: list[dict[str, Any]] = []
+
+    def get(self, url: str, *, params: dict[str, Any]):
+        self.requests.append({"url": url, "params": params})
+        if len(self.requests) <= self.failures:
+            raise cli.httpx.ConnectError("tls eof")
+        return FakeResponse({"servers": [], "metadata": {}})
+
+    def close(self) -> None:
+        pass
+
+
 def registry_entry(
     *,
     name: str = "io.github.example/weather",
@@ -559,6 +590,57 @@ def test_sync_registry_verbose_prints_page_and_record_progress(
     assert "fetched page 1: records=1" in output
     assert "dry-run candidate: name=io.github.example/one version=1.0.0 reason=dry_run" in output
     assert "registry pagination complete" in output
+
+
+def test_mcp_registry_client_retries_transient_registry_errors(monkeypatch) -> None:
+    client = cli.MCPRegistryClient(
+        registry_url="https://registry.test/v0.1/servers",
+        timeout_seconds=1,
+        user_agent="test",
+        retries=3,
+        retry_delay_seconds=10,
+    )
+    flaky = FlakyHttpClient(failures=2)
+    client._client = flaky  # type: ignore[assignment]
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    payload = client.list_servers(
+        cursor="cursor-1",
+        limit=25,
+        version="latest",
+        updated_since=None,
+    )
+
+    assert payload == {"servers": [], "metadata": {}}
+    assert len(flaky.requests) == 3
+    assert flaky.requests[-1]["params"] == {
+        "cursor": "cursor-1",
+        "limit": 25,
+        "version": "latest",
+    }
+
+
+def test_mcp_registry_client_reports_retry_exhaustion(monkeypatch) -> None:
+    client = cli.MCPRegistryClient(
+        registry_url="https://registry.test/v0.1/servers",
+        timeout_seconds=1,
+        user_agent="test",
+        retries=2,
+        retry_delay_seconds=10,
+    )
+    flaky = FlakyHttpClient(failures=2)
+    client._client = flaky  # type: ignore[assignment]
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(cli.UserFacingError, match="failed after 2 attempt"):
+        client.list_servers(
+            cursor=None,
+            limit=25,
+            version="latest",
+            updated_since=None,
+        )
+
+    assert len(flaky.requests) == 2
 
 
 def test_build_parser_rejects_bad_datetime() -> None:
