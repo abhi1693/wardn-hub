@@ -19,12 +19,19 @@ export type mcpCategoriesListResponse200 = {
   status: 200
 }
 
+export type mcpCategoriesListResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
 export type mcpCategoriesListResponseSuccess = (mcpCategoriesListResponse200) & {
   headers: Headers;
 };
-;
+export type mcpCategoriesListResponseError = (mcpCategoriesListResponse422) & {
+  headers: Headers;
+};
 
-export type mcpCategoriesListResponse = (mcpCategoriesListResponseSuccess)
+export type mcpCategoriesListResponse = (mcpCategoriesListResponseSuccess | mcpCategoriesListResponseError)
 
 export const getMcpCategoriesListUrl = () => {
 

@@ -72,6 +72,9 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/users",
         "/api/v1/users/{user_id}",
         "/api/v1/users/bootstrap",
+        "/v0.1/servers",
+        "/v0.1/servers/{server_name}/versions",
+        "/v0.1/servers/{server_name}/versions/{version}",
     }
 
 

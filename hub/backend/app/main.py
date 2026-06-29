@@ -8,6 +8,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.telemetry import configure_telemetry
+from app.modules.mcp_registry_v01.router import router as mcp_registry_v01_router
 from app.modules.metrics.router import router as metrics_router
 
 
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(mcp_registry_v01_router)
     app.include_router(api_router, prefix=settings.api_prefix)
     app.include_router(metrics_router)
     configure_telemetry(app)
