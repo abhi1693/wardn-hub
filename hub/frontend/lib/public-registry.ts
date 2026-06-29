@@ -1,3 +1,5 @@
+import { cookies, headers } from "next/headers";
+
 import type {
   RegistryCategoryListResponse,
   RegistryPublishedServerListResponse,
@@ -54,15 +56,43 @@ function resolveApiBaseUrl() {
   return stripTrailingSlash(url.toString());
 }
 
+async function registryAuthHeaders() {
+  const forwardedHeaders: Record<string, string> = {};
+
+  try {
+    const requestCookies = await cookies();
+    const cookieHeader = requestCookies.toString();
+    if (cookieHeader) {
+      forwardedHeaders.Cookie = cookieHeader;
+    }
+  } catch {
+    // Build-time catalog helpers run without an HTTP request, so there are no cookies to forward.
+  }
+
+  try {
+    const requestHeaders = await headers();
+    const authorization = requestHeaders.get("authorization");
+    if (authorization) {
+      forwardedHeaders.Authorization = authorization;
+    }
+  } catch {
+    // Static generation has no request headers to forward.
+  }
+
+  return forwardedHeaders;
+}
+
 async function registryRequest<T>(path: string, params?: Record<string, string | number>) {
   const url = new URL(`${resolveApiBaseUrl()}${path}`);
   for (const [key, value] of Object.entries(params ?? {})) {
     url.searchParams.set(key, String(value));
   }
+  const authHeaders = await registryAuthHeaders();
+  const hasAuthHeaders = Object.keys(authHeaders).length > 0;
 
   const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    next: { revalidate: 3600 },
+    ...(hasAuthHeaders ? { cache: "no-store" } : { next: { revalidate: 3600 } }),
+    headers: { Accept: "application/json", ...authHeaders },
   });
 
   if (!response.ok) {

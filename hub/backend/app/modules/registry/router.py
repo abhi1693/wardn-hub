@@ -77,6 +77,8 @@ from app.modules.users.dependencies import (
 )
 from app.modules.users.models import User
 
+CatalogReadUser = Annotated[User, Depends(require_api_token_scopes("catalog:read"))]
+
 catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
 badges_router = APIRouter(prefix="/mcp/badges", tags=["mcp"])
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
@@ -166,6 +168,7 @@ def quality_score_badge_svg(score: int | None) -> str:
 )
 async def list_mcp_categories(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryCategoryListResponse:
     return await list_categories(session)
 
@@ -238,6 +241,7 @@ async def delete_mcp_category(
 )
 async def list_mcp_servers(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     fields: str | None = None,
@@ -281,6 +285,7 @@ async def list_mcp_servers(
 )
 async def search_mcp_servers(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
     q: Annotated[str, Query(min_length=1, max_length=200)],
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -325,6 +330,7 @@ async def search_mcp_servers(
 )
 async def list_mcp_catalog(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
     page: Annotated[int, Query(ge=1)] = 1,
     fields: str | None = None,
 ) -> RegistryPublishedServerListResponse | JSONResponse:
@@ -380,6 +386,7 @@ async def get_mcp_quality_score_badge(
 async def list_mcp_server_versions(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerVersionListResponse:
     try:
         return await list_versions(session, server_name)
@@ -397,6 +404,7 @@ async def get_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerVersionDetailResponse:
     try:
         return await get_version_detail(session, server_name, version)
@@ -439,6 +447,7 @@ async def claim_mcp_server_ownership(
 async def get_mcp_server_summary(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerSummaryResponse:
     try:
         return await get_server_summary(session, server_name)
@@ -455,6 +464,7 @@ async def get_mcp_server_summary(
 async def get_mcp_server_overview_tab(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerOverviewTabResponse:
     try:
         return await get_server_overview_tab(session, server_name)
@@ -471,6 +481,7 @@ async def get_mcp_server_overview_tab(
 async def get_mcp_server_schema_tab(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerSchemaTabResponse:
     try:
         return await get_server_schema_tab(session, server_name)
@@ -487,6 +498,7 @@ async def get_mcp_server_schema_tab(
 async def get_mcp_server_score_tab(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerScoreTabResponse:
     try:
         return await get_server_score_tab(session, server_name)
@@ -503,6 +515,7 @@ async def get_mcp_server_score_tab(
 async def get_mcp_server(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: CatalogReadUser,
 ) -> RegistryServerDetailResponse:
     try:
         return await get_server_detail(session, server_name)

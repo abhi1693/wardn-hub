@@ -29,6 +29,20 @@ def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer wardn_hub_key.secret"}
 
 
+async def catalog_read_session_user():
+    return SimpleNamespace(
+        id=uuid4(),
+        is_active=True,
+        is_superuser=False,
+        is_global_moderator=False,
+        is_global_partner_manager=False,
+    )
+
+
+def allow_catalog_read_session(app) -> None:
+    app.dependency_overrides[dependencies.get_current_user] = catalog_read_session_user
+
+
 def registry_detail_response(server_id, version_id) -> RegistryServerVersionDetailResponse:
     return RegistryServerVersionDetailResponse(
         server=RegistryServerRead(
@@ -230,7 +244,13 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
     )
 
 
-def test_published_servers_route_is_public_and_fixed_page_size(monkeypatch) -> None:
+def test_published_servers_route_requires_authentication() -> None:
+    response = TestClient(create_app()).get("/api/v1/mcp/catalog?page=2")
+
+    assert response.status_code == 401
+
+
+def test_published_servers_route_accepts_session_and_uses_fixed_page_size(monkeypatch) -> None:
     app = create_app()
     captured: dict[str, int] = {}
 
@@ -248,6 +268,7 @@ def test_published_servers_route_is_public_and_fixed_page_size(monkeypatch) -> N
         )
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_published_servers", published_servers)
 
     response = TestClient(app).get("/api/v1/mcp/catalog?page=2")
@@ -258,6 +279,46 @@ def test_published_servers_route_is_public_and_fixed_page_size(monkeypatch) -> N
         "metadata": {"page": 2, "perPage": 20, "total": 0, "pages": 0},
     }
     assert captured == {"page": 2, "per_page": 20}
+
+
+def test_published_servers_route_accepts_catalog_read_api_token(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    async def published_servers(*args, **kwargs):
+        return RegistryPublishedServerListResponse(
+            servers=[],
+            metadata=RegistryPageMetadata(page=1, perPage=20, total=0, pages=0),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_low_scope_api_token)
+    monkeypatch.setattr(router, "list_published_servers", published_servers)
+
+    response = TestClient(app).get("/api/v1/mcp/catalog", headers=auth_headers())
+
+    assert response.status_code == 200
+
+
+def test_server_list_requires_catalog_read_scope_for_api_token(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        dependencies,
+        "authenticate_api_token",
+        authenticate_registry_write_user_api_token,
+    )
+
+    response = TestClient(app).get("/api/v1/mcp/servers", headers=auth_headers())
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "API token missing required scope: catalog:read"}
 
 
 def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
@@ -303,6 +364,7 @@ def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get(
@@ -351,6 +413,7 @@ def test_list_servers_route_rejects_unknown_fields(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get("/api/v1/mcp/servers?fields=id,unknown")
@@ -394,6 +457,7 @@ def test_search_servers_route_forwards_query_and_filters(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get(
@@ -436,6 +500,7 @@ def test_search_servers_route_rejects_blank_query(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get("/api/v1/mcp/servers/search?q=%20%20")
@@ -591,6 +656,7 @@ def test_server_schema_tab_route_preserves_server_name(monkeypatch) -> None:
         }
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "get_server_schema_tab", get_schema_tab)
 
     response = TestClient(app).get(
@@ -623,6 +689,7 @@ def test_server_summary_route_returns_minimal_metadata(monkeypatch) -> None:
         }
 
     app.dependency_overrides[get_db_session] = fake_session
+    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "get_server_summary", get_summary)
 
     response = TestClient(app).get("/api/v1/mcp/servers/io.github.example/weather/summary")
