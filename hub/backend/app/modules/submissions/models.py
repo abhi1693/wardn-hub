@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,3 +52,16 @@ class ServerSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+
+
+Index(
+    "ix_server_submissions_updated_at_id_desc",
+    ServerSubmission.updated_at.desc(),
+    ServerSubmission.id.desc(),
+)
+Index(
+    "ix_server_submissions_status_updated_at_id_desc",
+    ServerSubmission.status,
+    ServerSubmission.updated_at.desc(),
+    ServerSubmission.id.desc(),
+)
