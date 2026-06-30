@@ -241,7 +241,6 @@ async def delete_mcp_category(
 )
 async def list_mcp_servers(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     fields: str | None = None,

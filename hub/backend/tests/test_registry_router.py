@@ -302,23 +302,25 @@ def test_published_servers_route_accepts_catalog_read_api_token(monkeypatch) -> 
     assert response.status_code == 200
 
 
-def test_server_list_requires_catalog_read_scope_for_api_token(monkeypatch) -> None:
+def test_server_list_allows_anonymous_access(monkeypatch) -> None:
     app = create_app()
 
     async def fake_session():
         yield object()
 
+    async def list_servers(*args, **kwargs):
+        return RegistryServerListResponse(
+            servers=[],
+            metadata=RegistryListMetadata(count=0, nextCursor=""),
+        )
+
     app.dependency_overrides[get_db_session] = fake_session
-    monkeypatch.setattr(
-        dependencies,
-        "authenticate_api_token",
-        authenticate_registry_write_user_api_token,
-    )
+    monkeypatch.setattr(router, "list_servers", list_servers)
 
-    response = TestClient(app).get("/api/v1/mcp/servers", headers=auth_headers())
+    response = TestClient(app).get("/api/v1/mcp/servers")
 
-    assert response.status_code == 403
-    assert response.json() == {"detail": "API token missing required scope: catalog:read"}
+    assert response.status_code == 200
+    assert response.json() == {"servers": [], "metadata": {"count": 0, "nextCursor": ""}}
 
 
 def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
