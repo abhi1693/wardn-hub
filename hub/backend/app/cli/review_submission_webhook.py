@@ -49,6 +49,7 @@ class WebhookSettings:
     http_timeout: int
     review_progress_interval: int
     verbose: bool
+    auto_publish: bool = False
 
 
 @dataclass(frozen=True)
@@ -169,8 +170,8 @@ def build_review_args(settings: WebhookSettings, job: ReviewJob) -> list[str]:
         "--once",
         "--non-interactive",
         "--auto-reject",
-        "--auto-approve",
     ]
+    args.append("--auto-publish" if settings.auto_publish else "--auto-approve")
     if settings.model:
         args.extend(["--model", settings.model])
     if settings.thinking:
@@ -310,6 +311,7 @@ def settings_from_env(args: argparse.Namespace) -> WebhookSettings:
         http_timeout=args.http_timeout,
         review_progress_interval=args.review_progress_interval,
         verbose=args.verbose,
+        auto_publish=args.auto_publish,
     )
 
 
@@ -403,6 +405,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="Show live review command logs and progress status.",
+    )
+    parser.add_argument(
+        "--auto-publish",
+        action="store_true",
+        help=(
+            "Approve and publish clean pass reviews from the webhook worker. Requires the "
+            "review token to have publish access."
+        ),
     )
     return parser
 

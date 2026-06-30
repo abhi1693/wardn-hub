@@ -898,6 +898,7 @@ def review_loop(
     stdout: TextIO,
     submission_id: str | None = None,
     non_interactive: bool = False,
+    auto_publish: bool = False,
 ) -> int:
     skipped_ids: set[str] = set()
     completed_reviews = 0
@@ -1006,7 +1007,51 @@ def review_loop(
                     return 1 if review_errors else 0
                 continue
 
-        if auto_approve and should_auto_approve(findings):
+        if auto_publish and should_auto_approve(findings):
+            if can_publish:
+                print("Auto-publishing LLM pass decision.", file=stdout)
+                completed_reviews += 1
+                try:
+                    apply_decision(
+                        client,
+                        current_submission_id,
+                        "approve_publish",
+                        dry_run=dry_run,
+                        stdin=stdin,
+                        stdout=stdout,
+                        suggested_rejection_message=suggested_rejection_message,
+                    )
+                except UserFacingError as exc:
+                    review_errors += 1
+                    skipped_ids.add(current_submission_id)
+                    print(
+                        f"Action failed for {current_submission_id}; skipping it for this run: {exc}",
+                        file=stdout,
+                    )
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
+
+            print(
+                "Auto-publish requested, but the authenticated token does not have publish "
+                + (
+                    f"access; leaving {current_submission_id} unchanged and skipping it "
+                    "for this run."
+                    if non_interactive
+                    else "access; leaving this submission for manual decision."
+                ),
+                file=stdout,
+            )
+            if non_interactive:
+                completed_reviews += 1
+                skipped_ids.add(current_submission_id)
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
+
+        if auto_approve and not auto_publish and should_auto_approve(findings):
             print("Auto-approving LLM pass decision.", file=stdout)
             completed_reviews += 1
             try:
@@ -1206,6 +1251,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--auto-publish",
+        action="store_true",
+        help=(
+            "Automatically approve and publish reviews whose LLM decision is pass. Requires "
+            "a superuser token with submissions:publish access."
+        ),
+    )
+    parser.add_argument(
         "--non-interactive",
         action="store_true",
         help=(
@@ -1262,6 +1315,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             auto_reject=args.auto_reject,
             auto_approve=args.auto_approve,
+            auto_publish=args.auto_publish,
             stdin=sys.stdin,
             stdout=sys.stdout,
             submission_id=args.submission_id.strip() or None,

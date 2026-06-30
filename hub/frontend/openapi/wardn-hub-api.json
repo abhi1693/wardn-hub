@@ -6030,7 +6030,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.60"
+    "version": "0.2.61"
   },
   "openapi": "3.1.0",
   "paths": {

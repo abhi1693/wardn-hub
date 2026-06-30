@@ -345,6 +345,14 @@ def test_auto_approve_argument() -> None:
     assert args.auto_approve is True
 
 
+def test_auto_publish_argument() -> None:
+    default_args = cli.build_parser().parse_args([])
+    args = cli.build_parser().parse_args(["--auto-publish"])
+
+    assert default_args.auto_publish is False
+    assert args.auto_publish is True
+
+
 def test_webhook_safe_arguments() -> None:
     default_args = cli.build_parser().parse_args([])
     args = cli.build_parser().parse_args(
@@ -994,6 +1002,86 @@ Approved.
     assert client.actions == [("approve", "sub-1", None)]
     output = stdout.getvalue()
     assert "Auto-approving LLM pass decision." in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_auto_publishes_llm_pass_with_publish_access() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: pass
+
+Suggested approval note:
+Approved.
+"""
+
+    client = FakeClient([submitted_submission()])
+    user = client.current_user()
+    user["_wardnHubCanPublish"] = True
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=user,
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=False,
+        stdin=StringIO(),
+        stdout=stdout,
+        auto_publish=True,
+    )
+
+    assert result == 0
+    assert client.actions == [
+        ("approve", "sub-1", None),
+        ("publish", "sub-1", None),
+    ]
+    output = stdout.getvalue()
+    assert "Auto-publishing LLM pass decision." in output
+    assert "Approved and published sub-1." in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_auto_publish_leaves_pass_without_publish_access() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return """Decision: pass
+
+Suggested approval note:
+Approved.
+"""
+
+    client = FakeClient([submitted_submission()])
+    user = client.current_user()
+    user["_wardnHubCanPublish"] = False
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=user,
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=False,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+        auto_publish=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "Auto-publish requested" in output
+    assert "does not have publish access" in output
     assert "Decision (" not in output
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -85,6 +86,29 @@ def test_build_review_args_are_webhook_safe() -> None:
         "high",
         "--verbose",
     ]
+
+
+def test_build_review_args_can_auto_publish() -> None:
+    settings = replace(webhook_settings(), auto_publish=True)
+    job = webhook.ReviewJob(
+        submission_id="sub-1",
+        delivery_id="delivery-1",
+        event_id="event-1",
+    )
+
+    args = webhook.build_review_args(settings, job)
+
+    assert "--auto-publish" in args
+    assert "--auto-approve" not in args
+
+
+def test_auto_publish_argument_is_disabled_by_default() -> None:
+    parser = webhook.build_parser()
+    default_args = parser.parse_args([])
+    auto_publish_args = parser.parse_args(["--auto-publish"])
+
+    assert default_args.auto_publish is False
+    assert auto_publish_args.auto_publish is True
 
 
 def test_submission_webhook_verifies_signature_and_queues_submission() -> None:
