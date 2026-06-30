@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,6 +12,14 @@ from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 class EventRecord(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "event_records"
+    __table_args__ = (
+        Index(
+            "ix_event_records_unprocessed_created_at_id",
+            "created_at",
+            "id",
+            postgresql_where=text("processed_at IS NULL"),
+        ),
+    )
 
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     subject_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
