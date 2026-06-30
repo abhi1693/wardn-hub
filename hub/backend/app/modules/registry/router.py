@@ -284,7 +284,6 @@ async def list_mcp_servers(
 )
 async def search_mcp_servers(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
     q: Annotated[str, Query(min_length=1, max_length=200)],
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -385,7 +384,6 @@ async def get_mcp_quality_score_badge(
 async def list_mcp_server_versions(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerVersionListResponse:
     try:
         return await list_versions(session, server_name)
@@ -403,7 +401,6 @@ async def get_mcp_server_version(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerVersionDetailResponse:
     try:
         return await get_version_detail(session, server_name, version)
@@ -446,7 +443,6 @@ async def claim_mcp_server_ownership(
 async def get_mcp_server_summary(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerSummaryResponse:
     try:
         return await get_server_summary(session, server_name)
@@ -463,7 +459,6 @@ async def get_mcp_server_summary(
 async def get_mcp_server_overview_tab(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerOverviewTabResponse:
     try:
         return await get_server_overview_tab(session, server_name)
@@ -480,7 +475,6 @@ async def get_mcp_server_overview_tab(
 async def get_mcp_server_schema_tab(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerSchemaTabResponse:
     try:
         return await get_server_schema_tab(session, server_name)
@@ -497,7 +491,6 @@ async def get_mcp_server_schema_tab(
 async def get_mcp_server_score_tab(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerScoreTabResponse:
     try:
         return await get_server_score_tab(session, server_name)
@@ -514,7 +507,6 @@ async def get_mcp_server_score_tab(
 async def get_mcp_server(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryServerDetailResponse:
     try:
         return await get_server_detail(session, server_name)

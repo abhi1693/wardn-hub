@@ -20,6 +20,7 @@ from app.modules.registry.schemas import (
     RegistryServerListResponse,
     RegistryServerRead,
     RegistryServerVersionDetailResponse,
+    RegistryServerVersionListResponse,
     RegistryServerVersionRead,
 )
 from app.modules.users import dependencies
@@ -366,7 +367,6 @@ def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get(
@@ -415,7 +415,6 @@ def test_list_servers_route_rejects_unknown_fields(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get("/api/v1/mcp/servers?fields=id,unknown")
@@ -459,7 +458,6 @@ def test_search_servers_route_forwards_query_and_filters(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get(
@@ -486,6 +484,62 @@ def test_search_servers_route_forwards_query_and_filters(monkeypatch) -> None:
     assert captured["partner"] is True
 
 
+def test_get_server_detail_route_allows_anonymous_access(monkeypatch) -> None:
+    app = create_app()
+    detail = registry_detail_response(uuid4(), uuid4())
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_detail(_session, server_name):
+        captured["server_name"] = server_name
+        return RegistryServerDetailResponse(server=detail.server, versions=[detail.version])
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_detail", get_detail)
+
+    response = TestClient(app).get("/api/v1/mcp/servers/io.github.example/weather")
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    assert response.json()["server"]["name"] == "io.github.example/weather"
+
+
+def test_server_version_routes_allow_anonymous_access(monkeypatch) -> None:
+    app = create_app()
+    detail = registry_detail_response(uuid4(), uuid4())
+
+    async def fake_session():
+        yield object()
+
+    async def list_server_versions(_session, server_name):
+        assert server_name == "io.github.example/weather"
+        return RegistryServerVersionListResponse(
+            versions=[detail.version],
+            metadata=RegistryListMetadata(count=1, nextCursor=""),
+        )
+
+    async def get_version(_session, server_name, version):
+        assert (server_name, version) == ("io.github.example/weather", "1.0.0")
+        return detail
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_versions", list_server_versions)
+    monkeypatch.setattr(router, "get_version_detail", get_version)
+
+    client = TestClient(app)
+    versions_response = client.get("/api/v1/mcp/servers/io.github.example/weather/versions")
+    version_response = client.get(
+        "/api/v1/mcp/servers/io.github.example/weather/versions/1.0.0"
+    )
+
+    assert versions_response.status_code == 200
+    assert versions_response.json()["versions"][0]["version"] == "1.0.0"
+    assert version_response.status_code == 200
+    assert version_response.json()["version"]["version"] == "1.0.0"
+
+
 def test_search_servers_route_rejects_blank_query(monkeypatch) -> None:
     app = create_app()
     called = False
@@ -502,7 +556,6 @@ def test_search_servers_route_rejects_blank_query(monkeypatch) -> None:
         )
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
 
     response = TestClient(app).get("/api/v1/mcp/servers/search?q=%20%20")
@@ -658,7 +711,6 @@ def test_server_schema_tab_route_preserves_server_name(monkeypatch) -> None:
         }
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "get_server_schema_tab", get_schema_tab)
 
     response = TestClient(app).get(
@@ -670,6 +722,102 @@ def test_server_schema_tab_route_preserves_server_name(monkeypatch) -> None:
     body = response.json()
     assert body["versions"][0]["serverJson"]["name"] == "io.github.example/weather"
     assert set(body["server"]) == {"id", "name", "title", "icons"}
+
+
+def test_server_overview_tab_route_allows_anonymous_access(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_overview_tab(_session, server_name):
+        captured["server_name"] = server_name
+        return {
+            "server": {
+                "id": str(server_id),
+                "name": "io.github.example/weather",
+                "title": "Weather",
+                "description": "Weather tools",
+                "websiteUrl": "https://example.com",
+                "repository": {"url": "https://github.com/example/weather"},
+                "icons": [],
+                "categories": [],
+                "updatedAt": "2026-06-23T00:00:00Z",
+            },
+            "versions": [
+                {
+                    "id": str(version_id),
+                    "version": "1.0.0",
+                    "title": "Weather",
+                    "description": "Weather tools",
+                    "documentation": "# Weather",
+                    "websiteUrl": "https://example.com",
+                    "repository": {"url": "https://github.com/example/weather"},
+                    "isLatest": True,
+                    "partnerSupport": [],
+                    "publishedAt": "2026-06-23T00:00:00Z",
+                    "updatedAt": "2026-06-23T00:00:00Z",
+                    "publishedBy": None,
+                }
+            ],
+            "partnerSupport": [],
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_overview_tab", get_overview_tab)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers/io.github.example/weather/tabs/overview"
+    )
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    assert response.json()["versions"][0]["documentation"] == "# Weather"
+
+
+def test_server_score_tab_route_allows_anonymous_access(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_score_tab(_session, server_name):
+        captured["server_name"] = server_name
+        return {
+            "server": {
+                "id": str(server_id),
+                "name": "io.github.example/weather",
+                "title": "Weather",
+                "icons": [],
+            },
+            "versions": [
+                {
+                    "id": str(version_id),
+                    "version": "1.0.0",
+                    "title": "Weather",
+                    "isLatest": True,
+                    "qualityScore": 96,
+                    "trustReport": None,
+                }
+            ],
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_score_tab", get_score_tab)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers/io.github.example/weather/tabs/score"
+    )
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    assert response.json()["versions"][0]["qualityScore"] == 96
 
 
 def test_server_summary_route_returns_minimal_metadata(monkeypatch) -> None:
@@ -691,7 +839,6 @@ def test_server_summary_route_returns_minimal_metadata(monkeypatch) -> None:
         }
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "get_server_summary", get_summary)
 
     response = TestClient(app).get("/api/v1/mcp/servers/io.github.example/weather/summary")
