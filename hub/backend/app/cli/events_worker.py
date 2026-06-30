@@ -12,6 +12,24 @@ from app.modules.metrics import service as metrics_service
 
 METRICS_PORT_ENV = "WARDN_HUB_EVENTS_WORKER_METRICS_PORT"
 DEFAULT_METRICS_PORT = 8092
+DEFAULT_IDLE_MIN_INTERVAL = 30.0
+DEFAULT_IDLE_MAX_INTERVAL = 60.0
+
+
+def next_poll_interval(
+    *,
+    deliveries_created: int,
+    deliveries_sent: int,
+    active_interval: float,
+    idle_interval: float,
+    idle_min_interval: float,
+    idle_max_interval: float,
+) -> tuple[float, float]:
+    idle_floor = max(idle_min_interval, active_interval)
+    idle_cap = max(idle_max_interval, idle_floor)
+    if deliveries_created > 0 or deliveries_sent > 0:
+        return active_interval, idle_floor
+    return idle_interval, min(idle_interval * 2, idle_cap)
 
 
 async def run_once(*, limit: int) -> tuple[int, int]:
@@ -37,13 +55,33 @@ async def run_once(*, limit: int) -> tuple[int, int]:
                 raise
 
 
-async def run_worker(*, once: bool, limit: int, interval: float) -> None:
+async def run_worker(
+    *,
+    once: bool,
+    limit: int,
+    interval: float,
+    idle_min_interval: float,
+    idle_max_interval: float,
+) -> None:
+    idle_interval = max(idle_min_interval, interval)
     while True:
         deliveries_created, deliveries_sent = await run_once(limit=limit)
-        print(f"events worker: created={deliveries_created} sent={deliveries_sent}")
         if once:
+            print(f"events worker: created={deliveries_created} sent={deliveries_sent}")
             return
-        await asyncio.sleep(interval)
+        sleep_interval, idle_interval = next_poll_interval(
+            deliveries_created=deliveries_created,
+            deliveries_sent=deliveries_sent,
+            active_interval=interval,
+            idle_interval=idle_interval,
+            idle_min_interval=idle_min_interval,
+            idle_max_interval=idle_max_interval,
+        )
+        print(
+            f"events worker: created={deliveries_created} sent={deliveries_sent} "
+            f"next_poll={sleep_interval:g}s"
+        )
+        await asyncio.sleep(sleep_interval)
 
 
 def main() -> None:
@@ -65,7 +103,31 @@ def main() -> None:
             f"Defaults to ${METRICS_PORT_ENV} or {DEFAULT_METRICS_PORT}."
         ),
     )
+    parser.add_argument(
+        "--idle-min-interval",
+        type=float,
+        default=DEFAULT_IDLE_MIN_INTERVAL,
+        help=(
+            "Polling interval after the first idle batch. Defaults to "
+            f"{DEFAULT_IDLE_MIN_INTERVAL:g} seconds."
+        ),
+    )
+    parser.add_argument(
+        "--idle-max-interval",
+        type=float,
+        default=DEFAULT_IDLE_MAX_INTERVAL,
+        help=(
+            "Maximum polling interval while the worker remains idle. Defaults to "
+            f"{DEFAULT_IDLE_MAX_INTERVAL:g} seconds."
+        ),
+    )
     args = parser.parse_args()
+    if args.interval <= 0:
+        parser.error("--interval must be greater than 0")
+    if args.idle_min_interval <= 0:
+        parser.error("--idle-min-interval must be greater than 0")
+    if args.idle_max_interval < args.idle_min_interval:
+        parser.error("--idle-max-interval must be greater than or equal to --idle-min-interval")
 
     configure_telemetry()
     if args.metrics_port > 0:
@@ -73,7 +135,15 @@ def main() -> None:
         print(f"events worker: metrics listening on :{args.metrics_port}/metrics")
 
     try:
-        asyncio.run(run_worker(once=args.once, limit=args.limit, interval=args.interval))
+        asyncio.run(
+            run_worker(
+                once=args.once,
+                limit=args.limit,
+                interval=args.interval,
+                idle_min_interval=args.idle_min_interval,
+                idle_max_interval=args.idle_max_interval,
+            )
+        )
     except KeyboardInterrupt:
         print("events worker: stopped")
 
