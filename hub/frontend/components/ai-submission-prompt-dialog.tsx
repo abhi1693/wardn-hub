@@ -81,10 +81,9 @@ Complete the full flow:
 3. Read the source README and any docs/files needed to verify install, launch, configuration, capabilities, limitations, and metadata.
 4. Merge the importer output with details found in the source review.
 5. Preserve imported package transport fields: command, args, env.
-6. Create the Wardn Hub draft with POST /submissions.
-7. Submit the draft with POST /submissions/{id}/submit.
-8. If submit fails validation, fix the draft and retry.
-9. Do not stop at a draft unless required information cannot be found after source review.
+6. Submit the Wardn Hub draft with POST /submissions/submit.
+7. If submit fails validation, fix the metadata and retry.
+8. Do not stop at a draft unless required information cannot be found after source review.
 
 Critical metadata rules:
 - Do not use environment placeholder values that wrap names in dollar signs and braces.

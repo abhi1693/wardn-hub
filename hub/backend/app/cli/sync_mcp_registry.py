@@ -183,8 +183,9 @@ class WardnHubApiClient:
     def submit_submission(self, submission_id: str) -> dict[str, Any]:
         response = self.request(
             "POST",
-            f"/submissions/{quote(submission_id, safe='')}/submit",
-            expected_statuses={200},
+            "/submissions/submit",
+            payload={"submissionId": submission_id},
+            expected_statuses={201},
         )
         return response.json()
 

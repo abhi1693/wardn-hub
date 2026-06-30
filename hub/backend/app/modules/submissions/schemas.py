@@ -83,6 +83,23 @@ class SubmissionUpdate(BaseModel):
     server_json: RegistryServerVersionCreate | None = Field(default=None, alias="serverJson")
 
 
+class SubmissionSubmitRequest(SubmissionUpdate):
+    submission_id: UUID | None = Field(default=None, alias="submissionId")
+
+    @model_validator(mode="after")
+    def require_server_json_for_new_submissions(self) -> "SubmissionSubmitRequest":
+        if self.submission_id is None and self.server_json is None:
+            raise ValueError("serverJson is required when creating and submitting a new submission")
+        if (
+            self.submission_id is None
+            and (self.submission_type or "new_server") == "new_server"
+            and self.server_json is not None
+            and self.server_json.version != "1.0.0"
+        ):
+            raise ValueError("new server submissions must start at version 1.0.0")
+        return self
+
+
 class SubmissionRejectRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
 

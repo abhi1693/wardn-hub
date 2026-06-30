@@ -96,7 +96,7 @@ def test_build_fix_prompt_copies_frontend_repair_instructions_without_token() ->
     assert "Fetch the submission with GET /submissions/sub-1" in prompt
     assert 'status "draft" or "rejected"' in prompt
     assert "Update the same submission with PUT /submissions/sub-1" in prompt
-    assert "Retry POST /submissions/sub-1/submit" in prompt
+    assert 'Retry POST /submissions/submit with submissionId "sub-1"' in prompt
     assert "Do not create a new submission" in prompt
     assert "Do not update submissions owned by any other user or organization." in prompt
     assert "sourceReview.llm.filesRead" in prompt

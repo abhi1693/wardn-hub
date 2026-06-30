@@ -44,10 +44,10 @@ import type {
   RegistryUserDetailResponse,
   ServerSourceImportRequest,
   ServerSourceImportResponse,
-  SubmissionCreate,
   SubmissionRejectRequest,
   SubmissionRead,
   SubmissionListResponse,
+  SubmissionSubmitRequest,
   SubmissionUpdate,
   SubmissionsListParams,
   UserAPITokenCreate,
@@ -119,13 +119,12 @@ import {
 } from "@/lib/api/generated/partners/partners";
 import {
   getSubmissionsApproveUrl,
-  getSubmissionsCreateUrl,
+  getSubmissionsCreateAndSubmitUrl,
   getSubmissionsDeleteUrl,
   getSubmissionsGetUrl,
   getSubmissionsListUrl,
   getSubmissionsPublishUrl,
   getSubmissionsRejectUrl,
-  getSubmissionsSubmitUrl,
   getSubmissionsUpdateUrl,
   getSubmissionsWithdrawUrl,
 } from "@/lib/api/generated/submissions/submissions";
@@ -411,8 +410,8 @@ export function getSubmission(submissionId: string) {
   return generatedRequest<SubmissionRead>(getSubmissionsGetUrl(encodeURIComponent(submissionId)));
 }
 
-export function createSubmission(payload: SubmissionCreate) {
-  return generatedRequest<SubmissionRead>(getSubmissionsCreateUrl(), {
+export function createAndSubmitSubmission(payload: SubmissionSubmitRequest) {
+  return generatedRequest<SubmissionRead>(getSubmissionsCreateAndSubmitUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -680,12 +679,11 @@ export function deleteApiToken(tokenId: string) {
 
 export function submissionAction(
   submissionId: string,
-  action: "submit" | "withdraw" | "approve" | "publish",
+  action: "withdraw" | "approve" | "publish",
 ) {
   const encodedSubmissionId = encodeURIComponent(submissionId);
   type SubmissionAction = typeof action;
   const urlByAction = {
-    submit: getSubmissionsSubmitUrl,
     withdraw: getSubmissionsWithdrawUrl,
     approve: getSubmissionsApproveUrl,
     publish: getSubmissionsPublishUrl,

@@ -5,11 +5,12 @@
  * OpenAPI spec version: 0.2.60
  */
 import type { RegistryServerVersionCreate } from './registryServerVersionCreate';
-import type { SubmissionUpdateSubmissionType } from './submissionUpdateSubmissionType';
+import type { SubmissionSubmitRequestSubmissionType } from './submissionSubmitRequestSubmissionType';
 
-export interface SubmissionUpdate {
+export interface SubmissionSubmitRequest {
   ownerOrganizationId?: string | null;
   ownerUserId?: string | null;
   serverJson?: RegistryServerVersionCreate | null;
-  submissionType?: SubmissionUpdateSubmissionType;
+  submissionId?: string | null;
+  submissionType?: SubmissionSubmitRequestSubmissionType;
 }

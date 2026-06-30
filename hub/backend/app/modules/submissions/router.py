@@ -27,6 +27,7 @@ from app.modules.submissions.schemas import (
     SubmissionRead,
     SubmissionRejectRequest,
     SubmissionStatus,
+    SubmissionSubmitRequest,
     SubmissionUpdate,
 )
 from app.modules.submissions.service import (
@@ -37,7 +38,7 @@ from app.modules.submissions.service import (
     list_submissions,
     publish_submission,
     reject_submission,
-    submit_submission,
+    submit_submission_request,
     update_submission,
     withdraw_submission,
 )
@@ -96,6 +97,41 @@ async def create_submission_record(
     except SubmissionAccessDeniedError as exc:
         raise forbidden(exc) from exc
     except SubmissionValidationError as exc:
+        raise bad_request(exc) from exc
+    return await commit_response(session, response)
+
+
+@router.post(
+    "/submit",
+    response_model=SubmissionRead,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="submissions_create_and_submit",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+    },
+)
+async def create_and_submit_submission_record(
+    request: Request,
+    payload: SubmissionSubmitRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
+) -> SubmissionRead:
+    try:
+        response = await submit_submission_request(
+            session,
+            current_user,
+            payload,
+            api_token=get_request_api_token(request),
+        )
+    except DuplicatePublishedVersionError as exc:
+        raise conflict(exc) from exc
+    except SubmissionNotFoundError as exc:
+        raise not_found(exc) from exc
+    except SubmissionAccessDeniedError as exc:
+        raise forbidden(exc) from exc
+    except (InvalidSubmissionTransitionError, SubmissionValidationError) as exc:
         raise bad_request(exc) from exc
     return await commit_response(session, response)
 
@@ -191,38 +227,6 @@ async def delete_submission_record(
     except InvalidSubmissionTransitionError as exc:
         raise bad_request(exc) from exc
     await commit_session(session)
-
-
-@router.post(
-    "/{submission_id}/submit",
-    response_model=SubmissionRead,
-    operation_id="submissions_submit",
-    responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse}},
-)
-async def submit_submission_record(
-    submission_id: UUID,
-    request: Request,
-    session: Annotated[AsyncSession, Depends(get_db_session)],
-    current_user: Annotated[User, Depends(require_api_token_scopes("submissions:write"))],
-) -> SubmissionRead:
-    try:
-        response = await submit_submission(
-            session,
-            current_user,
-            submission_id,
-            api_token=get_request_api_token(request),
-        )
-    except SubmissionNotFoundError as exc:
-        raise not_found(exc) from exc
-    except SubmissionAccessDeniedError as exc:
-        raise forbidden(exc) from exc
-    except (
-        InvalidSubmissionTransitionError,
-        DuplicatePublishedVersionError,
-        SubmissionValidationError,
-    ) as exc:
-        raise bad_request(exc) from exc
-    return await commit_response(session, response)
 
 
 @router.post(

@@ -5,10 +5,10 @@
  * OpenAPI spec version: 0.2.60
  */
 
-export type ServerSourceImportSubmissionPayloadSubmissionType = typeof ServerSourceImportSubmissionPayloadSubmissionType[keyof typeof ServerSourceImportSubmissionPayloadSubmissionType];
+export type SubmissionSubmitRequestSubmissionType = typeof SubmissionSubmitRequestSubmissionType[keyof typeof SubmissionSubmitRequestSubmissionType] | null;
 
 
-export const ServerSourceImportSubmissionPayloadSubmissionType = {
+export const SubmissionSubmitRequestSubmissionType = {
   new_server: 'new_server',
   new_version: 'new_version',
   metadata_edit: 'metadata_edit',

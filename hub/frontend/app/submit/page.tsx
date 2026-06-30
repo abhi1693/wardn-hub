@@ -28,12 +28,10 @@ import {
 } from "@/components/ui/select";
 import {
   HubApiError,
+  createAndSubmitSubmission,
   createServerVersion,
-  createSubmission,
   currentUser,
-  submissionAction,
   updateServerVersion,
-  updateSubmission,
 } from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
 
@@ -483,33 +481,37 @@ function SubmitServerPageContent() {
           router.push(defaultReturnPath);
           return;
         }
-        const draft = await createSubmission({
+        const submitted = await createAndSubmitSubmission({
           ownerOrganizationId: ownerOrganizationId || null,
           submissionType: "new_version",
           serverJson,
         });
-        await submissionAction(draft.id, "submit");
+        setSubmissionMode("edit");
+        setEditingSubmissionId(submitted.id);
+        setEditingSubmissionType(submitted.submissionType);
         setSourceImportMessage("");
         router.push(submissionReturnPath);
         return;
       }
 
       const submissionType = isAddingNewVersion ? "new_version" : editingSubmissionType;
-      const draft = isEditingExistingSubmission
-        ? await updateSubmission(editingSubmissionId, {
-            ownerOrganizationId: ownerOrganizationId || null,
-            submissionType,
-            serverJson,
-          })
-        : await createSubmission({
-            ownerOrganizationId: ownerOrganizationId || null,
-            submissionType,
-            serverJson,
-          });
+      const submitted = await createAndSubmitSubmission(
+        isEditingExistingSubmission
+          ? {
+              submissionId: editingSubmissionId,
+              ownerOrganizationId: ownerOrganizationId || null,
+              submissionType,
+              serverJson,
+            }
+          : {
+              ownerOrganizationId: ownerOrganizationId || null,
+              submissionType,
+              serverJson,
+            },
+      );
       setSubmissionMode("edit");
-      setEditingSubmissionId(draft.id);
-      setEditingSubmissionType(draft.submissionType);
-      await submissionAction(draft.id, "submit");
+      setEditingSubmissionId(submitted.id);
+      setEditingSubmissionType(submitted.submissionType);
       setSourceImportMessage("");
       router.push(submissionReturnPath);
     } catch (caught) {

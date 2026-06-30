@@ -95,7 +95,8 @@ class WardnHubFixApiClient(WardnHubApiClient):
     def submit_submission(self, submission_id: str) -> dict[str, Any]:
         return self.request(
             "POST",
-            f"/submissions/{urllib.parse.quote(submission_id, safe='')}/submit",
+            "/submissions/submit",
+            payload={"submissionId": submission_id},
         )
 
 
@@ -267,7 +268,7 @@ Goal:
 - Validate the submission against any submit/review feedback and Wardn Hub review requirements.
 - Read the upstream source/docs needed to fix missing or incomplete metadata.
 - Update the same submission with PUT /submissions/{submission_id}.
-- Retry POST /submissions/{submission_id}/submit.
+- Retry POST /submissions/submit with submissionId "{submission_id}".
 - If submission still fails, repeat the fix/update/submit loop until it passes or the required information cannot be found.
 
 Important:

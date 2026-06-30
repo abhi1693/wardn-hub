@@ -14,7 +14,11 @@ from app.modules.submissions.exceptions import (
     SubmissionAccessDeniedError,
     SubmissionValidationError,
 )
-from app.modules.submissions.schemas import SubmissionCreate, SubmissionUpdate
+from app.modules.submissions.schemas import (
+    SubmissionCreate,
+    SubmissionSubmitRequest,
+    SubmissionUpdate,
+)
 from app.modules.users.models import User, UserAPIToken
 
 
@@ -903,7 +907,11 @@ async def test_global_moderator_cannot_submit_other_user_draft(monkeypatch) -> N
     monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
 
     with pytest.raises(SubmissionAccessDeniedError):
-        await service.submit_submission(FakeSession(), moderator, submission.id)
+        await service.submit_submission_request(
+            FakeSession(),
+            moderator,
+            SubmissionSubmitRequest(submissionId=submission.id),
+        )
 
 
 @pytest.mark.asyncio
@@ -949,7 +957,11 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
         updated_at=response.updated_at,
     )
 
-    submitted = await service.submit_submission(FakeSession(), submitter, response.id)
+    submitted = await service.submit_submission_request(
+        FakeSession(),
+        submitter,
+        SubmissionSubmitRequest(submissionId=response.id),
+    )
     assert submitted.status == "submitted"
     assert created_submission.submitted_at is not None
 
@@ -1039,7 +1051,11 @@ async def test_submit_submission_emits_event_record(monkeypatch) -> None:
     monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
     session = FakeSession()
 
-    await service.submit_submission(session, submitter, submission.id)
+    await service.submit_submission_request(
+        session,
+        submitter,
+        SubmissionSubmitRequest(submissionId=submission.id),
+    )
 
     event = next(item for item in session.added if isinstance(item, EventRecord))
     assert event.event_type == "submission.submitted"
@@ -1047,6 +1063,29 @@ async def test_submit_submission_emits_event_record(monkeypatch) -> None:
     assert event.payload["submission"]["id"] == str(submission.id)
     assert event.payload["submission"]["status"] == "submitted"
     assert event.payload["links"]["submissionApiUrl"] == f"/api/v1/submissions/{submission.id}"
+
+
+@pytest.mark.asyncio
+async def test_create_submission_can_submit_for_review(monkeypatch) -> None:
+    submitter = current_user()
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+    session = FakeSession()
+
+    response = await service.create_submission(
+        session,
+        submitter,
+        SubmissionCreate(serverJson=complete_registry_payload()),
+        submit_for_review=True,
+    )
+
+    assert response.status == "submitted"
+    assert response.submitted_at is not None
+    event_types = [item.event_type for item in session.added if isinstance(item, EventRecord)]
+    assert event_types == ["submission.created", "submission.submitted"]
 
 
 @pytest.mark.asyncio
@@ -1203,7 +1242,11 @@ async def test_submit_submission_rejects_incomplete_source_review(monkeypatch) -
     monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
 
     with pytest.raises(SubmissionValidationError, match="not ready for review"):
-        await service.submit_submission(FakeSession(), submitter, submission.id)
+        await service.submit_submission_request(
+            FakeSession(),
+            submitter,
+            SubmissionSubmitRequest(submissionId=submission.id),
+        )
 
 
 @pytest.mark.asyncio

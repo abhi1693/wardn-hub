@@ -33,6 +33,7 @@ from app.modules.submissions.schemas import (
     SubmissionRead,
     SubmissionStatus,
     SubmissionStatusCounts,
+    SubmissionSubmitRequest,
     SubmissionUpdate,
 )
 from app.modules.users.models import User, UserAPIToken
@@ -878,6 +879,7 @@ async def create_submission(
     payload: SubmissionCreate,
     *,
     api_token: UserAPIToken | None = None,
+    submit_for_review: bool = False,
 ) -> SubmissionRead:
     validation_result = validation_result_for(payload.server_json)
     ensure_validation_passed(validation_result)
@@ -929,7 +931,57 @@ async def create_submission(
         submission=submission,
         occurred_at=submission.created_at or datetime.now(UTC),
     )
+    if submit_for_review:
+        return await submit_submission_record(
+            session,
+            user,
+            submission,
+            api_token=api_token,
+        )
     return submission_response(submission)
+
+
+async def submit_submission_request(
+    session: AsyncSession,
+    user: User,
+    payload: SubmissionSubmitRequest,
+    *,
+    api_token: UserAPIToken | None = None,
+) -> SubmissionRead:
+    if payload.submission_id is None:
+        if payload.server_json is None:
+            raise SubmissionValidationError(
+                "serverJson is required when creating and submitting a new submission"
+            )
+        return await create_submission(
+            session,
+            user,
+            SubmissionCreate(
+                submissionType=payload.submission_type or "new_server",
+                ownerUserId=payload.owner_user_id,
+                ownerOrganizationId=payload.owner_organization_id,
+                serverJson=payload.server_json,
+            ),
+            api_token=api_token,
+            submit_for_review=True,
+        )
+
+    update_data = payload.model_dump(by_alias=True, exclude_unset=True)
+    update_data.pop("submissionId", None)
+    if update_data:
+        await update_submission(
+            session,
+            user,
+            payload.submission_id,
+            SubmissionUpdate.model_validate(update_data),
+            api_token=api_token,
+        )
+    submission = await repository.get_submission_by_id(session, payload.submission_id)
+    if submission is None:
+        raise SubmissionNotFoundError("submission not found")
+    ensure_can_own_or_manage_submission(user, submission)
+    ensure_api_token_submission_access(api_token, submission)
+    return await submit_submission_record(session, user, submission, api_token=api_token)
 
 
 async def update_submission(
@@ -1031,18 +1083,13 @@ async def delete_submission(
     await repository.delete_submission(session, submission)
 
 
-async def submit_submission(
+async def submit_submission_record(
     session: AsyncSession,
     user: User,
-    submission_id: uuid.UUID,
+    submission: ServerSubmission,
     *,
     api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
-    submission = await repository.get_submission_by_id(session, submission_id)
-    if submission is None:
-        raise SubmissionNotFoundError("submission not found")
-    ensure_can_own_or_manage_submission(user, submission)
-    ensure_api_token_submission_access(api_token, submission)
     if submission.status not in {"draft", "rejected"}:
         raise InvalidSubmissionTransitionError("submission cannot be submitted")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)

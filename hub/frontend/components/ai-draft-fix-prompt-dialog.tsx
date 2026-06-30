@@ -36,8 +36,7 @@ Goal:
 - Fetch the draft with GET /submissions/${submissionId}.
 - Validate the draft against the submit/review feedback and Wardn Hub review requirements.
 - Read the upstream source/docs needed to fix missing or incomplete metadata.
-- Update the draft with PUT /submissions/${submissionId}.
-- Retry POST /submissions/${submissionId}/submit.
+- Update and submit the draft with POST /submissions/submit using submissionId "${submissionId}".
 - If submission still fails, repeat the fix/update/submit loop until it passes or the required information cannot be found.
 
 Important:

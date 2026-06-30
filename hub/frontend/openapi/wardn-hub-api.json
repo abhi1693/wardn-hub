@@ -5208,6 +5208,75 @@
         "title": "SubmissionStatusCounts",
         "type": "object"
       },
+      "SubmissionSubmitRequest": {
+        "properties": {
+          "ownerOrganizationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerorganizationid"
+          },
+          "ownerUserId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owneruserid"
+          },
+          "serverJson": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryServerVersionCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submissionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submissionid"
+          },
+          "submissionType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "new_server",
+                  "new_version",
+                  "metadata_edit",
+                  "takedown_appeal"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submissiontype"
+          }
+        },
+        "title": "SubmissionSubmitRequest",
+        "type": "object"
+      },
       "SubmissionUpdate": {
         "properties": {
           "ownerOrganizationId": {
@@ -5961,7 +6030,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.59"
+    "version": "0.2.60"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10337,6 +10406,95 @@
         ]
       }
     },
+    "/api/v1/submissions/submit": {
+      "post": {
+        "operationId": "submissions_create_and_submit",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create And Submit Submission Record",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
     "/api/v1/submissions/{submission_id}": {
       "delete": {
         "operationId": "submissions_delete",
@@ -10745,75 +10903,6 @@
           }
         },
         "summary": "Reject Submission Record",
-        "tags": [
-          "submissions"
-        ]
-      }
-    },
-    "/api/v1/submissions/{submission_id}/submit": {
-      "post": {
-        "operationId": "submissions_submit",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Submission Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubmissionRead"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Submit Submission Record",
         "tags": [
           "submissions"
         ]
