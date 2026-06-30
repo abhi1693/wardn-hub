@@ -8,6 +8,7 @@ from app.modules.registry.schemas import RegistryServerVersionCreate
 
 SubmissionStatus = Literal["draft", "submitted", "approved", "rejected", "withdrawn", "published"]
 SubmissionType = Literal["new_server", "new_version", "metadata_edit", "takedown_appeal"]
+SubmissionOwnerScope = Literal["mine", "all"]
 
 
 class SubmissionCreate(BaseModel):

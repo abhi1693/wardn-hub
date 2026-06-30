@@ -10295,6 +10295,20 @@
             }
           },
           {
+            "in": "query",
+            "name": "ownerScope",
+            "required": false,
+            "schema": {
+              "default": "mine",
+              "enum": [
+                "mine",
+                "all"
+              ],
+              "title": "Ownerscope",
+              "type": "string"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,

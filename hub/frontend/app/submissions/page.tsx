@@ -20,6 +20,8 @@ import {
   SearchX,
   Sparkles,
   Trash2,
+  User as UserIcon,
+  Users,
   XCircle,
 } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +53,7 @@ import { cn } from "@/lib/utils";
 
 type LoadState = "loading" | "ready" | "error" | "auth";
 type StatusFilter = "all" | SubmissionRead["status"];
+type OwnerScopeFilter = "mine" | "all";
 type SubmissionGroup = {
   latest: SubmissionRead;
   name: string;
@@ -67,6 +70,7 @@ const statusOrder: SubmissionRead["status"][] = [
 ];
 const SUBMISSIONS_PAGE_SIZE = 20;
 const statusValues = new Set<StatusFilter>(["all", ...statusOrder]);
+const ownerScopeValues = new Set<OwnerScopeFilter>(["mine", "all"]);
 const emptyStatusCounts = {
   all: 0,
   approved: 0,
@@ -155,6 +159,11 @@ function canPublishSubmissions(user: UserRead | null) {
 function statusFilterFromQuery(value: string | null): StatusFilter {
   if (!value) return "all";
   return statusValues.has(value as StatusFilter) ? (value as StatusFilter) : "all";
+}
+
+function ownerScopeFromQuery(value: string | null): OwnerScopeFilter {
+  if (!value) return "mine";
+  return ownerScopeValues.has(value as OwnerScopeFilter) ? (value as OwnerScopeFilter) : "mine";
 }
 
 function pageFromQuery(value: string | null) {
@@ -649,6 +658,7 @@ function SubmissionsPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const filter = statusFilterFromQuery(searchParams.get("status"));
+  const ownerScope = ownerScopeFromQuery(searchParams.get("ownerScope"));
   const page = pageFromQuery(searchParams.get("page"));
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
@@ -675,19 +685,14 @@ function SubmissionsPageContent() {
         listSubmissions({
           page,
           perPage: SUBMISSIONS_PAGE_SIZE,
+          ownerScope,
           status: filter === "all" ? undefined : filter,
         }),
       ])
         .then(([current, response]) => {
           if (!active) return;
           setUser(current);
-          setSubmissions(
-            sortSubmissions(
-              response.submissions.filter((submission) => {
-                return canReviewSubmissions(current) || submission.submitterUserId === current.id;
-              }),
-            ),
-          );
+          setSubmissions(sortSubmissions(response.submissions));
           setMetadata(response.metadata);
           setStatusCounts({ ...emptyStatusCounts, ...response.statusCounts });
           setState("ready");
@@ -702,7 +707,7 @@ function SubmissionsPageContent() {
       active = false;
       window.clearTimeout(timeoutId);
     };
-  }, [filter, page]);
+  }, [filter, ownerScope, page]);
 
   const counts = statusCounts;
   const groupedSubmissions = useMemo(() => groupSubmissionsByServer(submissions), [submissions]);
@@ -716,6 +721,7 @@ function SubmissionsPageContent() {
   const lastVisibleSubmission = metadata
     ? Math.min(metadata.page * metadata.perPage, metadata.total)
     : submissions.length;
+  const showOwnerScopeFilter = canReviewSubmissions(user);
 
   function filterHref(nextFilter: StatusFilter) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -723,6 +729,18 @@ function SubmissionsPageContent() {
       nextParams.delete("status");
     } else {
       nextParams.set("status", nextFilter);
+    }
+    nextParams.delete("page");
+    const queryString = nextParams.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }
+
+  function ownerScopeHref(nextOwnerScope: OwnerScopeFilter) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextOwnerScope === "mine") {
+      nextParams.delete("ownerScope");
+    } else {
+      nextParams.set("ownerScope", nextOwnerScope);
     }
     nextParams.delete("page");
     const queryString = nextParams.toString();
@@ -859,6 +877,38 @@ function SubmissionsPageContent() {
                     {totalSubmissions === 1 ? "submission" : "submissions"}
                   </span>
                 </span>
+                {showOwnerScopeFilter ? (
+                  <div className="inline-flex overflow-hidden rounded-md border border-border bg-white">
+                    <Link
+                      className={cn(
+                        "inline-flex min-h-9 items-center gap-2 px-3 text-sm font-bold",
+                        ownerScope === "mine"
+                          ? "bg-slate-900 text-white"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                      href={ownerScopeHref("mine")}
+                      replace
+                      scroll={false}
+                    >
+                      <UserIcon className="size-4" />
+                      Mine
+                    </Link>
+                    <Link
+                      className={cn(
+                        "inline-flex min-h-9 items-center gap-2 border-l border-border px-3 text-sm font-bold",
+                        ownerScope === "all"
+                          ? "bg-slate-900 text-white"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                      href={ownerScopeHref("all")}
+                      replace
+                      scroll={false}
+                    >
+                      <Users className="size-4" />
+                      All users
+                    </Link>
+                  </div>
+                ) : null}
                 <Link
                   className={cn(
                     "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",

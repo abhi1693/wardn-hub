@@ -24,6 +24,7 @@ from app.modules.submissions.exceptions import (
 from app.modules.submissions.schemas import (
     SubmissionCreate,
     SubmissionListResponse,
+    SubmissionOwnerScope,
     SubmissionRead,
     SubmissionRejectRequest,
     SubmissionStatus,
@@ -61,6 +62,7 @@ async def list_submission_records(
     page: Annotated[int, Query(ge=1)] = 1,
     per_page: Annotated[int, Query(alias="perPage", ge=1, le=100)] = 20,
     submission_status: Annotated[SubmissionStatus | None, Query(alias="status")] = None,
+    owner_scope: Annotated[SubmissionOwnerScope, Query(alias="ownerScope")] = "mine",
 ) -> SubmissionListResponse:
     return await list_submissions(
         session,
@@ -69,6 +71,7 @@ async def list_submission_records(
         page=page,
         per_page=per_page,
         status=submission_status,
+        owner_scope=owner_scope,
     )
 
 

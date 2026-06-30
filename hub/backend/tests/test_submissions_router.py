@@ -239,7 +239,7 @@ def test_submissions_list_passes_pagination_filters(monkeypatch) -> None:
     monkeypatch.setattr(submissions_router, "list_submissions", list_submission_records)
 
     response = TestClient(app).get(
-        "/api/v1/submissions?page=2&perPage=10&status=submitted",
+        "/api/v1/submissions?page=2&perPage=10&status=submitted&ownerScope=all",
         headers={"Authorization": "Bearer wardn_hub_key.secret"},
     )
 
@@ -254,6 +254,7 @@ def test_submissions_list_passes_pagination_filters(monkeypatch) -> None:
     assert captured["page"] == 2
     assert captured["per_page"] == 10
     assert captured["status"] == "submitted"
+    assert captured["owner_scope"] == "all"
 
 
 def test_publish_submission_validation_error_returns_bad_request(monkeypatch) -> None:

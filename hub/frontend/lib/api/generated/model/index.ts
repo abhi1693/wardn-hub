@@ -187,6 +187,7 @@ export * from './submissionReadStatus';
 export * from './submissionReadSubmissionType';
 export * from './submissionReadValidationResult';
 export * from './submissionRejectRequest';
+export * from './submissionsListOwnerScope';
 export * from './submissionsListParams';
 export * from './submissionsListStatus';
 export * from './submissionStatusCounts';

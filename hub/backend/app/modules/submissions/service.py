@@ -30,6 +30,7 @@ from app.modules.submissions.schemas import (
     SubmissionCreate,
     SubmissionListMetadata,
     SubmissionListResponse,
+    SubmissionOwnerScope,
     SubmissionRead,
     SubmissionStatus,
     SubmissionStatusCounts,
@@ -845,12 +846,13 @@ async def list_submissions(
     page: int = 1,
     per_page: int = 20,
     status: SubmissionStatus | None = None,
+    owner_scope: SubmissionOwnerScope = "mine",
 ) -> SubmissionListResponse:
     offset = (page - 1) * per_page
     submissions, total, raw_status_counts = await repository.list_submissions(
         session,
         user_id=user.id,
-        include_all=can_review_submissions(user),
+        include_all=can_review_submissions(user) and owner_scope == "all",
         organization_ids=api_token_organization_ids(api_token),
         status=status,
         offset=offset,

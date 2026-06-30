@@ -4,6 +4,7 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.2.61
  */
+import type { SubmissionsListOwnerScope } from './submissionsListOwnerScope';
 import type { SubmissionsListStatus } from './submissionsListStatus';
 
 export type SubmissionsListParams = {
@@ -17,4 +18,5 @@ page?: number;
  */
 perPage?: number;
 status?: SubmissionsListStatus;
+ownerScope?: SubmissionsListOwnerScope;
 };

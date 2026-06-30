@@ -747,7 +747,7 @@ async def test_restricted_api_token_cannot_read_submission_outside_allowlist(
 
 
 @pytest.mark.asyncio
-async def test_global_moderator_lists_all_submissions(monkeypatch) -> None:
+async def test_global_moderator_defaults_to_own_submissions(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     async def list_submission_records(*args, **kwargs):
@@ -765,9 +765,49 @@ async def test_global_moderator_lists_all_submissions(monkeypatch) -> None:
     assert response.metadata.page == 1
     assert response.metadata.per_page == 20
     assert response.metadata.total == 0
-    assert captured["include_all"] is True
+    assert captured["include_all"] is False
     assert captured["offset"] == 0
     assert captured["limit"] == 20
+
+
+@pytest.mark.asyncio
+async def test_global_moderator_can_list_all_submissions(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return [], 0, {}
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    response = await service.list_submissions(
+        FakeSession(),
+        current_user(is_global_moderator=True),
+        owner_scope="all",
+    )
+
+    assert response.submissions == []
+    assert response.metadata.total == 0
+    assert captured["include_all"] is True
+
+
+@pytest.mark.asyncio
+async def test_regular_user_cannot_force_all_submission_scope(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return [], 0, {}
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    await service.list_submissions(
+        FakeSession(),
+        current_user(),
+        owner_scope="all",
+    )
+
+    assert captured["include_all"] is False
 
 
 @pytest.mark.asyncio
