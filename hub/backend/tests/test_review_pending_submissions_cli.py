@@ -154,11 +154,12 @@ def test_default_review_command_uses_portable_codex_exec_flags() -> None:
     args = cli.build_parser().parse_args([])
 
     assert args.review_command == (
-        "codex --search exec --sandbox danger-full-access --ignore-user-config "
+        "codex --search exec --ephemeral --sandbox danger-full-access --ignore-user-config "
         "--skip-git-repo-check -"
     )
     assert "--ask-for-approval" not in args.review_command
     assert "--ignore-user-config" in args.review_command
+    assert "--ephemeral" in args.review_command
 
 
 def test_model_argument_is_inserted_into_codex_exec_command() -> None:

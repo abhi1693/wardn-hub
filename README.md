@@ -250,12 +250,14 @@ The token must authenticate a superuser or global moderator and should include
 superuser token with `submissions:publish`. The default review command is Codex:
 
 ```sh
-codex --search exec --sandbox danger-full-access --ignore-user-config --skip-git-repo-check -
+codex --search exec --ephemeral --sandbox danger-full-access --ignore-user-config --skip-git-repo-check -
 ```
 
 The default reviewer ignores Codex user config so local MCP servers do not leak
 into registry moderation, and uses a network-capable sandbox because the review
 must fetch Wardn Hub submission details and upstream source documentation.
+Codex runs in ephemeral mode because completed app-driven reviews are not
+resumed and should not accumulate session history on persistent storage.
 The backend container image includes the `@openai/codex` CLI for the review
 commands. Before running a Codex-backed review, the CLI checks `codex login
 status`; if Codex is not logged in it runs `codex login --device-auth` and waits

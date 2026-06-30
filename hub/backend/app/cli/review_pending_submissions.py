@@ -33,7 +33,7 @@ REVIEW_THINKING_ENV = "WARDN_HUB_REVIEW_THINKING"
 REVIEW_PROGRESS_INTERVAL_ENV = "WARDN_HUB_REVIEW_PROGRESS_INTERVAL"
 DEFAULT_USER_AGENT = "WardnHubReviewCLI/0.1"
 DEFAULT_REVIEW_COMMAND = (
-    "codex --search exec --sandbox danger-full-access --ignore-user-config "
+    "codex --search exec --ephemeral --sandbox danger-full-access --ignore-user-config "
     "--skip-git-repo-check -"
 )
 THINKING_LEVELS = ("low", "medium", "high", "xhigh")
