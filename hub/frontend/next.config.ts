@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.1.101"],
   devIndicators: false,
   output: "standalone",
+  productionBrowserSourceMaps: true,
   async headers() {
     return [
       {
