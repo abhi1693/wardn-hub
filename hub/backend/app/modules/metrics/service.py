@@ -13,7 +13,7 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.events.models import EventDelivery, EventRecord, EventRule
@@ -215,6 +215,87 @@ async def submission_metrics(session: AsyncSession) -> list[str]:
             func.count(),
         ).group_by(validation_status)
     )
+    review_backlog = await session.execute(
+        select(func.count())
+        .select_from(ServerSubmission)
+        .where(ServerSubmission.status == "submitted")
+    )
+    review_backlog_oldest = await session.execute(
+        select(
+            func.max(
+                func.extract(
+                    "epoch",
+                    func.now()
+                    - func.coalesce(
+                        ServerSubmission.submitted_at,
+                        ServerSubmission.updated_at,
+                        ServerSubmission.created_at,
+                    ),
+                )
+            )
+        ).where(ServerSubmission.status == "submitted")
+    )
+    review_backlog_age_buckets = await session.execute(
+        text(
+            """
+            SELECT bucket, count(*) AS count
+            FROM (
+                SELECT CASE
+                    WHEN now() - coalesce(submitted_at, updated_at, created_at) < interval '1 hour'
+                        THEN 'lt_1h'
+                    WHEN now() - coalesce(submitted_at, updated_at, created_at) < interval '6 hours'
+                        THEN '1h_6h'
+                    WHEN now() - coalesce(submitted_at, updated_at, created_at)
+                        < interval '24 hours'
+                        THEN '6h_24h'
+                    ELSE 'gte_24h'
+                END AS bucket
+                FROM server_submissions
+                WHERE status = 'submitted'
+            ) backlog
+            GROUP BY bucket
+            ORDER BY bucket
+            """
+        )
+    )
+    submission_events_24h = await session.execute(
+        text(
+            """
+            SELECT replace(event_type, 'submission.', '') AS action, count(*) AS count
+            FROM event_records
+            WHERE event_type IN (
+                'submission.created',
+                'submission.submitted',
+                'submission.approved',
+                'submission.rejected',
+                'submission.published',
+                'submission.withdrawn'
+            )
+                AND created_at >= now() - interval '24 hours'
+            GROUP BY action
+            ORDER BY action
+            """
+        )
+    )
+    submission_events_7d = await session.execute(
+        text(
+            """
+            SELECT replace(event_type, 'submission.', '') AS action, count(*) AS count
+            FROM event_records
+            WHERE event_type IN (
+                'submission.created',
+                'submission.submitted',
+                'submission.approved',
+                'submission.rejected',
+                'submission.published',
+                'submission.withdrawn'
+            )
+                AND created_at >= now() - interval '7 days'
+            GROUP BY action
+            ORDER BY action
+            """
+        )
+    )
 
     lines: list[str] = []
     lines.extend(
@@ -289,6 +370,77 @@ async def submission_metrics(session: AsyncSession) -> list[str]:
                     {"rank": str(index)},
                 )
                 for index, (_user_id, count) in enumerate(top_submitters.all(), start=1)
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_submission_review_backlog_total",
+            help_text="Submissions currently waiting for review.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_submission_review_backlog_total",
+                    review_backlog.scalar_one() or 0,
+                )
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_submission_review_backlog_oldest_age_seconds",
+            help_text="Age in seconds of the oldest submitted submission waiting for review.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_submission_review_backlog_oldest_age_seconds",
+                    review_backlog_oldest.scalar_one() or 0,
+                )
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_submission_review_backlog_age_bucket",
+            help_text="Submitted submissions waiting for review by age bucket.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_submission_review_backlog_age_bucket",
+                    count,
+                    {"bucket": str(bucket)},
+                )
+                for bucket, count in review_backlog_age_buckets.all()
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_submission_events_24h_total",
+            help_text="Submission lifecycle events recorded in the last 24 hours.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_submission_events_24h_total",
+                    count,
+                    {"action": str(action)},
+                )
+                for action, count in submission_events_24h.all()
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_submission_events_7d_total",
+            help_text="Submission lifecycle events recorded in the last 7 days.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_submission_events_7d_total",
+                    count,
+                    {"action": str(action)},
+                )
+                for action, count in submission_events_7d.all()
             ],
         )
     )
@@ -505,6 +657,30 @@ async def event_metrics(session: AsyncSession) -> list[str]:
     event_backlog = await session.execute(
         select(func.count()).select_from(EventRecord).where(EventRecord.processed_at.is_(None))
     )
+    delivery_backlog = await session.execute(
+        select(EventDelivery.status, EventDelivery.destination_type, func.count())
+        .where(EventDelivery.status.in_(["pending", "retrying", "running"]))
+        .group_by(EventDelivery.status, EventDelivery.destination_type)
+    )
+    due_deliveries = await session.execute(
+        select(EventDelivery.status, EventDelivery.destination_type, func.count())
+        .where(
+            EventDelivery.status.in_(["pending", "retrying"]),
+            or_(
+                EventDelivery.next_attempt_at.is_(None),
+                EventDelivery.next_attempt_at <= func.now(),
+            ),
+        )
+        .group_by(EventDelivery.status, EventDelivery.destination_type)
+    )
+    failed_deliveries_24h = await session.execute(
+        select(EventDelivery.destination_type, func.count())
+        .where(
+            EventDelivery.status == "failed",
+            EventDelivery.updated_at >= func.now() - text("interval '24 hours'"),
+        )
+        .group_by(EventDelivery.destination_type)
+    )
 
     lines: list[str] = []
     lines.extend(
@@ -573,6 +749,51 @@ async def event_metrics(session: AsyncSession) -> list[str]:
                     "wardn_event_unprocessed_records_total",
                     event_backlog.scalar_one() or 0,
                 )
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_event_delivery_backlog_total",
+            help_text="Event deliveries still requiring worker action by status and destination.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_event_delivery_backlog_total",
+                    count,
+                    {"status": str(status), "destination_type": str(destination_type)},
+                )
+                for status, destination_type, count in delivery_backlog.all()
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_event_delivery_due_total",
+            help_text="Pending or retrying event deliveries due to be attempted now.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_event_delivery_due_total",
+                    count,
+                    {"status": str(status), "destination_type": str(destination_type)},
+                )
+                for status, destination_type, count in due_deliveries.all()
+            ],
+        )
+    )
+    lines.extend(
+        metric_block(
+            name="wardn_event_delivery_failures_24h_total",
+            help_text="Event deliveries that failed in the last 24 hours.",
+            metric_type="gauge",
+            samples=[
+                metric_line(
+                    "wardn_event_delivery_failures_24h_total",
+                    count,
+                    {"destination_type": str(destination_type)},
+                )
+                for destination_type, count in failed_deliveries_24h.all()
             ],
         )
     )
