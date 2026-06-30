@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,8 @@ from app.modules.submissions.models import ServerSubmission
 from app.modules.users.models import User, UserAPIToken
 
 PROCESS_REGISTRY = CollectorRegistry()
+REGISTRY_METRICS_CACHE_TTL_ENV = "WARDN_HUB_REGISTRY_METRICS_CACHE_TTL_SECONDS"
+DEFAULT_REGISTRY_METRICS_CACHE_TTL_SECONDS = 300.0
 
 WEBHOOK_JOBS_ENQUEUED = Counter(
     "wardn_webhook_jobs_enqueued_total",
@@ -72,6 +75,30 @@ class QueueDepth:
     processing: int
 
 
+@dataclass(frozen=True)
+class CachedMetricLines:
+    expires_at: float
+    lines: tuple[str, ...]
+
+
+_registry_metrics_cache: CachedMetricLines | None = None
+
+
+def registry_metrics_cache_ttl_seconds() -> float:
+    value = os.getenv(REGISTRY_METRICS_CACHE_TTL_ENV, "").strip()
+    if not value:
+        return DEFAULT_REGISTRY_METRICS_CACHE_TTL_SECONDS
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return DEFAULT_REGISTRY_METRICS_CACHE_TTL_SECONDS
+
+
+def clear_registry_metrics_cache() -> None:
+    global _registry_metrics_cache
+    _registry_metrics_cache = None
+
+
 def escape_label_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
@@ -114,11 +141,35 @@ async def grouped_counts(
 async def collect_database_metrics(session: AsyncSession) -> str:
     lines: list[str] = []
     lines.extend(await submission_metrics(session))
-    lines.extend(await registry_metrics(session))
+    lines.extend(await cached_registry_metrics(session))
     lines.extend(await event_metrics(session))
     lines.extend(await user_metrics(session))
     lines.append("")
     return "\n".join(lines)
+
+
+async def cached_registry_metrics(
+    session: AsyncSession,
+    *,
+    now: Callable[[], float] = time.monotonic,
+) -> list[str]:
+    global _registry_metrics_cache
+
+    ttl_seconds = registry_metrics_cache_ttl_seconds()
+    if ttl_seconds <= 0:
+        return await registry_metrics(session)
+
+    current_time = now()
+    cached = _registry_metrics_cache
+    if cached is not None and cached.expires_at > current_time:
+        return list(cached.lines)
+
+    lines = await registry_metrics(session)
+    _registry_metrics_cache = CachedMetricLines(
+        expires_at=now() + ttl_seconds,
+        lines=tuple(lines),
+    )
+    return lines
 
 
 async def submission_metrics(session: AsyncSession) -> list[str]:
