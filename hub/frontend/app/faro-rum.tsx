@@ -9,6 +9,7 @@ let faroActionTrackingInitialized = false;
 
 const ACTION_SELECTOR =
   'button, a[href], input[type="button"], input[type="submit"], input[type="reset"], [role="button"], [role="link"]';
+const USER_ACTION_FALLBACK_END_DELAY_MS = 1200;
 
 function installFaroUserActionTracking() {
   if (faroActionTrackingInitialized || typeof document === "undefined") {
@@ -49,9 +50,33 @@ function handleFaroUserAction(event: Event) {
     return;
   }
 
-  faro.api.startUserAction(actionName, getFaroUserActionAttributes(element), {
-    triggerName: event.type,
-  });
+  const userAction = faro.api.startUserAction(
+    actionName,
+    getFaroUserActionAttributes(element),
+    {
+      triggerName: event.type,
+    },
+  );
+
+  scheduleFaroUserActionEnd(userAction);
+}
+
+function scheduleFaroUserActionEnd(
+  userAction: ReturnType<typeof faro.api.startUserAction>,
+) {
+  if (!userAction) {
+    return;
+  }
+
+  window.setTimeout(() => {
+    const activeUserAction = faro.api.getActiveUserAction();
+
+    if (activeUserAction !== userAction) {
+      return;
+    }
+
+    (activeUserAction as typeof activeUserAction & { end?: () => void }).end?.();
+  }, USER_ACTION_FALLBACK_END_DELAY_MS);
 }
 
 function getFaroUserActionName(element: HTMLElement) {
