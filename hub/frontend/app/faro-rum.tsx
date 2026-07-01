@@ -23,6 +23,9 @@ function installFaroUserActionTracking() {
   document.addEventListener("keydown", handleFaroUserAction, {
     capture: true,
   });
+  document.addEventListener("click", handleFaroNavigationClick, {
+    capture: true,
+  });
 }
 
 function handleFaroUserAction(event: Event) {
@@ -61,6 +64,26 @@ function handleFaroUserAction(event: Event) {
   scheduleFaroUserActionEnd(userAction);
 }
 
+function handleFaroNavigationClick(event: MouseEvent) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const element = event.target.closest<HTMLElement>(ACTION_SELECTOR);
+
+  if (!(element instanceof HTMLAnchorElement)) {
+    return;
+  }
+
+  window.queueMicrotask(endActiveFaroUserAction);
+}
+
+function endActiveFaroUserAction() {
+  const activeUserAction = faro.api.getActiveUserAction();
+
+  (activeUserAction as typeof activeUserAction & { end?: () => void } | undefined)?.end?.();
+}
+
 function scheduleFaroUserActionEnd(
   userAction: ReturnType<typeof faro.api.startUserAction>,
 ) {
@@ -75,7 +98,7 @@ function scheduleFaroUserActionEnd(
       return;
     }
 
-    (activeUserAction as typeof activeUserAction & { end?: () => void }).end?.();
+    endActiveFaroUserAction();
   }, USER_ACTION_FALLBACK_END_DELAY_MS);
 }
 
