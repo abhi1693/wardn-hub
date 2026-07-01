@@ -135,6 +135,195 @@ def package_targets_check(packages: list[Any]) -> dict[str, str]:
     return validation_check("packages", "passed", "Package targets are structurally valid.")
 
 
+PACKAGE_WRAPPER_ARGUMENTS_BY_REGISTRY_TYPE = {
+    "container": {
+        "docker",
+        "podman",
+        "run",
+        "--rm",
+        "--interactive",
+        "-i",
+        "--publish",
+        "-p",
+        "--volume",
+        "-v",
+        "--mount",
+        "--network",
+        "--name",
+        "--env",
+        "-e",
+        "--env-file",
+        "--entrypoint",
+        "--workdir",
+        "-w",
+        "--user",
+        "-u",
+        "--add-host",
+    },
+    "docker": {
+        "docker",
+        "podman",
+        "run",
+        "--rm",
+        "--interactive",
+        "-i",
+        "--publish",
+        "-p",
+        "--volume",
+        "-v",
+        "--mount",
+        "--network",
+        "--name",
+        "--env",
+        "-e",
+        "--env-file",
+        "--entrypoint",
+        "--workdir",
+        "-w",
+        "--user",
+        "-u",
+        "--add-host",
+    },
+    "npm": {
+        "npm",
+        "npx",
+        "exec",
+        "run",
+        "--yes",
+        "-y",
+        "--package",
+    },
+    "oci": {
+        "docker",
+        "podman",
+        "run",
+        "--rm",
+        "--interactive",
+        "-i",
+        "--publish",
+        "-p",
+        "--volume",
+        "-v",
+        "--mount",
+        "--network",
+        "--name",
+        "--env",
+        "-e",
+        "--env-file",
+        "--entrypoint",
+        "--workdir",
+        "-w",
+        "--user",
+        "-u",
+        "--add-host",
+    },
+    "pypi": {
+        "pip",
+        "pipx",
+        "python",
+        "python3",
+        "uv",
+        "uvx",
+        "install",
+        "run",
+        "-m",
+    },
+    "uvx": {
+        "uv",
+        "uvx",
+        "tool",
+        "run",
+        "--from",
+        "--with",
+        "--with-editable",
+        "--python",
+    },
+}
+
+
+def package_argument_token(argument: dict[str, Any]) -> list[str]:
+    tokens: list[str] = []
+    flag = argument.get("flag")
+    value = argument.get("value")
+    default = argument.get("default")
+    if is_non_empty_string(flag):
+        tokens.append(str(flag).strip())
+    if is_non_empty_string(value):
+        tokens.append(str(value).strip())
+    elif is_non_empty_string(default):
+        tokens.append(str(default).strip())
+    return tokens
+
+
+def package_argument_name(argument: dict[str, Any]) -> str:
+    for key in ("name", "description", "flag", "value"):
+        value = argument.get(key)
+        if is_non_empty_string(value):
+            return str(value).strip()
+    return "package argument"
+
+
+def token_matches_package_identifier(token: str, identifier: str, version: str) -> bool:
+    if not identifier:
+        return False
+    if token == identifier:
+        return True
+    if not version:
+        return False
+    return token in {
+        f"{identifier}@{version}",
+        f"{identifier}=={version}",
+        f"{identifier}:{version}",
+    }
+
+
+def package_manager_argument_check(packages: list[Any]) -> dict[str, str]:
+    offenders: list[str] = []
+    for package_value in packages:
+        package = model_or_dict(package_value)
+        registry_type = str(package.get("registryType") or "").lower()
+        wrapper_tokens = PACKAGE_WRAPPER_ARGUMENTS_BY_REGISTRY_TYPE.get(registry_type)
+        if wrapper_tokens is None:
+            continue
+
+        identifier = str(package.get("identifier") or "").strip()
+        version = str(package.get("version") or "").strip()
+        package_arguments = package.get("packageArguments")
+        if not isinstance(package_arguments, list):
+            continue
+
+        for argument_value in package_arguments:
+            argument = model_or_dict(argument_value)
+            tokens = package_argument_token(argument)
+            if not tokens:
+                continue
+            normalized_tokens = {token.strip() for token in tokens}
+            normalized_lower_tokens = {token.lower() for token in normalized_tokens}
+            has_wrapper_token = bool(normalized_lower_tokens.intersection(wrapper_tokens))
+            has_identifier_token = any(
+                token_matches_package_identifier(token, identifier, version)
+                for token in normalized_tokens
+            )
+            if has_wrapper_token or has_identifier_token:
+                offenders.append(
+                    f"{identifier or registry_type or 'package'}: {package_argument_name(argument)}"
+                )
+
+    if offenders:
+        return validation_check(
+            "packageManagerArguments",
+            "failed",
+            "Package packageArguments must describe arguments passed to the server process only, "
+            "not package manager wrapper flags, runner commands, or the package/image identifier: "
+            + "; ".join(offenders[:5]),
+        )
+    return validation_check(
+        "packageManagerArguments",
+        "passed",
+        "Package arguments do not include package manager wrapper tokens.",
+    )
+
+
 def remote_targets_check(remotes: list[Any]) -> dict[str, str]:
     if not remotes:
         return validation_check("remotes", "passed", "No remote targets provided.")
@@ -476,15 +665,39 @@ def documentation_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
     return validation_check("documentation", "warning", "Documentation is empty.")
 
 
-def validation_result_for(payload: RegistryServerVersionCreate) -> dict:
+def new_server_initial_version_check(
+    payload: RegistryServerVersionCreate,
+    submission_type: str | None,
+) -> dict[str, str]:
+    if submission_type == "new_server" and payload.version != "1.0.0":
+        return validation_check(
+            "newServerVersion",
+            "failed",
+            "New server submissions must start at Wardn registry version 1.0.0. "
+            "Keep upstream package, image, or server versions in packages[].version.",
+        )
+    return validation_check(
+        "newServerVersion",
+        "passed",
+        "New server initial version is valid.",
+    )
+
+
+def validation_result_for(
+    payload: RegistryServerVersionCreate,
+    *,
+    submission_type: str | None = None,
+) -> dict:
     checks = [
         validation_check("schema", "passed", "Registry schema fields are valid."),
         validation_check("target", "passed", "At least one package or remote target is present."),
+        new_server_initial_version_check(payload, submission_type),
         env_placeholder_check(payload),
         duplicate_environment_check(payload),
         environment_metadata_check(payload.packages),
         source_review_list_quality_check(payload),
         package_targets_check(payload.packages),
+        package_manager_argument_check(payload.packages),
         package_transport_detail_check(payload.packages),
         remote_targets_check(payload.remotes),
         documentation_check(payload),
@@ -883,7 +1096,10 @@ async def create_submission(
     api_token: UserAPIToken | None = None,
     submit_for_review: bool = False,
 ) -> SubmissionRead:
-    validation_result = validation_result_for(payload.server_json)
+    validation_result = validation_result_for(
+        payload.server_json,
+        submission_type=payload.submission_type,
+    )
     ensure_validation_passed(validation_result)
     owner_user_id, owner_organization_id = await resolve_submission_owner(
         session,
@@ -1000,9 +1216,13 @@ async def update_submission(
     ensure_can_mutate_submission(user, submission)
     ensure_api_token_submission_access(api_token, submission)
 
+    next_submission_type = payload.submission_type or submission.submission_type
     server_json = payload.server_json
     if server_json is not None:
-        validation_result = validation_result_for(server_json)
+        validation_result = validation_result_for(
+            server_json,
+            submission_type=next_submission_type,
+        )
         ensure_validation_passed(validation_result)
         await ensure_version_not_published(session, server_json.name, server_json.version)
         await ensure_no_active_submission_for_version(
@@ -1017,6 +1237,14 @@ async def update_submission(
         submission.validation_result = validation_result
     if payload.submission_type is not None:
         submission.submission_type = payload.submission_type
+        if server_json is None:
+            current_payload = RegistryServerVersionCreate.model_validate(submission.server_json)
+            validation_result = validation_result_for(
+                current_payload,
+                submission_type=submission.submission_type,
+            )
+            ensure_validation_passed(validation_result)
+            submission.validation_result = validation_result
     next_owner_user_id = (
         payload.owner_user_id
         if "owner_user_id" in payload.model_fields_set
@@ -1095,7 +1323,7 @@ async def submit_submission_record(
     if submission.status not in {"draft", "rejected"}:
         raise InvalidSubmissionTransitionError("submission cannot be submitted")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
-    validation_result = validation_result_for(payload)
+    validation_result = validation_result_for(payload, submission_type=submission.submission_type)
     ensure_ready_for_review(validation_result)
     submission.validation_result = validation_result
     await ensure_submission_type_allowed(
@@ -1178,6 +1406,10 @@ async def approve_submission(
         submission.owner_user_id,
         submission.owner_organization_id,
     )
+    payload = RegistryServerVersionCreate.model_validate(submission.server_json)
+    validation_result = validation_result_for(payload, submission_type=submission.submission_type)
+    ensure_ready_for_review(validation_result)
+    submission.validation_result = validation_result
     await ensure_version_not_published(session, submission.name, submission.version)
     await ensure_no_active_submission_for_version(
         session,
@@ -1259,6 +1491,9 @@ async def publish_submission(
         error = exc.errors()[0] if exc.errors() else {}
         message = str(error.get("msg") or "submission payload validation failed")
         raise SubmissionValidationError(message) from exc
+    validation_result = validation_result_for(payload, submission_type=submission.submission_type)
+    ensure_validation_passed(validation_result)
+    submission.validation_result = validation_result
     try:
         published = await registry_service.create_server_version(
             session,

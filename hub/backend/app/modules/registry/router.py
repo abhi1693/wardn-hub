@@ -21,6 +21,7 @@ from app.modules.registry.exceptions import (
     DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    InvalidRegistryVersionError,
     RegistryAccessDeniedError,
     RegistryCategoryNotFoundError,
     RegistryOwnershipClaimConflictError,
@@ -599,6 +600,8 @@ async def admin_create_mcp_server_version(
         )
     except DuplicateRegistryVersionError as exc:
         raise conflict(exc, detail="server version already exists") from exc
+    except InvalidRegistryVersionError as exc:
+        raise bad_request(exc) from exc
     return await commit_response(session, response)
 
 

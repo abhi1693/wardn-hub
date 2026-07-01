@@ -61,7 +61,8 @@ export const PACKAGE_ARGUMENT_RULES = `Package argument rules:
 - Use packageArguments[].requiresValue true when a flag takes a user-supplied value. Do not include placeholder text like <port> or [url] in transport.args.
 - requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
 - Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
-- If a package argument is part of the default launch command, set includeInLaunch true. Otherwise leave it false.`;
+- If a package argument is part of the default launch command, set includeInLaunch true. Otherwise leave it false.
+- For package-manager launches, identifier is the package/image. packageArguments must describe only arguments passed to the server process after the package/image, never wrapper tokens such as npx/npm/uvx/pipx/docker, -y/--yes, run, --rm, -i, -p/--publish, -e/--env, volumes, networks, or the package/image identifier itself.`;
 
 export const ENVIRONMENT_VARIABLE_RULES = `Environment variable rules:
 - Do not use environment placeholder values that wrap names in dollar signs and braces.
@@ -109,7 +110,8 @@ export const VALIDATION_PACKAGE_ARGUMENT_CHECKS = `- packages[].transport.args c
 - Flags that take user-supplied values are represented with packageArguments[].requiresValue true, not placeholder text in transport.args.
 - packageArguments[].value does not contain placeholder examples such as "<host>", "[url]", "host", or "url"; requiresValue is the metadata for that.
 - packageArguments[].flag does not contain placeholders. For docs that show "--host <host>", the correct shape is flag "--host" and requiresValue true.
-- Package arguments that are part of the default launch command have includeInLaunch true.`;
+- Package arguments that are part of the default launch command have includeInLaunch true.
+- packageArguments contain only server process args after the package/image, not package-manager wrapper args such as npx/npm/uvx/pipx/docker, install/run flags, or the package/image identifier.`;
 
 export const VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = `- Remote endpoint URLs do not include configurable query strings such as ?apiKey={apiKey}.
 - Remote URL query parameters are represented in remotes[].queryParameters, not remotes[].authentication.queryParameters.

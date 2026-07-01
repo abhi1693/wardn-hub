@@ -50,7 +50,8 @@ PACKAGE_ARGUMENT_RULES = """Package argument rules:
 - Use packageArguments[].requiresValue true when a flag takes a user-supplied value. Do not include placeholder text like <port> or [url] in transport.args.
 - requiresValue is a boolean. Do not set packageArguments[].value to placeholder examples such as "<host>", "[url]", "host", or "url".
 - Do not include placeholders inside packageArguments[].flag. For docs that show "--host <host>", use {"flag":"--host","requiresValue":true,"includeInLaunch":false}.
-- If a package argument is part of the default launch command, set includeInLaunch true. Otherwise leave it false."""
+- If a package argument is part of the default launch command, set includeInLaunch true. Otherwise leave it false.
+- For package-manager launches, identifier is the package/image. packageArguments must describe only arguments passed to the server process after the package/image, never wrapper tokens such as npx/npm/uvx/pipx/docker, -y/--yes, run, --rm, -i, -p/--publish, -e/--env, volumes, networks, or the package/image identifier itself."""
 
 REMOTE_QUERY_PARAMETER_RULES = """Remote query parameter rules:
 - Remote endpoint URLs must be the base endpoint path only, without configurable query strings.

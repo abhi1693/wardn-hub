@@ -53,7 +53,8 @@ VALIDATION_PACKAGE_ARGUMENT_CHECKS = """- packages[].transport.args contains onl
 - Flags that take user-supplied values are represented with packageArguments[].requiresValue true, not placeholder text in transport.args.
 - packageArguments[].value does not contain placeholder examples such as "<host>", "[url]", "host", or "url"; requiresValue is the metadata for that.
 - packageArguments[].flag does not contain placeholders. For docs that show "--host <host>", the correct shape is flag "--host" and requiresValue true.
-- Package arguments that are part of the default launch command have includeInLaunch true."""
+- Package arguments that are part of the default launch command have includeInLaunch true.
+- packageArguments contain only server process args after the package/image, not package-manager wrapper args such as npx/npm/uvx/pipx/docker, install/run flags, or the package/image identifier."""
 
 VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = """- Remote endpoint URLs do not include configurable query strings such as ?apiKey={apiKey}.
 - Remote URL query parameters are represented in remotes[].queryParameters, not remotes[].authentication.queryParameters.

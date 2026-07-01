@@ -7,7 +7,11 @@ import pytest
 from app.modules.events.models import EventRecord
 from app.modules.organizations.exceptions import OrganizationAccessDeniedError
 from app.modules.registry.models import RegistryServer
-from app.modules.registry.schemas import RegistryEnvironmentVariable, RegistryServerVersionCreate
+from app.modules.registry.schemas import (
+    RegistryEnvironmentVariable,
+    RegistryPackageArgument,
+    RegistryServerVersionCreate,
+)
 from app.modules.submissions import service
 from app.modules.submissions.exceptions import (
     InvalidSubmissionTransitionError,
@@ -212,6 +216,29 @@ def test_validation_passes_with_source_review_and_transport_details() -> None:
     assert service.validation_result_for(complete_registry_payload())["status"] == "passed"
 
 
+def test_validation_rejects_new_server_registry_version_after_one_zero_zero() -> None:
+    result = service.validation_result_for(
+        complete_registry_payload(version="1.5.0"),
+        submission_type="new_server",
+    )
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "newServerVersion"
+        and "must start at Wardn registry version 1.0.0" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_allows_new_version_registry_version_after_one_zero_zero() -> None:
+    result = service.validation_result_for(
+        complete_registry_payload(version="1.5.0"),
+        submission_type="new_version",
+    )
+
+    assert result["status"] == "passed"
+
+
 def test_validation_passes_with_llm_source_review_channel() -> None:
     payload = complete_registry_payload()
     assert payload.meta is not None
@@ -290,6 +317,139 @@ def test_validation_allows_docker_registry_port_without_tag() -> None:
     payload.packages[0].identifier = "registry.example.com:5000/ankimcp/server"
 
     assert service.validation_result_for(payload)["status"] == "passed"
+
+
+def test_validation_rejects_docker_wrapper_tokens_in_oci_package_arguments() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.registry_type = "oci"
+    package.identifier = "ghcr.io/github/github-mcp-server"
+    package.version = "1.5.0"
+    package.transport.command = "docker"
+    package.transport.args = [
+        "run",
+        "-i",
+        "--rm",
+        "-p",
+        "127.0.0.1:8085:8085",
+        "-e",
+        "GITHUB_OAUTH_CALLBACK_PORT",
+        "ghcr.io/github/github-mcp-server",
+    ]
+    package.package_arguments = [
+        RegistryPackageArgument(flag="run", includeInLaunch=True),
+        RegistryPackageArgument(flag="-i", includeInLaunch=True),
+        RegistryPackageArgument(
+            flag="-p",
+            value="127.0.0.1:8085:8085",
+            requiresValue=True,
+            includeInLaunch=True,
+        ),
+        RegistryPackageArgument(
+            value="ghcr.io/github/github-mcp-server",
+            includeInLaunch=True,
+        ),
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "packageManagerArguments"
+        and check["status"] == "failed"
+        and "package manager wrapper" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_allows_container_process_args_in_oci_package_arguments() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.registry_type = "oci"
+    package.identifier = "docker.io/example/grafana-mcp"
+    package.version = "1.0.0"
+    package.transport.command = "docker"
+    package.transport.args = [
+        "run",
+        "--rm",
+        "docker.io/example/grafana-mcp",
+        "--disable-write",
+        "-t",
+        "stdio",
+    ]
+    package.package_arguments = [
+        RegistryPackageArgument(flag="--disable-write", includeInLaunch=True),
+        RegistryPackageArgument(
+            flag="-t",
+            value="stdio",
+            requiresValue=True,
+            includeInLaunch=True,
+        ),
+    ]
+
+    assert service.validation_result_for(payload)["status"] == "passed"
+
+
+def test_validation_rejects_npx_wrapper_tokens_in_npm_package_arguments() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.registry_type = "npm"
+    package.identifier = "@example/weather-mcp"
+    package.version = "1.0.0"
+    package.transport.command = "npx"
+    package.transport.args = ["-y", "@example/weather-mcp", "--stdio"]
+    package.package_arguments = [
+        RegistryPackageArgument(flag="-y", includeInLaunch=True),
+        RegistryPackageArgument(value="@example/weather-mcp", includeInLaunch=True),
+        RegistryPackageArgument(flag="--stdio", includeInLaunch=True),
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "packageManagerArguments"
+        and "@example/weather-mcp" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_allows_server_process_args_in_npm_package_arguments() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.package_arguments = [
+        RegistryPackageArgument(flag="--stdio", includeInLaunch=True),
+        RegistryPackageArgument(
+            flag="--log-level",
+            value="debug",
+            requiresValue=True,
+            includeInLaunch=True,
+        ),
+    ]
+
+    assert service.validation_result_for(payload)["status"] == "passed"
+
+
+def test_validation_rejects_uvx_wrapper_tokens_in_uvx_package_arguments() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.registry_type = "uvx"
+    package.identifier = "weather-mcp"
+    package.version = "1.0.0"
+    package.transport.command = "uvx"
+    package.transport.args = ["weather-mcp"]
+    package.package_arguments = [
+        RegistryPackageArgument(value="weather-mcp", includeInLaunch=True),
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    assert any(
+        check["name"] == "packageManagerArguments"
+        and "weather-mcp" in check["message"]
+        for check in result["checks"]
+    )
 
 
 def test_validation_rejects_env_placeholder_values() -> None:
@@ -1176,7 +1336,7 @@ async def test_submission_catalog_event_types_emit_event_records(monkeypatch) ->
             session,
             submitter,
             submission.id,
-            SubmissionUpdate(serverJson=complete_registry_payload(version="1.0.1")),
+            SubmissionUpdate(serverJson=complete_registry_payload(version="1.0.0")),
         )
 
     await assert_emits("submission.updated", update_action, expected_status="draft")
@@ -1349,11 +1509,41 @@ async def test_update_submission_allowed_until_published(monkeypatch) -> None:
         FakeSession(),
         submitter,
         submission.id,
-        SubmissionUpdate(serverJson=registry_payload(version="1.0.1")),
+        SubmissionUpdate(serverJson=registry_payload(version="1.0.0")),
     )
 
     assert response.status == "draft"
-    assert response.version == "1.0.1"
+    assert response.version == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_update_new_server_submission_rejects_later_registry_version(monkeypatch) -> None:
+    submitter = current_user()
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="draft",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+
+    with pytest.raises(
+        SubmissionValidationError,
+        match="New server submissions must start at Wardn registry version 1.0.0",
+    ):
+        await service.update_submission(
+            FakeSession(),
+            submitter,
+            submission.id,
+            SubmissionUpdate(serverJson=registry_payload(version="1.0.1")),
+        )
 
 
 @pytest.mark.asyncio

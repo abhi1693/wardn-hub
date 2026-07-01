@@ -12,6 +12,7 @@ from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    InvalidRegistryVersionError,
     RegistryAccessDeniedError,
     RegistryOwnershipClaimError,
     RegistryServerNotFoundError,
@@ -520,6 +521,23 @@ async def test_create_server_version_creates_server_and_latest(monkeypatch) -> N
     assert response.version.server_json["name"] == "io.github.example/weather"
     event_types = [item.event_type for item in session.added if isinstance(item, EventRecord)]
     assert event_types == ["registry.server.published", "registry.version.published"]
+
+
+@pytest.mark.asyncio
+async def test_create_server_version_rejects_new_server_after_initial_version(
+    monkeypatch,
+) -> None:
+    async def missing_server(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_server", missing_server)
+    monkeypatch.setattr(service.repository, "get_server_version", missing_server)
+
+    with pytest.raises(
+        InvalidRegistryVersionError,
+        match="new servers must start at Wardn registry version 1.0.0",
+    ):
+        await service.create_server_version(FakeSession(), registry_payload("1.5.0"))
 
 
 @pytest.mark.asyncio

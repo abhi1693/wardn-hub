@@ -10,6 +10,10 @@ class DuplicateRegistryCategoryError(RegistryError):
     pass
 
 
+class InvalidRegistryVersionError(RegistryError):
+    pass
+
+
 class InvalidRegistryCursorError(RegistryError):
     pass
 

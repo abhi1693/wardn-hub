@@ -24,6 +24,7 @@ from app.modules.registry.exceptions import (
     DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
     InvalidRegistryCursorError,
+    InvalidRegistryVersionError,
     RegistryAccessDeniedError,
     RegistryCategoryNotFoundError,
     RegistryOwnershipClaimConflictError,
@@ -1678,6 +1679,10 @@ async def create_server_version(
 
     server = await repository.get_server(session, payload.name, include_deleted=True)
     should_emit_server_published = server is None or server.status == "deleted"
+    if should_emit_server_published and payload.version != "1.0.0":
+        raise InvalidRegistryVersionError(
+            "new servers must start at Wardn registry version 1.0.0"
+        )
     values = document_values(payload)
     now = datetime.now(UTC)
 
