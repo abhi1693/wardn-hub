@@ -456,6 +456,9 @@ class MCPServerDocument(BaseModel):
             raise ValueError("at least one category is required")
         return self
 
+    def to_json_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", by_alias=True, exclude_none=True)
+
 
 class RegistryServerVersionCreate(MCPServerDocument):
     pass

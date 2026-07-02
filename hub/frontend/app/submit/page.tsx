@@ -60,6 +60,7 @@ import {
   publicHeaders,
   publicPackageArguments,
   publicQueryParameters,
+  resolvedLaunchValues,
   serverMetaPayload,
   splitArgumentFlagRequiresValue,
   splitPackageIdentifierVersion,
@@ -1136,9 +1137,7 @@ function SubmitServerPageContent() {
                       <div className="grid gap-2">
                         <Label>Resolved launch</Label>
                         <div className="min-h-9 overflow-x-auto whitespace-nowrap rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                          {[packageTarget.command, ...launchArgumentValues(packageTarget.packageArguments)]
-                            .filter(Boolean)
-                            .join(" ") || "Not configured"}
+                          {resolvedLaunchValues(packageTarget).join(" ") || "Not configured"}
                         </div>
                       </div>
                     </div>

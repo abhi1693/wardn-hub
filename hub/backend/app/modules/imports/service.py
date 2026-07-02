@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -35,8 +36,93 @@ def dict_items(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def list_values(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def strip_git_suffix(value: str) -> str:
     return value.strip().removesuffix(".git")
+
+
+def split_package_identifier_version(value: str, registry_type: str) -> tuple[str, str]:
+    identifier = value.strip()
+    normalized_registry_type = registry_type.lower()
+    if not identifier:
+        return "", ""
+
+    if normalized_registry_type in {"oci", "docker"}:
+        last_colon = identifier.rfind(":")
+        last_slash = identifier.rfind("/")
+        if last_colon > last_slash and last_colon < len(identifier) - 1:
+            return identifier[:last_colon], identifier[last_colon + 1 :]
+        return identifier, ""
+
+    equality_index = identifier.find("==")
+    if equality_index > 0 and equality_index < len(identifier) - 2:
+        return identifier[:equality_index], identifier[equality_index + 2 :]
+
+    at_index = identifier.rfind("@")
+    if at_index > 0 and at_index < len(identifier) - 1:
+        return identifier[:at_index], identifier[at_index + 1 :]
+
+    return identifier, ""
+
+
+def package_specifier(identifier: str, version: str, registry_type: str) -> str:
+    normalized_identifier = identifier.strip()
+    normalized_version = version.strip()
+    if not normalized_identifier:
+        return ""
+    if not normalized_version or normalized_version == "latest":
+        return normalized_identifier
+    if registry_type.lower() in {"oci", "docker"}:
+        return f"{normalized_identifier}:{normalized_version}"
+    if registry_type.lower() in {"pypi", "uvx"}:
+        return f"{normalized_identifier}=={normalized_version}"
+    return f"{normalized_identifier}@{normalized_version}"
+
+
+def package_manager_wrapper_arg(command: str, argument: str) -> bool:
+    normalized_command = command.strip().lower()
+    normalized_argument = argument.strip()
+    if normalized_argument in {"-y", "--yes"}:
+        return normalized_command in {"npx", "npm", "pnpm", "yarn", "bun", "bunx"}
+    if normalized_argument in {"run", "exec"}:
+        return normalized_command in {"npm", "pnpm", "yarn", "bun"}
+    if normalized_argument in {"--rm", "-i", "run"}:
+        return normalized_command in {"docker", "podman"}
+    return False
+
+
+def package_token_matches(argument: str, identifier: str, registry_type: str) -> bool:
+    parsed_identifier, _parsed_version = split_package_identifier_version(argument, registry_type)
+    return bool(identifier and parsed_identifier == identifier)
+
+
+def server_runtime_arguments(
+    *,
+    command: str,
+    identifier: str,
+    registry_type: str,
+    args: list[str],
+) -> list[str]:
+    if not args:
+        return []
+
+    for index, argument in enumerate(args):
+        if package_manager_wrapper_arg(command, argument):
+            continue
+        if package_token_matches(argument, identifier, registry_type):
+            return args[index + 1 :]
+
+    return [
+        argument
+        for argument in args
+        if not package_manager_wrapper_arg(command, argument)
+        and not package_token_matches(argument, identifier, registry_type)
+    ]
 
 
 def parse_github_repository(value: str) -> GitHubRepository:
@@ -101,6 +187,17 @@ def clean_subfolder(value: str) -> str:
     return value.strip().strip("/")
 
 
+def source_request_headers(url: str, accept: str) -> dict[str, str]:
+    headers = {"Accept": accept, "User-Agent": "wardn-hub-importer/0.1"}
+    host = (urlparse(url).hostname or "").lower()
+    if host in {"api.github.com", "raw.githubusercontent.com"}:
+        token = os.getenv("GITHUB_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+            headers["X-GitHub-Api-Version"] = "2022-11-28"
+    return headers
+
+
 def fetch_text(url: str, *, accept: str = "application/json") -> str | None:
     parsed = urlparse(url)
     with tracer.start_as_current_span("imports.source_fetch") as span:
@@ -109,7 +206,7 @@ def fetch_text(url: str, *, accept: str = "application/json") -> str | None:
         span.set_attribute("source.accept", accept)
         request = Request(
             url,
-            headers={"Accept": accept, "User-Agent": "wardn-hub-importer/0.1"},
+            headers=source_request_headers(url, accept),
         )
         try:
             with urlopen(request, timeout=10) as response:
@@ -167,24 +264,48 @@ def github_raw_url(repository: GitHubRepository, branch: str, path: str) -> str:
 
 
 def fetch_github_metadata(repository: GitHubRepository) -> dict[str, str]:
-    payload = fetch_json(github_api_url(repository, ""))
+    try:
+        payload = fetch_json(github_api_url(repository, ""))
+    except SourceNotFoundError:
+        payload = {}
     homepage = string_value(payload.get("homepage"))
     html_url = string_value(payload.get("html_url"))
     owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
     return {
-        "title": string_value(payload.get("name")),
+        "title": string_value(payload.get("name")) or repository.repo,
         "description": string_value(payload.get("description")),
         "iconUrl": string_value(owner.get("avatar_url")),
-        "websiteUrl": homepage or html_url,
+        "websiteUrl": homepage or html_url or repository_web_url(repository),
     }
+
+
+def raw_readme_candidates(repository: GitHubRepository, subfolder: str) -> list[str]:
+    folder = clean_subfolder(subfolder)
+    paths = ["README.md", "readme.md"]
+    branches = ["main", "master"]
+    candidates = []
+    for branch in branches:
+        for path in paths:
+            file_path = "/".join(part for part in (folder, path) if part)
+            candidates.append(github_raw_url(repository, branch, file_path))
+    return candidates
 
 
 def fetch_github_readme(repository: GitHubRepository, subfolder: str) -> str:
     readme_path = f"/{clean_subfolder(subfolder)}" if clean_subfolder(subfolder) else ""
-    text = fetch_text(
-        github_api_url(repository, f"/readme{readme_path}"),
-        accept="application/vnd.github.raw",
-    )
+    try:
+        text = fetch_text(
+            github_api_url(repository, f"/readme{readme_path}"),
+            accept="application/vnd.github.raw",
+        )
+    except SourceNotFoundError:
+        text = None
+    if text:
+        return text
+    for candidate_url in raw_readme_candidates(repository, subfolder):
+        text = fetch_text(candidate_url, accept="text/plain")
+        if text:
+            return text
     return text or ""
 
 
@@ -206,13 +327,27 @@ def metadata_from_mcp_json(value: dict[str, Any], repository: GitHubRepository) 
     config = raw_config if isinstance(raw_config, dict) else {}
     url = string_value(config.get("url"))
     command = string_value(config.get("command"))
-    args = (
-        [str(argument) for argument in config.get("args", [])]
-        if isinstance(config.get("args"), list)
-        else []
-    )
+    args = list_values(config.get("args"))
     env = config.get("env") if isinstance(config.get("env"), dict) else {}
-    package_identifier = next((argument for argument in args if not argument.startswith("-")), "")
+    registry_type = "uvx" if "uv" in command else "npm"
+    package_argument = next(
+        (
+            argument
+            for argument in args
+            if not argument.startswith("-") and not package_manager_wrapper_arg(command, argument)
+        ),
+        "",
+    )
+    package_identifier, package_version = split_package_identifier_version(
+        package_argument,
+        registry_type,
+    )
+    runtime_args = server_runtime_arguments(
+        command=command,
+        identifier=package_identifier,
+        registry_type=registry_type,
+        args=args,
+    )
 
     return {
         "source": "mcp.json",
@@ -226,12 +361,17 @@ def metadata_from_mcp_json(value: dict[str, Any], repository: GitHubRepository) 
         "remotes": [{"type": "streamable-http", "url": url}] if url else [],
         "packages": [
             {
-                "registryType": "uvx" if "uv" in command else "npm",
+                "registryType": registry_type,
                 "identifier": package_identifier,
+                **(
+                    {"version": package_version}
+                    if package_version and package_version != "latest"
+                    else {}
+                ),
                 "transport": {
                     "type": "stdio",
                     "command": command,
-                    "args": args,
+                    "args": runtime_args,
                     "env": env,
                 },
             }
@@ -239,6 +379,46 @@ def metadata_from_mcp_json(value: dict[str, Any], repository: GitHubRepository) 
         if command and package_identifier
         else [],
     }
+
+
+def normalize_import_package_configs(server_json: dict[str, Any]) -> dict[str, Any]:
+    packages = dict_items(server_json.get("packages"))
+    if not packages:
+        return server_json
+
+    normalized_packages: list[dict[str, Any]] = []
+    for package in packages:
+        registry_type = string_value(package.get("registryType") or package.get("registry_type"))
+        raw_identifier = string_value(package.get("identifier"))
+        identifier, identifier_version = split_package_identifier_version(
+            raw_identifier,
+            registry_type,
+        )
+        version = string_value(package.get("version")) or (
+            identifier_version if identifier_version != "latest" else ""
+        )
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        command = string_value(transport_value.get("command"))
+        runtime_args = server_runtime_arguments(
+            command=command,
+            identifier=identifier,
+            registry_type=registry_type,
+            args=list_values(transport_value.get("args")),
+        )
+        normalized_package = {
+            **package,
+            "identifier": identifier or raw_identifier,
+            **({"version": version} if version else {}),
+        }
+        if transport_value:
+            normalized_package["transport"] = {
+                **transport_value,
+                "args": runtime_args,
+            }
+        normalized_packages.append(normalized_package)
+
+    return {**server_json, "packages": normalized_packages}
 
 
 def strip_json_comments(value: str) -> str:
@@ -339,8 +519,6 @@ def import_missing_fields(server_json: dict[str, Any]) -> list[str]:
             continue
         if not string_value(transport_value.get("command")):
             missing.append("package transport command")
-        if not transport_value.get("args"):
-            missing.append("package transport args")
 
     meta = server_json.get("_meta") if isinstance(server_json.get("_meta"), dict) else {}
     source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
@@ -353,16 +531,16 @@ def import_missing_fields(server_json: dict[str, Any]) -> list[str]:
 def package_install_commands(packages: list[dict[str, Any]]) -> list[str]:
     commands: list[str] = []
     for package in packages:
+        registry_type = string_value(package.get("registryType") or package.get("registry_type"))
+        identifier = string_value(package.get("identifier"))
+        version = string_value(package.get("version"))
+        package_target = package_specifier(identifier, version, registry_type)
         transport = package.get("transport")
         transport_value = transport if isinstance(transport, dict) else {}
         command = string_value(transport_value.get("command")).strip()
-        args = [
-            str(argument).strip()
-            for argument in transport_value.get("args", [])
-            if str(argument).strip()
-        ] if isinstance(transport_value.get("args"), list) else []
+        args = list_values(transport_value.get("args"))
         if command:
-            commands.append(" ".join([command, *args]).strip())
+            commands.append(" ".join(part for part in [command, package_target, *args] if part))
     return commands
 
 
@@ -518,6 +696,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
                 )
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
                 server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
+                server_json = normalize_import_package_configs(server_json)
                 server_json = add_import_source_review(server_json, files)
                 metadata = with_server_targets(metadata, server_json)
                 span.set_attribute("imports.source", "server.json")
@@ -532,6 +711,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
             if raw_payload.get("mcpServers"):
                 metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
+                server_json = normalize_import_package_configs(server_json)
                 server_json = add_import_source_review(server_json, files)
                 metadata = with_server_targets(metadata, server_json)
                 span.set_attribute("imports.source", "mcp.json")
@@ -546,6 +726,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
         if readme_mcp_json:
             metadata = with_fallback(readme_mcp_metadata, fallback)
             server_json = server_json_from_metadata(metadata, repository, subfolder)
+            server_json = normalize_import_package_configs(server_json)
             server_json = add_import_source_review(server_json, files)
             metadata = with_server_targets(metadata, server_json)
             span.set_attribute("imports.source", "mcp.json")
@@ -570,6 +751,7 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
             repository,
             subfolder,
         )
+        server_json = normalize_import_package_configs(server_json)
         server_json = add_import_source_review(server_json, files)
         missing = import_missing_fields(server_json)
         span.set_attribute("imports.source", "github")

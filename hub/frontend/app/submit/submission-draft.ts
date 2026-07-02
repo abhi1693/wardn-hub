@@ -168,6 +168,69 @@ export function splitPackageIdentifierVersion(value: string) {
   return { identifier: value, version: "" };
 }
 
+export function packageLaunchSpecifier(packageTarget: Pick<PackageTarget, "identifier" | "version" | "registryType">) {
+  const identifier = packageTarget.identifier.trim();
+  const version = packageTarget.version.trim();
+  if (!identifier) return "";
+  if (!version || version === "latest") return identifier;
+  if (["oci", "docker"].includes(packageTarget.registryType.trim().toLowerCase())) {
+    return `${identifier}:${version}`;
+  }
+  if (["pypi", "uvx"].includes(packageTarget.registryType.trim().toLowerCase())) {
+    return `${identifier}==${version}`;
+  }
+  return `${identifier}@${version}`;
+}
+
+function packageManagerWrapperArg(command: string, argument: string) {
+  const normalizedCommand = command.trim().toLowerCase();
+  const normalizedArgument = argument.trim();
+  if (["-y", "--yes"].includes(normalizedArgument)) {
+    return ["npx", "npm", "pnpm", "yarn", "bun", "bunx"].includes(normalizedCommand);
+  }
+  if (["run", "exec"].includes(normalizedArgument)) {
+    return ["npm", "pnpm", "yarn", "bun"].includes(normalizedCommand);
+  }
+  if (["--rm", "-i", "run"].includes(normalizedArgument)) {
+    return ["docker", "podman"].includes(normalizedCommand);
+  }
+  return false;
+}
+
+function packageTokenMatches(argument: string, identifier: string, registryType: string) {
+  const parsedPackage = splitPackageIdentifierVersion(argument);
+  if (["oci", "docker"].includes(registryType.trim().toLowerCase())) {
+    const lastColon = argument.lastIndexOf(":");
+    const lastSlash = argument.lastIndexOf("/");
+    const imageIdentifier = lastColon > lastSlash ? argument.slice(0, lastColon) : argument;
+    return Boolean(identifier && imageIdentifier === identifier);
+  }
+  return Boolean(identifier && parsedPackage.identifier === identifier);
+}
+
+export function normalizedTransportArgumentValues(
+  value: unknown,
+  command: string,
+  identifier: string,
+  registryType: string,
+) {
+  if (!Array.isArray(value)) return [];
+  const args = value.map(String).map((argument) => argument.trim()).filter(Boolean);
+  const packageIndex = args.findIndex(
+    (argument) =>
+      !packageManagerWrapperArg(command, argument)
+      && packageTokenMatches(argument, identifier, registryType),
+  );
+  if (packageIndex >= 0) {
+    return args.slice(packageIndex + 1);
+  }
+  return args.filter(
+    (argument) =>
+      !packageManagerWrapperArg(command, argument)
+      && !packageTokenMatches(argument, identifier, registryType),
+  );
+}
+
 export function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
@@ -600,21 +663,26 @@ export function importedRemotes(value: unknown): RemoteTarget[] {
 export function importedPackages(value: unknown): PackageTarget[] {
   return records(value).map((packageTarget) => {
     const transport = packageTarget.transport as Record<string, unknown> | undefined;
+    const registryType = stringValue(packageTarget.registryType) || "npm";
+    const command = stringValue(transport?.command);
     const parsedPackage = splitPackageIdentifierVersion(stringValue(packageTarget.identifier));
     const importedVersion = stringValue(packageTarget.version).replaceAll("$VERSION", "latest");
+    const identifier = parsedPackage.identifier.replaceAll("$VERSION", "latest");
     return {
       id: createId("package"),
-      registryType: stringValue(packageTarget.registryType) || "npm",
-      identifier: parsedPackage.identifier.replaceAll("$VERSION", "latest"),
+      registryType,
+      identifier,
       version: importedVersion || parsedPackage.version.replaceAll("$VERSION", "latest"),
-      command: stringValue(transport?.command),
+      command,
       transportType: stringValue(transport?.type) || "stdio",
       environmentVariables: mergeEnvironmentFields([
         ...initialTransportEnvironment(transport?.env),
         ...initialEnvironment(packageTarget.environmentVariables),
       ]),
       packageArguments: [
-        ...initialTransportArguments(transport?.args),
+        ...initialTransportArguments(
+          normalizedTransportArgumentValues(transport?.args, command, identifier, registryType),
+        ),
         ...initialPackageArguments(packageTarget.packageArguments),
       ],
     };
@@ -695,11 +763,8 @@ export function humanSourceReviewPayload({
   ]);
   const installCommands = uniqueNonEmptyValues(
     packages.flatMap((packageTarget) => {
-      const command = packageTarget.command.trim();
-      const launchArgs = launchArgumentValues(packageTarget.packageArguments);
-      if (command) {
-        return [[command, ...launchArgs].join(" ")];
-      }
+      const resolvedLaunch = resolvedLaunchValues(packageTarget);
+      if (resolvedLaunch.length > 0) return [resolvedLaunch.join(" ")];
       return packageTarget.identifier.trim() ? [packageTarget.identifier.trim()] : [];
     }),
   );
@@ -721,9 +786,7 @@ export function humanSourceReviewPayload({
       if (values.length > 0) {
         return values;
       }
-      return packageTarget.identifier.trim()
-        ? [`No configurable command arguments documented for ${packageTarget.identifier.trim()}.`]
-        : [];
+      return [];
     }),
   );
 
@@ -859,6 +922,14 @@ export function launchArgumentValues(packageArguments: PackageArgumentField[]) {
 
       return [flag];
     });
+}
+
+export function resolvedLaunchValues(packageTarget: PackageTarget) {
+  return [
+    packageTarget.command.trim(),
+    packageLaunchSpecifier(packageTarget),
+    ...launchArgumentValues(packageTarget.packageArguments),
+  ].filter(Boolean);
 }
 
 function serverJsonRecord(value: unknown): Record<string, unknown> {

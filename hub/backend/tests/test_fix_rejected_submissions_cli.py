@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from io import StringIO
 from typing import Any
 
@@ -8,19 +9,8 @@ from app.cli import fix_rejected_submissions as cli
 
 class FakeClient:
     def __init__(self, submissions: list[dict[str, Any]] | None = None) -> None:
-        self.token = "wardn_hub_test_token"
-        self.base_url = "http://localhost:8000/api/v1"
         self.submissions = submissions or []
-
-    def current_user(self) -> dict[str, Any]:
-        return {
-            "id": "user-1",
-            "email": "owner@example.com",
-            "display_name": "Owner",
-            "is_active": True,
-            "is_superuser": False,
-            "is_global_moderator": False,
-        }
+        self.fixed: list[tuple[str, dict[str, Any]]] = []
 
     def list_submissions(self) -> list[dict[str, Any]]:
         return self.submissions
@@ -31,31 +21,81 @@ class FakeClient:
                 return submission
         raise AssertionError(f"unknown submission {submission_id}")
 
+    def fix_submission(self, submission_id: str, server_json: dict[str, Any]) -> dict[str, Any]:
+        self.fixed.append((submission_id, server_json))
+        for submission in self.submissions:
+            if submission["id"] == submission_id:
+                submission["serverJson"] = server_json
+                submission["name"] = server_json["name"]
+                submission["version"] = server_json["version"]
+                submission["status"] = "submitted"
+                return submission
+        raise AssertionError(f"unknown submission {submission_id}")
+
 
 class FakeReviewer:
-    def __init__(self, client: FakeClient, *, final_status: str = "submitted") -> None:
-        self.client = client
-        self.final_status = final_status
+    def __init__(self, server_json: dict[str, Any] | None = None) -> None:
+        self.server_json = server_json or complete_server_json()
         self.prompts: list[str] = []
         self.environments: list[dict[str, str]] = []
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         self.prompts.append(prompt)
         self.environments.append(environment)
-        submission_id = environment["WARDN_HUB_FIX_SUBMISSION_ID"]
-        for submission in self.client.submissions:
-            if submission["id"] == submission_id:
-                submission["status"] = self.final_status
-                break
-        return "final status updated"
+        return (
+            "Decision: fixed\n\n"
+            "Updated serverJson:\n"
+            "```json\n"
+            f"{json.dumps(self.server_json)}\n"
+            "```"
+        )
+
+
+def complete_server_json(version: str = "1.0.0") -> dict[str, Any]:
+    return {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "io.github.example/weather",
+        "title": "Weather",
+        "description": "Weather tools.",
+        "documentation": "# Weather\n\nUse this server for forecast tools.",
+        "version": version,
+        "websiteUrl": "https://github.com/example/weather",
+        "repository": {
+            "type": "git",
+            "source": "github",
+            "url": "https://github.com/example/weather",
+        },
+        "packages": [
+            {
+                "registryType": "npm",
+                "identifier": "@example/weather",
+                "version": version,
+                "transport": {"type": "stdio", "command": "npx", "args": []},
+            }
+        ],
+        "_meta": {
+            "categories": ["developer-tools"],
+            "sourceReview": {
+                "llm": {
+                    "filesRead": ["https://github.com/example/weather/README.md"],
+                    "installCommands": ["npx @example/weather"],
+                    "commandArguments": [],
+                    "environmentVariables": [],
+                    "prerequisites": [],
+                    "capabilitiesReviewed": True,
+                    "limitationsReviewed": True,
+                    "unknowns": [],
+                }
+            },
+        },
+    }
 
 
 def rejected_submission(
     *,
     submission_id: str = "sub-1",
-    owner_user_id: str = "user-1",
-    owner_organization_id: str | None = None,
     status: str = "rejected",
+    updated_at: str = "2026-06-28T10:00:00Z",
 ) -> dict[str, Any]:
     return {
         "id": submission_id,
@@ -63,64 +103,48 @@ def rejected_submission(
         "version": "1.0.0",
         "status": status,
         "submissionType": "new_server",
-        "ownerUserId": owner_user_id,
-        "ownerOrganizationId": owner_organization_id,
+        "ownerUserId": "superuser-1",
+        "ownerOrganizationId": None,
         "rejectionMessage": "Add complete source review evidence.",
-        "serverJson": {
-            "name": "io.github.example/weather",
-            "version": "1.0.0",
-            "description": "Weather tools.",
-            "repository": {
-                "type": "git",
-                "source": "github",
-                "url": "https://github.com/example/weather",
-            },
-            "packages": [{"registryType": "npm", "identifier": "@example/weather"}],
-            "_meta": {"categories": ["developer-tools"]},
-        },
+        "serverJson": complete_server_json(),
         "validationResult": {"status": "failed", "checks": []},
-        "updatedAt": "2026-06-28T10:00:00Z",
+        "updatedAt": updated_at,
     }
 
 
-def test_build_fix_prompt_copies_frontend_repair_instructions_without_token() -> None:
+def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() -> None:
     client = FakeClient([rejected_submission()])
-    context = cli.build_fix_context(client, client.submissions[0], user_id="user-1")
+    context = cli.build_fix_context(client, client.submissions[0])
 
     prompt = cli.build_fix_prompt(context)
 
-    assert "Fix this Wardn Hub draft or rejected submission" in prompt
+    assert "Fix this Wardn Hub draft or rejected MCP server submission" in prompt
     assert "Submission ID: sub-1" in prompt
-    assert "Expected ownerUserId for this token: user-1" in prompt
     assert "Current submit/review feedback: Add complete source review evidence." in prompt
-    assert "Fetch the submission with GET /submissions/sub-1" in prompt
-    assert 'status "draft" or "rejected"' in prompt
-    assert "Update the same submission with PUT /submissions/sub-1" in prompt
-    assert 'Retry POST /submissions/submit with submissionId "sub-1"' in prompt
-    assert "Do not create a new submission" in prompt
-    assert "Do not update submissions owned by any other user or organization." in prompt
-    assert "sourceReview.llm.filesRead" in prompt
-    assert "Package argument rules:" in prompt
-    assert "wardn_hub_test_token" not in prompt
+    assert "Wardn Hub submission JSON snapshot" in prompt
+    assert "Submitted MCP server model JSON from to_json_dict()" in prompt
+    assert "Do not call Wardn Hub API endpoints." in prompt
+    assert "The database fix controller will apply your returned serverJson" in prompt
+    assert "Updated serverJson:" in prompt
+    assert "WARDN_HUB_TOKEN" not in prompt
+    assert "GET /submissions" not in prompt
+    assert "PUT /submissions" not in prompt
 
 
-def test_fix_loop_processes_draft_or_rejected_submissions_owned_by_current_user() -> None:
+def test_fix_loop_applies_updated_server_json_and_submits() -> None:
     client = FakeClient(
         [
-            rejected_submission(submission_id="other-user", owner_user_id="user-2"),
-            rejected_submission(submission_id="org-owned", owner_organization_id="org-1"),
-            rejected_submission(submission_id="approved", status="approved"),
-            rejected_submission(submission_id="draft", status="draft"),
-            rejected_submission(submission_id="owned"),
+            rejected_submission(submission_id="newer", updated_at="2026-06-29T10:00:00Z"),
+            rejected_submission(submission_id="oldest", updated_at="2026-06-28T10:00:00Z"),
         ]
     )
-    reviewer = FakeReviewer(client)
+    reviewer = FakeReviewer()
     stdout = StringIO()
 
     result = cli.fix_loop(
         client=client,
         reviewer=reviewer,
-        user=client.current_user(),
+        user={"id": "database"},
         max_fixes=None,
         once=True,
         dry_run=False,
@@ -129,70 +153,54 @@ def test_fix_loop_processes_draft_or_rejected_submissions_owned_by_current_user(
 
     assert result == 0
     assert len(reviewer.prompts) == 1
-    assert "Submission ID: draft" in reviewer.prompts[0]
-    output = stdout.getvalue()
-    assert "owned by different user user-2" in output
-    assert "owned by organization org-1" in output
-    assert "Submitted draft for review." in output
+    assert "Submission ID: oldest" in reviewer.prompts[0]
+    assert reviewer.environments[0]["WARDN_HUB_FIX_SUBMISSION_ID"] == "oldest"
+    assert client.fixed[0][0] == "oldest"
+    assert client.get_submission("oldest")["status"] == "submitted"
+    assert "Submitted oldest for review." in stdout.getvalue()
 
 
-def test_fix_loop_processes_rejected_after_drafts() -> None:
-    client = FakeClient(
-        [
-            rejected_submission(submission_id="draft", status="draft"),
-            rejected_submission(submission_id="owned"),
-        ]
-    )
-    reviewer = FakeReviewer(client)
+def test_fix_loop_skips_cannot_fix_decision() -> None:
+    class CannotFixReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            self.prompts.append(prompt)
+            self.environments.append(environment)
+            return "Decision: cannot fix\n\nMissing official repository URL."
+
+    client = FakeClient([rejected_submission()])
+    reviewer = CannotFixReviewer()
     stdout = StringIO()
 
     result = cli.fix_loop(
         client=client,
         reviewer=reviewer,
-        user=client.current_user(),
-        max_fixes=None,
-        once=False,
-        dry_run=False,
-        stdout=stdout,
-    )
-
-    assert result == 0
-    assert len(reviewer.prompts) == 2
-    assert "Submission ID: draft" in reviewer.prompts[0]
-    assert "Submission ID: owned" in reviewer.prompts[1]
-    assert "fixed=2" in stdout.getvalue()
-
-
-def test_fix_loop_skips_exact_submission_owned_by_different_user() -> None:
-    client = FakeClient([rejected_submission(owner_user_id="user-2")])
-    reviewer = FakeReviewer(client)
-    stdout = StringIO()
-
-    result = cli.fix_loop(
-        client=client,
-        reviewer=reviewer,
-        user=client.current_user(),
+        user={"id": "database"},
         max_fixes=None,
         once=True,
         dry_run=False,
         stdout=stdout,
-        submission_id="sub-1",
     )
 
     assert result == 0
-    assert reviewer.prompts == []
-    assert "owned by different user user-2" in stdout.getvalue()
+    assert client.fixed == []
+    assert "Reviewer could not fix sub-1" in stdout.getvalue()
 
 
-def test_fix_loop_reports_failure_when_reviewer_does_not_submit() -> None:
+def test_fix_loop_reports_failure_when_llm_omits_server_json() -> None:
+    class MissingJsonReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            self.prompts.append(prompt)
+            self.environments.append(environment)
+            return "Decision: fixed\n\nSummary: fixed it"
+
     client = FakeClient([rejected_submission()])
-    reviewer = FakeReviewer(client, final_status="draft")
+    reviewer = MissingJsonReviewer()
     stdout = StringIO()
 
     result = cli.fix_loop(
         client=client,
         reviewer=reviewer,
-        user=client.current_user(),
+        user={"id": "database"},
         max_fixes=None,
         once=True,
         dry_run=False,
@@ -200,19 +208,19 @@ def test_fix_loop_reports_failure_when_reviewer_does_not_submit() -> None:
     )
 
     assert result == 1
-    assert "final status is draft" in stdout.getvalue()
-    assert "failed=1" in stdout.getvalue()
+    assert client.fixed == []
+    assert "LLM did not return Updated serverJson" in stdout.getvalue()
 
 
 def test_dry_run_prints_prompt_without_running_reviewer() -> None:
     client = FakeClient([rejected_submission()])
-    reviewer = FakeReviewer(client)
+    reviewer = FakeReviewer()
     stdout = StringIO()
 
     result = cli.fix_loop(
         client=client,
         reviewer=reviewer,
-        user=client.current_user(),
+        user={"id": "database"},
         max_fixes=None,
         once=True,
         dry_run=True,
@@ -221,13 +229,27 @@ def test_dry_run_prints_prompt_without_running_reviewer() -> None:
 
     assert result == 0
     assert reviewer.prompts == []
-    assert "Fix this Wardn Hub draft or rejected submission" in stdout.getvalue()
-    assert client.submissions[0]["status"] == "rejected"
+    assert client.fixed == []
+    assert "Fix this Wardn Hub draft or rejected MCP server submission" in stdout.getvalue()
 
 
-def test_parser_uses_expected_defaults() -> None:
+def test_extract_updated_server_json_reads_nested_fenced_json() -> None:
+    server_json = complete_server_json()
+    findings = (
+        "Decision: fixed\n"
+        "Updated serverJson:\n"
+        "```json\n"
+        f"{json.dumps(server_json, indent=2)}\n"
+        "```"
+    )
+
+    assert cli.extract_updated_server_json(findings) == server_json
+
+
+def test_parser_uses_app_server_defaults() -> None:
     args = cli.build_parser().parse_args(["--submission-id", "sub-1", "--dry-run"])
 
     assert args.submission_id == "sub-1"
     assert args.dry_run is True
-    assert args.review_command == cli.DEFAULT_REVIEW_COMMAND
+    assert hasattr(args, "codex_app_server_url")
+    assert not hasattr(args, "review_command")

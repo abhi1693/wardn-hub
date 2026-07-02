@@ -169,8 +169,8 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_CORS_ORIGINS` | Comma-separated browser origins allowed by the backend. |
 | `WARDN_HUB_SESSION_SECRET` | Secret used for signed session cookies. Must be high entropy in production. |
 | `WARDN_HUB_API_TOKEN_SECRET` | Secret used for API token signing. Must be independent from the session secret in production. |
-| `WARDN_HUB_SYSTEM_REVIEW_SECRET` | Optional shared secret for internal system review endpoints and the submission review worker. Must be high entropy when set in production. |
-| `WARDN_HUB_CODEX_APP_SERVER_URL` | Optional experimental Codex app-server WebSocket URL used by the submission review worker instead of spawning `codex exec`. |
+| `WARDN_HUB_SYSTEM_REVIEW_SECRET` | Optional shared secret for internal system review endpoints. Must be high entropy when set in production. |
+| `WARDN_HUB_CODEX_APP_SERVER_URL` | Experimental Codex app-server WebSocket URL used by the submission review worker. |
 | `WARDN_HUB_API_TOKEN_PREFIX` | Prefix used when issuing user API tokens. |
 | `WARDN_HUB_SESSION_COOKIE_NAME` | Cookie name for local session auth. |
 | `WARDN_HUB_SESSION_TTL_SECONDS` | Session lifetime in seconds. |
@@ -189,6 +189,9 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_OTEL_EXPORTER_OTLP_TRACES_HEADERS` | Optional comma-separated OTLP exporter headers. Leave empty for the in-cluster collector. |
 | `WARDN_HUB_OTEL_TRACES_SAMPLE_RATIO` | Trace sampling ratio from `0.0` to `1.0`. Defaults to `1.0`. |
 | `WARDN_HUB_OTEL_EXCLUDED_URLS` | Optional comma-separated URL patterns excluded from FastAPI tracing. |
+
+GitHub source imports also honor `GITHUB_TOKEN` when present, which avoids
+unauthenticated GitHub API rate limits while reading repository metadata.
 
 Frontend settings:
 
@@ -236,144 +239,90 @@ OpenAPI metadata.
 
 ### Pending Submission Review CLI
 
-Submitted MCP server reviews can be assisted by an LLM while keeping moderation
-actions human-driven:
-
-```sh
-cd hub/backend
-WARDN_HUB_TOKEN=wardn_hub_key... uv run python -m app.cli.review_pending_submissions \
-  --url https://hub.example.com/api/v1 \
-  --model gpt-5 \
-  --thinking xhigh
-```
-
-The token must authenticate a superuser or global moderator and should include
-`submissions:read` and `submissions:moderate`; publishing also requires a
-superuser token with `submissions:publish`. The default review command is Codex:
-
-```sh
-codex --search exec --ephemeral --sandbox danger-full-access --ignore-user-config --skip-git-repo-check -
-```
-
-The default reviewer ignores Codex user config so local MCP servers do not leak
-into registry moderation, and uses a network-capable sandbox because the review
-must fetch Wardn Hub submission details and upstream source documentation.
-Codex runs in ephemeral mode because completed app-driven reviews are not
-resumed and should not accumulate session history on persistent storage.
-The backend container image includes the `@openai/codex` CLI for the review
-commands. Before running a Codex-backed review, the CLI checks `codex login
-status`; if Codex is not logged in it runs `codex login --device-auth` and waits
-for the device login to complete. Codex persists credentials under `~/.codex`;
-inside the backend image the `app` user's home is `/app`, and `/app/.codex` is
-writable.
-
-To avoid spawning `codex exec` for every review, run the experimental Codex
-app-server separately and point the review worker at it:
+Submitted MCP server reviews can be assisted by Codex app-server while keeping
+moderation actions human-driven:
 
 ```sh
 codex app-server --listen ws://127.0.0.1:41237
 
-WARDN_HUB_SYSTEM_REVIEW_SECRET=review_system_secret... \
+cd hub/backend
+WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
+uv run python -m app.cli.review_pending_submissions
+```
+
+The review worker requires `WARDN_HUB_CODEX_APP_SERVER_URL` or
+`--codex-app-server-url`. It reads submitted submissions directly from the
+configured database, oldest submitted first, and keeps reviewing until no
+submitted records remain. It does not poll the Hub API, require submission
+webhooks or event triggers, or spawn subprocess reviewers.
+
+For long-running review automation, run Codex app-server separately and point the
+review worker at it:
+
+```sh
+codex app-server --listen ws://127.0.0.1:41237
+
 WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
 uv run python -m app.cli.review_pending_submissions \
-  --url https://hub.example.com/api/v1 \
   --submission-id 00000000-0000-0000-0000-000000000000 \
   --non-interactive \
   --auto-reject \
   --auto-approve
 ```
 
-App-server mode requires system review mode. The worker does not forward
-`WARDN_HUB_TOKEN` or `WARDN_HUB_SYSTEM_REVIEW_SECRET` into Codex; Codex uses the
-login state of the long-running app-server process. The review thread is
-ephemeral, requests live web search, and runs with read-only filesystem access
-plus network access.
+Review mode does not spawn local Codex subprocesses or forward Wardn Hub
+credentials into Codex; Codex uses the login state of the long-running
+app-server process. The review thread is ephemeral, requests live web search,
+and runs with read-only filesystem access plus network access.
 
-Override it with `--review-command` or `WARDN_HUB_REVIEW_COMMAND`. The prompt is
-sent on stdin unless the command includes `{prompt_file}`. The CLI uses the same
-validation prompt text as the web UI, including the upstream source/release
-verification workflow. It fetches the first submitted review, shows the findings,
-then waits for a human action: approve, approve and publish, reject with message,
-skip, or quit.
+The CLI uses the same validation prompt text as the web UI, including the
+upstream source/release verification workflow. It loads the oldest submitted
+review from the database, shows the findings, then waits for a human action:
+approve, approve and publish, reject with message, skip, or quit.
 
 When rejecting, the CLI reuses the LLM report's `Suggested rejection message`
 section when one is present. If no suggested rejection message is available, it
 prompts for one.
 
-Use `--model` or `WARDN_HUB_REVIEW_MODEL` to pass a model to the default
-`codex exec` reviewer. Use `--thinking` or `WARDN_HUB_REVIEW_THINKING` to pass
-one of `low`, `medium`, `high`, or `xhigh` as Codex reasoning effort. For other
-LLM CLIs, include the equivalent model/thinking flags directly in
-`--review-command`.
+### Draft/Rejection Fix CLI
 
-Use `--verbose` to show review command logs while the LLM review command is
-running, including reviewer stderr and a refreshed terminal heartbeat status
-line. Use `--review-progress-interval 0` with `--verbose` to disable the
-heartbeat, or `--stream-review-output` to also tee reviewer stdout live while
-still capturing the final findings for the moderation prompt.
+Draft and rejected MCP server submissions can be repaired with the same
+Codex app-server setup:
 
-If `--url` is omitted, the CLI uses `WARDN_HUB_API_BASE_URL` or local
-`http://localhost:8000/api/v1`.
-The CLI sends `WardnHubReviewCLI/0.1` as its HTTP user agent by default; override
-it with `--user-agent` or `WARDN_HUB_USER_AGENT` if an edge proxy requires a
-specific API-client signature.
+```sh
+codex app-server --listen ws://127.0.0.1:41237
+
+cd hub/backend
+WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
+uv run python -m app.cli.fix_rejected_submissions
+```
+
+The fix worker reads eligible draft/rejected submissions directly from the
+database, oldest updated first, and keeps running until no eligible records
+remain. Eligibility is intentionally narrow: it only fixes submissions owned by
+an active superuser or active partner organization. It does not call the Hub API,
+forward Wardn Hub credentials to Codex, use event webhooks, or spawn subprocess
+reviewers. Codex returns an updated `serverJson`; the worker validates it with
+the Pydantic MCP server model and submits the same record for review.
+
+Use `--verbose` to stream Codex app-server reviewer output while the review is
+running. Findings are still shown again before the moderation prompt.
 
 For automation, target one submission and avoid prompts:
 
 ```sh
-WARDN_HUB_SYSTEM_REVIEW_SECRET=review_system_secret... \
+WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
 uv run python -m app.cli.review_pending_submissions \
-  --url https://hub.example.com/api/v1 \
   --submission-id 00000000-0000-0000-0000-000000000000 \
   --non-interactive \
   --auto-reject \
   --auto-approve
 ```
 
-In non-interactive mode, `pass` can approve, `needs fixes` or `reject` can reject
-when a suggested rejection message exists, and `cannot validate` or ambiguous
-results leave the submission unchanged. With `WARDN_HUB_SYSTEM_REVIEW_SECRET`,
-review decisions are recorded through the internal system review path rather
-than a personal moderator account.
-
-### Submission Review Webhook
-
-Wardn Hub can emit `submission.submitted` event webhooks. The review webhook
-receiver accepts those events, verifies the Wardn signature, queues the
-submission ID, returns `202`, then reviews the submission in a background worker:
-
-```sh
-cd hub/backend
-WARDN_HUB_SYSTEM_REVIEW_SECRET=review_system_secret... \
-WARDN_HUB_REVIEW_WEBHOOK_SECRET=event_rule_signing_secret \
-WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
-uv run python -m app.cli.review_submission_webhook \
-  --url https://hub.example.com/api/v1 \
-  --host 0.0.0.0 \
-  --port 8090
-```
-
-Create a superuser-managed internal automation event rule for
-`submission.submitted`, enable signing, and point it at the receiver path:
-
-```text
-/webhooks/wardn/submission-review
-```
-
-The same receiver is available from the repository root as
-`scripts/review-submission-webhook.py`.
-
-For durable review jobs, run the webhook receiver with Redis or Valkey queue
-storage, for example:
-
-```sh
-WARDN_HUB_WEBHOOK_QUEUE_BACKEND=redis
-WARDN_HUB_WEBHOOK_REDIS_URL=redis://redis.example.com:6379/40
-```
-
-When a Redis-backed review job fails or exits nonzero, it remains in the
-processing queue so a restarted worker can reclaim and retry it instead of losing
-the webhook.
+In non-interactive mode, `pass` can approve, `needs fixes` or `reject` can
+reject when a suggested rejection message exists, and `cannot validate` or
+ambiguous results leave the submission unchanged for manual review or a later
+retry.
 
 ## Containers
 

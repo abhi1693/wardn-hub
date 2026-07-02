@@ -84,6 +84,38 @@ async def list_submissions(
     return list(result.scalars().all()), total, status_counts
 
 
+async def list_submitted_submissions_for_review(
+    session: AsyncSession,
+) -> list[ServerSubmission]:
+    statement = (
+        select(ServerSubmission)
+        .where(ServerSubmission.status == "submitted")
+        .order_by(
+            ServerSubmission.submitted_at.asc().nullslast(),
+            ServerSubmission.created_at.asc(),
+            ServerSubmission.id.asc(),
+        )
+    )
+    result = await session.execute(statement)
+    return list(result.scalars().all())
+
+
+async def list_repairable_submissions_for_system_fix(
+    session: AsyncSession,
+) -> list[ServerSubmission]:
+    statement = (
+        select(ServerSubmission)
+        .where(ServerSubmission.status.in_({"draft", "rejected"}))
+        .order_by(
+            ServerSubmission.updated_at.asc().nullslast(),
+            ServerSubmission.created_at.asc(),
+            ServerSubmission.id.asc(),
+        )
+    )
+    result = await session.execute(statement)
+    return list(result.scalars().all())
+
+
 async def get_submission_by_name_version(
     session: AsyncSession,
     *,

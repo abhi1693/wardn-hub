@@ -539,8 +539,6 @@ def package_transport_detail_check(packages: list[Any]) -> dict[str, str]:
         missing: list[str] = []
         if not is_non_empty_string(transport_value.get("command")):
             missing.append("command")
-        if not transport_value.get("args"):
-            missing.append("args")
         if missing:
             incomplete.append(f"{identifier} missing {'/'.join(missing)}")
 
@@ -553,7 +551,7 @@ def package_transport_detail_check(packages: list[Any]) -> dict[str, str]:
     return validation_check(
         "packageTransportDetails",
         "passed",
-        "Package transport command and args are present where expected.",
+        "Package transport command is present where expected.",
     )
 
 
@@ -654,7 +652,7 @@ def source_review_missing_fields(
         command_arguments = source_review.get("commandArguments")
         if not isinstance(install_commands, list) or not install_commands:
             missing.append("installCommands")
-        if not isinstance(command_arguments, list) or not command_arguments:
+        if not isinstance(command_arguments, list):
             missing.append("commandArguments")
     return missing
 
@@ -736,6 +734,36 @@ def ensure_ready_for_review(validation_result: dict) -> None:
 
 def can_review_submissions(user: User) -> bool:
     return user.is_superuser or user.is_global_moderator
+
+
+async def submission_owned_by_superuser_or_partner(
+    session: AsyncSession,
+    submission: ServerSubmission,
+) -> bool:
+    if submission.owner_user_id is not None:
+        owner_user = await session.get(User, submission.owner_user_id)
+        return bool(owner_user and owner_user.is_active and owner_user.is_superuser)
+    if submission.owner_organization_id is not None:
+        organization = await organization_repository.get_organization_by_id(
+            session,
+            submission.owner_organization_id,
+        )
+        return bool(
+            organization
+            and organization.status == "active"
+            and organization.is_partner
+            and organization.partner_status == "active"
+        )
+    return False
+
+
+async def list_submissions_for_system_fix(session: AsyncSession) -> list[SubmissionRead]:
+    submissions = await repository.list_repairable_submissions_for_system_fix(session)
+    eligible: list[SubmissionRead] = []
+    for submission in submissions:
+        if await submission_owned_by_superuser_or_partner(session, submission):
+            eligible.append(submission_response(submission))
+    return eligible
 
 
 def api_token_organization_ids(api_token: UserAPIToken | None) -> set[str]:
@@ -1120,6 +1148,13 @@ async def list_submissions_for_system_review(
     )
 
 
+async def list_submissions_for_database_review(
+    session: AsyncSession,
+) -> list[SubmissionRead]:
+    submissions = await repository.list_submitted_submissions_for_review(session)
+    return [submission_response(submission) for submission in submissions]
+
+
 async def get_submission_for_system_review(
     session: AsyncSession,
     submission_id: uuid.UUID,
@@ -1396,6 +1431,63 @@ async def submit_submission_record(
         api_token=api_token,
         submission=submission,
         occurred_at=submitted_at,
+    )
+    return submission_response(submission)
+
+
+async def fix_submission_by_system(
+    session: AsyncSession,
+    submission_id: uuid.UUID,
+    server_json: RegistryServerVersionCreate,
+) -> SubmissionRead:
+    submission = await repository.get_submission_by_id(session, submission_id)
+    if submission is None:
+        raise SubmissionNotFoundError("submission not found")
+    if submission.status not in {"draft", "rejected"}:
+        raise InvalidSubmissionTransitionError("submission cannot be fixed")
+    if not await submission_owned_by_superuser_or_partner(session, submission):
+        raise SubmissionAccessDeniedError(
+            "system fixes are limited to superuser-owned or active partner-owned submissions"
+        )
+
+    validation_result = validation_result_for(
+        server_json,
+        submission_type=submission.submission_type,
+    )
+    ensure_ready_for_review(validation_result)
+    await ensure_version_not_published(session, server_json.name, server_json.version)
+    await ensure_no_active_submission_for_version(
+        session,
+        server_json.name,
+        server_json.version,
+        exclude_id=submission.id,
+    )
+
+    submission.name = server_json.name
+    submission.version = server_json.version
+    submission.server_json = server_json.to_json_dict()
+    submission.validation_result = validation_result
+    submission.status = "submitted"
+    submission.submitted_at = datetime.now(UTC)
+    submission.rejection_message = ""
+    await session.flush()
+    await session.refresh(submission)
+    await emit_submission_event(
+        session,
+        event_type="submission.fixed",
+        actor_user_id=None,
+        api_token=None,
+        submission=submission,
+        metadata={"source": "system_fix"},
+        occurred_at=submission.updated_at or datetime.now(UTC),
+    )
+    await emit_submission_event(
+        session,
+        event_type="submission.submitted",
+        actor_user_id=None,
+        api_token=None,
+        submission=submission,
+        occurred_at=submission.submitted_at or datetime.now(UTC),
     )
     return submission_response(submission)
 

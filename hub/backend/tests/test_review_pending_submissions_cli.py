@@ -4,7 +4,6 @@ import json
 import sys
 from io import StringIO
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -18,9 +17,6 @@ class TtyStringIO(StringIO):
 
 class FakeClient:
     def __init__(self, submissions: list[dict[str, Any]] | None = None) -> None:
-        self.token = "wardn_hub_test_token"
-        self.base_url = "http://localhost:8000/api/v1"
-        self.user_agent = cli.DEFAULT_USER_AGENT
         self.submissions = submissions or []
         self.actions: list[tuple[str, str, str | None]] = []
 
@@ -77,8 +73,7 @@ class FakeReviewer:
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         self.prompts.append(prompt)
-        assert environment[cli.TOKEN_ENV] == "wardn_hub_test_token"
-        assert environment[cli.API_BASE_URL_ENV] == "http://localhost:8000/api/v1"
+        assert environment["WARDN_HUB_REVIEW_SUBMISSION_ID"].startswith("sub-")
         return "## Summary\nLooks structurally valid.\n\n## Recommended decision\napprove"
 
 
@@ -126,227 +121,11 @@ def submitted_submission_with_id(submission_id: str) -> dict[str, Any]:
     return submission
 
 
-def test_normalize_api_base_url_adds_default_api_prefix() -> None:
-    assert cli.normalize_api_base_url("http://localhost:8000") == "http://localhost:8000/api/v1"
-    assert cli.normalize_api_base_url("http://localhost:8000/api/v1/") == (
-        "http://localhost:8000/api/v1"
-    )
-
-
-def test_api_client_wraps_response_read_timeout() -> None:
-    class TimeoutResponse:
-        status = 200
-        headers = {"content-type": "application/json"}
-
-        def __enter__(self) -> TimeoutResponse:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            return None
-
-        def read(self) -> bytes:
-            raise TimeoutError("read timed out")
-
-    client = cli.WardnHubApiClient(
-        base_url="https://hub.example.com/api/v1",
-        token="token",
-        user_agent="test",
-        timeout_seconds=3,
-    )
-
-    with patch("urllib.request.urlopen", return_value=TimeoutResponse()):
-        with pytest.raises(cli.UserFacingError, match="timed out after 3 seconds reading"):
-            client.request("GET", "/submissions")
-
-
-def test_url_alias_sets_api_base_url() -> None:
-    args = cli.build_parser().parse_args(["--url", "https://hub.example.com/api/v1"])
-
-    assert args.api_base_url == "https://hub.example.com/api/v1"
-
-
-def test_user_agent_argument_overrides_default() -> None:
-    args = cli.build_parser().parse_args(["--user-agent", "WardnHubReviewCLI/edge-test"])
-
-    assert args.user_agent == "WardnHubReviewCLI/edge-test"
-
-
-def test_default_review_command_uses_portable_codex_exec_flags() -> None:
-    args = cli.build_parser().parse_args([])
-
-    assert args.review_command == (
-        "codex --search exec --ephemeral --sandbox danger-full-access --ignore-user-config "
-        "--skip-git-repo-check -"
-    )
-    assert "--ask-for-approval" not in args.review_command
-    assert "--ignore-user-config" in args.review_command
-    assert "--ephemeral" in args.review_command
-
-
-def test_model_argument_is_inserted_into_codex_exec_command() -> None:
-    command = cli.parse_review_command(
-        "codex exec --sandbox read-only --skip-git-repo-check -",
-        model="gpt-5",
-    )
-
-    assert command == [
-        "codex",
-        "exec",
-        "--model",
-        "gpt-5",
-        "--sandbox",
-        "read-only",
-        "--skip-git-repo-check",
-        "-",
-    ]
-
-
-def test_model_argument_is_inserted_after_codex_exec_with_top_level_flags() -> None:
-    command = cli.parse_review_command(
-        "codex --search exec --sandbox read-only --skip-git-repo-check -",
-        model="gpt-5",
-    )
-
-    assert command == [
-        "codex",
-        "--search",
-        "exec",
-        "--model",
-        "gpt-5",
-        "--sandbox",
-        "read-only",
-        "--skip-git-repo-check",
-        "-",
-    ]
-
-
-def test_thinking_argument_is_inserted_into_codex_exec_command() -> None:
-    command = cli.parse_review_command(
-        "codex exec --sandbox read-only --skip-git-repo-check -",
-        thinking="xhigh",
-    )
-
-    assert command == [
-        "codex",
-        "exec",
-        "-c",
-        'model_reasoning_effort="xhigh"',
-        "--sandbox",
-        "read-only",
-        "--skip-git-repo-check",
-        "-",
-    ]
-
-
-def test_model_and_thinking_arguments_are_inserted_before_codex_prompt() -> None:
-    command = cli.parse_review_command(
-        "codex exec --sandbox read-only --skip-git-repo-check -",
-        model="gpt-5",
-        thinking="high",
-    )
-
-    assert command == [
-        "codex",
-        "exec",
-        "--model",
-        "gpt-5",
-        "-c",
-        'model_reasoning_effort="high"',
-        "--sandbox",
-        "read-only",
-        "--skip-git-repo-check",
-        "-",
-    ]
-
-
-def test_model_argument_requires_codex_exec_command() -> None:
-    with pytest.raises(cli.UserFacingError, match="codex exec"):
-        cli.parse_review_command("custom-llm --review -", model="gpt-5")
-
-
-def test_thinking_argument_requires_codex_exec_command() -> None:
-    with pytest.raises(cli.UserFacingError, match="codex exec"):
-        cli.parse_review_command("custom-llm --review -", thinking="high")
-
-
-def test_thinking_argument_accepts_expected_levels() -> None:
-    for level in ("low", "medium", "high", "xhigh"):
-        args = cli.build_parser().parse_args(["--thinking", level])
-        assert args.thinking == level
-
-
-def test_ensure_codex_login_skips_non_codex_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **kwargs: Any) -> Any:
-        calls.append(command)
-        raise AssertionError("subprocess should not be called")
-
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
-
-    cli.ensure_codex_login(["custom-reviewer", "-"], environment={}, stdout=StringIO())
-
-    assert calls == []
-
-
-def test_ensure_codex_login_uses_status_when_already_logged_in(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **kwargs: Any) -> Any:
-        calls.append(command)
-        return cli.subprocess.CompletedProcess(command, 0)
-
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
-
-    cli.ensure_codex_login(["codex", "exec", "-"], environment={}, stdout=StringIO())
-
-    assert calls == [["codex", "login", "status"]]
-
-
-def test_ensure_codex_login_runs_device_auth_when_status_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **kwargs: Any) -> Any:
-        calls.append(command)
-        return cli.subprocess.CompletedProcess(command, 1 if len(calls) == 1 else 0)
-
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
-    stdout = StringIO()
-
-    cli.ensure_codex_login(["codex", "exec", "-"], environment={}, stdout=stdout)
-
-    assert calls == [
-        ["codex", "login", "status"],
-        ["codex", "login", "--device-auth"],
-    ]
-    assert "complete the device login" in stdout.getvalue()
-
-
-def test_ensure_codex_login_reports_missing_codex(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(command: list[str], **kwargs: Any) -> Any:
-        raise FileNotFoundError("codex")
-
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
-
-    with pytest.raises(cli.UserFacingError, match="codex command not found"):
-        cli.ensure_codex_login(["codex", "exec", "-"], environment={}, stdout=StringIO())
-
-
-def test_review_progress_arguments() -> None:
+def test_verbose_argument() -> None:
     default_args = cli.build_parser().parse_args([])
-    args = cli.build_parser().parse_args(
-        ["--review-progress-interval", "30", "--stream-review-output", "--verbose"]
-    )
+    args = cli.build_parser().parse_args(["--verbose"])
 
-    assert default_args.review_progress_interval == 15
     assert default_args.verbose is False
-    assert default_args.stream_review_output is False
-    assert args.review_progress_interval == 30
-    assert args.stream_review_output is True
     assert args.verbose is True
 
 
@@ -386,7 +165,7 @@ def test_auto_publish_argument() -> None:
     assert args.auto_publish is True
 
 
-def test_webhook_safe_arguments() -> None:
+def test_targeted_non_interactive_arguments() -> None:
     default_args = cli.build_parser().parse_args([])
     args = cli.build_parser().parse_args(
         ["--submission-id", "sub-1", "--non-interactive"]
@@ -396,75 +175,6 @@ def test_webhook_safe_arguments() -> None:
     assert default_args.non_interactive is False
     assert args.submission_id == "sub-1"
     assert args.non_interactive is True
-
-
-def test_review_progress_interval_env_requires_integer(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setenv(cli.REVIEW_PROGRESS_INTERVAL_ENV, "soon")
-
-    assert cli.main(["--token", "wardn_hub_test_token"]) == 1
-    assert "$WARDN_HUB_REVIEW_PROGRESS_INTERVAL must be an integer" in capsys.readouterr().err
-
-
-def test_subprocess_reviewer_streams_stderr_and_captures_stdout() -> None:
-    progress = StringIO()
-    reviewer = cli.SubprocessReviewer(
-        command=[
-            sys.executable,
-            "-c",
-            "import sys; print('review progress', file=sys.stderr); print('final findings')",
-        ],
-        timeout_seconds=5,
-        progress_stream=progress,
-        progress_interval_seconds=0,
-    )
-
-    findings = reviewer.review("prompt", environment={})
-
-    assert findings == "final findings"
-    assert "Review command started" in progress.getvalue()
-    assert "review progress" in progress.getvalue()
-    assert "final findings" not in progress.getvalue()
-
-
-def test_subprocess_reviewer_can_stream_stdout_while_capturing_findings() -> None:
-    progress = StringIO()
-    reviewer = cli.SubprocessReviewer(
-        command=[sys.executable, "-c", "print('final findings')"],
-        timeout_seconds=5,
-        progress_stream=progress,
-        progress_interval_seconds=0,
-        stream_stdout=True,
-    )
-
-    findings = reviewer.review("prompt", environment={})
-
-    assert findings == "final findings"
-    assert "final findings" in progress.getvalue()
-
-
-def test_subprocess_reviewer_refreshes_tty_heartbeat_status_line() -> None:
-    progress = TtyStringIO()
-    reviewer = cli.SubprocessReviewer(
-        command=[
-            sys.executable,
-            "-c",
-            "import time; time.sleep(1.1); print('final findings')",
-        ],
-        timeout_seconds=5,
-        progress_stream=progress,
-        progress_interval_seconds=1,
-    )
-
-    findings = reviewer.review("prompt", environment={})
-    progress_output = progress.getvalue()
-
-    assert findings == "final findings"
-    assert "Review command still running after" in progress_output
-    assert "\r\033[KReview command still running after" in progress_output
-    assert "\nReview command still running after" not in progress_output
 
 
 def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> None:
@@ -518,17 +228,12 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
         url="ws://127.0.0.1:41237",
         timeout_seconds=5,
         cwd=None,
-        model="test-model",
-        thinking="low",
         websocket_connect=lambda _url: websocket,
     )
 
     findings = reviewer.review(
         "review prompt",
-        environment={
-            cli.TOKEN_ENV: "wardn_hub_test_token",
-            cli.SYSTEM_REVIEW_SECRET_ENV: "system-secret",
-        },
+        environment={"WARDN_HUB_TOKEN": "wardn_hub_test_token"},
     )
 
     assert findings == "Decision: pass"
@@ -539,85 +244,16 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
     assert websocket.sent[1]["params"]["ephemeral"] is True
     assert websocket.sent[1]["params"]["approvalPolicy"] == "never"
     assert websocket.sent[1]["params"]["config"]["web_search"] == "live"
+    assert "model" not in websocket.sent[1]["params"]
     assert websocket.sent[2]["method"] == "turn/start"
     assert websocket.sent[2]["params"]["threadId"] == "thread-1"
     assert websocket.sent[2]["params"]["input"][0]["text"] == "review prompt"
+    assert "model" not in websocket.sent[2]["params"]
+    assert "effort" not in websocket.sent[2]["params"]
     assert websocket.sent[2]["params"]["sandboxPolicy"] == {
         "type": "readOnly",
         "networkAccess": True,
     }
-
-
-def test_main_keeps_review_command_logs_quiet_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_reviewers: list[dict[str, Any]] = []
-
-    class FakeApiClient(FakeClient):
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__([])
-
-    class CapturingSubprocessReviewer:
-        def __init__(self, **kwargs: Any) -> None:
-            captured_reviewers.append(kwargs)
-
-    monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
-    monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
-    monkeypatch.setattr(cli, "ensure_codex_login", lambda *args, **kwargs: None)
-
-    result = cli.main(["--token", "wardn_hub_test_token", "--once"])
-
-    assert result == 0
-    assert captured_reviewers[0]["progress_stream"] is None
-    assert captured_reviewers[0]["stream_stdout"] is False
-
-
-def test_main_enables_review_command_logs_with_verbose(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_reviewers: list[dict[str, Any]] = []
-
-    class FakeApiClient(FakeClient):
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__([])
-
-    class CapturingSubprocessReviewer:
-        def __init__(self, **kwargs: Any) -> None:
-            captured_reviewers.append(kwargs)
-
-    monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
-    monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
-    monkeypatch.setattr(cli, "ensure_codex_login", lambda *args, **kwargs: None)
-
-    result = cli.main(["--token", "wardn_hub_test_token", "--once", "--verbose"])
-
-    assert result == 0
-    assert captured_reviewers[0]["progress_stream"] is sys.stdout
-    assert captured_reviewers[0]["stream_stdout"] is False
-
-
-def test_main_stream_review_output_implies_verbose(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_reviewers: list[dict[str, Any]] = []
-
-    class FakeApiClient(FakeClient):
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__([])
-
-    class CapturingSubprocessReviewer:
-        def __init__(self, **kwargs: Any) -> None:
-            captured_reviewers.append(kwargs)
-
-    monkeypatch.setattr(cli, "WardnHubApiClient", FakeApiClient)
-    monkeypatch.setattr(cli, "SubprocessReviewer", CapturingSubprocessReviewer)
-    monkeypatch.setattr(cli, "ensure_codex_login", lambda *args, **kwargs: None)
-
-    result = cli.main(["--token", "wardn_hub_test_token", "--once", "--stream-review-output"])
-
-    assert result == 0
-    assert captured_reviewers[0]["progress_stream"] is sys.stdout
-    assert captured_reviewers[0]["stream_stdout"] is True
 
 
 def test_main_uses_codex_app_server_without_login(
@@ -625,31 +261,19 @@ def test_main_uses_codex_app_server_without_login(
 ) -> None:
     captured_reviewers: list[dict[str, Any]] = []
 
-    class SystemReviewClient(FakeClient):
+    class FakeDatabaseReviewClient(FakeClient):
         def __init__(self, **kwargs: Any) -> None:
             super().__init__([])
-            self.token = kwargs.get("token", "")
-            self.system_review_secret = kwargs.get("system_review_secret", "")
-
-        @property
-        def is_system_review(self) -> bool:
-            return True
 
     class CapturingCodexAppServerReviewer:
         def __init__(self, **kwargs: Any) -> None:
             captured_reviewers.append(kwargs)
 
-    def fail_login(*args: Any, **kwargs: Any) -> None:
-        raise AssertionError("app-server mode should not run codex login")
-
-    monkeypatch.setattr(cli, "WardnHubApiClient", SystemReviewClient)
+    monkeypatch.setattr(cli, "WardnHubDatabaseReviewClient", FakeDatabaseReviewClient)
     monkeypatch.setattr(cli, "CodexAppServerReviewer", CapturingCodexAppServerReviewer)
-    monkeypatch.setattr(cli, "ensure_codex_login", fail_login)
 
     result = cli.main(
         [
-            "--system-review-secret",
-            "system-secret",
             "--codex-app-server-url",
             "ws://127.0.0.1:41237",
             "--once",
@@ -663,114 +287,52 @@ def test_main_uses_codex_app_server_without_login(
             "url": "ws://127.0.0.1:41237",
             "timeout_seconds": 900,
             "cwd": cli.Path.cwd(),
-            "model": "",
-            "thinking": "",
             "progress_stream": sys.stdout,
-            "stream_output": False,
+            "stream_output": True,
         }
     ]
 
 
-def test_main_requires_system_review_for_codex_app_server(
+def test_main_uses_database_queue_with_codex_app_server(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fail_login(*args: Any, **kwargs: Any) -> None:
-        raise AssertionError("no login")
+    client_created = False
+    captured_reviewers: list[dict[str, Any]] = []
 
-    monkeypatch.setattr(cli, "ensure_codex_login", fail_login)
+    class FakeDatabaseReviewClient(FakeClient):
+        def __init__(self, **kwargs: Any) -> None:
+            nonlocal client_created
+            super().__init__([])
+            assert kwargs == {}
+            client_created = True
+
+    class CapturingCodexAppServerReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    monkeypatch.setattr(cli, "WardnHubDatabaseReviewClient", FakeDatabaseReviewClient)
+    monkeypatch.setattr(cli, "CodexAppServerReviewer", CapturingCodexAppServerReviewer)
 
     result = cli.main(
         [
-            "--token",
-            "wardn_hub_test_token",
             "--codex-app-server-url",
             "ws://127.0.0.1:41237",
             "--once",
         ]
     )
 
+    assert result == 0
+    assert client_created is True
+    assert captured_reviewers[0]["url"] == "ws://127.0.0.1:41237"
+
+
+def test_main_requires_app_server_without_explicit_review_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = cli.main(["--once"])
+
     assert result == 1
-    assert "Codex app-server review requires --system-review-secret" in capsys.readouterr().err
-
-
-def test_api_client_sends_user_agent_header() -> None:
-    captured: dict[str, str] = {}
-
-    class FakeResponse:
-        status = 200
-        headers = {"content-type": "application/json"}
-
-        def __enter__(self) -> FakeResponse:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            return None
-
-        def read(self) -> bytes:
-            return b'{"ok": true}'
-
-    def fake_urlopen(request: Any, timeout: int) -> FakeResponse:
-        captured["user_agent"] = request.get_header("User-agent")
-        captured["authorization"] = request.get_header("Authorization")
-        assert timeout == 30
-        return FakeResponse()
-
-    client = cli.WardnHubApiClient(
-        base_url="https://hub.example.com",
-        token="wardn_hub_test_token",
-        user_agent="WardnHubReviewCLI/edge-test",
-        timeout_seconds=30,
-    )
-
-    with patch("urllib.request.urlopen", fake_urlopen):
-        assert client.request("GET", "/auth/me") == {"ok": True}
-
-    assert captured == {
-        "authorization": "Bearer wardn_hub_test_token",
-        "user_agent": "WardnHubReviewCLI/edge-test",
-    }
-
-
-def test_system_review_client_uses_system_secret_header() -> None:
-    captured: dict[str, str | None] = {}
-
-    class FakeResponse:
-        status = 200
-        headers = {"content-type": "application/json"}
-
-        def __enter__(self) -> FakeResponse:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            return None
-
-        def read(self) -> bytes:
-            return b'{"submissions":[]}'
-
-    def fake_urlopen(request: Any, timeout: int) -> FakeResponse:
-        captured["authorization"] = request.get_header("Authorization")
-        captured["system_secret"] = request.get_header("X-wardn-system-review-secret")
-        captured["url"] = request.full_url
-        assert timeout == 30
-        return FakeResponse()
-
-    client = cli.WardnHubApiClient(
-        base_url="https://hub.example.com",
-        token="",
-        user_agent="WardnHubReviewCLI/edge-test",
-        timeout_seconds=30,
-        system_review_secret="system-secret",
-    )
-
-    with patch("urllib.request.urlopen", fake_urlopen):
-        assert client.list_submissions() == []
-
-    assert captured == {
-        "authorization": None,
-        "system_secret": "system-secret",
-        "url": "https://hub.example.com/api/v1/system/review/submissions",
-    }
+    assert "Codex app-server review is required" in capsys.readouterr().err
 
 
 def test_pending_submissions_filters_status_and_skips() -> None:
@@ -805,31 +367,22 @@ def test_pending_submissions_orders_oldest_submitted_first() -> None:
     ]
 
 
-def test_validate_token_requires_review_role() -> None:
-    class NonReviewerClient(FakeClient):
-        def current_user(self) -> dict[str, Any]:
-            user = super().current_user()
-            user["is_superuser"] = False
-            user["is_global_moderator"] = False
-            return user
-
-    with pytest.raises(cli.UserFacingError, match="superuser or global moderator"):
-        cli.validate_token(NonReviewerClient())
-
-
 def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
-    context = {
-        "submission": submitted_submission(),
-        "apiBaseUrl": "https://hub.example.com/api/v1",
-        "apiTokenEnvironmentVariable": cli.TOKEN_ENV,
-    }
+    context = {"submission": submitted_submission()}
 
     prompt = cli.build_review_prompt(context)
 
     assert "Validate one Wardn Hub MCP server version that is currently in review." in prompt
-    assert "Wardn Hub API base URL: https://hub.example.com/api/v1" in prompt
+    assert "System review mode:" in prompt
+    assert "Wardn Hub submission JSON snapshot" in prompt
+    assert "Submitted MCP server model JSON from to_json_dict()" in prompt
+    assert '"serverJson"' in prompt
     assert "io.github.example/weather" in prompt
-    assert "wardn_hub_test_token" not in prompt
+    assert "Do not call Wardn Hub API endpoints." in prompt
+    assert "WARDN_HUB_TOKEN" not in prompt
+    assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in prompt
+    assert "Use the Wardn Hub submission JSON snapshot for submission ID" in prompt
+    assert "Read the Submitted MCP server model JSON from to_json_dict()" in prompt
     assert "Read the upstream README and relevant docs/files" in prompt
     assert "Do not assume importer output is complete." in prompt
     assert "packages[].transport.args contains only the concrete default launch arguments" in prompt
@@ -837,46 +390,41 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "Every documented environment variable is represented" in prompt
     assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt
     assert "Decision: pass, needs fixes, or cannot validate" in prompt
-
-
-def test_build_review_prompt_system_mode_uses_snapshot_without_credentials() -> None:
-    context = {
-        "submission": submitted_submission(),
-        "apiBaseUrl": "https://hub.example.com/api/v1",
-        "apiAccessMode": "system_review",
-    }
-
-    prompt = cli.build_review_prompt(context)
-
-    assert "System review mode:" in prompt
-    assert "Wardn Hub submission JSON snapshot" in prompt
-    assert '"serverJson"' in prompt
-    assert "Do not call Wardn Hub API endpoints." in prompt
-    assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in prompt
-    assert "WARDN_HUB_TOKEN" not in prompt
     assert "Call GET /submissions" not in prompt
 
 
-def test_review_loop_system_mode_scrubs_user_token_from_reviewer_environment() -> None:
-    class SystemReviewClient(FakeClient):
-        def __init__(self, submissions: list[dict[str, Any]]) -> None:
-            super().__init__(submissions)
-            self.token = "wardn_hub_personal_token"
-            self.system_review_secret = "system-secret"
+def test_submitted_mcp_server_model_json_uses_schema_serializer() -> None:
+    submission = submitted_submission()
+    submission["serverJson"] = {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "io.github.example/weather",
+        "title": "Weather",
+        "description": "Weather tools.",
+        "documentation": "# Weather",
+        "version": "1.0.0",
+        "websiteUrl": "https://example.com/weather",
+        "packages": [{"registryType": "npm", "identifier": "@example/weather"}],
+        "_meta": {"categories": ["developer-tools"]},
+    }
 
-        @property
-        def is_system_review(self) -> bool:
-            return True
+    serialized = cli.submitted_mcp_server_model_json(submission)
 
+    assert serialized["websiteUrl"] == "https://example.com/weather"
+    assert serialized["packages"][0]["registryType"] == "npm"
+    assert "website_url" not in serialized
+
+
+def test_review_loop_sets_only_submission_context_environment() -> None:
     class EnvironmentCheckingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             self.prompts.append(prompt)
-            assert cli.TOKEN_ENV not in environment
-            assert cli.SYSTEM_REVIEW_SECRET_ENV not in environment
-            assert environment[cli.API_BASE_URL_ENV] == "http://localhost:8000/api/v1"
+            assert "WARDN_HUB_TOKEN" not in environment
+            assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in environment
+            assert "WARDN_HUB_API_BASE_URL" not in environment
+            assert environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] == "sub-1"
             return "Decision: pass\n\nSuggested approval note:\nApproved."
 
-    client = SystemReviewClient([submitted_submission()])
+    client = FakeClient([submitted_submission()])
     reviewer = EnvironmentCheckingReviewer()
 
     result = cli.review_loop(
@@ -1160,11 +708,7 @@ def test_review_loop_targets_exact_submission_id() -> None:
 
 
 def test_review_loop_skips_missing_exact_submission_id() -> None:
-    class MissingSubmissionClient(FakeClient):
-        def get_submission(self, submission_id: str) -> dict[str, Any]:
-            raise cli.HubApiError(404, "submission not found", f"/submissions/{submission_id}")
-
-    client = MissingSubmissionClient()
+    client = FakeClient([])
     reviewer = FakeReviewer()
     stdout = StringIO()
 
@@ -1436,7 +980,7 @@ def test_review_loop_continues_after_review_error() -> None:
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
             if len(self.prompts) == 1:
-                raise cli.UserFacingError("review command timed out after 900 seconds")
+                raise cli.UserFacingError("Codex app-server review timed out after 900 seconds")
             return "Decision: pass\n\nSuggested approval note:\nApproved."
 
     client = FakeClient(
@@ -1519,7 +1063,7 @@ def test_review_loop_once_stops_after_review_error() -> None:
     class FailingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            raise cli.UserFacingError("review command timed out after 900 seconds")
+            raise cli.UserFacingError("Codex app-server review timed out after 900 seconds")
 
     client = FakeClient([submitted_submission()])
     reviewer = FailingReviewer()

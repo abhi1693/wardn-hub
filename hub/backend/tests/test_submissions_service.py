@@ -6,6 +6,7 @@ import pytest
 
 from app.modules.events.models import EventRecord
 from app.modules.organizations.exceptions import OrganizationAccessDeniedError
+from app.modules.organizations.models import Organization
 from app.modules.registry.models import RegistryServer
 from app.modules.registry.schemas import (
     RegistryEnvironmentVariable,
@@ -214,6 +215,96 @@ def test_validation_warns_when_source_review_and_transport_details_are_missing()
 
 def test_validation_passes_with_source_review_and_transport_details() -> None:
     assert service.validation_result_for(complete_registry_payload())["status"] == "passed"
+
+
+def test_validation_passes_for_package_without_server_args() -> None:
+    payload = complete_registry_payload()
+    package = payload.packages[0]
+    package.identifier = "chrome-devtools-mcp"
+    package.version = "1.4.0"
+    package.transport.command = "npx"
+    package.transport.args = []
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["installCommands"] = ["npx chrome-devtools-mcp@1.4.0"]
+    source_review["commandArguments"] = []
+    payload.meta["sourceReview"] = {"llm": source_review}
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "passed"
+
+
+@pytest.mark.asyncio
+async def test_system_fix_eligibility_allows_active_superuser_owner() -> None:
+    owner = current_user(is_superuser=True)
+    submission = submission_record(submitter_user_id=uuid4(), owner_user_id=owner.id)
+
+    class LookupSession(FakeSession):
+        async def get(self, model, instance_id):
+            if model is User and instance_id == owner.id:
+                return owner
+            return None
+
+    assert await service.submission_owned_by_superuser_or_partner(
+        LookupSession(),
+        submission,
+    )
+
+
+@pytest.mark.asyncio
+async def test_system_fix_eligibility_rejects_normal_user_owner() -> None:
+    owner = current_user(is_superuser=False)
+    submission = submission_record(submitter_user_id=uuid4(), owner_user_id=owner.id)
+
+    class LookupSession(FakeSession):
+        async def get(self, model, instance_id):
+            if model is User and instance_id == owner.id:
+                return owner
+            return None
+
+    assert not await service.submission_owned_by_superuser_or_partner(
+        LookupSession(),
+        submission,
+    )
+
+
+@pytest.mark.asyncio
+async def test_system_fix_eligibility_allows_active_partner_org(monkeypatch) -> None:
+    organization_id = uuid4()
+    organization = Organization(
+        id=organization_id,
+        name="Acme",
+        slug="acme",
+        status="active",
+        is_partner=True,
+        partner_status="active",
+        partner_tier="verified",
+        partner_support_level="compatible",
+        website_url="",
+        support_email="",
+        partner_profile={},
+        partner_internal_notes="",
+    )
+    submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_organization_id=organization_id,
+    )
+
+    async def get_organization_by_id(*args, **kwargs):
+        return organization
+
+    monkeypatch.setattr(
+        service.organization_repository,
+        "get_organization_by_id",
+        get_organization_by_id,
+    )
+
+    assert await service.submission_owned_by_superuser_or_partner(
+        FakeSession(),
+        submission,
+    )
 
 
 def test_validation_rejects_new_server_registry_version_after_one_zero_zero() -> None:

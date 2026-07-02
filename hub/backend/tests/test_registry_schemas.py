@@ -41,6 +41,18 @@ def test_mcp_server_document_preserves_aliases_and_meta() -> None:
     }
 
 
+def test_mcp_server_document_to_json_dict_serializes_llm_context() -> None:
+    payload = RegistryServerVersionCreate(**registry_payload())
+
+    serialized = payload.to_json_dict()
+
+    assert serialized["$schema"].endswith("/server.schema.json")
+    assert serialized["websiteUrl"] == "https://example.com/weather"
+    assert serialized["_meta"]["io.modelcontextprotocol.registry/publisher-provided"] == {
+        "category": "weather"
+    }
+
+
 def test_mcpb_packages_are_allowed_in_hub() -> None:
     payload = RegistryServerVersionCreate(
         **registry_payload(

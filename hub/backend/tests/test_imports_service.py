@@ -1,5 +1,32 @@
 from app.modules.imports import service
+from app.modules.imports.exceptions import SourceNotFoundError
 from app.modules.imports.schemas import ServerSourceImportRequest
+
+
+def test_source_request_headers_use_github_token_for_github_hosts(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+
+    api_headers = service.source_request_headers(
+        "https://api.github.com/repos/acme/weather",
+        "application/json",
+    )
+    raw_headers = service.source_request_headers(
+        "https://raw.githubusercontent.com/acme/weather/main/README.md",
+        "text/plain",
+    )
+
+    assert api_headers["Authorization"] == "Bearer github-token"
+    assert raw_headers["Authorization"] == "Bearer github-token"
+    assert api_headers["X-GitHub-Api-Version"] == "2022-11-28"
+
+
+def test_source_request_headers_do_not_send_github_token_to_other_hosts(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+
+    headers = service.source_request_headers("https://example.com/source.json", "application/json")
+
+    assert "Authorization" not in headers
+    assert "X-GitHub-Api-Version" not in headers
 
 
 def test_import_server_source_uses_server_json(monkeypatch) -> None:
@@ -70,10 +97,7 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
     ]
     assert response.submission_payload.server_json == response.server_json
     assert response.evidence.files == ["README.md", "server.json"]
-    assert response.evidence.missing == [
-        "package transport command",
-        "package transport args",
-    ]
+    assert response.evidence.missing == ["package transport command"]
 
 
 def test_import_server_source_returns_readme_fallback_when_metadata_missing(monkeypatch) -> None:
@@ -103,6 +127,41 @@ def test_import_server_source_returns_readme_fallback_when_metadata_missing(monk
     assert response.server_json.meta is not None
     assert response.server_json.meta["sourceReview"]["llm"]["filesRead"] == ["README.md"]
     assert response.evidence.missing == ["packages or remotes"]
+
+
+def test_import_server_source_uses_raw_readme_when_github_api_is_rate_limited(
+    monkeypatch,
+) -> None:
+    fetched_urls: list[str] = []
+
+    def fetch_json(url: str):
+        raise SourceNotFoundError("source metadata could not be loaded")
+
+    def fetch_text(url: str, *, accept: str = "application/json"):
+        fetched_urls.append(url)
+        if "api.github.com" in url:
+            raise SourceNotFoundError("source metadata could not be loaded")
+        if "/main/README.md" in url:
+            return "# Chrome DevTools MCP\n\nChrome DevTools automation server."
+        return None
+
+    monkeypatch.setattr(service, "fetch_json", fetch_json)
+    monkeypatch.setattr(service, "fetch_text", fetch_text)
+
+    response = service.import_server_source(
+        ServerSourceImportRequest(
+            repositoryUrl="https://github.com/ChromeDevTools/chrome-devtools-mcp"
+        ),
+    )
+
+    assert response.source == "github"
+    assert response.title == "chrome-devtools-mcp"
+    assert response.website_url == "https://github.com/ChromeDevTools/chrome-devtools-mcp"
+    assert response.server_json.documentation == (
+        "# Chrome DevTools MCP\n\nChrome DevTools automation server."
+    )
+    assert any("raw.githubusercontent.com" in url for url in fetched_urls)
+    assert response.evidence.files == ["README.md"]
 
 
 def test_import_server_source_derives_subfolder_from_github_tree_url(monkeypatch) -> None:
@@ -215,9 +274,81 @@ def test_import_server_source_enriches_server_json_with_readme_config(monkeypatc
     assert package.transport is not None
     assert package.transport.type_ == "stdio"
     assert package.transport.command == "npx"
-    assert package.transport.args == ["-y", "@ankimcp/anki-mcp-server", "--stdio"]
+    assert package.transport.args == ["--stdio"]
     assert package.transport.env == {"ANKI_CONNECT_URL": "http://localhost:8765"}
+    assert response.server_json.meta["sourceReview"]["llm"]["installCommands"] == [
+        "npx @ankimcp/anki-mcp-server@0.18.4 --stdio"
+    ]
+    assert response.server_json.meta["sourceReview"]["llm"]["commandArguments"] == ["--stdio"]
     assert response.packages[0] == package
+
+
+def test_import_server_source_does_not_import_package_manager_tokens_as_args(monkeypatch) -> None:
+    def fetch_json(url: str):
+        return {
+            "name": "chrome-devtools-mcp",
+            "description": "Chrome DevTools MCP server.",
+            "html_url": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+            "owner": {"avatar_url": "https://github.com/ChromeDevTools.png"},
+        }
+
+    def fetch_text(url: str, *, accept: str = "application/json"):
+        if "/readme" in url:
+            return """
+            # Chrome DevTools MCP
+
+            ```json
+            {
+              "mcpServers": {
+                "chrome-devtools": {
+                  "command": "npx",
+                  "args": ["-y", "chrome-devtools-mcp@latest"]
+                }
+              }
+            }
+            ```
+            """
+        if "server.json" in url and "/main/" in url:
+            return """
+            {
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              "name": "io.github.ChromeDevTools/chrome-devtools-mcp",
+              "title": "Chrome DevTools MCP",
+              "description": "Chrome DevTools MCP server.",
+              "version": "1.4.0",
+              "packages": [
+                {
+                  "registryType": "npm",
+                  "identifier": "chrome-devtools-mcp",
+                  "version": "1.4.0",
+                  "transport": {"type": "stdio"}
+                }
+              ]
+            }
+            """
+        return None
+
+    monkeypatch.setattr(service, "fetch_json", fetch_json)
+    monkeypatch.setattr(service, "fetch_text", fetch_text)
+
+    response = service.import_server_source(
+        ServerSourceImportRequest(
+            repositoryUrl="https://github.com/ChromeDevTools/chrome-devtools-mcp"
+        ),
+    )
+
+    package = response.server_json.packages[0]
+    assert response.evidence.missing == []
+    assert package.identifier == "chrome-devtools-mcp"
+    assert package.version == "1.4.0"
+    assert package.transport is not None
+    assert package.transport.command == "npx"
+    assert package.transport.args == []
+    assert response.server_json.meta is not None
+    assert response.server_json.meta["sourceReview"]["llm"]["installCommands"] == [
+        "npx chrome-devtools-mcp@1.4.0"
+    ]
+    assert response.server_json.meta["sourceReview"]["llm"]["commandArguments"] == []
 
 
 def test_import_server_source_extracts_readme_mcp_server_config(monkeypatch) -> None:
@@ -266,5 +397,5 @@ def test_import_server_source_extracts_readme_mcp_server_config(monkeypatch) -> 
     assert package.identifier == "@ankimcp/anki-mcp-server"
     assert package.transport is not None
     assert package.transport.command == "npx"
-    assert package.transport.args == ["-y", "@ankimcp/anki-mcp-server", "--stdio"]
+    assert package.transport.args == ["--stdio"]
     assert package.transport.env == {"ANKI_CONNECT_URL": "http://localhost:8765"}

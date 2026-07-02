@@ -401,7 +401,7 @@ async def test_internal_submission_review_rule_can_receive_submission_events(mon
         owner_user_id=None,
         owner_organization_id=None,
         name="Wardn Hub System Review",
-        description="Internal submission review webhook",
+        description="Internal event automation webhook",
         is_enabled=True,
         event_types=["submission.submitted"],
         conditions={},
