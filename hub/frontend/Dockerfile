@@ -32,7 +32,6 @@ RUN apt-get update \
   && useradd --system --uid 1001 --gid nodejs --home /app nextjs
 
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=deps --chown=nextjs:nodejs /app/hub/frontend/node_modules ./hub/frontend/node_modules
 COPY --from=deps --chown=nextjs:nodejs /app/package.json /app/package-lock.json ./
 COPY --chown=nextjs:nodejs hub/frontend ./hub/frontend
 
