@@ -25,6 +25,14 @@ SEMVER_PATTERN = (
 RegistryServerStatus = Literal["active", "deprecated", "deleted", "quarantined"]
 RegistryVersionStatus = Literal["active", "deprecated", "deleted", "quarantined", "rejected"]
 RegistryVisibility = Literal["public", "unlisted", "private_preview"]
+RegistryNamespaceType = Literal["github", "domain", "unknown"]
+RegistryNamespaceVerificationStatus = Literal[
+    "verified",
+    "unverified",
+    "imported",
+    "conflict",
+    "unknown",
+]
 CATEGORY_SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 PUBLISHER_META_KEY = "io.modelcontextprotocol.registry/publisher-provided"
 ARGUMENT_VALUE_PLACEHOLDER_PATTERN = re.compile(
@@ -527,6 +535,32 @@ class ActorSummary(BaseModel):
     html_url: str = Field(default="", alias="htmlUrl")
 
 
+class RegistryNamespace(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    namespace: str
+    server: str
+    type_: RegistryNamespaceType = Field(alias="type")
+    authority: str = ""
+    display_name: str = Field(default="", alias="displayName")
+    verification_status: RegistryNamespaceVerificationStatus = Field(alias="verificationStatus")
+    verification_method: str = Field(default="", alias="verificationMethod")
+    evidence_url: str = Field(default="", alias="evidenceUrl")
+    evidence_text: str = Field(default="", alias="evidenceText")
+    source: str = ""
+
+
+def unknown_registry_namespace() -> RegistryNamespace:
+    return RegistryNamespace(
+        namespace="",
+        server="",
+        type="unknown",
+        authority="",
+        displayName="",
+        verificationStatus="unknown",
+    )
+
+
 class RegistryLatestVersionSummary(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -594,6 +628,10 @@ class RegistryServerRead(BaseModel):
     title: str
     description: str
     documentation: str = ""
+    registry_namespace: RegistryNamespace = Field(
+        default_factory=unknown_registry_namespace,
+        alias="registryNamespace",
+    )
     website_url: str = Field(alias="websiteUrl")
     repository: dict[str, Any] | None = None
     icons: list[dict[str, Any]] = Field(default_factory=list)
@@ -626,6 +664,10 @@ class RegistryServerVersionRead(BaseModel):
     title: str
     description: str
     documentation: str = ""
+    registry_namespace: RegistryNamespace = Field(
+        default_factory=unknown_registry_namespace,
+        alias="registryNamespace",
+    )
     website_url: str = Field(alias="websiteUrl")
     repository: dict[str, Any] | None = None
     packages: list[dict[str, Any]] = Field(default_factory=list)

@@ -240,6 +240,8 @@ Goal:
 - {REGISTRY_METADATA_SCOPE_RULE}
 
 Source review requirements:
+- Derive the registry namespace from serverJson.name. If the source is the official MCP registry, set serverJson._meta.registryNamespace with namespace, type, authority, verificationStatus "verified", verificationMethod "official_registry", evidenceUrl, and source "modelcontextprotocol-registry".
+- For io.github.* names without official registry evidence, compare the namespace owner against the linked GitHub repository owner and record any uncertainty in sourceReview.llm.unknowns.
 - Fill serverJson._meta.sourceReview.llm.filesRead with every README/docs/source URL or file inspected.
 - Fill sourceReview.llm.installCommands with documented install/run commands when package targets exist.
 - Fill sourceReview.llm.commandArguments with documented CLI args/configurable flags.

@@ -1,6 +1,7 @@
 "use client";
 
 import { Search, Server } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { ServerCard } from "@/components/server-card";
@@ -180,47 +181,56 @@ export function ExploreHomeClient({
     <>
       <section className="registry-hero-section" aria-labelledby="registry-hero-title">
         <div className="registry-hero-inner">
-          <h1 id="registry-hero-title">Find the perfect MCP server for your workflow.</h1>
-          <p>
-            A curated registry of Model Context Protocol servers. Enhance your AI with localized
-            knowledge and specialized tools.
-          </p>
-          <div className="registry-facts" aria-label="Dated registry facts">
-            <span>
-              As of {formatFactDate(registryFacts.generatedAt)}, Wardn Hub lists{" "}
-              <strong>{registryFacts.publishedServerCount ?? "an unavailable number of"}</strong>{" "}
-              published MCP servers across{" "}
-              <strong>{registryFacts.categoryCount ?? "an unavailable number of"}</strong>{" "}
-              categories.
-            </span>
-            <span>
-              Last registry update observed:{" "}
-              <strong>{formatFactDate(registryFacts.lastRegistryUpdate)}</strong>.
-            </span>
-            <a href={registryFacts.methodologyPath}>Wardn Score methodology</a>
+          <div className="registry-hero-copy">
+            <h1 id="registry-hero-title">The MCP server registry</h1>
+            <p>
+              Find published MCP servers, compare trust signals, and review packages, categories,
+              transports, and Wardn Score before you install.
+            </p>
           </div>
-          <form action="/" className="registry-hero-search-form" method="get">
-            <label className="registry-hero-search" htmlFor={searchInputId}>
-              <Search aria-hidden="true" size={22} />
-              <span className="sr-only">Search servers</span>
-              <input
-                aria-label="Search servers"
-                autoComplete="off"
-                disabled={Boolean(initialError)}
-                id={searchInputId}
-                name="q"
-                onChange={(event) => updateQuery(event.currentTarget.value)}
-                placeholder="Search servers..."
-                ref={searchInputRef}
-                type="search"
-                value={query}
-              />
-            </label>
-          </form>
+          <div className="registry-hero-tools">
+            <form action="/" className="registry-hero-search-form" method="get">
+              <label className="registry-hero-search" htmlFor={searchInputId}>
+                <Search aria-hidden="true" size={22} />
+                <span className="sr-only">Search servers</span>
+                <input
+                  aria-label="Search servers"
+                  autoComplete="off"
+                  disabled={Boolean(initialError)}
+                  id={searchInputId}
+                  name="q"
+                  onChange={(event) => updateQuery(event.currentTarget.value)}
+                  placeholder="Search servers, packages, namespaces"
+                  ref={searchInputRef}
+                  type="search"
+                  value={query}
+                />
+              </label>
+            </form>
+            <nav className="registry-quick-links" aria-label="Registry shortcuts">
+              <Link href="/categories">Browse categories</Link>
+              <Link href="/registries/npm">NPM packages</Link>
+              <Link href="/transports/streamable-http">Remote servers</Link>
+              <Link href={registryFacts.methodologyPath}>Scoring method</Link>
+            </nav>
+          </div>
         </div>
       </section>
       <section className="workspace">
         <div className="home-view simple-home">
+          <p className="sr-only">
+            As of {formatFactDate(registryFacts.generatedAt)}, Wardn Hub lists{" "}
+            {registryFacts.publishedServerCount ?? "an unavailable number of"} published MCP
+            servers across {registryFacts.categoryCount ?? "an unavailable number of"} categories.
+            Last registry update observed {formatFactDate(registryFacts.lastRegistryUpdate)}.
+          </p>
+          <div className="registry-results-heading">
+            <div>
+              <span>{hasSearchQuery ? "Search results" : "Registry"}</span>
+              <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Published MCP servers"}</h2>
+            </div>
+            <Link href="/categories">View categories</Link>
+          </div>
           {error ? <EmptyState detail={error} title="Registry unavailable" /> : null}
           {!error && loading ? <EmptyState detail="Searching published servers." title="Searching" /> : null}
           {!error && !loading && servers.length === 0 ? (

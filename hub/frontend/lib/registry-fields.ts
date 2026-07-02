@@ -3,6 +3,7 @@ export const PUBLIC_CARD_FIELDS = [
   "name",
   "title",
   "description",
+  "registryNamespace",
   "websiteUrl",
   "repository",
   "icons",

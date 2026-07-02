@@ -24,4 +24,7 @@ partner?: boolean | null;
 registry_type?: string | null;
 transport_type?: string | null;
 category?: string | null;
+namespace?: string | null;
+namespaceType?: string | null;
+namespaceVerificationStatus?: string | null;
 };

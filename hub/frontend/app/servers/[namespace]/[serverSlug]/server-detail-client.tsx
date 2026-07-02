@@ -16,6 +16,7 @@ import { ServerIcon, serverIconUrl } from "@/components/server-icon";
 import { PublicHeader } from "@/components/site-header";
 import { claimServerOwnership, currentUser, getServerDetailTab } from "@/lib/api/hub";
 import type {
+  RegistryNamespace,
   RegistryTrustReport,
   RegistryTrustReportComponent,
   UserRead,
@@ -1366,10 +1367,36 @@ function versionDateSentence(version?: ServerTabVersion) {
   return parts.length > 0 ? `The ${parts.join(" and ")}.` : "";
 }
 
+function registryNamespaceSentence(registryNamespace?: RegistryNamespace | null) {
+  if (!registryNamespace?.namespace) return "";
+  const typeLabel =
+    registryNamespace.type === "github"
+      ? "GitHub"
+      : registryNamespace.type === "domain"
+        ? "domain"
+        : "registry";
+  const status = registryNamespace.verificationStatus || "unknown";
+  const verified =
+    status === "verified"
+      ? "verified"
+      : status === "imported"
+        ? "imported from registry evidence"
+        : status === "unverified"
+          ? "not verified"
+          : status === "conflict"
+            ? "conflicting"
+            : "unknown";
+  const evidence = registryNamespace.evidenceUrl
+    ? ` Evidence: ${registryNamespace.evidenceUrl}.`
+    : "";
+  return `Its MCP Registry namespace is ${registryNamespace.namespace}, a ${typeLabel} namespace with ${verified} ownership status.${evidence}`;
+}
+
 function ExtractableAnswerSections({
   categoryName,
   description,
   manifest,
+  registryNamespace,
   repositoryUrl,
   selectedVersion,
   targetData,
@@ -1380,6 +1407,7 @@ function ExtractableAnswerSections({
   categoryName: string;
   description: string;
   manifest: Record<string, unknown> | null;
+  registryNamespace?: RegistryNamespace | null;
   repositoryUrl: string;
   selectedVersion?: ServerTabVersion;
   targetData: {
@@ -1403,6 +1431,7 @@ function ExtractableAnswerSections({
   ]);
   const transports = supportedTransportNames(targetData);
   const versionSentence = versionDateSentence(selectedVersion);
+  const namespaceSentence = registryNamespaceSentence(registryNamespace);
   const sourceLinks = [repositoryUrl, websiteUrl].filter(Boolean);
 
   return (
@@ -1460,7 +1489,7 @@ function ExtractableAnswerSections({
           {trustReport
             ? `${title} has a Wardn Score of ${trustScoreLabel(trustReport.overallScore)}. ${trustReport.summary}`
             : `${title} does not have a published Wardn trust report yet.`}{" "}
-          {versionSentence}
+          {versionSentence} {namespaceSentence}
           {sourceLinks.length > 0
             ? ` Verify runtime behavior against the upstream source: ${sentenceList(sourceLinks, "upstream documentation", 2)}.`
             : " Verify runtime behavior against upstream documentation before installation."}
@@ -1487,6 +1516,7 @@ function ServerFaq({
   categoryName,
   description,
   manifest,
+  registryNamespace,
   repositoryUrl,
   selectedVersion,
   targetData,
@@ -1496,6 +1526,7 @@ function ServerFaq({
   categoryName: string;
   description: string;
   manifest: Record<string, unknown> | null;
+  registryNamespace?: RegistryNamespace | null;
   repositoryUrl: string;
   selectedVersion?: ServerTabVersion;
   targetData: {
@@ -1518,6 +1549,7 @@ function ServerFaq({
   ]);
   const transports = supportedTransportNames(targetData);
   const versionSentence = versionDateSentence(selectedVersion);
+  const namespaceSentence = registryNamespaceSentence(registryNamespace);
   const faqs = [
     {
       answer: `${title} is a Model Context Protocol server${categoryName ? ` in the ${categoryName} category` : ""}. ${description || "Wardn Hub lists this server with community-submitted registry metadata."}`,
@@ -1546,8 +1578,8 @@ function ServerFaq({
     },
     {
       answer: trustReport
-        ? `${title} has a Wardn Score of ${trustScoreLabel(trustReport.overallScore)}. ${trustReport.summary} ${versionSentence}`
-        : `${title} does not have a published Wardn trust report yet. ${versionSentence}`,
+        ? `${title} has a Wardn Score of ${trustScoreLabel(trustReport.overallScore)}. ${trustReport.summary} ${versionSentence} ${namespaceSentence}`
+        : `${title} does not have a published Wardn trust report yet. ${versionSentence} ${namespaceSentence}`,
       question: `Is ${title} trusted or maintained?`,
     },
     {
@@ -1665,6 +1697,7 @@ export function ServerDetailClient({
     : "";
   const qualityScore = selectedVersion?.qualityScore ?? null;
   const trustReport = selectedVersion?.trustReport ?? null;
+  const registryNamespace = selectedVersion?.registryNamespace ?? server?.registryNamespace ?? null;
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
     : detail?.partnerSupport ?? [];
@@ -1768,6 +1801,7 @@ export function ServerDetailClient({
                       categoryName={categoryName}
                       description={description}
                       manifest={manifest}
+                      registryNamespace={registryNamespace}
                       repositoryUrl={repoUrl}
                       selectedVersion={selectedVersion}
                       targetData={targets}
@@ -1780,6 +1814,7 @@ export function ServerDetailClient({
                       categoryName={categoryName}
                       description={description}
                       manifest={manifest}
+                      registryNamespace={registryNamespace}
                       repositoryUrl={repoUrl}
                       selectedVersion={selectedVersion}
                       targetData={targets}
@@ -1871,6 +1906,17 @@ export function ServerDetailClient({
                               ) : (
                                 categoryName
                               )}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {registryNamespace?.namespace ? (
+                          <div>
+                            <dt>Namespace</dt>
+                            <dd>
+                              {registryNamespace.namespace}
+                              {registryNamespace.verificationStatus
+                                ? ` (${registryNamespace.verificationStatus})`
+                                : ""}
                             </dd>
                           </div>
                         ) : null}

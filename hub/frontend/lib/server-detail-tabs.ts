@@ -2,6 +2,7 @@ import type {
   ActorSummary,
   PartnerSupportSummary,
   RegistryCategoryRead,
+  RegistryNamespace,
   RegistryServerRead,
   RegistryServerVersionRead,
   RegistryTrustReport,
@@ -29,7 +30,7 @@ export type ServerTabServer = Pick<
   Partial<
     Pick<
       RegistryServerRead,
-      "categories" | "description" | "repository" | "updatedAt" | "websiteUrl"
+      "categories" | "description" | "registryNamespace" | "repository" | "updatedAt" | "websiteUrl"
     >
   >;
 
@@ -49,6 +50,7 @@ export type ServerTabVersion = Pick<
   publishedAt?: string;
   publishedBy?: ActorSummary | null;
   qualityScore?: number | null;
+  registryNamespace?: RegistryNamespace;
   remotes?: Record<string, unknown>[];
   repository?: Record<string, unknown> | null;
   serverJson?: Record<string, unknown>;

@@ -12,6 +12,7 @@ import type { RegistryCatalogServerReadStatus } from './registryCatalogServerRea
 import type { RegistryCatalogServerReadVisibility } from './registryCatalogServerReadVisibility';
 import type { RegistryCategoryRead } from './registryCategoryRead';
 import type { RegistryLatestVersionSummary } from './registryLatestVersionSummary';
+import type { RegistryNamespace } from './registryNamespace';
 import type { RegistryPublishedServerVersionRead } from './registryPublishedServerVersionRead';
 import type { RegistryTrustReport } from './registryTrustReport';
 
@@ -29,6 +30,7 @@ export interface RegistryCatalogServerRead {
   owner?: ActorSummary | null;
   partnerSupport?: PartnerSupportSummary[];
   qualityScore?: number | null;
+  registryNamespace?: RegistryNamespace;
   repository?: RegistryCatalogServerReadRepository;
   status: RegistryCatalogServerReadStatus;
   statusMessage: string;

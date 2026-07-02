@@ -30,6 +30,24 @@ class RegistryServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     documentation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    registry_namespace: Mapped[str] = mapped_column(
+        String(200),
+        default="",
+        nullable=False,
+        index=True,
+    )
+    registry_namespace_type: Mapped[str] = mapped_column(
+        String(32),
+        default="unknown",
+        nullable=False,
+        index=True,
+    )
+    registry_namespace_verification_status: Mapped[str] = mapped_column(
+        String(32),
+        default="unknown",
+        nullable=False,
+        index=True,
+    )
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     repository: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     icons: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
@@ -74,6 +92,24 @@ class RegistryServerVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     documentation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    registry_namespace: Mapped[str] = mapped_column(
+        String(200),
+        default="",
+        nullable=False,
+        index=True,
+    )
+    registry_namespace_type: Mapped[str] = mapped_column(
+        String(32),
+        default="unknown",
+        nullable=False,
+        index=True,
+    )
+    registry_namespace_verification_status: Mapped[str] = mapped_column(
+        String(32),
+        default="unknown",
+        nullable=False,
+        index=True,
+    )
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     repository: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     packages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)

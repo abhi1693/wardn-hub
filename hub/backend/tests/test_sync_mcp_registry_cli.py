@@ -173,6 +173,15 @@ def test_build_import_payload_adds_default_category_and_import_evidence() -> Non
         "upstreamUpdatedAt": "2026-04-14T17:33:26.613537Z",
         "upstreamIsLatest": True,
     }
+    assert payload["_meta"]["registryNamespace"] == {
+        "namespace": "io.github.example",
+        "type": "github",
+        "authority": "example",
+        "verificationStatus": "verified",
+        "verificationMethod": "official_registry",
+        "evidenceUrl": cli.DEFAULT_REGISTRY_URL,
+        "source": "modelcontextprotocol-registry",
+    }
     assert payload["_meta"]["sourceReview"]["llm"]["filesRead"] == [
         f"Official MCP registry record: {cli.DEFAULT_REGISTRY_URL}"
     ]

@@ -8,6 +8,7 @@ import type { ActorSummary } from './actorSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
 import type { RegistryCategoryRead } from './registryCategoryRead';
 import type { RegistryLatestVersionSummary } from './registryLatestVersionSummary';
+import type { RegistryNamespace } from './registryNamespace';
 import type { RegistryServerReadIconsItem } from './registryServerReadIconsItem';
 import type { RegistryServerReadRepository } from './registryServerReadRepository';
 import type { RegistryServerReadStatus } from './registryServerReadStatus';
@@ -28,6 +29,7 @@ export interface RegistryServerRead {
   owner?: ActorSummary | null;
   partnerSupport?: PartnerSupportSummary[];
   qualityScore?: number | null;
+  registryNamespace?: RegistryNamespace;
   repository?: RegistryServerReadRepository;
   status: RegistryServerReadStatus;
   statusMessage: string;

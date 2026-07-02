@@ -508,6 +508,9 @@ Validation workflow for each submission:
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.
+- Registry namespace is derived from serverJson.name and is either io.github.owner/server or reverse-DNS domain/server. Verify serverJson._meta.registryNamespace evidence when present, especially official_registry, DNS, HTTP well-known, or GitHub ownership evidence.
+- For official MCP registry imports, confirm registryNamespace.verificationStatus is "verified", verificationMethod is "official_registry", and evidenceUrl points to the official registry record.
+- For io.github.* namespaces, compare the namespace owner against the linked GitHub repository owner unless official registry evidence already verifies the namespace.
 - Package identifiers and versions are split correctly. No package identifier contains a version or tag.
 - Transport command, args, env, and transport type match documented install/run instructions.
 {VALIDATION_PACKAGE_ARGUMENT_CHECKS}

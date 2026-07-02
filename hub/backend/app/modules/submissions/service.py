@@ -596,6 +596,39 @@ def documentation_detail_check(payload: RegistryServerVersionCreate) -> dict[str
     )
 
 
+def registry_namespace_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
+    namespace_values = registry_service.registry_namespace_storage_values(
+        payload.name,
+        payload.meta,
+    )
+    namespace = namespace_values["registry_namespace"]
+    namespace_type = namespace_values["registry_namespace_type"]
+    verification_status = namespace_values["registry_namespace_verification_status"]
+    if not namespace or namespace_type == "unknown":
+        return validation_check(
+            "registryNamespace",
+            "failed",
+            "Server name must use io.github.owner/server or reverse-DNS domain/server namespace.",
+        )
+    if verification_status == "verified":
+        return validation_check(
+            "registryNamespace",
+            "passed",
+            f"Namespace {namespace} is marked verified.",
+        )
+    if verification_status in {"imported", "unverified", "conflict"}:
+        return validation_check(
+            "registryNamespace",
+            "passed",
+            f"Namespace {namespace} has verification status {verification_status}.",
+        )
+    return validation_check(
+        "registryNamespace",
+        "passed",
+        f"Namespace {namespace} is structurally valid; ownership verification is unknown.",
+    )
+
+
 def source_review_check(payload: RegistryServerVersionCreate) -> dict[str, str]:
     meta = payload.meta if isinstance(payload.meta, dict) else {}
     channels = source_review_channels(meta)
@@ -700,6 +733,7 @@ def validation_result_for(
         remote_targets_check(payload.remotes),
         documentation_check(payload),
         documentation_detail_check(payload),
+        registry_namespace_check(payload),
         source_review_check(payload),
     ]
     statuses = {check["status"] for check in checks}

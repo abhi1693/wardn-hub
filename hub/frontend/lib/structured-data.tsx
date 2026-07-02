@@ -573,6 +573,7 @@ export function serverDetailJsonLd(
   const transports = transportNames(packages, remotes);
   const categories = server.categories ?? [];
   const title = server.title || server.name;
+  const registryNamespace = server.registryNamespace;
   const url = absoluteUrl(canonicalPath);
   const dateModified = dateValue(latestVersion?.updatedAt) || dateValue(server.updatedAt);
   const howTo = serverInstallHowToJsonLd({
@@ -606,6 +607,29 @@ export function serverDetailJsonLd(
       {
         "@id": `${url}#server`,
         "@type": "SoftwareApplication",
+        additionalProperty: [
+          registryNamespace?.namespace
+            ? {
+                "@type": "PropertyValue",
+                name: "MCP registry namespace",
+                value: registryNamespace.namespace,
+              }
+            : undefined,
+          registryNamespace?.verificationStatus
+            ? {
+                "@type": "PropertyValue",
+                name: "MCP registry namespace verification status",
+                value: registryNamespace.verificationStatus,
+              }
+            : undefined,
+          registryNamespace?.verificationMethod
+            ? {
+                "@type": "PropertyValue",
+                name: "MCP registry namespace verification method",
+                value: registryNamespace.verificationMethod,
+              }
+            : undefined,
+        ],
         alternateName: server.name,
         applicationCategory: categories.map((category) => category.name),
         codeRepository: repositoryHref,

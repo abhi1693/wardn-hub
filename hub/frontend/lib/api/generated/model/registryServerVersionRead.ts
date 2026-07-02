@@ -6,6 +6,7 @@
  */
 import type { ActorSummary } from './actorSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
+import type { RegistryNamespace } from './registryNamespace';
 import type { RegistryServerVersionReadIconsItem } from './registryServerVersionReadIconsItem';
 import type { RegistryServerVersionReadPackagesItem } from './registryServerVersionReadPackagesItem';
 import type { RegistryServerVersionReadRemotesItem } from './registryServerVersionReadRemotesItem';
@@ -31,6 +32,7 @@ export interface RegistryServerVersionRead {
   publishedAt: string;
   publishedBy?: ActorSummary | null;
   qualityScore?: number | null;
+  registryNamespace?: RegistryNamespace;
   remotes?: RegistryServerVersionReadRemotesItem[];
   repository?: RegistryServerVersionReadRepository;
   serverId: string;

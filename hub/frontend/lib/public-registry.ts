@@ -110,6 +110,9 @@ export async function listPublicCategories() {
 export async function listPublishedRegistryServers(params?: {
   category?: string;
   limit?: number;
+  namespace?: string;
+  namespaceType?: string;
+  namespaceVerificationStatus?: string;
   registryType?: string;
   search?: string;
   transportType?: string;
@@ -123,6 +126,11 @@ export async function listPublishedRegistryServers(params?: {
       ...(params?.category ? { category: params.category } : {}),
       fields: PUBLIC_CARD_FIELDS,
       limit: Math.min(PAGE_SIZE, maxServers - servers.length),
+      ...(params?.namespace ? { namespace: params.namespace } : {}),
+      ...(params?.namespaceType ? { namespaceType: params.namespaceType } : {}),
+      ...(params?.namespaceVerificationStatus
+        ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
+        : {}),
       ...(params?.registryType ? { registry_type: params.registryType } : {}),
       ...(params?.search ? { search: params.search } : {}),
       ...(params?.transportType ? { transport_type: params.transportType } : {}),
@@ -143,11 +151,19 @@ export async function listPublishedRegistryServerPage(params?: {
   category?: string;
   cursor?: string;
   limit?: number;
+  namespace?: string;
+  namespaceType?: string;
+  namespaceVerificationStatus?: string;
   search?: string;
 }) {
   const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
     ...(params?.category ? { category: params.category } : {}),
     ...(params?.cursor ? { cursor: params.cursor } : {}),
+    ...(params?.namespace ? { namespace: params.namespace } : {}),
+    ...(params?.namespaceType ? { namespaceType: params.namespaceType } : {}),
+    ...(params?.namespaceVerificationStatus
+      ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
+      : {}),
     ...(params?.search ? { search: params.search } : {}),
     fields: PUBLIC_CARD_FIELDS,
     limit: params?.limit ?? PAGE_SIZE,

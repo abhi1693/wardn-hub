@@ -630,76 +630,64 @@ button {
   overflow: hidden;
   border-bottom: 1px solid rgb(15 23 42 / 6%);
   background:
-    radial-gradient(circle at 50% 48%, rgb(15 23 42 / 3%) 0%, rgb(247 249 252 / 0%) 68%),
-    var(--background);
-  padding: 74px
+    linear-gradient(90deg, rgb(15 23 42 / 4%) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(15 23 42 / 4%) 1px, transparent 1px),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background-size: 44px 44px, 44px 44px, auto;
+  padding: 38px
     max(
       var(--content-gutter),
       calc((100vw - var(--content-max-width)) / 2 + var(--content-gutter))
     )
-    60px;
+    34px;
 }
 
 .registry-hero-inner {
+  position: relative;
   display: grid;
+  max-width: var(--content-max-width);
   justify-items: center;
-  gap: 22px;
+  gap: 18px;
   margin: 0 auto;
   text-align: center;
 }
 
+.registry-hero-copy,
+.registry-hero-tools {
+  display: grid;
+}
+
+.registry-hero-copy {
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.registry-hero-tools {
+  width: min(100%, 760px);
+  gap: 12px;
+}
+
 .registry-hero-inner h1 {
-  max-width: 720px;
+  max-width: 760px;
   margin: 0;
   color: #0f172a;
-  font-size: 48px;
+  font-size: 46px;
   font-weight: 800;
   letter-spacing: 0;
-  line-height: 54px;
+  line-height: 52px;
 }
 
 .registry-hero-inner p {
-  max-width: 640px;
+  max-width: 660px;
   margin: 0;
   color: #555f6d;
-  font-size: 18px;
-  line-height: 29px;
-}
-
-.registry-facts {
-  display: grid;
-  max-width: 760px;
-  gap: 6px;
-  border-left: 3px solid #2563eb;
-  background: #ffffff;
-  color: #334155;
-  font-size: 14px;
-  line-height: 22px;
-  padding: 12px 14px;
-  text-align: left;
-}
-
-.registry-facts strong {
-  color: #0f172a;
-  font-weight: 800;
-}
-
-.registry-facts a {
-  width: fit-content;
-  color: #1d4ed8;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.registry-facts a:hover,
-.registry-facts a:focus-visible {
-  color: #0f172a;
-  outline: none;
-  text-decoration: underline;
+  font-size: 17px;
+  line-height: 27px;
 }
 
 .registry-hero-search-form {
-  width: min(100%, 680px);
+  width: 100%;
   margin: 0;
 }
 
@@ -711,8 +699,8 @@ button {
   gap: 12px;
   border: 1px solid rgb(15 23 42 / 8%);
   border-radius: 8px;
-  background: rgb(255 255 255 / 95%);
-  box-shadow: 0 10px 28px rgb(15 23 42 / 6%);
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgb(15 23 42 / 9%);
   color: #64748b;
   padding: 0 18px;
 }
@@ -740,6 +728,89 @@ button {
 
 .registry-hero-search input::placeholder {
   color: #64748b;
+}
+
+.registry-quick-links {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.registry-quick-links a {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid #dbe4ef;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 70%);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 18px;
+  color: #475569;
+  padding: 0 13px;
+  text-decoration: none;
+}
+
+.registry-quick-links a:hover,
+.registry-quick-links a:focus-visible {
+  border-color: #9db2c9;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  text-decoration: none;
+}
+
+.registry-results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 14px;
+}
+
+.registry-results-heading div {
+  display: grid;
+  gap: 3px;
+}
+
+.registry-results-heading span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.registry-results-heading h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 30px;
+}
+
+.registry-results-heading a {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  border: 1px solid #d8e1ee;
+  border-radius: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 12px;
+  text-decoration: none;
+}
+
+.registry-results-heading a:hover,
+.registry-results-heading a:focus-visible {
+  border-color: #94a3b8;
+  color: #0f172a;
+  outline: none;
 }
 
 .category-page-header {
@@ -2225,14 +2296,14 @@ button {
 
 .server-card {
   display: grid;
-  min-height: 188px;
+  min-height: 198px;
   grid-template-rows: auto 1fr auto;
   gap: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid #dbe3ed;
   border-radius: 8px;
   background: var(--surface);
   color: var(--foreground);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 6%);
   padding: 18px 16px;
   text-align: left;
   text-decoration: none;
@@ -2240,9 +2311,9 @@ button {
 
 .server-card:hover,
 .server-card:focus-visible {
-  border-color: var(--border);
+  border-color: #b9c8d8;
   outline: none;
-  box-shadow: 0 6px 18px rgb(15 23 42 / 9%);
+  box-shadow: 0 10px 26px rgb(15 23 42 / 10%);
 }
 
 .server-card-head {
@@ -4102,27 +4173,31 @@ button {
 
   .site-brand {
     min-height: 36px;
+    font-size: 22px;
+    line-height: 30px;
   }
 
-	  .site-nav {
-	    order: 3;
-	    display: grid;
-	    grid-column: 1 / -1;
-	    width: 100%;
-	    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
-	    overflow: visible;
-	  }
+  .site-nav {
+    order: 3;
+    display: flex;
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 22px;
+    overflow-x: auto;
+  }
 
-	  .site-actions {
-	    justify-self: end;
-	    margin-left: auto;
-	  }
+  .site-actions {
+    justify-self: end;
+    margin-left: auto;
+  }
 
   .site-user-dropdown {
     top: calc(100% + 10px);
   }
 
   .site-nav-item {
+    flex: 0 0 auto;
     min-height: 38px;
     justify-content: center;
   }
@@ -4160,21 +4235,45 @@ button {
   }
 
   .registry-hero-section {
-    padding: 52px 14px 42px;
+    padding: 36px 14px 34px;
   }
 
   .registry-hero-inner {
-    gap: 18px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 14px;
+    text-align: center;
+  }
+
+  .registry-hero-copy,
+  .registry-hero-tools {
+    width: 100%;
+    justify-items: center;
+  }
+
+  .registry-hero-copy {
+    text-align: center;
   }
 
   .registry-hero-inner h1 {
-    font-size: 36px;
-    line-height: 41px;
+    max-width: 360px;
+    font-size: 34px;
+    line-height: 39px;
   }
 
   .registry-hero-inner p {
     font-size: 16px;
     line-height: 25px;
+  }
+
+  .registry-quick-links {
+    justify-content: center;
+    gap: 7px;
+  }
+
+  .registry-results-heading {
+    display: grid;
+    gap: 8px;
   }
 
   .registry-hero-search {

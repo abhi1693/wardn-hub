@@ -253,6 +253,12 @@ async def list_mcp_servers(
     registry_type: str | None = None,
     transport_type: str | None = None,
     category: str | None = None,
+    namespace: str | None = None,
+    namespace_type: str | None = Query(default=None, alias="namespaceType"),
+    namespace_verification_status: str | None = Query(
+        default=None,
+        alias="namespaceVerificationStatus",
+    ),
 ) -> RegistryServerListResponse | JSONResponse:
     try:
         response = await list_servers(
@@ -267,6 +273,9 @@ async def list_mcp_servers(
             registry_type=registry_type,
             transport_type=transport_type,
             category=category,
+            namespace=namespace,
+            namespace_type=namespace_type,
+            namespace_verification_status=namespace_verification_status,
         )
         projected = project_list_response_fields(response, fields=fields)
         if projected is not None:
@@ -295,6 +304,12 @@ async def search_mcp_servers(
     registry_type: str | None = None,
     transport_type: str | None = None,
     category: str | None = None,
+    namespace: str | None = None,
+    namespace_type: str | None = Query(default=None, alias="namespaceType"),
+    namespace_verification_status: str | None = Query(
+        default=None,
+        alias="namespaceVerificationStatus",
+    ),
 ) -> RegistryServerListResponse | JSONResponse:
     search_query = q.strip()
     if not search_query:
@@ -311,6 +326,9 @@ async def search_mcp_servers(
             registry_type=registry_type,
             transport_type=transport_type,
             category=category,
+            namespace=namespace,
+            namespace_type=namespace_type,
+            namespace_verification_status=namespace_verification_status,
         )
         projected = project_list_response_fields(response, fields=fields)
         if projected is not None:

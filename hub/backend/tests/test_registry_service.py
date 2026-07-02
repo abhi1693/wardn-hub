@@ -125,6 +125,16 @@ def version_model(server_id, version: str, *, is_latest: bool) -> RegistryServer
     )
 
 
+def test_document_values_derives_registry_namespace_metadata() -> None:
+    payload = registry_payload()
+
+    values = service.document_values(payload)
+
+    assert values["registry_namespace"] == "io.github.example"
+    assert values["registry_namespace_type"] == "github"
+    assert values["registry_namespace_verification_status"] == "unknown"
+
+
 def category_model(slug: str = "weather", name: str = "Weather") -> RegistryCategory:
     now = datetime(2026, 6, 23, tzinfo=UTC)
     return RegistryCategory(
@@ -264,6 +274,7 @@ def test_trust_report_explains_quality_score_components() -> None:
         "targetMetadata",
         "license",
         "maintenance",
+        "registryNamespace",
         "ownerVerification",
         "securityReview",
     }

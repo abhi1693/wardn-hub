@@ -2018,6 +2018,9 @@
             ],
             "title": "Qualityscore"
           },
+          "registryNamespace": {
+            "$ref": "#/components/schemas/RegistryNamespace"
+          },
           "repository": {
             "anyOf": [
               {
@@ -2469,6 +2472,76 @@
           "count"
         ],
         "title": "RegistryListMetadata",
+        "type": "object"
+      },
+      "RegistryNamespace": {
+        "properties": {
+          "authority": {
+            "default": "",
+            "title": "Authority",
+            "type": "string"
+          },
+          "displayName": {
+            "default": "",
+            "title": "Displayname",
+            "type": "string"
+          },
+          "evidenceText": {
+            "default": "",
+            "title": "Evidencetext",
+            "type": "string"
+          },
+          "evidenceUrl": {
+            "default": "",
+            "title": "Evidenceurl",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "server": {
+            "title": "Server",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "github",
+              "domain",
+              "unknown"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "verificationMethod": {
+            "default": "",
+            "title": "Verificationmethod",
+            "type": "string"
+          },
+          "verificationStatus": {
+            "enum": [
+              "verified",
+              "unverified",
+              "imported",
+              "conflict",
+              "unknown"
+            ],
+            "title": "Verificationstatus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "server",
+          "type",
+          "verificationStatus"
+        ],
+        "title": "RegistryNamespace",
         "type": "object"
       },
       "RegistryOwnershipClaimResponse": {
@@ -3344,6 +3417,9 @@
             ],
             "title": "Qualityscore"
           },
+          "registryNamespace": {
+            "$ref": "#/components/schemas/RegistryNamespace"
+          },
           "repository": {
             "anyOf": [
               {
@@ -3958,6 +4034,9 @@
               }
             ],
             "title": "Qualityscore"
+          },
+          "registryNamespace": {
+            "$ref": "#/components/schemas/RegistryNamespace"
           },
           "remotes": {
             "items": {
@@ -8334,6 +8413,54 @@
               ],
               "title": "Category"
             }
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespaceType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespacetype"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespaceVerificationStatus",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespaceverificationstatus"
+            }
           }
         ],
         "responses": {
@@ -8518,6 +8645,54 @@
                 }
               ],
               "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespaceType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespacetype"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespaceVerificationStatus",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespaceverificationstatus"
             }
           }
         ],

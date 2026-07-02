@@ -131,6 +131,9 @@ async def list_servers(
     registry_type: str | None = None,
     transport_type: str | None = None,
     category: str | None = None,
+    namespace: str | None = None,
+    namespace_type: str | None = None,
+    namespace_verification_status: str | None = None,
     status: str | None = None,
 ) -> tuple[list[RegistryServer], str]:
     _ = include_deleted
@@ -149,6 +152,19 @@ async def list_servers(
         )
     if updated_since:
         statement = statement.where(RegistryServer.updated_at >= updated_since)
+    if namespace:
+        statement = statement.where(
+            RegistryServer.registry_namespace == namespace.strip().casefold()
+        )
+    if namespace_type:
+        statement = statement.where(
+            RegistryServer.registry_namespace_type == namespace_type.strip().casefold()
+        )
+    if namespace_verification_status:
+        statement = statement.where(
+            RegistryServer.registry_namespace_verification_status
+            == namespace_verification_status.strip().casefold()
+        )
     if category:
         statement = (
             statement.join(

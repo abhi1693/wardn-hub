@@ -22,6 +22,11 @@ function qualityScorePercent(score: number | null | undefined) {
   return Math.max(0, Math.min(100, score));
 }
 
+function displayCategoryName(value: string | undefined) {
+  if (!value) return "";
+  return value.replace(/\bModelcontextprotocol\b/g, "MCP");
+}
+
 function QualityScoreMeter({ score }: { score?: number | null }) {
   const value = typeof score === "number" ? `${score}/100` : "Pending";
   const percent = qualityScorePercent(score);
@@ -50,7 +55,7 @@ export function ServerCard({
   server: RegistryServerRead;
   showQualityScore?: boolean;
 }) {
-  const categoryName = server.categories?.[0]?.name;
+  const categoryName = displayCategoryName(server.categories?.[0]?.name);
 
   return (
     <Link className="server-card" href={serverDetailHref(server.name)}>

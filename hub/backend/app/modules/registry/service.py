@@ -44,6 +44,7 @@ from app.modules.registry.schemas import (
     RegistryCategoryUpdate,
     RegistryLatestVersionSummary,
     RegistryListMetadata,
+    RegistryNamespace,
     RegistryOwnershipClaimResponse,
     RegistryPageMetadata,
     RegistryPublishedServerListResponse,
@@ -445,11 +446,13 @@ def attach_wardn_ownership_metadata(
 
 
 def document_values(payload: MCPServerDocument) -> dict:
+    namespace_values = registry_namespace_storage_values(payload.name, payload.meta)
     return {
         "name": payload.name,
         "title": payload.title,
         "description": payload.description,
         "documentation": payload.documentation,
+        **namespace_values,
         "version": payload.version,
         "website_url": payload.website_url,
         "repository": registry_json(payload.repository),
@@ -722,6 +725,105 @@ def registry_strings(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def split_registry_name(name: str) -> tuple[str, str]:
+    namespace, separator, server_name = name.strip().partition("/")
+    if not separator:
+        return "", name.strip()
+    return namespace.strip().casefold(), server_name.strip()
+
+
+def registry_namespace_type(namespace: str) -> str:
+    labels = [label for label in namespace.split(".") if label]
+    if len(labels) == 3 and labels[:2] == ["io", "github"]:
+        return "github"
+    if len(labels) >= 2:
+        return "domain"
+    return "unknown"
+
+
+def registry_namespace_authority(namespace: str, namespace_type: str) -> str:
+    namespace = namespace or ""
+    namespace_type = namespace_type or "unknown"
+    labels = [label for label in namespace.split(".") if label]
+    if namespace_type == "github" and len(labels) == 3:
+        return labels[2]
+    if namespace_type == "domain" and len(labels) >= 2:
+        return ".".join(reversed(labels))
+    return ""
+
+
+def registry_namespace_storage_values(
+    name: str,
+    meta: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    namespace, _server_name = split_registry_name(name)
+    namespace_type = registry_namespace_type(namespace)
+    metadata = registry_record(meta)
+    namespace_meta = registry_record(metadata.get("registryNamespace"))
+    verification_status = str(
+        namespace_meta.get("verificationStatus")
+        or namespace_meta.get("status")
+        or "unknown"
+    ).strip().lower()
+    if verification_status not in {"verified", "unverified", "imported", "conflict", "unknown"}:
+        verification_status = "unknown"
+    return {
+        "registry_namespace": namespace,
+        "registry_namespace_type": namespace_type,
+        "registry_namespace_verification_status": verification_status,
+    }
+
+
+def registry_namespace_info(
+    *,
+    name: str,
+    namespace: str,
+    namespace_type: str,
+    verification_status: str,
+    server_json: dict[str, Any] | None = None,
+) -> RegistryNamespace:
+    parsed_namespace, server_name = split_registry_name(name)
+    namespace = namespace or parsed_namespace
+    namespace_type = namespace_type or registry_namespace_type(namespace)
+    verification_status = verification_status or "unknown"
+    meta = registry_record(registry_record(server_json).get("_meta"))
+    namespace_meta = registry_record(meta.get("registryNamespace"))
+    method = str(
+        namespace_meta.get("verificationMethod")
+        or namespace_meta.get("method")
+        or ""
+    ).strip()
+    evidence_url = str(
+        namespace_meta.get("evidenceUrl")
+        or namespace_meta.get("registryUrl")
+        or namespace_meta.get("sourceUrl")
+        or ""
+    ).strip()
+    evidence_text = str(namespace_meta.get("evidenceText") or "").strip()
+    source = str(namespace_meta.get("source") or "").strip()
+    display_name = str(namespace_meta.get("displayName") or "").strip()
+    authority = str(namespace_meta.get("authority") or "").strip()
+    if not authority:
+        authority = registry_namespace_authority(namespace, namespace_type)
+    if not display_name:
+        display_name = authority or namespace
+    status = verification_status if verification_status else "unknown"
+    if status not in {"verified", "unverified", "imported", "conflict", "unknown"}:
+        status = "unknown"
+    return RegistryNamespace(
+        namespace=namespace,
+        server=server_name,
+        type=namespace_type if namespace_type in {"github", "domain"} else "unknown",
+        authority=authority,
+        displayName=display_name,
+        verificationStatus=status,
+        verificationMethod=method,
+        evidenceUrl=evidence_url,
+        evidenceText=evidence_text,
+        source=source,
+    )
 
 
 def trust_status(score: int | None) -> str:
@@ -1116,6 +1218,70 @@ def component_owner_verification(
     )
 
 
+def component_registry_namespace(version: RegistryServerVersion) -> RegistryTrustReportComponent:
+    namespace = registry_namespace_info(
+        name=version.name,
+        namespace=version.registry_namespace,
+        namespace_type=version.registry_namespace_type,
+        verification_status=version.registry_namespace_verification_status,
+        server_json=version.server_json,
+    )
+    if namespace.type_ == "unknown" or not namespace.namespace:
+        return trust_component(
+            key="registryNamespace",
+            label="Registry namespace",
+            score=0,
+            summary="Registry namespace could not be classified.",
+            evidence=["Use io.github.owner/server or reverse-DNS domain/server naming."],
+        )
+    if namespace.verification_status == "verified":
+        return trust_component(
+            key="registryNamespace",
+            label="Registry namespace",
+            score=100,
+            summary="Namespace ownership verification is published.",
+            evidence=[
+                f"Namespace: {namespace.namespace}.",
+                f"Method: {namespace.verification_method or 'registry evidence'}.",
+                *([f"Evidence: {namespace.evidence_url}."] if namespace.evidence_url else []),
+            ],
+        )
+    if namespace.verification_status == "imported":
+        return trust_component(
+            key="registryNamespace",
+            label="Registry namespace",
+            score=85,
+            summary="Namespace metadata was imported from a registry source.",
+            evidence=[
+                f"Namespace: {namespace.namespace}.",
+                *([f"Evidence: {namespace.evidence_url}."] if namespace.evidence_url else []),
+            ],
+        )
+    if namespace.verification_status == "conflict":
+        return trust_component(
+            key="registryNamespace",
+            label="Registry namespace",
+            score=0,
+            summary="Namespace verification evidence conflicts with the listing.",
+            evidence=[namespace.evidence_text or f"Namespace: {namespace.namespace}."],
+        )
+    if namespace.verification_status == "unverified":
+        return trust_component(
+            key="registryNamespace",
+            label="Registry namespace",
+            score=45,
+            summary="Namespace is structured but not verified.",
+            evidence=[f"Namespace: {namespace.namespace} ({namespace.type_})."],
+        )
+    return trust_component(
+        key="registryNamespace",
+        label="Registry namespace",
+        score=60,
+        summary="Namespace structure is recognized, but verification evidence is not published.",
+        evidence=[f"Namespace: {namespace.namespace} ({namespace.type_})."],
+    )
+
+
 def component_security_review(version: RegistryServerVersion) -> RegistryTrustReportComponent:
     server_json = registry_record(version.server_json)
     meta = registry_record(server_json.get("_meta"))
@@ -1179,6 +1345,7 @@ def calculated_trust_score(components: list[RegistryTrustReportComponent]) -> in
         "targetMetadata": 15,
         "license": 10,
         "maintenance": 10,
+        "registryNamespace": 10,
         "ownerVerification": 10,
         "securityReview": 5,
     }
@@ -1206,15 +1373,19 @@ def trust_report_for_version(
         except ValueError:
             pass
         else:
-            owner_component = component_owner_verification(version, trust)
-            replaced = False
+            extra_components = [
+                component_registry_namespace(version),
+                component_owner_verification(version, trust),
+            ]
             for index, component in enumerate(report.components):
-                if component.key == "ownerVerification":
-                    report.components[index] = owner_component
-                    replaced = True
-                    break
-            if not replaced:
-                report.components.append(owner_component)
+                for extra_component in extra_components:
+                    if component.key == extra_component.key:
+                        report.components[index] = extra_component
+                        break
+            existing_keys = {component.key for component in report.components}
+            report.components.extend(
+                component for component in extra_components if component.key not in existing_keys
+            )
             if version.quality_score is not None and report.overall_score != version.quality_score:
                 report.overall_score = version.quality_score
                 report.score_source = "manual"
@@ -1228,6 +1399,7 @@ def trust_report_for_version(
         component_target_metadata(version),
         component_license(version),
         component_maintenance(version),
+        component_registry_namespace(version),
         component_owner_verification(version, trust),
         component_security_review(version),
     ]
@@ -1521,6 +1693,13 @@ def server_summary(
         title=server.title,
         description=server.description,
         documentation=server.documentation,
+        registry_namespace=registry_namespace_info(
+            name=server.name,
+            namespace=server.registry_namespace,
+            namespace_type=server.registry_namespace_type,
+            verification_status=server.registry_namespace_verification_status,
+            server_json=latest_version.server_json if latest_version is not None else None,
+        ),
         website_url=server.website_url,
         repository=server.repository,
         icons=server.icons,
@@ -1583,6 +1762,13 @@ def version_summary(
         title=version.title,
         description=version.description,
         documentation=version.documentation,
+        registry_namespace=registry_namespace_info(
+            name=version.name,
+            namespace=version.registry_namespace,
+            namespace_type=version.registry_namespace_type,
+            verification_status=version.registry_namespace_verification_status,
+            server_json=version.server_json,
+        ),
         website_url=version.website_url,
         repository=version.repository,
         packages=packages,
@@ -1696,6 +1882,11 @@ async def create_server_version(
             title=payload.title,
             description=payload.description,
             documentation=payload.documentation,
+            registry_namespace=values["registry_namespace"],
+            registry_namespace_type=values["registry_namespace_type"],
+            registry_namespace_verification_status=values[
+                "registry_namespace_verification_status"
+            ],
             website_url=payload.website_url,
             repository=values["repository"],
             icons=values["icons"],
@@ -1715,6 +1906,11 @@ async def create_server_version(
         server.title = payload.title
         server.description = payload.description
         server.documentation = payload.documentation
+        server.registry_namespace = values["registry_namespace"]
+        server.registry_namespace_type = values["registry_namespace_type"]
+        server.registry_namespace_verification_status = values[
+            "registry_namespace_verification_status"
+        ]
         server.website_url = payload.website_url
         server.repository = values["repository"]
         server.icons = values["icons"]
@@ -1823,6 +2019,11 @@ async def update_server_version(
     if version.is_latest:
         server.title = payload.title
         server.description = payload.description
+        server.registry_namespace = values["registry_namespace"]
+        server.registry_namespace_type = values["registry_namespace_type"]
+        server.registry_namespace_verification_status = values[
+            "registry_namespace_verification_status"
+        ]
         server.website_url = payload.website_url
         server.repository = values["repository"]
         server.icons = values["icons"]
@@ -2044,6 +2245,9 @@ async def list_servers(
     transport_type: str | None = None,
     status: str | None = None,
     category: str | None = None,
+    namespace: str | None = None,
+    namespace_type: str | None = None,
+    namespace_verification_status: str | None = None,
 ) -> RegistryServerListResponse:
     offset = parse_cursor(cursor)
     servers, next_cursor = await repository.list_servers(
@@ -2059,6 +2263,9 @@ async def list_servers(
         registry_type=registry_type,
         transport_type=transport_type,
         category=category,
+        namespace=namespace,
+        namespace_type=namespace_type,
+        namespace_verification_status=namespace_verification_status,
         status=status,
     )
     return RegistryServerListResponse(

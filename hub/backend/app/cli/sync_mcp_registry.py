@@ -355,6 +355,17 @@ def metadata_categories(meta: dict[str, Any]) -> list[str]:
     return categories
 
 
+def registry_namespace_from_name(name: str) -> tuple[str, str, str]:
+    namespace, _separator, _server_name = name.strip().partition("/")
+    namespace = namespace.casefold()
+    labels = [label for label in namespace.split(".") if label]
+    if len(labels) == 3 and labels[:2] == ["io", "github"]:
+        return namespace, "github", labels[2]
+    if len(labels) >= 2:
+        return namespace, "domain", ".".join(reversed(labels))
+    return namespace, "unknown", ""
+
+
 def non_empty_strings(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
@@ -661,6 +672,19 @@ def build_import_payload(
         "registryUrl": registry_url,
         "syncedAt": iso_z(synced_at),
     }
+    namespace, namespace_type, authority = registry_namespace_from_name(
+        str(payload.get("name") or "")
+    )
+    if namespace:
+        meta["registryNamespace"] = {
+            "namespace": namespace,
+            "type": namespace_type,
+            "authority": authority,
+            "verificationStatus": "verified",
+            "verificationMethod": "official_registry",
+            "evidenceUrl": registry_url,
+            "source": "modelcontextprotocol-registry",
+        }
     upstream_version = str(server.get("version") or "").strip()
     if upstream_version:
         meta[IMPORT_META_KEY]["upstreamVersion"] = upstream_version
