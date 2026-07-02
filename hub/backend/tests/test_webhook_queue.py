@@ -109,6 +109,24 @@ def test_redis_queue_removes_processing_job_after_success() -> None:
     assert redis.lists[queue.processing_key] == []
 
 
+def test_redis_queue_keeps_processing_job_after_nonzero_exit() -> None:
+    redis = FakeRedis()
+    queue = RedisReliableWebhookQueue(
+        name="test",
+        job_from_payload=job_from_payload,
+        process_job=lambda _job: 1,
+        log_prefix="test webhook",
+        redis_client=redis,  # type: ignore[arg-type]
+    )
+    job = ExampleJob(submission_id="sub-1", delivery_id="delivery-1", event_id="event-1")
+    payload = serialize_job(job)
+    redis.lists[queue.processing_key] = [payload]
+
+    queue._process_payload(payload)
+
+    assert redis.lists[queue.processing_key] == [payload]
+
+
 def test_redis_queue_reclaims_interrupted_processing_jobs() -> None:
     redis = FakeRedis()
     queue = RedisReliableWebhookQueue(

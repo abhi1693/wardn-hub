@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     session_cookie_name: str
     session_secret: str
     session_ttl_seconds: int
+    system_review_secret: str = ""
     registry_public_base_url: str
     database_url: str
     cors_origins: list[str] = []
@@ -117,6 +118,13 @@ class Settings(BaseSettings):
             if secret.lower() in INSECURE_SECRET_VALUES or len(secret) < 32:
                 raise ValueError(
                     f"{field_name} must be at least 32 characters and not a placeholder "
+                    "outside local/test environments"
+                )
+        if self.system_review_secret:
+            secret = self.system_review_secret
+            if secret.lower() in INSECURE_SECRET_VALUES or len(secret) < 32:
+                raise ValueError(
+                    "system_review_secret must be at least 32 characters and not a placeholder "
                     "outside local/test environments"
                 )
 

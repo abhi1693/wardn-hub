@@ -251,7 +251,8 @@ class RedisReliableWebhookQueue[JobT]:
             print(f"{self.log_prefix}: job failed: {exc}", file=sys.stderr, flush=True)
         finally:
             metrics_service.record_webhook_processed(self.name, result)
-            self.redis.lrem(self.processing_key, 1, payload)
+            if result == "success":
+                self.redis.lrem(self.processing_key, 1, payload)
 
     def _reclaim_interrupted_jobs(self) -> None:
         while True:

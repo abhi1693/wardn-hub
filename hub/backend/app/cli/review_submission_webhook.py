@@ -41,8 +41,9 @@ class WebhookConfigurationError(Exception):
 class WebhookSettings:
     signing_secret: str
     api_base_url: str
-    token: str
+    system_review_secret: str
     review_command: str
+    codex_app_server_url: str
     model: str
     thinking: str
     review_timeout: int
@@ -155,8 +156,8 @@ def build_review_args(settings: WebhookSettings, job: ReviewJob) -> list[str]:
     args = [
         "--url",
         settings.api_base_url,
-        "--token",
-        settings.token,
+        "--system-review-secret",
+        settings.system_review_secret,
         "--review-command",
         settings.review_command,
         "--review-timeout",
@@ -172,6 +173,8 @@ def build_review_args(settings: WebhookSettings, job: ReviewJob) -> list[str]:
         "--auto-reject",
     ]
     args.append("--auto-publish" if settings.auto_publish else "--auto-approve")
+    if settings.codex_app_server_url:
+        args.extend(["--codex-app-server-url", settings.codex_app_server_url])
     if settings.model:
         args.extend(["--model", settings.model])
     if settings.thinking:
@@ -288,12 +291,15 @@ def int_from_env(name: str, default: int) -> int:
 
 
 def settings_from_env(args: argparse.Namespace) -> WebhookSettings:
-    token = (args.token or os.getenv(review_pending_submissions.TOKEN_ENV, "")).strip()
+    system_review_secret = (
+        args.system_review_secret
+        or os.getenv(review_pending_submissions.SYSTEM_REVIEW_SECRET_ENV, "")
+    ).strip()
     signing_secret = (args.signing_secret or os.getenv(WEBHOOK_SECRET_ENV, "")).strip()
-    if not token:
+    if not system_review_secret:
         raise WebhookConfigurationError(
-            "Missing Wardn Hub API token. Pass --token or set "
-            f"{review_pending_submissions.TOKEN_ENV}."
+            "Missing Wardn Hub system review secret. Pass --system-review-secret or set "
+            f"{review_pending_submissions.SYSTEM_REVIEW_SECRET_ENV}."
         )
     if not signing_secret:
         raise WebhookConfigurationError(
@@ -303,8 +309,9 @@ def settings_from_env(args: argparse.Namespace) -> WebhookSettings:
     return WebhookSettings(
         signing_secret=signing_secret,
         api_base_url=args.api_base_url,
-        token=token,
+        system_review_secret=system_review_secret,
         review_command=args.review_command,
+        codex_app_server_url=args.codex_app_server_url,
         model=args.model,
         thinking=args.thinking,
         review_timeout=args.review_timeout,
@@ -354,9 +361,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Wardn Hub API base URL. Defaults to ${review_pending_submissions.API_BASE_URL_ENV}.",
     )
     parser.add_argument(
-        "--token",
+        "--system-review-secret",
         default="",
-        help=f"Wardn Hub review API token. Defaults to ${review_pending_submissions.TOKEN_ENV}.",
+        help=(
+            "Wardn Hub system review secret. Defaults to "
+            f"${review_pending_submissions.SYSTEM_REVIEW_SECRET_ENV}."
+        ),
     )
     parser.add_argument(
         "--review-command",
@@ -365,6 +375,14 @@ def build_parser() -> argparse.ArgumentParser:
             review_pending_submissions.DEFAULT_REVIEW_COMMAND,
         ),
         help=f"LLM review command. Defaults to ${review_pending_submissions.REVIEW_COMMAND_ENV}.",
+    )
+    parser.add_argument(
+        "--codex-app-server-url",
+        default=os.getenv(review_pending_submissions.CODEX_APP_SERVER_URL_ENV, ""),
+        help=(
+            "Experimental Codex app-server WebSocket URL. Defaults to "
+            f"${review_pending_submissions.CODEX_APP_SERVER_URL_ENV}."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -410,8 +428,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--auto-publish",
         action="store_true",
         help=(
-            "Approve and publish clean pass reviews from the webhook worker. Requires the "
-            "review token to have publish access."
+            "Approve and publish clean pass reviews from the webhook worker through the "
+            "system review path."
         ),
     )
     return parser

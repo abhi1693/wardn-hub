@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from io import StringIO
 from typing import Any
@@ -79,6 +80,26 @@ class FakeReviewer:
         assert environment[cli.TOKEN_ENV] == "wardn_hub_test_token"
         assert environment[cli.API_BASE_URL_ENV] == "http://localhost:8000/api/v1"
         return "## Summary\nLooks structurally valid.\n\n## Recommended decision\napprove"
+
+
+class FakeCodexWebSocket:
+    def __init__(self, received: list[dict[str, Any]]) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self._received = [json.dumps(item) for item in received]
+
+    async def __aenter__(self) -> FakeCodexWebSocket:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def send(self, message: str) -> None:
+        self.sent.append(json.loads(message))
+
+    async def recv(self) -> str:
+        if not self._received:
+            raise AssertionError("fake Codex app-server websocket received no more messages")
+        return self._received.pop(0)
 
 
 def submitted_submission() -> dict[str, Any]:
@@ -329,6 +350,18 @@ def test_review_progress_arguments() -> None:
     assert args.verbose is True
 
 
+def test_codex_app_server_url_argument_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(cli.CODEX_APP_SERVER_URL_ENV, "ws://127.0.0.1:41237")
+
+    default_args = cli.build_parser().parse_args([])
+    override_args = cli.build_parser().parse_args(
+        ["--codex-app-server-url", "ws://127.0.0.1:5000"]
+    )
+
+    assert default_args.codex_app_server_url == "ws://127.0.0.1:41237"
+    assert override_args.codex_app_server_url == "ws://127.0.0.1:5000"
+
+
 def test_auto_reject_argument() -> None:
     default_args = cli.build_parser().parse_args([])
     args = cli.build_parser().parse_args(["--auto-reject"])
@@ -434,6 +467,87 @@ def test_subprocess_reviewer_refreshes_tty_heartbeat_status_line() -> None:
     assert "\nReview command still running after" not in progress_output
 
 
+def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> None:
+    websocket = FakeCodexWebSocket(
+        [
+            {"id": 1, "result": {"userAgent": "codex-test"}},
+            {
+                "id": 2,
+                "result": {
+                    "thread": {"id": "thread-1"},
+                    "model": "test-model",
+                },
+            },
+            {
+                "id": 3,
+                "result": {
+                    "turn": {
+                        "id": "turn-1",
+                        "items": [],
+                        "itemsView": "notLoaded",
+                        "status": "inProgress",
+                        "error": None,
+                    },
+                },
+            },
+            {
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "message-1",
+                    "delta": "Decision: pass",
+                },
+            },
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "items": [],
+                        "itemsView": "notLoaded",
+                        "status": "completed",
+                        "error": None,
+                    },
+                },
+            },
+        ]
+    )
+    reviewer = cli.CodexAppServerReviewer(
+        url="ws://127.0.0.1:41237",
+        timeout_seconds=5,
+        cwd=None,
+        model="test-model",
+        thinking="low",
+        websocket_connect=lambda _url: websocket,
+    )
+
+    findings = reviewer.review(
+        "review prompt",
+        environment={
+            cli.TOKEN_ENV: "wardn_hub_test_token",
+            cli.SYSTEM_REVIEW_SECRET_ENV: "system-secret",
+        },
+    )
+
+    assert findings == "Decision: pass"
+    sent_json = json.dumps(websocket.sent)
+    assert "wardn_hub_test_token" not in sent_json
+    assert "system-secret" not in sent_json
+    assert websocket.sent[1]["method"] == "thread/start"
+    assert websocket.sent[1]["params"]["ephemeral"] is True
+    assert websocket.sent[1]["params"]["approvalPolicy"] == "never"
+    assert websocket.sent[1]["params"]["config"]["web_search"] == "live"
+    assert websocket.sent[2]["method"] == "turn/start"
+    assert websocket.sent[2]["params"]["threadId"] == "thread-1"
+    assert websocket.sent[2]["params"]["input"][0]["text"] == "review prompt"
+    assert websocket.sent[2]["params"]["sandboxPolicy"] == {
+        "type": "readOnly",
+        "networkAccess": True,
+    }
+
+
 def test_main_keeps_review_command_logs_quiet_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -506,6 +620,80 @@ def test_main_stream_review_output_implies_verbose(
     assert captured_reviewers[0]["stream_stdout"] is True
 
 
+def test_main_uses_codex_app_server_without_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_reviewers: list[dict[str, Any]] = []
+
+    class SystemReviewClient(FakeClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__([])
+            self.token = kwargs.get("token", "")
+            self.system_review_secret = kwargs.get("system_review_secret", "")
+
+        @property
+        def is_system_review(self) -> bool:
+            return True
+
+    class CapturingCodexAppServerReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    def fail_login(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("app-server mode should not run codex login")
+
+    monkeypatch.setattr(cli, "WardnHubApiClient", SystemReviewClient)
+    monkeypatch.setattr(cli, "CodexAppServerReviewer", CapturingCodexAppServerReviewer)
+    monkeypatch.setattr(cli, "ensure_codex_login", fail_login)
+
+    result = cli.main(
+        [
+            "--system-review-secret",
+            "system-secret",
+            "--codex-app-server-url",
+            "ws://127.0.0.1:41237",
+            "--once",
+            "--verbose",
+        ]
+    )
+
+    assert result == 0
+    assert captured_reviewers == [
+        {
+            "url": "ws://127.0.0.1:41237",
+            "timeout_seconds": 900,
+            "cwd": cli.Path.cwd(),
+            "model": "",
+            "thinking": "",
+            "progress_stream": sys.stdout,
+            "stream_output": False,
+        }
+    ]
+
+
+def test_main_requires_system_review_for_codex_app_server(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_login(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("no login")
+
+    monkeypatch.setattr(cli, "ensure_codex_login", fail_login)
+
+    result = cli.main(
+        [
+            "--token",
+            "wardn_hub_test_token",
+            "--codex-app-server-url",
+            "ws://127.0.0.1:41237",
+            "--once",
+        ]
+    )
+
+    assert result == 1
+    assert "Codex app-server review requires --system-review-secret" in capsys.readouterr().err
+
+
 def test_api_client_sends_user_agent_header() -> None:
     captured: dict[str, str] = {}
 
@@ -541,6 +729,47 @@ def test_api_client_sends_user_agent_header() -> None:
     assert captured == {
         "authorization": "Bearer wardn_hub_test_token",
         "user_agent": "WardnHubReviewCLI/edge-test",
+    }
+
+
+def test_system_review_client_uses_system_secret_header() -> None:
+    captured: dict[str, str | None] = {}
+
+    class FakeResponse:
+        status = 200
+        headers = {"content-type": "application/json"}
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"submissions":[]}'
+
+    def fake_urlopen(request: Any, timeout: int) -> FakeResponse:
+        captured["authorization"] = request.get_header("Authorization")
+        captured["system_secret"] = request.get_header("X-wardn-system-review-secret")
+        captured["url"] = request.full_url
+        assert timeout == 30
+        return FakeResponse()
+
+    client = cli.WardnHubApiClient(
+        base_url="https://hub.example.com",
+        token="",
+        user_agent="WardnHubReviewCLI/edge-test",
+        timeout_seconds=30,
+        system_review_secret="system-secret",
+    )
+
+    with patch("urllib.request.urlopen", fake_urlopen):
+        assert client.list_submissions() == []
+
+    assert captured == {
+        "authorization": None,
+        "system_secret": "system-secret",
+        "url": "https://hub.example.com/api/v1/system/review/submissions",
     }
 
 
@@ -608,6 +837,65 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "Every documented environment variable is represented" in prompt
     assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt
     assert "Decision: pass, needs fixes, or cannot validate" in prompt
+
+
+def test_build_review_prompt_system_mode_uses_snapshot_without_credentials() -> None:
+    context = {
+        "submission": submitted_submission(),
+        "apiBaseUrl": "https://hub.example.com/api/v1",
+        "apiAccessMode": "system_review",
+    }
+
+    prompt = cli.build_review_prompt(context)
+
+    assert "System review mode:" in prompt
+    assert "Wardn Hub submission JSON snapshot" in prompt
+    assert '"serverJson"' in prompt
+    assert "Do not call Wardn Hub API endpoints." in prompt
+    assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in prompt
+    assert "WARDN_HUB_TOKEN" not in prompt
+    assert "Call GET /submissions" not in prompt
+
+
+def test_review_loop_system_mode_scrubs_user_token_from_reviewer_environment() -> None:
+    class SystemReviewClient(FakeClient):
+        def __init__(self, submissions: list[dict[str, Any]]) -> None:
+            super().__init__(submissions)
+            self.token = "wardn_hub_personal_token"
+            self.system_review_secret = "system-secret"
+
+        @property
+        def is_system_review(self) -> bool:
+            return True
+
+    class EnvironmentCheckingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            self.prompts.append(prompt)
+            assert cli.TOKEN_ENV not in environment
+            assert cli.SYSTEM_REVIEW_SECRET_ENV not in environment
+            assert environment[cli.API_BASE_URL_ENV] == "http://localhost:8000/api/v1"
+            return "Decision: pass\n\nSuggested approval note:\nApproved."
+
+    client = SystemReviewClient([submitted_submission()])
+    reviewer = EnvironmentCheckingReviewer()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user={"_wardnHubCanPublish": False},
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=True,
+        stdin=StringIO(),
+        stdout=StringIO(),
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert client.actions == [("approve", "sub-1", None)]
+    assert "System review mode:" in reviewer.prompts[0]
 
 
 def test_extract_suggested_rejection_message_from_fenced_section() -> None:

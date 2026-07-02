@@ -232,6 +232,65 @@ async def test_create_rule_allows_private_resolved_hostname_for_superuser(monkey
 
 
 @pytest.mark.asyncio
+async def test_create_ownerless_internal_submission_review_rule_for_superuser() -> None:
+    session = FakeSession()
+
+    response = await service.create_rule(
+        session,
+        current_user(is_superuser=True),
+        EventRuleCreate(
+            name="System submission review",
+            eventTypes=["submission.submitted"],
+            actionConfig={
+                "url": "https://hooks.example.test/review",
+                "internalAutomation": True,
+            },
+        ),
+    )
+
+    rule = next(item for item in session.added if isinstance(item, EventRule))
+    assert rule.owner_user_id is None
+    assert rule.owner_organization_id is None
+    assert rule.action_config["internalAutomation"] is True
+    assert response.owner_user_id is None
+    assert response.owner_organization_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_internal_submission_review_rule_requires_superuser() -> None:
+    with pytest.raises(service.EventAccessDeniedError, match="internal automation"):
+        await service.create_rule(
+            FakeSession(),
+            current_user(),
+            EventRuleCreate(
+                name="System submission review",
+                eventTypes=["submission.submitted"],
+                actionConfig={
+                    "url": "https://hooks.example.test/review",
+                    "internalAutomation": True,
+                },
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_internal_rule_rejects_non_internal_event_type() -> None:
+    with pytest.raises(EventValidationError, match="unsupported internal automation"):
+        await service.create_rule(
+            FakeSession(),
+            current_user(is_superuser=True),
+            EventRuleCreate(
+                name="Internal archive watcher",
+                eventTypes=["registry.server.archived"],
+                actionConfig={
+                    "url": "https://hooks.example.test/review",
+                    "internalAutomation": True,
+                },
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_delivery_revalidates_webhook_hostname_before_sending(monkeypatch) -> None:
     def private_dns(*args, **kwargs):
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))]
@@ -317,6 +376,57 @@ async def test_create_deliveries_for_event_matches_visible_rule(monkeypatch) -> 
     assert deliveries[0].destination_url_redacted == "https://hooks.example.test/review"
     assert event.processed_at is not None
     assert rule.last_triggered_at is not None
+
+
+@pytest.mark.asyncio
+async def test_internal_submission_review_rule_can_receive_submission_events(monkeypatch) -> None:
+    owner_user_id = uuid4()
+    event = event_record(owner_user_id=owner_user_id)
+    unrelated_owner_rule = EventRule(
+        id=uuid4(),
+        owner_user_id=uuid4(),
+        name="Other owner",
+        description="",
+        is_enabled=True,
+        event_types=["submission.submitted"],
+        conditions={},
+        action_type="webhook",
+        action_config={"url": "https://hooks.example.test/review"},
+        failure_policy={},
+        created_at=datetime(2026, 6, 27, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+    internal_rule = EventRule(
+        id=uuid4(),
+        owner_user_id=None,
+        owner_organization_id=None,
+        name="Wardn Hub System Review",
+        description="Internal submission review webhook",
+        is_enabled=True,
+        event_types=["submission.submitted"],
+        conditions={},
+        action_type="webhook",
+        action_config={
+            "url": "https://hooks.example.test/review",
+            "internalAutomation": True,
+        },
+        failure_policy={},
+        created_at=datetime(2026, 6, 27, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+
+    async def list_rules(*args, **kwargs):
+        return [unrelated_owner_rule, internal_rule]
+
+    monkeypatch.setattr(service.repository, "list_enabled_rules_for_event_type", list_rules)
+    session = FakeSession()
+
+    deliveries = await service.create_deliveries_for_event(session, event)
+
+    assert len(deliveries) == 1
+    assert deliveries[0].event_rule_id == internal_rule.id
+    assert internal_rule.last_triggered_at is not None
+    assert unrelated_owner_rule.last_triggered_at is None
 
 
 @pytest.mark.asyncio

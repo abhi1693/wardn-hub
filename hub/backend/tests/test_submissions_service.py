@@ -1418,6 +1418,37 @@ async def test_submission_catalog_event_types_emit_event_records(monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_system_reject_records_no_user_actor(monkeypatch) -> None:
+    submitter = current_user()
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="submitted",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    session = FakeSession()
+
+    response = await service.reject_submission_by_system(
+        session,
+        submission.id,
+        "Metadata does not match upstream docs.",
+    )
+
+    event = next(item for item in session.added if isinstance(item, EventRecord))
+    assert response.status == "rejected"
+    assert response.approver_user_id is None
+    assert event.actor_user_id is None
+    assert event.actor_token_id is None
+    assert event.payload["actor"]["userId"] is None
+    assert event.payload["actor"]["tokenId"] is None
+    assert event.payload["submission"]["status"] == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_submit_submission_rejects_incomplete_source_review(monkeypatch) -> None:
     submitter = current_user()
     submission = service.repository.ServerSubmission(

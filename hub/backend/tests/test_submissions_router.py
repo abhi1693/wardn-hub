@@ -187,6 +187,63 @@ def test_submit_missing_submission_returns_not_found(monkeypatch) -> None:
     assert response.json() == {"detail": "submission not found"}
 
 
+def test_system_review_approve_uses_system_route_without_user_auth(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, object] = {}
+    submission_id = uuid4()
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+
+    class FakeSession:
+        async def commit(self) -> None:
+            captured["committed"] = True
+
+    async def fake_session():
+        yield FakeSession()
+
+    async def approve_by_system(session, route_submission_id):
+        captured["session"] = session
+        captured["submission_id"] = route_submission_id
+        return {
+            "id": str(route_submission_id),
+            "name": "io.github.example/weather",
+            "version": "1.0.0",
+            "submitterUserId": str(uuid4()),
+            "ownerUserId": str(uuid4()),
+            "ownerOrganizationId": None,
+            "submissionType": "new_server",
+            "status": "approved",
+            "serverJson": {
+                "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+                "name": "io.github.example/weather",
+                "description": "Weather tools for forecasts",
+                "version": "1.0.0",
+                "packages": [{"registryType": "mcpb", "identifier": "example.mcpb"}],
+                "_meta": {"categories": ["weather"]},
+            },
+            "validationResult": {"status": "passed", "checks": []},
+            "submittedAt": now.isoformat(),
+            "approvedAt": now.isoformat(),
+            "approverUserId": None,
+            "rejectionMessage": "",
+            "publishedServerVersionId": None,
+            "createdAt": now.isoformat(),
+            "updatedAt": now.isoformat(),
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    app.dependency_overrides[submissions_router.require_system_review_secret] = lambda: None
+    monkeypatch.setattr(submissions_router, "approve_submission_by_system", approve_by_system)
+
+    response = TestClient(app).post(
+        f"/api/v1/system/review/submissions/{submission_id}/approve"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["approverUserId"] is None
+    assert captured["submission_id"] == submission_id
+    assert captured["committed"] is True
+
+
 def test_submission_delete_rejects_token_without_write_scope(monkeypatch) -> None:
     app = create_app()
 

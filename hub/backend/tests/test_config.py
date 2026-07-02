@@ -120,6 +120,21 @@ def test_release_environment_rejects_placeholder_secrets(monkeypatch) -> None:
         Settings(_env_file=None)
 
 
+def test_release_environment_rejects_placeholder_system_review_secret(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_SYSTEM_REVIEW_SECRET": "secret",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="system_review_secret"):
+        Settings(_env_file=None)
+
+
 def test_release_environment_rejects_wildcard_cors(monkeypatch) -> None:
     set_required_settings(
         monkeypatch,

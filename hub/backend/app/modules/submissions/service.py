@@ -1088,6 +1088,48 @@ async def list_submissions(
     )
 
 
+async def list_submissions_for_system_review(
+    session: AsyncSession,
+    *,
+    page: int = 1,
+    per_page: int = 20,
+    status: SubmissionStatus | None = "submitted",
+) -> SubmissionListResponse:
+    offset = (page - 1) * per_page
+    submissions, total, raw_status_counts = await repository.list_submissions(
+        session,
+        include_all=True,
+        status=status,
+        offset=offset,
+        limit=per_page,
+    )
+    status_counts = SubmissionStatusCounts(
+        all=sum(raw_status_counts.values()),
+        **raw_status_counts,
+    )
+    return SubmissionListResponse(
+        submissions=[submission_response(submission) for submission in submissions],
+        metadata=SubmissionListMetadata(
+            page=page,
+            perPage=per_page,
+            total=total,
+            pages=(total + per_page - 1) // per_page,
+            count=len(submissions),
+        ),
+        statusCounts=status_counts,
+    )
+
+
+async def get_submission_for_system_review(
+    session: AsyncSession,
+    submission_id: uuid.UUID,
+) -> SubmissionRead:
+    submission = await repository.get_submission_by_id(session, submission_id)
+    if submission is None:
+        raise SubmissionNotFoundError("submission not found")
+    return submission_response(submission)
+
+
 async def create_submission(
     session: AsyncSession,
     user: User,
@@ -1385,11 +1427,11 @@ async def withdraw_submission(
     return submission_response(submission)
 
 
-async def approve_submission(
+async def approve_submission_for_actor(
     session: AsyncSession,
-    approver: User,
     submission_id: uuid.UUID,
     *,
+    actor_user_id: uuid.UUID | None,
     api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
@@ -1419,17 +1461,73 @@ async def approve_submission(
     )
     submission.status = "approved"
     submission.approved_at = datetime.now(UTC)
-    submission.approver_user_id = approver.id
+    submission.approver_user_id = actor_user_id
     submission.rejection_message = ""
     await session.flush()
     await session.refresh(submission)
     await emit_submission_event(
         session,
         event_type="submission.approved",
-        actor_user_id=approver.id,
+        actor_user_id=actor_user_id,
         api_token=api_token,
         submission=submission,
         occurred_at=submission.approved_at or datetime.now(UTC),
+    )
+    return submission_response(submission)
+
+
+async def approve_submission(
+    session: AsyncSession,
+    approver: User,
+    submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
+) -> SubmissionRead:
+    return await approve_submission_for_actor(
+        session,
+        submission_id,
+        actor_user_id=approver.id,
+        api_token=api_token,
+    )
+
+
+async def approve_submission_by_system(
+    session: AsyncSession,
+    submission_id: uuid.UUID,
+) -> SubmissionRead:
+    return await approve_submission_for_actor(
+        session,
+        submission_id,
+        actor_user_id=None,
+    )
+
+
+async def reject_submission_for_actor(
+    session: AsyncSession,
+    submission_id: uuid.UUID,
+    message: str,
+    *,
+    actor_user_id: uuid.UUID | None,
+    api_token: UserAPIToken | None = None,
+) -> SubmissionRead:
+    submission = await repository.get_submission_by_id(session, submission_id)
+    if submission is None:
+        raise SubmissionNotFoundError("submission not found")
+    ensure_api_token_submission_access(api_token, submission)
+    if submission.status != "submitted":
+        raise InvalidSubmissionTransitionError("only submitted submissions can be rejected")
+    submission.status = "rejected"
+    submission.approver_user_id = actor_user_id
+    submission.rejection_message = message.strip()
+    await session.flush()
+    await session.refresh(submission)
+    await emit_submission_event(
+        session,
+        event_type="submission.rejected",
+        actor_user_id=actor_user_id,
+        api_token=api_token,
+        submission=submission,
+        metadata={"rejectionMessage": submission.rejection_message},
     )
     return submission_response(submission)
 
@@ -1442,33 +1540,33 @@ async def reject_submission(
     *,
     api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
-    submission = await repository.get_submission_by_id(session, submission_id)
-    if submission is None:
-        raise SubmissionNotFoundError("submission not found")
-    ensure_api_token_submission_access(api_token, submission)
-    if submission.status != "submitted":
-        raise InvalidSubmissionTransitionError("only submitted submissions can be rejected")
-    submission.status = "rejected"
-    submission.approver_user_id = approver.id
-    submission.rejection_message = message.strip()
-    await session.flush()
-    await session.refresh(submission)
-    await emit_submission_event(
+    return await reject_submission_for_actor(
         session,
-        event_type="submission.rejected",
+        submission_id,
+        message,
         actor_user_id=approver.id,
         api_token=api_token,
-        submission=submission,
-        metadata={"rejectionMessage": submission.rejection_message},
     )
-    return submission_response(submission)
 
 
-async def publish_submission(
+async def reject_submission_by_system(
     session: AsyncSession,
-    publisher: User,
+    submission_id: uuid.UUID,
+    message: str,
+) -> SubmissionRead:
+    return await reject_submission_for_actor(
+        session,
+        submission_id,
+        message,
+        actor_user_id=None,
+    )
+
+
+async def publish_submission_for_actor(
+    session: AsyncSession,
     submission_id: uuid.UUID,
     *,
+    actor_user_id: uuid.UUID | None,
     api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
     submission = await repository.get_submission_by_id(session, submission_id)
@@ -1501,8 +1599,8 @@ async def publish_submission(
             owner_user_id=submission.owner_user_id,
             owner_organization_id=submission.owner_organization_id,
             created_by_user_id=submission.submitter_user_id,
-            updated_by_user_id=publisher.id,
-            publisher_user_id=publisher.id,
+            updated_by_user_id=actor_user_id,
+            publisher_user_id=actor_user_id,
         )
     except DuplicateRegistryVersionError as exc:
         raise DuplicatePublishedVersionError("server version already published") from exc
@@ -1513,7 +1611,7 @@ async def publish_submission(
     await emit_submission_event(
         session,
         event_type="submission.published",
-        actor_user_id=publisher.id,
+        actor_user_id=actor_user_id,
         api_token=api_token,
         submission=submission,
         metadata={
@@ -1521,3 +1619,29 @@ async def publish_submission(
         },
     )
     return submission_response(submission)
+
+
+async def publish_submission(
+    session: AsyncSession,
+    publisher: User,
+    submission_id: uuid.UUID,
+    *,
+    api_token: UserAPIToken | None = None,
+) -> SubmissionRead:
+    return await publish_submission_for_actor(
+        session,
+        submission_id,
+        actor_user_id=publisher.id,
+        api_token=api_token,
+    )
+
+
+async def publish_submission_by_system(
+    session: AsyncSession,
+    submission_id: uuid.UUID,
+) -> SubmissionRead:
+    return await publish_submission_for_actor(
+        session,
+        submission_id,
+        actor_user_id=None,
+    )

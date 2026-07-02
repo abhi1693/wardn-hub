@@ -169,6 +169,8 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_CORS_ORIGINS` | Comma-separated browser origins allowed by the backend. |
 | `WARDN_HUB_SESSION_SECRET` | Secret used for signed session cookies. Must be high entropy in production. |
 | `WARDN_HUB_API_TOKEN_SECRET` | Secret used for API token signing. Must be independent from the session secret in production. |
+| `WARDN_HUB_SYSTEM_REVIEW_SECRET` | Optional shared secret for internal system review endpoints and the submission review worker. Must be high entropy when set in production. |
+| `WARDN_HUB_CODEX_APP_SERVER_URL` | Optional experimental Codex app-server WebSocket URL used by the submission review worker instead of spawning `codex exec`. |
 | `WARDN_HUB_API_TOKEN_PREFIX` | Prefix used when issuing user API tokens. |
 | `WARDN_HUB_SESSION_COOKIE_NAME` | Cookie name for local session auth. |
 | `WARDN_HUB_SESSION_TTL_SECONDS` | Session lifetime in seconds. |
@@ -265,6 +267,28 @@ for the device login to complete. Codex persists credentials under `~/.codex`;
 inside the backend image the `app` user's home is `/app`, and `/app/.codex` is
 writable.
 
+To avoid spawning `codex exec` for every review, run the experimental Codex
+app-server separately and point the review worker at it:
+
+```sh
+codex app-server --listen ws://127.0.0.1:41237
+
+WARDN_HUB_SYSTEM_REVIEW_SECRET=review_system_secret... \
+WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
+uv run python -m app.cli.review_pending_submissions \
+  --url https://hub.example.com/api/v1 \
+  --submission-id 00000000-0000-0000-0000-000000000000 \
+  --non-interactive \
+  --auto-reject \
+  --auto-approve
+```
+
+App-server mode requires system review mode. The worker does not forward
+`WARDN_HUB_TOKEN` or `WARDN_HUB_SYSTEM_REVIEW_SECRET` into Codex; Codex uses the
+login state of the long-running app-server process. The review thread is
+ephemeral, requests live web search, and runs with read-only filesystem access
+plus network access.
+
 Override it with `--review-command` or `WARDN_HUB_REVIEW_COMMAND`. The prompt is
 sent on stdin unless the command includes `{prompt_file}`. The CLI uses the same
 validation prompt text as the web UI, including the upstream source/release
@@ -297,7 +321,8 @@ specific API-client signature.
 For automation, target one submission and avoid prompts:
 
 ```sh
-WARDN_HUB_TOKEN=wardn_hub_key... uv run python -m app.cli.review_pending_submissions \
+WARDN_HUB_SYSTEM_REVIEW_SECRET=review_system_secret... \
+uv run python -m app.cli.review_pending_submissions \
   --url https://hub.example.com/api/v1 \
   --submission-id 00000000-0000-0000-0000-000000000000 \
   --non-interactive \
@@ -307,7 +332,9 @@ WARDN_HUB_TOKEN=wardn_hub_key... uv run python -m app.cli.review_pending_submiss
 
 In non-interactive mode, `pass` can approve, `needs fixes` or `reject` can reject
 when a suggested rejection message exists, and `cannot validate` or ambiguous
-results leave the submission unchanged.
+results leave the submission unchanged. With `WARDN_HUB_SYSTEM_REVIEW_SECRET`,
+review decisions are recorded through the internal system review path rather
+than a personal moderator account.
 
 ### Submission Review Webhook
 
@@ -317,16 +344,17 @@ submission ID, returns `202`, then reviews the submission in a background worker
 
 ```sh
 cd hub/backend
-WARDN_HUB_TOKEN=wardn_hub_key... \
+WARDN_HUB_SYSTEM_REVIEW_SECRET=review_system_secret... \
 WARDN_HUB_REVIEW_WEBHOOK_SECRET=event_rule_signing_secret \
+WARDN_HUB_CODEX_APP_SERVER_URL=ws://127.0.0.1:41237 \
 uv run python -m app.cli.review_submission_webhook \
   --url https://hub.example.com/api/v1 \
   --host 0.0.0.0 \
   --port 8090
 ```
 
-Create an event rule for `submission.submitted`, enable signing, and point it at
-the receiver path:
+Create a superuser-managed internal automation event rule for
+`submission.submitted`, enable signing, and point it at the receiver path:
 
 ```text
 /webhooks/wardn/submission-review
@@ -334,6 +362,18 @@ the receiver path:
 
 The same receiver is available from the repository root as
 `scripts/review-submission-webhook.py`.
+
+For durable review jobs, run the webhook receiver with Redis or Valkey queue
+storage, for example:
+
+```sh
+WARDN_HUB_WEBHOOK_QUEUE_BACKEND=redis
+WARDN_HUB_WEBHOOK_REDIS_URL=redis://redis.example.com:6379/40
+```
+
+When a Redis-backed review job fails or exits nonzero, it remains in the
+processing queue so a restarted worker can reclaim and retry it instead of losing
+the webhook.
 
 ## Containers
 

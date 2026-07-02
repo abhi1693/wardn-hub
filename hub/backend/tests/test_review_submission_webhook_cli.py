@@ -26,8 +26,9 @@ def webhook_settings() -> webhook.WebhookSettings:
     return webhook.WebhookSettings(
         signing_secret="secret",
         api_base_url="https://hub.example.com/api/v1",
-        token="wardn_hub_test_token",
+        system_review_secret="system-review-secret",
         review_command="codex exec -",
+        codex_app_server_url="",
         model="gpt-5",
         thinking="high",
         review_timeout=123,
@@ -64,8 +65,8 @@ def test_build_review_args_are_webhook_safe() -> None:
     assert args == [
         "--url",
         "https://hub.example.com/api/v1",
-        "--token",
-        "wardn_hub_test_token",
+        "--system-review-secret",
+        "system-review-secret",
         "--review-command",
         "codex exec -",
         "--review-timeout",
@@ -100,6 +101,20 @@ def test_build_review_args_can_auto_publish() -> None:
 
     assert "--auto-publish" in args
     assert "--auto-approve" not in args
+
+
+def test_build_review_args_can_use_codex_app_server() -> None:
+    settings = replace(webhook_settings(), codex_app_server_url="ws://127.0.0.1:41237")
+    job = webhook.ReviewJob(
+        submission_id="sub-1",
+        delivery_id="delivery-1",
+        event_id="event-1",
+    )
+
+    args = webhook.build_review_args(settings, job)
+
+    assert "--codex-app-server-url" in args
+    assert args[args.index("--codex-app-server-url") + 1] == "ws://127.0.0.1:41237"
 
 
 def test_auto_publish_argument_is_disabled_by_default() -> None:
@@ -206,16 +221,17 @@ def test_submission_webhook_deduplicates_delivery() -> None:
     assert len(review_queue.jobs) == 1
 
 
-def test_settings_from_env_requires_token_and_secret(monkeypatch) -> None:
+def test_settings_from_env_requires_system_review_secret_and_webhook_secret(monkeypatch) -> None:
     parser = webhook.build_parser()
     args = parser.parse_args([])
     monkeypatch.delenv(review_pending_submissions.TOKEN_ENV, raising=False)
+    monkeypatch.delenv(review_pending_submissions.SYSTEM_REVIEW_SECRET_ENV, raising=False)
     monkeypatch.delenv(webhook.WEBHOOK_SECRET_ENV, raising=False)
 
     try:
         webhook.settings_from_env(args)
     except webhook.WebhookConfigurationError as exc:
-        assert "Missing Wardn Hub API token" in str(exc)
+        assert "Missing Wardn Hub system review secret" in str(exc)
     else:
         raise AssertionError("expected WebhookConfigurationError")
 

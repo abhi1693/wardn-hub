@@ -40,6 +40,7 @@ from app.modules.organizations.service import (
 from app.modules.users.models import User, UserAPIToken
 
 INTERNAL_AUTOMATION_EVENT_TYPES = {
+    "submission.submitted",
     "registry.server.published",
     "registry.version.published",
 }
@@ -179,6 +180,14 @@ def validate_event_types(event_types: list[str]) -> None:
         raise EventValidationError("unsupported event type: " + ", ".join(unsupported))
 
 
+def validate_internal_automation_event_types(event_types: list[str]) -> None:
+    unsupported = sorted(set(event_types) - INTERNAL_AUTOMATION_EVENT_TYPES)
+    if unsupported:
+        raise EventValidationError(
+            "unsupported internal automation event type: " + ", ".join(unsupported)
+        )
+
+
 def validate_webhook_action(action_config: dict[str, Any], *, allow_private: bool) -> str:
     url = str(action_config.get("url") or "").strip()
     if not url:
@@ -224,8 +233,11 @@ async def resolve_rule_owner(
     *,
     owner_user_id: uuid.UUID | None,
     owner_organization_id: uuid.UUID | None,
+    allow_ownerless: bool = False,
 ) -> tuple[uuid.UUID | None, uuid.UUID | None]:
     if owner_user_id is None and owner_organization_id is None:
+        if allow_ownerless:
+            return None, None
         owner_user_id = user.id
     if owner_user_id is not None and not user.is_superuser and owner_user_id != user.id:
         raise EventAccessDeniedError("event rule owner user access denied")
@@ -342,12 +354,22 @@ async def create_rule(
     api_token: UserAPIToken | None = None,
 ) -> EventRuleRead:
     validate_event_types(payload.event_types)
+    internal_automation = payload.action_config.get("internalAutomation") is True
+    if internal_automation:
+        if not user.is_superuser:
+            raise EventAccessDeniedError("internal automation rules require superuser access")
+        validate_internal_automation_event_types(payload.event_types)
     owner_user_id, owner_organization_id = await resolve_rule_owner(
         session,
         user,
         owner_user_id=payload.owner_user_id,
         owner_organization_id=payload.owner_organization_id,
+        allow_ownerless=internal_automation,
     )
+    if internal_automation and (
+        owner_user_id is not None or owner_organization_id is not None
+    ):
+        raise EventValidationError("internal automation rules must be ownerless")
     action_config, generated_secret = normalize_action_config(
         payload.action_type,
         payload.action_config,
@@ -422,6 +444,15 @@ async def update_rule(
         user,
         owner_user_id=next_owner_user_id,
         owner_organization_id=next_owner_organization_id,
+        allow_ownerless=(
+            (
+                payload.action_config.get("internalAutomation")
+                if payload.action_config is not None
+                else rule.action_config.get("internalAutomation")
+            )
+            is True
+            and user.is_superuser
+        ),
     )
     rule.owner_user_id = next_owner_user_id
     rule.owner_organization_id = next_owner_organization_id
@@ -434,6 +465,8 @@ async def update_rule(
         rule.is_enabled = payload.is_enabled
     if payload.event_types is not None:
         validate_event_types(payload.event_types)
+        if rule.action_config.get("internalAutomation") is True:
+            validate_internal_automation_event_types(payload.event_types)
         rule.event_types = payload.event_types
     if payload.conditions is not None:
         rule.conditions = payload.conditions
@@ -443,6 +476,12 @@ async def update_rule(
         action_config = dict(payload.action_config)
         if "signingSecret" not in action_config and rule.action_type == "webhook":
             action_config["signingSecret"] = rule.action_config.get("signingSecret")
+        if action_config.get("internalAutomation") is True:
+            if not user.is_superuser:
+                raise EventAccessDeniedError("internal automation rules require superuser access")
+            validate_internal_automation_event_types(rule.event_types)
+            if rule.owner_user_id is not None or rule.owner_organization_id is not None:
+                raise EventValidationError("internal automation rules must be ownerless")
         rule.action_config, _generated_secret = normalize_action_config(
             rule.action_type,
             action_config,

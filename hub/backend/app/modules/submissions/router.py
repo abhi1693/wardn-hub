@@ -1,9 +1,11 @@
+import hmac
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.router import (
     bad_request,
     commit_response,
@@ -33,12 +35,17 @@ from app.modules.submissions.schemas import (
 )
 from app.modules.submissions.service import (
     approve_submission,
+    approve_submission_by_system,
     create_submission,
     delete_submission,
     get_submission,
+    get_submission_for_system_review,
     list_submissions,
+    list_submissions_for_system_review,
     publish_submission,
+    publish_submission_by_system,
     reject_submission,
+    reject_submission_by_system,
     submit_submission_request,
     update_submission,
     withdraw_submission,
@@ -52,6 +59,28 @@ from app.modules.users.dependencies import (
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
+system_review_router = APIRouter(
+    prefix="/system/review/submissions",
+    tags=["system-review"],
+    include_in_schema=False,
+)
+SYSTEM_REVIEW_SECRET_HEADER = "X-Wardn-System-Review-Secret"
+
+
+def require_system_review_secret(
+    supplied_secret: Annotated[str | None, Header(alias=SYSTEM_REVIEW_SECRET_HEADER)] = None,
+) -> None:
+    configured_secret = get_settings().system_review_secret.strip()
+    if not configured_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="system review is not configured",
+        )
+    if not supplied_secret or not hmac.compare_digest(supplied_secret, configured_secret):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="system review access denied",
+        )
 
 
 @router.get("", response_model=SubmissionListResponse, operation_id="submissions_list")
@@ -333,6 +362,108 @@ async def publish_submission_record(
             submission_id,
             api_token=get_request_api_token(request),
         )
+    except SubmissionNotFoundError as exc:
+        raise not_found(exc) from exc
+    except (
+        InvalidSubmissionTransitionError,
+        DuplicatePublishedVersionError,
+        SubmissionValidationError,
+    ) as exc:
+        raise bad_request(exc) from exc
+    return await commit_response(session, response)
+
+
+@system_review_router.get(
+    "",
+    response_model=SubmissionListResponse,
+    operation_id="system_review_submissions_list",
+)
+async def list_system_review_submission_records(
+    _system_review_access: Annotated[None, Depends(require_system_review_secret)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    per_page: Annotated[int, Query(alias="perPage", ge=1, le=100)] = 20,
+    submission_status: Annotated[SubmissionStatus | None, Query(alias="status")] = "submitted",
+) -> SubmissionListResponse:
+    return await list_submissions_for_system_review(
+        session,
+        page=page,
+        per_page=per_page,
+        status=submission_status,
+    )
+
+
+@system_review_router.get(
+    "/{submission_id}",
+    response_model=SubmissionRead,
+    operation_id="system_review_submissions_get",
+)
+async def get_system_review_submission_record(
+    submission_id: UUID,
+    _system_review_access: Annotated[None, Depends(require_system_review_secret)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SubmissionRead:
+    try:
+        return await get_submission_for_system_review(session, submission_id)
+    except SubmissionNotFoundError as exc:
+        raise not_found(exc) from exc
+
+
+@system_review_router.post(
+    "/{submission_id}/approve",
+    response_model=SubmissionRead,
+    operation_id="system_review_submissions_approve",
+)
+async def approve_system_review_submission_record(
+    submission_id: UUID,
+    _system_review_access: Annotated[None, Depends(require_system_review_secret)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SubmissionRead:
+    try:
+        response = await approve_submission_by_system(session, submission_id)
+    except SubmissionNotFoundError as exc:
+        raise not_found(exc) from exc
+    except (
+        InvalidSubmissionTransitionError,
+        DuplicatePublishedVersionError,
+        SubmissionValidationError,
+    ) as exc:
+        raise bad_request(exc) from exc
+    return await commit_response(session, response)
+
+
+@system_review_router.post(
+    "/{submission_id}/reject",
+    response_model=SubmissionRead,
+    operation_id="system_review_submissions_reject",
+)
+async def reject_system_review_submission_record(
+    submission_id: UUID,
+    payload: SubmissionRejectRequest,
+    _system_review_access: Annotated[None, Depends(require_system_review_secret)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SubmissionRead:
+    try:
+        response = await reject_submission_by_system(session, submission_id, payload.message)
+    except SubmissionNotFoundError as exc:
+        raise not_found(exc) from exc
+    except InvalidSubmissionTransitionError as exc:
+        raise bad_request(exc) from exc
+    return await commit_response(session, response)
+
+
+@system_review_router.post(
+    "/{submission_id}/publish",
+    response_model=SubmissionRead,
+    operation_id="system_review_submissions_publish",
+)
+async def publish_system_review_submission_record(
+    submission_id: UUID,
+    _system_review_access: Annotated[None, Depends(require_system_review_secret)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SubmissionRead:
+    try:
+        response = await publish_submission_by_system(session, submission_id)
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
     except (

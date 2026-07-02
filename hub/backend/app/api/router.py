@@ -12,6 +12,7 @@ from app.modules.registry.router import catalog_router as registry_catalog_route
 from app.modules.registry.router import categories_router as registry_categories_router
 from app.modules.registry.router import public_router as registry_public_router
 from app.modules.submissions.router import router as submissions_router
+from app.modules.submissions.router import system_review_router
 from app.modules.users.auth_router import router as auth_router
 from app.modules.users.router import router as users_router
 
@@ -23,6 +24,7 @@ api_router.include_router(organizations_router)
 api_router.include_router(partners_router)
 api_router.include_router(imports_router)
 api_router.include_router(submissions_router)
+api_router.include_router(system_review_router)
 api_router.include_router(audit_router)
 api_router.include_router(events_router)
 api_router.include_router(registry_catalog_router)

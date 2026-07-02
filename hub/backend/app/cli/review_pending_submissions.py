@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import queue
@@ -25,6 +26,7 @@ from typing import Any, Protocol, TextIO
 API_PREFIX = "/api/v1"
 DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
 TOKEN_ENV = "WARDN_HUB_TOKEN"
+SYSTEM_REVIEW_SECRET_ENV = "WARDN_HUB_SYSTEM_REVIEW_SECRET"
 API_BASE_URL_ENV = "WARDN_HUB_API_BASE_URL"
 USER_AGENT_ENV = "WARDN_HUB_USER_AGENT"
 REVIEW_COMMAND_ENV = "WARDN_HUB_REVIEW_COMMAND"
@@ -36,12 +38,19 @@ DEFAULT_REVIEW_COMMAND = (
     "codex --search exec --ephemeral --sandbox danger-full-access --ignore-user-config "
     "--skip-git-repo-check -"
 )
+CODEX_APP_SERVER_URL_ENV = "WARDN_HUB_CODEX_APP_SERVER_URL"
 THINKING_LEVELS = ("low", "medium", "high", "xhigh")
 
 API_ACCESS_INSTRUCTIONS = """Required API access:
 - Use WARDN_HUB_TOKEN as the Wardn Hub bearer token.
 - If WARDN_HUB_TOKEN is not available in the environment or context, stop and ask the user for a Wardn Hub API token.
 - Do not call the Wardn Hub API until a token is available."""
+
+SYSTEM_REVIEW_INSTRUCTIONS = """System review mode:
+- Use the submission JSON snapshot in this prompt as the Wardn Hub source of truth.
+- Do not call Wardn Hub API endpoints.
+- Do not request or expose Wardn Hub credentials.
+- Review upstream public source repositories, README files, documentation, and package metadata only."""
 
 REGISTRY_METADATA_SCOPE_RULE = (
     "Treat this as registry metadata review only. Do not install workspace MCP servers, "
@@ -265,6 +274,260 @@ class SubprocessReviewer:
         return output
 
 
+@dataclass
+class CodexAppServerReviewer:
+    url: str
+    timeout_seconds: int
+    cwd: Path | None = None
+    model: str = ""
+    thinking: str = ""
+    progress_stream: TextIO | None = None
+    stream_output: bool = False
+    websocket_connect: Any | None = None
+
+    def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+        del environment
+        if self.progress_stream is not None:
+            print(
+                "Codex app-server review started. Waiting for reviewer output.",
+                file=self.progress_stream,
+                flush=True,
+            )
+        try:
+            return asyncio.run(
+                asyncio.wait_for(self._review_async(prompt), timeout=self.timeout_seconds)
+            )
+        except TimeoutError as exc:
+            raise UserFacingError(
+                f"Codex app-server review timed out after {self.timeout_seconds} seconds"
+            ) from exc
+        except UserFacingError:
+            raise
+        except Exception as exc:
+            raise UserFacingError(f"Codex app-server review failed: {exc}") from exc
+
+    async def _review_async(self, prompt: str) -> str:
+        connection = self._connect()
+        async with connection as websocket:
+            await self._request(
+                websocket,
+                "initialize",
+                {
+                    "clientInfo": {
+                        "name": "wardn-hub-review",
+                        "title": None,
+                        "version": "0.1",
+                    },
+                    "capabilities": {
+                        "experimentalApi": True,
+                        "requestAttestation": False,
+                    },
+                },
+                request_id=1,
+            )
+            thread = await self._request(
+                websocket,
+                "thread/start",
+                self._thread_start_params(),
+                request_id=2,
+            )
+            thread_id = str(thread["thread"]["id"])
+            turn = await self._request(
+                websocket,
+                "turn/start",
+                self._turn_start_params(thread_id, prompt),
+                request_id=3,
+            )
+            turn_id = str(turn["turn"]["id"])
+            return await self._collect_turn_output(websocket, thread_id, turn_id)
+
+    def _connect(self) -> Any:
+        if self.websocket_connect is not None:
+            return self.websocket_connect(self.url)
+
+        import websockets
+
+        return websockets.connect(self.url, max_size=None)
+
+    async def _request(
+        self,
+        websocket: Any,
+        method: str,
+        params: dict[str, Any],
+        *,
+        request_id: int,
+    ) -> dict[str, Any]:
+        await websocket.send(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": method,
+                    "params": params,
+                }
+            )
+        )
+        while True:
+            message = json.loads(await websocket.recv())
+            if message.get("id") == request_id:
+                if "error" in message:
+                    raise UserFacingError(
+                        f"Codex app-server {method} failed: {format_codex_rpc_error(message['error'])}"
+                    )
+                result = message.get("result")
+                return result if isinstance(result, dict) else {}
+            await self._handle_server_message(websocket, message)
+
+    async def _collect_turn_output(
+        self,
+        websocket: Any,
+        thread_id: str,
+        turn_id: str,
+    ) -> str:
+        chunks: list[str] = []
+        completed_text = ""
+        last_error = ""
+        while True:
+            message = json.loads(await websocket.recv())
+            method = message.get("method")
+            params = message.get("params") if isinstance(message.get("params"), dict) else {}
+
+            if method == "item/agentMessage/delta":
+                if params.get("threadId") == thread_id and params.get("turnId") == turn_id:
+                    delta = str(params.get("delta") or "")
+                    chunks.append(delta)
+                    if self.stream_output and self.progress_stream is not None:
+                        print(delta, end="", file=self.progress_stream, flush=True)
+                continue
+
+            if method == "item/completed":
+                item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                if (
+                    params.get("threadId") == thread_id
+                    and params.get("turnId") == turn_id
+                    and item.get("type") == "agentMessage"
+                ):
+                    completed_text = str(item.get("text") or "")
+                continue
+
+            if method == "error":
+                if params.get("threadId") == thread_id and params.get("turnId") == turn_id:
+                    last_error = format_codex_notification_error(params)
+                continue
+
+            if method == "turn/completed":
+                turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+                if params.get("threadId") != thread_id or turn.get("id") != turn_id:
+                    continue
+                status = str(turn.get("status") or "")
+                if status != "completed":
+                    error = turn.get("error")
+                    detail = (
+                        format_codex_notification_error({"error": error})
+                        if isinstance(error, dict)
+                        else last_error
+                    )
+                    raise UserFacingError(
+                        "Codex app-server turn failed"
+                        + (f": {detail}" if detail else f" with status {status}")
+                    )
+                output = "".join(chunks).strip() or completed_text.strip()
+                if not output:
+                    raise UserFacingError("Codex app-server completed without findings")
+                return output
+
+            await self._handle_server_message(websocket, message)
+
+    async def _handle_server_message(self, websocket: Any, message: dict[str, Any]) -> None:
+        request_id = message.get("id")
+        method = str(message.get("method") or "")
+        if request_id is None or not method:
+            return
+
+        if method == "currentTime/read":
+            result: dict[str, Any] = {"currentTimeAt": int(time.time())}
+        elif method == "item/tool/requestUserInput":
+            result = {"answers": {}}
+        elif method == "mcpServer/elicitation/request":
+            result = {"action": "decline", "content": None, "_meta": None}
+        elif method == "item/permissions/requestApproval":
+            result = {"permissions": {}, "scope": "turn", "strictAutoReview": False}
+        elif method in {
+            "item/commandExecution/requestApproval",
+            "item/fileChange/requestApproval",
+        }:
+            result = {"decision": "decline"}
+        elif method in {"applyPatchApproval", "execCommandApproval"}:
+            result = {"decision": "denied"}
+        else:
+            await websocket.send(
+                json.dumps(
+                    {
+                        "id": request_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"unsupported server request: {method}",
+                        },
+                    }
+                )
+            )
+            return
+
+        await websocket.send(json.dumps({"id": request_id, "result": result}))
+
+    def _thread_start_params(self) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "approvalPolicy": "never",
+            "sandbox": "read-only",
+            "ephemeral": True,
+            "config": {
+                "web_search": "live",
+                "tools": {"web_search": {"context_size": "medium"}},
+            },
+        }
+        if self.cwd is not None:
+            cwd = str(self.cwd)
+            params["cwd"] = cwd
+            params["runtimeWorkspaceRoots"] = [cwd]
+        if self.model.strip():
+            params["model"] = self.model.strip()
+        return params
+
+    def _turn_start_params(self, thread_id: str, prompt: str) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "threadId": thread_id,
+            "input": [{"type": "text", "text": prompt, "text_elements": []}],
+            "approvalPolicy": "never",
+            "sandboxPolicy": {"type": "readOnly", "networkAccess": True},
+        }
+        if self.model.strip():
+            params["model"] = self.model.strip()
+        if self.thinking.strip():
+            params["effort"] = self.thinking.strip()
+        return params
+
+
+def format_codex_rpc_error(error: Any) -> str:
+    if isinstance(error, dict):
+        message = error.get("message")
+        if isinstance(message, str) and message:
+            return message
+        return json.dumps(error)
+    return str(error)
+
+
+def format_codex_notification_error(params: dict[str, Any]) -> str:
+    error = params.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        if isinstance(message, str) and message:
+            return message
+        return json.dumps(error)
+    if isinstance(error, str):
+        return error
+    return ""
+
+
 class WardnHubApiClient:
     def __init__(
         self,
@@ -273,11 +536,23 @@ class WardnHubApiClient:
         token: str,
         user_agent: str,
         timeout_seconds: int,
+        system_review_secret: str = "",
     ) -> None:
         self.base_url = normalize_api_base_url(base_url)
         self.token = token
+        self.system_review_secret = system_review_secret
         self.user_agent = user_agent.strip() or DEFAULT_USER_AGENT
         self.timeout_seconds = timeout_seconds
+
+    @property
+    def is_system_review(self) -> bool:
+        return bool(self.system_review_secret)
+
+    @property
+    def submissions_path(self) -> str:
+        if self.is_system_review:
+            return "/system/review/submissions"
+        return "/submissions"
 
     def request(
         self,
@@ -293,9 +568,12 @@ class WardnHubApiClient:
         body = None
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.token}",
             "User-Agent": self.user_agent,
         }
+        if self.system_review_secret:
+            headers["X-Wardn-System-Review-Secret"] = self.system_review_secret
+        else:
+            headers["Authorization"] = f"Bearer {self.token}"
         if payload is not None:
             headers["Content-Type"] = "application/json"
             body = json.dumps(payload).encode("utf-8")
@@ -333,12 +611,15 @@ class WardnHubApiClient:
         return self.request("GET", "/auth/me")
 
     def list_submissions(self) -> list[dict[str, Any]]:
-        response = self.request("GET", "/submissions")
+        response = self.request("GET", self.submissions_path)
         submissions = response.get("submissions") if isinstance(response, dict) else []
         return submissions if isinstance(submissions, list) else []
 
     def get_submission(self, submission_id: str) -> dict[str, Any]:
-        return self.request("GET", f"/submissions/{urllib.parse.quote(submission_id, safe='')}")
+        return self.request(
+            "GET",
+            f"{self.submissions_path}/{urllib.parse.quote(submission_id, safe='')}",
+        )
 
     def list_categories(self) -> dict[str, Any] | None:
         return self.request("GET", "/mcp/categories", allow_statuses=(403, 404))
@@ -360,26 +641,26 @@ class WardnHubApiClient:
     def approve_submission(self, submission_id: str) -> dict[str, Any]:
         return self.request(
             "POST",
-            f"/submissions/{urllib.parse.quote(submission_id, safe='')}/approve",
+            f"{self.submissions_path}/{urllib.parse.quote(submission_id, safe='')}/approve",
         )
 
     def publish_submission(self, submission_id: str) -> dict[str, Any]:
         return self.request(
             "POST",
-            f"/submissions/{urllib.parse.quote(submission_id, safe='')}/publish",
+            f"{self.submissions_path}/{urllib.parse.quote(submission_id, safe='')}/publish",
         )
 
     def reject_submission(self, submission_id: str, message: str) -> dict[str, Any]:
         return self.request(
             "POST",
-            f"/submissions/{urllib.parse.quote(submission_id, safe='')}/reject",
+            f"{self.submissions_path}/{urllib.parse.quote(submission_id, safe='')}/reject",
             payload={"message": message},
         )
 
     def probe_moderation_access(self) -> None:
         self.request(
             "POST",
-            f"/submissions/{uuid.uuid4()}/approve",
+            f"{self.submissions_path}/{uuid.uuid4()}/approve",
             expected_statuses=(),
             allow_statuses=(404,),
         )
@@ -388,7 +669,7 @@ class WardnHubApiClient:
         try:
             self.request(
                 "POST",
-                f"/submissions/{uuid.uuid4()}/publish",
+                f"{self.submissions_path}/{uuid.uuid4()}/publish",
                 expected_statuses=(),
                 allow_statuses=(404,),
             )
@@ -455,6 +736,20 @@ def bool_field(data: dict[str, Any], snake_case: str, camel_case: str) -> bool:
 
 
 def validate_token(client: WardnHubApiClient) -> dict[str, Any]:
+    if getattr(client, "is_system_review", False):
+        client.list_submissions()
+        client.probe_moderation_access()
+        return {
+            "id": "system",
+            "display_name": "Wardn Hub system review",
+            "email": "",
+            "is_active": True,
+            "is_superuser": False,
+            "is_global_moderator": True,
+            "is_system_review": True,
+            "_wardnHubCanPublish": client.probe_publish_access(),
+        }
+
     user = client.current_user()
     if not bool_field(user, "is_active", "isActive"):
         raise UserFacingError("authenticated user is inactive")
@@ -510,6 +805,9 @@ def build_review_context(client: WardnHubApiClient, submission: dict[str, Any]) 
         "submission": fresh_submission,
         "apiBaseUrlEnvironmentVariable": API_BASE_URL_ENV,
         "apiTokenEnvironmentVariable": TOKEN_ENV,
+        "apiAccessMode": (
+            "system_review" if getattr(client, "is_system_review", False) else "api_token"
+        ),
     }
 
 
@@ -520,6 +818,75 @@ def build_review_prompt(context: dict[str, Any]) -> str:
     version = str(submission.get("version") or "")
     id_list = f"- {submission_id}" if submission_id else "- none"
     expected_version = version or "the listed version"
+    system_review_mode = context.get("apiAccessMode") == "system_review"
+    access_instructions = SYSTEM_REVIEW_INSTRUCTIONS if system_review_mode else API_ACCESS_INSTRUCTIONS
+    api_review_requirements = ""
+    if not system_review_mode:
+        api_review_requirements = """- The token must belong to an admin or moderator account with review-system access and must be able to read the submitted queue.
+- The token must include submissions:read to inspect submissions and submissions:moderate to approve or reject submissions.
+- To publish, the token must belong to a superuser and include submissions:publish.
+- Moderator tokens may approve or reject submitted versions. Publishing and archiving require a superuser token.
+- If GET /submissions does not expose submitted records for review, stop and report that the token does not have review access.
+- Do not approve, reject, publish, update, or delete anything before presenting your validation report and receiving explicit user approval for the exact action."""
+    scope_fetch_instruction = (
+        "Use the Wardn Hub submission JSON snapshot in this prompt before reviewing details."
+        if system_review_mode
+        else "Call GET /submissions/{id} before reviewing details."
+    )
+    scope_confirm_instruction = (
+        f'Confirm the snapshot has status "submitted", name "{server_name}", and version '
+        f'"{expected_version}". In the Wardn Hub UI, this status is shown as "In review".'
+        if system_review_mode
+        else f'Confirm the fetched submission has status "submitted", name "{server_name}", '
+        f'and version "{expected_version}". In the Wardn Hub UI, this status is shown as '
+        '"In review".'
+    )
+    scope_ignore_instruction = (
+        "Ignore any other submissions or versions."
+        if system_review_mode
+        else "Ignore any other submissions returned by the API, including drafts, approved "
+        "submissions, rejected submissions, withdrawn submissions, published submissions, "
+        "other versions, and submissions for other servers."
+    )
+    scope_missing_instruction = (
+        "If the listed snapshot is not an in-review submission for this version, report that "
+        "clearly and stop."
+        if system_review_mode
+        else "If the listed ID cannot be fetched as an in-review submission for this version, "
+        "report that clearly and stop."
+    )
+    after_report_instructions = (
+        """After the report:
+- Do not call Wardn Hub API endpoints.
+- Do not approve, reject, publish, update, or delete anything directly.
+- The system review controller will apply configured automatic actions from your Decision and Suggested rejection message fields."""
+        if system_review_mode
+        else """After the report:
+- Ask the user exactly what action to take using lettered options so they can reply with a single letter. If the token has moderator-only access, display:
+  A. Approve
+  B. Reject with the suggested message
+  C. Leave unchanged
+- If the token has superuser publishing access, display:
+  A. Approve
+  B. Approve and publish
+  C. Reject with the suggested message
+  D. Leave unchanged
+- Do not take action from your own recommendation alone.
+- Only after the user explicitly chooses one lettered option or the exact action text, call the corresponding Wardn Hub API endpoint.
+- If the user chooses approve, call POST /submissions/{id}/approve.
+- If the user chooses approve and publish, first call POST /submissions/{id}/approve, then call POST /submissions/{id}/publish on the approved submission. Only offer and perform this when the token has superuser publishing access.
+- If the user chooses reject, call POST /submissions/{id}/reject with a clear message.
+- Do not publish unless the user explicitly chose approve and publish.
+- After performing an approved action, return the endpoints called, final submission status, and any API error."""
+    )
+    submission_snapshot = ""
+    if system_review_mode:
+        submission_snapshot = (
+            "\nWardn Hub submission JSON snapshot:\n"
+            "```json\n"
+            f"{json.dumps(submission, indent=2, sort_keys=True)}\n"
+            "```\n"
+        )
 
     return f"""Validate one Wardn Hub MCP server version that is currently in review.
 
@@ -529,20 +896,16 @@ Version: {version or "unknown"}
 In-review submission ID shown in UI:
 {id_list}
 
-{API_ACCESS_INSTRUCTIONS}
-- The token must belong to an admin or moderator account with review-system access and must be able to read the submitted queue.
-- The token must include submissions:read to inspect submissions and submissions:moderate to approve or reject submissions.
-- To publish, the token must belong to a superuser and include submissions:publish.
-- Moderator tokens may approve or reject submitted versions. Publishing and archiving require a superuser token.
-- If GET /submissions does not expose submitted records for review, stop and report that the token does not have review access.
-- Do not approve, reject, publish, update, or delete anything before presenting your validation report and receiving explicit user approval for the exact action.
+{access_instructions}
+{api_review_requirements}
+{submission_snapshot}
 
 Scope:
 1. Validate only the in-review submission ID listed above.
-2. Call GET /submissions/{{id}} before reviewing details.
-3. Confirm the fetched submission has status "submitted", name "{server_name}", and version "{expected_version}". In the Wardn Hub UI, this status is shown as "In review".
-4. Ignore any other submissions returned by the API, including drafts, approved submissions, rejected submissions, withdrawn submissions, published submissions, other versions, and submissions for other servers.
-5. If the listed ID cannot be fetched as an in-review submission for this version, report that clearly and stop.
+2. {scope_fetch_instruction}
+3. {scope_confirm_instruction}
+4. {scope_ignore_instruction}
+5. {scope_missing_instruction}
 
 Validation workflow for each submission:
 1. Read submission.serverJson, submission.validationResult, and submission.serverJson._meta.sourceReview.
@@ -585,23 +948,7 @@ Decision rules:
 - Use "needs fixes" or "reject" only when the submitted metadata is clearly wrong or incomplete.
 - Use "cannot validate" when source evidence is unavailable, ambiguous, or insufficient to make a safe approval/rejection decision. This leaves the submission unchanged so it can be retried or reviewed manually later.
 
-After the report:
-- Ask the user exactly what action to take using lettered options so they can reply with a single letter. If the token has moderator-only access, display:
-  A. Approve
-  B. Reject with the suggested message
-  C. Leave unchanged
-- If the token has superuser publishing access, display:
-  A. Approve
-  B. Approve and publish
-  C. Reject with the suggested message
-  D. Leave unchanged
-- Do not take action from your own recommendation alone.
-- Only after the user explicitly chooses one lettered option or the exact action text, call the corresponding Wardn Hub API endpoint.
-- If the user chooses approve, call POST /submissions/{{id}}/approve.
-- If the user chooses approve and publish, first call POST /submissions/{{id}}/approve, then call POST /submissions/{{id}}/publish on the approved submission. Only offer and perform this when the token has superuser publishing access.
-- If the user chooses reject, call POST /submissions/{{id}}/reject with a clear message.
-- Do not publish unless the user explicitly chose approve and publish.
-- After performing an approved action, return the endpoints called, final submission status, and any API error.
+{after_report_instructions}
 
 Do not mark a submission as passing if source review evidence is incomplete, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified."""
 
@@ -927,7 +1274,11 @@ def review_loop(
         context = build_review_context(client, submission)
         prompt = build_review_prompt(context)
         environment = os.environ.copy()
-        environment[TOKEN_ENV] = client.token
+        if client.token and not getattr(client, "is_system_review", False):
+            environment[TOKEN_ENV] = client.token
+        else:
+            environment.pop(TOKEN_ENV, None)
+        environment.pop(SYSTEM_REVIEW_SECRET_ENV, None)
         environment[API_BASE_URL_ENV] = client.base_url
         environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] = current_submission_id
 
@@ -1145,6 +1496,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Wardn Hub API token. Defaults to ${TOKEN_ENV}.",
     )
     parser.add_argument(
+        "--system-review-secret",
+        default=os.getenv(SYSTEM_REVIEW_SECRET_ENV, ""),
+        help=(
+            "Wardn Hub system review secret. Uses internal system review endpoints instead "
+            f"of a user token. Defaults to ${SYSTEM_REVIEW_SECRET_ENV}."
+        ),
+    )
+    parser.add_argument(
         "--user-agent",
         default=os.getenv(USER_AGENT_ENV, DEFAULT_USER_AGENT),
         help=(
@@ -1158,6 +1517,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "LLM review command. The prompt is sent on stdin unless the command contains "
             "{prompt_file}. Defaults to Codex exec."
+        ),
+    )
+    parser.add_argument(
+        "--codex-app-server-url",
+        default=os.getenv(CODEX_APP_SERVER_URL_ENV, ""),
+        help=(
+            "Experimental Codex app-server WebSocket URL for review, for example "
+            f"ws://127.0.0.1:41237. Requires system review mode. Defaults to "
+            f"${CODEX_APP_SERVER_URL_ENV}."
         ),
     )
     parser.add_argument(
@@ -1275,16 +1643,25 @@ def main(argv: list[str] | None = None) -> int:
         parser = build_parser()
         args = parser.parse_args(argv)
         token = (args.token or os.getenv(TOKEN_ENV, "")).strip()
-        if not token:
+        system_review_secret = str(args.system_review_secret or "").strip()
+        if not token and not system_review_secret:
             print(
-                f"Missing Wardn Hub API token. Pass --token or set {TOKEN_ENV}.",
+                "Missing Wardn Hub review credentials. Pass --system-review-secret, "
+                f"set {SYSTEM_REVIEW_SECRET_ENV}, pass --token, or set {TOKEN_ENV}.",
                 file=sys.stderr,
             )
             return 2
+        codex_app_server_url = str(args.codex_app_server_url or "").strip()
+        if codex_app_server_url and not system_review_secret:
+            raise UserFacingError(
+                "Codex app-server review requires --system-review-secret because Wardn Hub "
+                "credentials are not forwarded to the app-server."
+            )
 
         client = WardnHubApiClient(
             base_url=args.api_base_url,
             token=token,
+            system_review_secret=system_review_secret,
             user_agent=args.user_agent,
             timeout_seconds=args.http_timeout,
         )
@@ -1292,20 +1669,39 @@ def main(argv: list[str] | None = None) -> int:
         if args.review_progress_interval < 0:
             raise UserFacingError("--review-progress-interval must be 0 or greater")
         verbose = bool(args.verbose or args.stream_review_output)
-        review_command = parse_review_command(
-            args.review_command,
-            model=args.model,
-            thinking=args.thinking,
-        )
-        ensure_codex_login(review_command, environment=os.environ.copy(), stdout=sys.stdout)
-        reviewer = SubprocessReviewer(
-            command=review_command,
-            timeout_seconds=args.review_timeout,
-            cwd=Path.cwd(),
-            progress_stream=sys.stdout if verbose else None,
-            progress_interval_seconds=args.review_progress_interval,
-            stream_stdout=args.stream_review_output,
-        )
+        if codex_app_server_url:
+            reviewer: Reviewer = CodexAppServerReviewer(
+                url=codex_app_server_url,
+                timeout_seconds=args.review_timeout,
+                cwd=Path.cwd(),
+                model=args.model,
+                thinking=args.thinking,
+                progress_stream=sys.stdout if verbose else None,
+                stream_output=args.stream_review_output,
+            )
+        else:
+            review_command = parse_review_command(
+                args.review_command,
+                model=args.model,
+                thinking=args.thinking,
+            )
+            codex_login_environment = os.environ.copy()
+            codex_login_environment.pop(SYSTEM_REVIEW_SECRET_ENV, None)
+            if system_review_secret:
+                codex_login_environment.pop(TOKEN_ENV, None)
+            ensure_codex_login(
+                review_command,
+                environment=codex_login_environment,
+                stdout=sys.stdout,
+            )
+            reviewer = SubprocessReviewer(
+                command=review_command,
+                timeout_seconds=args.review_timeout,
+                cwd=Path.cwd(),
+                progress_stream=sys.stdout if verbose else None,
+                progress_interval_seconds=args.review_progress_interval,
+                stream_stdout=args.stream_review_output,
+            )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return review_loop(
             client=client,
