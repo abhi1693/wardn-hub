@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol, TextIO
 
 from app.cli.review_pending_submissions import (
+    CODEX_APP_SERVER_AUTH_TOKEN_ENV,
     CODEX_APP_SERVER_URL_ENV,
     REGISTRY_METADATA_SCOPE_RULE,
     VALIDATION_PACKAGE_ARGUMENT_CHECKS,
@@ -455,6 +456,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=Path.cwd(),
             progress_stream=sys.stdout if args.verbose else None,
             stream_output=args.verbose,
+            auth_token=os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip(),
         )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return fix_loop(

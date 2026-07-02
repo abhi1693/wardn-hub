@@ -256,6 +256,70 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
     }
 
 
+def test_codex_app_server_reviewer_uses_capability_token_header_only() -> None:
+    websocket = FakeCodexWebSocket(
+        [
+            {"id": 1, "result": {"capabilities": {}}},
+            {
+                "id": 2,
+                "result": {
+                    "thread": {
+                        "id": "thread-1",
+                        "title": None,
+                        "createdAt": "2026-07-03T00:00:00Z",
+                        "updatedAt": "2026-07-03T00:00:00Z",
+                    }
+                },
+            },
+            {"id": 3, "result": {"turn": {"id": "turn-1"}}},
+            {
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "message-1",
+                    "delta": "Decision: pass",
+                },
+            },
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "items": [],
+                        "itemsView": "notLoaded",
+                        "status": "completed",
+                        "error": None,
+                    },
+                },
+            },
+        ]
+    )
+    captured_connect: dict[str, Any] = {}
+
+    def connect(url: str, **kwargs: Any) -> FakeCodexWebSocket:
+        captured_connect["url"] = url
+        captured_connect.update(kwargs)
+        return websocket
+
+    reviewer = cli.CodexAppServerReviewer(
+        url="ws://127.0.0.1:41237",
+        timeout_seconds=5,
+        auth_token="codex-test-token",
+        websocket_connect=connect,
+    )
+
+    findings = reviewer.review("review prompt", environment={})
+
+    assert findings == "Decision: pass"
+    assert captured_connect == {
+        "url": "ws://127.0.0.1:41237",
+        "additional_headers": {"Authorization": "Bearer codex-test-token"},
+    }
+    assert "codex-test-token" not in json.dumps(websocket.sent)
+
+
 def test_main_uses_codex_app_server_without_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -289,6 +353,7 @@ def test_main_uses_codex_app_server_without_login(
             "cwd": cli.Path.cwd(),
             "progress_stream": sys.stdout,
             "stream_output": True,
+            "auth_token": "",
         }
     ]
 
@@ -324,6 +389,36 @@ def test_main_uses_database_queue_with_codex_app_server(
     assert result == 0
     assert client_created is True
     assert captured_reviewers[0]["url"] == "ws://127.0.0.1:41237"
+    assert captured_reviewers[0]["auth_token"] == ""
+
+
+def test_main_passes_codex_app_server_auth_token_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_reviewers: list[dict[str, Any]] = []
+
+    class FakeDatabaseReviewClient(FakeClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__([])
+
+    class CapturingCodexAppServerReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    monkeypatch.setenv(cli.CODEX_APP_SERVER_AUTH_TOKEN_ENV, " test-token ")
+    monkeypatch.setattr(cli, "WardnHubDatabaseReviewClient", FakeDatabaseReviewClient)
+    monkeypatch.setattr(cli, "CodexAppServerReviewer", CapturingCodexAppServerReviewer)
+
+    result = cli.main(
+        [
+            "--codex-app-server-url",
+            "ws://127.0.0.1:41237",
+            "--once",
+        ]
+    )
+
+    assert result == 0
+    assert captured_reviewers[0]["auth_token"] == "test-token"
 
 
 def test_main_requires_app_server_without_explicit_review_command(

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol, TextIO
 
 CODEX_APP_SERVER_URL_ENV = "WARDN_HUB_CODEX_APP_SERVER_URL"
+CODEX_APP_SERVER_AUTH_TOKEN_ENV = "WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN"
 
 SYSTEM_REVIEW_INSTRUCTIONS = """System review mode:
 - Use the submission JSON snapshot and submitted MCP server model JSON in this prompt as the Wardn Hub source of truth.
@@ -67,6 +68,7 @@ class CodexAppServerReviewer:
     cwd: Path | None = None
     progress_stream: TextIO | None = None
     stream_output: bool = False
+    auth_token: str = ""
     websocket_connect: Any | None = None
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
@@ -126,12 +128,27 @@ class CodexAppServerReviewer:
             return await self._collect_turn_output(websocket, thread_id, turn_id)
 
     def _connect(self) -> Any:
+        headers = self._websocket_headers()
         if self.websocket_connect is not None:
+            if headers:
+                return self.websocket_connect(self.url, additional_headers=headers)
             return self.websocket_connect(self.url)
 
         import websockets
 
+        if headers:
+            return websockets.connect(
+                self.url,
+                max_size=None,
+                additional_headers=headers,
+            )
         return websockets.connect(self.url, max_size=None)
+
+    def _websocket_headers(self) -> dict[str, str]:
+        auth_token = self.auth_token.strip()
+        if not auth_token:
+            return {}
+        return {"Authorization": f"Bearer {auth_token}"}
 
     async def _request(
         self,
@@ -1086,6 +1103,7 @@ def main(argv: list[str] | None = None) -> int:
             cwd=Path.cwd(),
             progress_stream=sys.stdout if args.verbose else None,
             stream_output=args.verbose,
+            auth_token=os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip(),
         )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return review_loop(
