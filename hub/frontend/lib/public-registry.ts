@@ -110,6 +110,9 @@ export async function listPublicCategories() {
 export async function listPublishedRegistryServers(params?: {
   category?: string;
   limit?: number;
+  registryType?: string;
+  search?: string;
+  transportType?: string;
 }) {
   const servers: RegistryServerRead[] = [];
   let cursor = "";
@@ -120,6 +123,9 @@ export async function listPublishedRegistryServers(params?: {
       ...(params?.category ? { category: params.category } : {}),
       fields: PUBLIC_CARD_FIELDS,
       limit: Math.min(PAGE_SIZE, maxServers - servers.length),
+      ...(params?.registryType ? { registry_type: params.registryType } : {}),
+      ...(params?.search ? { search: params.search } : {}),
+      ...(params?.transportType ? { transport_type: params.transportType } : {}),
       ...(cursor ? { cursor } : {}),
     });
 

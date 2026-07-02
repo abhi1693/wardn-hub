@@ -7,6 +7,8 @@ import { ServerCard } from "@/components/server-card";
 import { listPublishedServers } from "@/lib/api/hub";
 import type { RegistryServerRead } from "@/lib/api/generated/model";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
+import type { RegistryFacts } from "@/lib/registry-facts-shared";
+import { formatFactDate } from "@/lib/registry-facts-shared";
 
 const EXPLORE_PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -49,11 +51,13 @@ export function ExploreHomeClient({
   initialError,
   initialNextCursor,
   initialQuery,
+  registryFacts,
   initialServers,
 }: {
   initialError: string;
   initialNextCursor: string;
   initialQuery: string;
+  registryFacts: RegistryFacts;
   initialServers: RegistryServerRead[];
 }) {
   const searchInputId = useId();
@@ -181,6 +185,20 @@ export function ExploreHomeClient({
             A curated registry of Model Context Protocol servers. Enhance your AI with localized
             knowledge and specialized tools.
           </p>
+          <div className="registry-facts" aria-label="Dated registry facts">
+            <span>
+              As of {formatFactDate(registryFacts.generatedAt)}, Wardn Hub lists{" "}
+              <strong>{registryFacts.publishedServerCount ?? "an unavailable number of"}</strong>{" "}
+              published MCP servers across{" "}
+              <strong>{registryFacts.categoryCount ?? "an unavailable number of"}</strong>{" "}
+              categories.
+            </span>
+            <span>
+              Last registry update observed:{" "}
+              <strong>{formatFactDate(registryFacts.lastRegistryUpdate)}</strong>.
+            </span>
+            <a href={registryFacts.methodologyPath}>Wardn Score methodology</a>
+          </div>
           <form action="/" className="registry-hero-search-form" method="get">
             <label className="registry-hero-search" htmlFor={searchInputId}>
               <Search aria-hidden="true" size={22} />

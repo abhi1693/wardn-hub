@@ -44,7 +44,7 @@ type SiteHeaderProps = {
 const publicItems: HeaderItem[] = [
   { href: "/", label: "Explore" },
   { href: "/categories", label: "Categories" },
-  { href: "/api/v1/docs", label: "API docs" },
+  { href: "/docs/api", label: "API docs" },
   { href: "/advertise", label: "Advertise" },
 ];
 

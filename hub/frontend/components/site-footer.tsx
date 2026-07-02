@@ -7,21 +7,10 @@ const footerSections = [
     links: [
       { href: "/", label: "Explore" },
       { href: "/categories", label: "Categories" },
-      { href: "/users", label: "Users" },
-      { href: "/partners", label: "Partners" },
+      { href: "/docs/api", label: "API docs" },
+      { href: "/advertise", label: "Advertise" },
     ],
     title: "Discover",
-  },
-  {
-    links: [
-      { href: "/submit", label: "Submit" },
-      { href: "/submissions", label: "Submissions" },
-      { href: "/advertise", label: "Advertise" },
-      { href: "/api/v1/docs", label: "API docs" },
-      { href: "/account/api-tokens", label: "API tokens" },
-      { href: "/login", label: "Sign in" },
-    ],
-    title: "Contribute",
   },
 ];
 

@@ -65,6 +65,16 @@ function serverCanonicalPath(serverName: string, tab: DetailTab) {
   return tab === "overview" ? serverPath : `${serverPath}/${tab}`;
 }
 
+function serverMetadataTitle(serverTitle: string, tab: DetailTab) {
+  if (tab === "schema") {
+    return `${serverTitle} MCP Server Schema - Packages, Transports, and Configuration`;
+  }
+  if (tab === "score") {
+    return `${serverTitle} MCP Server Trust Score and Maintenance Signals`;
+  }
+  return `${serverTitle} MCP Server - Install, Configuration, Packages, and Trust Score`;
+}
+
 async function resolveServerDetailRoute({ fixedTab, params }: ServerDetailTemplateProps) {
   const resolvedParams = await params;
   const serverName = serverNameFromParams(resolvedParams);
@@ -80,10 +90,10 @@ async function resolveServerDetailRoute({ fixedTab, params }: ServerDetailTempla
 export async function generateServerDetailMetadata(
   props: ServerDetailTemplateProps,
 ): Promise<Metadata> {
-  const { canonical, serverName } = await resolveServerDetailRoute(props);
+  const { canonical, serverName, tab } = await resolveServerDetailRoute(props);
 
   if (!serverName) {
-    const title = "MCP server";
+    const title = "MCP Server - Install, Configuration, Packages, and Trust Score";
     return {
       alternates: {
         canonical,
@@ -98,7 +108,8 @@ export async function generateServerDetailMetadata(
 
   try {
     const server = await getPublishedRegistryServerSummary(serverName);
-    const title = server.title || server.name;
+    const serverTitle = server.title || server.name;
+    const title = serverMetadataTitle(serverTitle, tab);
     const description = server.description;
 
     return {
@@ -119,14 +130,15 @@ export async function generateServerDetailMetadata(
       },
     };
   } catch {
+    const title = serverMetadataTitle(serverName, tab);
     return {
       alternates: {
         canonical,
       },
-      title: serverName,
+      title,
       twitter: {
         card: "summary",
-        title: `${serverName} | ${siteConfig.name}`,
+        title: `${title} | ${siteConfig.name}`,
       },
     };
   }

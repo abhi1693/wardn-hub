@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ExploreHomeClient } from "@/app/explore-client";
 import { PublicHeader } from "@/components/site-header";
 import { listPublishedRegistryServerPage } from "@/lib/public-registry";
+import { getRegistryFacts } from "@/lib/registry-facts";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, registryIndexJsonLd } from "@/lib/structured-data";
 
@@ -41,25 +42,28 @@ function firstSearchParam(value: string | string[] | undefined) {
 export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = await searchParams;
   const searchQuery = firstSearchParam(resolvedSearchParams?.q);
-  const { error, nextCursor, servers } = await (async () => {
-    try {
-      const page = await listPublishedRegistryServerPage({
-        limit: EXPLORE_PAGE_SIZE,
-        search: searchQuery || undefined,
-      });
-      return {
-        error: "",
-        nextCursor: page.nextCursor,
-        servers: page.servers,
-      };
-    } catch (caught) {
-      return {
-        error: caught instanceof Error ? caught.message : "Unable to load registry.",
-        nextCursor: "",
-        servers: [],
-      };
-    }
-  })();
+  const [{ error, nextCursor, servers }, registryFacts] = await Promise.all([
+    (async () => {
+      try {
+        const page = await listPublishedRegistryServerPage({
+          limit: EXPLORE_PAGE_SIZE,
+          search: searchQuery || undefined,
+        });
+        return {
+          error: "",
+          nextCursor: page.nextCursor,
+          servers: page.servers,
+        };
+      } catch (caught) {
+        return {
+          error: caught instanceof Error ? caught.message : "Unable to load registry.",
+          nextCursor: "",
+          servers: [],
+        };
+      }
+    })(),
+    getRegistryFacts(),
+  ]);
 
   return (
     <main className="site-shell">
@@ -70,6 +74,7 @@ export default async function Home({ searchParams }: HomeProps) {
         initialNextCursor={nextCursor}
         initialQuery={searchQuery}
         initialServers={servers}
+        registryFacts={registryFacts}
       />
     </main>
   );
