@@ -560,6 +560,7 @@ Validation workflow for each submission:
 3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
 4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
 5. {REGISTRY_METADATA_SCOPE_RULE}
+6. If submissionType is "new_server", serverJson.version is the Wardn registry version and is normally "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.

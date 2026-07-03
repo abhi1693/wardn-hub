@@ -271,6 +271,28 @@ def test_extract_updated_server_json_reads_nested_fenced_json() -> None:
     assert cli.extract_updated_server_json(findings) == server_json
 
 
+def test_extract_updated_server_json_allows_markdown_fences_inside_json_string() -> None:
+    server_json = complete_server_json()
+    server_json["documentation"] = (
+        "## Installation\n\n"
+        "```bash\n"
+        "npx @example/weather\n"
+        "```\n\n"
+        "```json\n"
+        '{"mcpServers":{"weather":{"command":"npx"}}}\n'
+        "```"
+    )
+    findings = (
+        "Decision: fixed\n"
+        "Updated serverJson:\n"
+        "```json\n"
+        f"{json.dumps(server_json, indent=2)}\n"
+        "```"
+    )
+
+    assert cli.extract_updated_server_json(findings) == server_json
+
+
 def test_parser_uses_app_server_defaults() -> None:
     args = cli.build_parser().parse_args(["--submission-id", "sub-1", "--dry-run"])
 

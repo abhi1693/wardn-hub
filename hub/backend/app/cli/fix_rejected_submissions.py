@@ -288,13 +288,15 @@ If you cannot fix it, omit Updated serverJson and include the exact missing info
 def extract_updated_server_json(findings: str) -> dict[str, Any] | None:
     label = re.search(r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Updated serverJson\s*:?\s*$", findings)
     search_from = label.end() if label is not None else 0
-    fenced = re.search(r"```(?:json)?\s*(?P<payload>.*?)```", findings[search_from:], re.DOTALL)
-    if fenced is None and label is None:
-        fenced = re.search(r"```(?:json)?\s*(?P<payload>.*?)```", findings, re.DOTALL)
+    fenced = re.search(r"```(?:json)?\s*", findings[search_from:], re.IGNORECASE)
+    payload_start = search_from + fenced.end() if fenced is not None else None
+    if payload_start is None and label is None:
+        fenced = re.search(r"```(?:json)?\s*", findings, re.IGNORECASE)
+        payload_start = fenced.end() if fenced is not None else None
     if fenced is None:
         return None
     try:
-        payload = json.loads(fenced.group("payload"))
+        payload, _end = json.JSONDecoder().raw_decode(findings, payload_start)
     except json.JSONDecodeError as exc:
         raise UserFacingError(f"LLM returned invalid Updated serverJson JSON: {exc}") from exc
     if not isinstance(payload, dict):

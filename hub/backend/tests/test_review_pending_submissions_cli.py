@@ -569,6 +569,10 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "Read the Submitted MCP server model JSON from to_json_dict()" in prompt
     assert "Read the upstream README and relevant docs/files" in prompt
     assert "Do not assume importer output is complete." in prompt
+    assert (
+        'If submissionType is "new_server", serverJson.version is the Wardn registry version'
+        in prompt
+    )
     assert "packages[].transport.args contains only the concrete default launch arguments" in prompt
     assert "Optional CLI flags/configurable arguments are represented" in prompt
     assert "Every documented environment variable is represented" in prompt
