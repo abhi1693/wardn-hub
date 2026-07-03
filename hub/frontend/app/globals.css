@@ -762,6 +762,38 @@ button {
   text-decoration: none;
 }
 
+.registry-trust-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.registry-trust-strip span {
+  display: grid;
+  min-height: 70px;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 78%);
+  padding: 12px;
+  text-align: left;
+}
+
+.registry-trust-strip strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 17px;
+}
+
+.registry-trust-strip small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 17px;
+}
+
 .registry-results-heading {
   display: flex;
   align-items: center;
@@ -810,6 +842,159 @@ button {
 .registry-results-heading a:focus-visible {
   border-color: #94a3b8;
   color: #0f172a;
+  outline: none;
+}
+
+.registry-seo-panel,
+.registry-comparison-section,
+.registry-home-faq {
+  display: grid;
+  gap: 16px;
+}
+
+.registry-seo-panel {
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  align-items: start;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 22px;
+}
+
+.registry-seo-definition {
+  display: grid;
+  gap: 9px;
+}
+
+.registry-seo-definition > span,
+.category-section-header > span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.registry-seo-definition h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 29px;
+}
+
+.registry-seo-definition p {
+  max-width: 800px;
+  margin: 0;
+  color: #334155;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.registry-update-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.registry-update-line span {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 0 10px;
+}
+
+.registry-internal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.registry-internal-links a {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 18px;
+  padding: 0 10px;
+  text-decoration: none;
+}
+
+.registry-internal-links a:hover,
+.registry-internal-links a:focus-visible {
+  border-color: #94a3b8;
+  color: #0f172a;
+  outline: none;
+}
+
+.registry-comparison-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.registry-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.65fr) minmax(240px, 1.4fr) minmax(150px, 0.75fr);
+  border-top: 1px solid #e2e8f0;
+}
+
+.registry-comparison-row:first-child {
+  border-top: 0;
+}
+
+.registry-comparison-row > * {
+  min-width: 0;
+  border-left: 1px solid #e2e8f0;
+  padding: 13px 14px;
+}
+
+.registry-comparison-row > *:first-child {
+  border-left: 0;
+}
+
+.registry-comparison-row.header {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.registry-comparison-row strong {
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.registry-comparison-row span,
+.registry-comparison-row a {
+  color: #334155;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.registry-comparison-row a {
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.registry-comparison-row a:hover,
+.registry-comparison-row a:focus-visible {
+  color: #1d4ed8;
   outline: none;
 }
 
@@ -4356,6 +4541,10 @@ button {
     gap: 7px;
   }
 
+  .registry-trust-strip {
+    grid-template-columns: 1fr;
+  }
+
   .registry-results-heading {
     display: grid;
     gap: 8px;
@@ -4463,6 +4652,8 @@ button {
 		  .category-landing-summary,
 		  .category-config-grid,
 		  .category-faq-grid,
+		  .registry-seo-panel,
+		  .registry-comparison-row,
 			  .user-grid,
 		  .user-card-access,
 		  .catalog-grid,

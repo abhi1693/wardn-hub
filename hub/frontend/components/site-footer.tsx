@@ -60,7 +60,7 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div className="site-footer-brand">
-          <span className="site-footer-kicker">MCP community</span>
+          <span className="site-footer-kicker">Trusted MCP directory</span>
           <strong>{siteConfig.name}</strong>
           <span>{siteConfig.tagline}</span>
           <div className="site-footer-social" aria-label="Social links">

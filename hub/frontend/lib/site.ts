@@ -37,19 +37,23 @@ const PUBLIC_REGISTRY_URL = computePublicRegistryUrl();
 
 export const siteConfig = {
   description:
-    "Wardn Hub is a community-driven directory for discovering, comparing, and sharing Model Context Protocol servers.",
+    "Wardn Hub is a trusted MCP server directory for comparing install metadata, transports, environment variables, namespace verification, review status, and Wardn Score.",
   keywords: [
     "MCP registry",
     "Model Context Protocol",
     "MCP servers",
-    "MCP server aggregator",
+    "trusted MCP server directory",
+    "MCP server trust score",
     "server.json",
     "MCP server directory",
-    "community MCP servers",
+    "MCP server install metadata",
+    "MCP transport metadata",
+    "MCP environment variables",
+    "MCP namespace verification",
     "AI tool registry",
   ],
   name: "Wardn Hub",
-  tagline: "Community directory for MCP servers.",
+  tagline: "Trusted MCP server directory.",
   url: SITE_URL,
 } as const;
 

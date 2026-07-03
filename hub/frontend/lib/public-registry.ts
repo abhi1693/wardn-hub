@@ -28,6 +28,10 @@ class RegistryRequestError extends Error {
   }
 }
 
+export function isRegistryNotFoundError(error: unknown) {
+  return error instanceof RegistryRequestError && error.status === 404;
+}
+
 function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
@@ -185,7 +189,7 @@ export async function getPublishedRegistryServerTab(serverName: string, tab: Det
   try {
     return await registryRequest<ServerDetailTabResponse>(serverTabApiPath(serverName, tab));
   } catch (error) {
-    if (!(error instanceof RegistryRequestError) || error.status !== 404) {
+    if (!isRegistryNotFoundError(error)) {
       throw error;
     }
     return serverDetailTabFallback(await getPublishedRegistryServer(serverName), tab);

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import {
   getPublishedRegistryServerSummary,
   getPublishedRegistryServerTab,
+  isRegistryNotFoundError,
   listPublishedRegistryServers,
 } from "@/lib/public-registry";
 import type { DetailTab } from "@/lib/server-detail-tabs";
@@ -79,9 +80,9 @@ async function resolveServerDetailRoute({ fixedTab, params }: ServerDetailTempla
   const resolvedParams = await params;
   const serverName = serverNameFromParams(resolvedParams);
   const tab = tabFromParams(resolvedParams, fixedTab);
-  if (!tab) notFound();
+  if (!serverName || !tab) notFound();
   return {
-    canonical: serverName ? serverCanonicalPath(serverName, tab) : "/servers",
+    canonical: serverCanonicalPath(serverName, tab),
     serverName,
     tab,
   };
@@ -91,20 +92,6 @@ export async function generateServerDetailMetadata(
   props: ServerDetailTemplateProps,
 ): Promise<Metadata> {
   const { canonical, serverName, tab } = await resolveServerDetailRoute(props);
-
-  if (!serverName) {
-    const title = "MCP Server - Install, Configuration, Packages, and Trust Score";
-    return {
-      alternates: {
-        canonical,
-      },
-      title,
-      twitter: {
-        card: "summary",
-        title: `${title} | ${siteConfig.name}`,
-      },
-    };
-  }
 
   try {
     const server = await getPublishedRegistryServerSummary(serverName);
@@ -129,11 +116,16 @@ export async function generateServerDetailMetadata(
         title: `${title} | ${siteConfig.name}`,
       },
     };
-  } catch {
+  } catch (caught) {
+    if (isRegistryNotFoundError(caught)) notFound();
     const title = serverMetadataTitle(serverName, tab);
     return {
       alternates: {
         canonical,
+      },
+      robots: {
+        follow: false,
+        index: false,
       },
       title,
       twitter: {
@@ -147,15 +139,13 @@ export async function generateServerDetailMetadata(
 export async function ServerDetailPageTemplate(props: ServerDetailTemplateProps) {
   const { canonical, serverName, tab } = await resolveServerDetailRoute(props);
   const { initialDetail, initialError } = await (async () => {
-    if (!serverName) {
-      return { initialDetail: null, initialError: "Server route is incomplete." };
-    }
     try {
       return {
         initialDetail: await getPublishedRegistryServerTab(serverName, tab),
         initialError: "",
       };
     } catch (caught) {
+      if (isRegistryNotFoundError(caught)) notFound();
       return {
         initialDetail: null,
         initialError: caught instanceof Error ? caught.message : "Unable to load server.",

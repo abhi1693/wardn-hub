@@ -169,6 +169,39 @@ export function categoryIndexJsonLd(categories: RegistryCategoryRead[]) {
   };
 }
 
+function registryFaqJsonLd(url: string) {
+  return {
+    "@id": `${url}#faq`,
+    "@type": "FAQPage",
+    mainEntity: [
+      {
+        "@type": "Question",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Wardn Hub is a trusted MCP server directory. It helps developers compare Model Context Protocol servers by installation metadata, transports, environment variables, namespace verification, review status, and Wardn Score before adding a server to an MCP client.",
+        },
+        name: "What is Wardn Hub?",
+      },
+      {
+        "@type": "Question",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Start with servers that publish clear package or remote metadata, documented environment variables, current source links, and a strong Wardn Score. Then verify upstream documentation before installing or connecting sensitive accounts.",
+        },
+        name: "How should I choose an MCP server?",
+      },
+      {
+        "@type": "Question",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "No. Wardn Hub is a registry and discovery product, not an MCP runtime or gateway. It lists metadata, trust signals, and links so operators can evaluate a server before runtime use.",
+        },
+        name: "Does Wardn Hub run MCP servers?",
+      },
+    ],
+  };
+}
+
 export function registryIndexJsonLd(servers: RegistryServerRead[]) {
   const url = absoluteUrl("/");
   const dateModified = newestDate(servers.map((server) => server.updatedAt));
@@ -207,10 +240,17 @@ export function registryIndexJsonLd(servers: RegistryServerRead[]) {
         "@type": "Dataset",
         dateModified,
         description:
-          "Wardn Hub public catalog dataset of published Model Context Protocol servers, packages, remotes, categories, and trust signals.",
+          "Wardn Hub public catalog dataset of published Model Context Protocol servers with install metadata, package targets, remote endpoints, transport metadata, environment variables, namespace verification, review status, and Wardn Score.",
         includedInDataCatalog: { "@id": `${url}#website` },
-        keywords: ["Model Context Protocol", "MCP registry", "MCP servers", "AI tools"],
-        name: "Wardn Hub published MCP server dataset",
+        keywords: [
+          "Model Context Protocol",
+          "trusted MCP server directory",
+          "MCP registry",
+          "MCP servers",
+          "Wardn Score",
+          "MCP install metadata",
+        ],
+        name: "Wardn Hub trusted MCP server dataset",
         url,
         variableMeasured: [
           "server name",
@@ -218,9 +258,14 @@ export function registryIndexJsonLd(servers: RegistryServerRead[]) {
           "category",
           "package target",
           "remote endpoint",
+          "transport",
+          "environment variable",
+          "namespace verification",
+          "review status",
           "quality score",
         ],
       },
+      registryFaqJsonLd(url),
     ],
   };
 }

@@ -7,12 +7,50 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ServerCard } from "@/components/server-card";
 import { listPublishedServers } from "@/lib/api/hub";
 import type { RegistryServerRead } from "@/lib/api/generated/model";
+import { serverDetailPath } from "@/lib/public-registry";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
 import type { RegistryFacts } from "@/lib/registry-facts-shared";
 import { formatFactDate } from "@/lib/registry-facts-shared";
 
 const EXPLORE_PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 250;
+const comparisonRows = [
+  {
+    criterion: "Install metadata",
+    detail: "Package targets, remote endpoints, launch commands, and published versions.",
+    link: "/registries/npm",
+    linkLabel: "Browse package registries",
+  },
+  {
+    criterion: "Runtime requirements",
+    detail: "Transport type, environment variables, command arguments, and endpoint requirements.",
+    link: "/transports/stdio",
+    linkLabel: "Compare transports",
+  },
+  {
+    criterion: "Trust signals",
+    detail: "Namespace verification, review status, source evidence, maintenance notes, and Wardn Score.",
+    link: "/methodology/quality-score",
+    linkLabel: "Read scoring method",
+  },
+];
+const homepageFaqs = [
+  {
+    answer:
+      "Wardn Hub is a trusted MCP server directory. It helps developers compare Model Context Protocol servers by installation metadata, transports, environment variables, namespace verification, review status, and Wardn Score before adding a server to an MCP client.",
+    question: "What is Wardn Hub?",
+  },
+  {
+    answer:
+      "Start with servers that publish clear package or remote metadata, documented environment variables, current source links, and a strong Wardn Score. Then verify upstream documentation before installing or connecting sensitive accounts.",
+    question: "How should I choose an MCP server?",
+  },
+  {
+    answer:
+      "No. Wardn Hub is a registry and discovery product, not an MCP runtime or gateway. It lists metadata, trust signals, and links so operators can evaluate a server before runtime use.",
+    question: "Does Wardn Hub run MCP servers?",
+  },
+];
 
 function EmptyState({ title, detail }: { detail: string; title: string }) {
   return (
@@ -83,6 +121,9 @@ export function ExploreHomeClient({
   const hasSearchQuery = trimmedQuery.length > 0;
   const servers = hasSearchQuery ? searchServers : baseServers;
   const nextCursor = hasSearchQuery ? searchNextCursor : baseNextCursor;
+  const visibleServerLinks = initialServers.slice(0, 4);
+  const lastUpdatedText = formatFactDate(registryFacts.lastRegistryUpdate);
+  const generatedAtText = formatFactDate(registryFacts.generatedAt);
 
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
@@ -182,10 +223,10 @@ export function ExploreHomeClient({
       <section className="registry-hero-section" aria-labelledby="registry-hero-title">
         <div className="registry-hero-inner">
           <div className="registry-hero-copy">
-            <h1 id="registry-hero-title">The MCP server registry</h1>
+            <h1 id="registry-hero-title">Trusted MCP server directory</h1>
             <p>
-              Find published MCP servers, compare trust signals, and review packages, categories,
-              transports, and Wardn Score before you install.
+              Compare MCP servers by install metadata, transports, environment variables,
+              namespace verification, review status, and Wardn Score before you install.
             </p>
           </div>
           <div className="registry-hero-tools">
@@ -200,7 +241,7 @@ export function ExploreHomeClient({
                   id={searchInputId}
                   name="q"
                   onChange={(event) => updateQuery(event.currentTarget.value)}
-                  placeholder="Search servers, packages, namespaces"
+                  placeholder="Search servers, packages, transports, namespaces"
                   ref={searchInputRef}
                   type="search"
                   value={query}
@@ -211,8 +252,22 @@ export function ExploreHomeClient({
               <Link href="/categories">Browse categories</Link>
               <Link href="/registries/npm">NPM packages</Link>
               <Link href="/transports/streamable-http">Remote servers</Link>
-              <Link href={registryFacts.methodologyPath}>Scoring method</Link>
+              <Link href={registryFacts.methodologyPath}>Wardn Score method</Link>
             </nav>
+            <section className="registry-trust-strip" aria-label="Wardn comparison signals">
+              <span>
+                <strong>Install metadata</strong>
+                <small>Packages, remotes, launch commands</small>
+              </span>
+              <span>
+                <strong>Runtime requirements</strong>
+                <small>Transports, env vars, arguments</small>
+              </span>
+              <span>
+                <strong>Trust review</strong>
+                <small>Namespace evidence, review status, Wardn Score</small>
+              </span>
+            </section>
           </div>
         </div>
       </section>
@@ -224,10 +279,82 @@ export function ExploreHomeClient({
             servers across {registryFacts.categoryCount ?? "an unavailable number of"} categories.
             Last registry update observed {formatFactDate(registryFacts.lastRegistryUpdate)}.
           </p>
+
+          <section className="registry-seo-panel" aria-labelledby="wardn-definition">
+            <div className="registry-seo-definition">
+              <span>Directory definition</span>
+              <h2 id="wardn-definition">What is Wardn Hub?</h2>
+              <p>
+                Wardn Hub is a trusted MCP server directory for evaluating Model Context Protocol
+                servers before installation. Each listing is built around practical registry
+                metadata: install targets, transports, environment variables, namespace evidence,
+                review status, and Wardn Score.
+              </p>
+              <div className="registry-update-line">
+                <span>Last updated: {lastUpdatedText}</span>
+                <span>Page generated: {generatedAtText}</span>
+              </div>
+            </div>
+
+            <div className="registry-internal-links" aria-label="Directory shortcuts">
+              <Link href="/categories">Browse all categories</Link>
+              <Link href="/categories/browser-automation">Browser automation MCP servers</Link>
+              <Link href="/transports/streamable-http">Streamable HTTP MCP servers</Link>
+              <Link href="/registries/pypi">PyPI MCP servers</Link>
+              {visibleServerLinks.map((server) => (
+                <Link href={serverDetailPath(server.name)} key={server.id}>
+                  {server.title || server.name}
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section className="registry-comparison-section" aria-labelledby="mcp-comparison">
+            <div className="category-section-header">
+              <span>Comparison framework</span>
+              <h2 id="mcp-comparison">How to compare MCP servers</h2>
+              <p>
+                A useful MCP directory should expose the details that turn a listing into a safe
+                client configuration, not just a name and description.
+              </p>
+            </div>
+            <div className="registry-comparison-table" role="table" aria-label="MCP server comparison criteria">
+              <div className="registry-comparison-row header" role="row">
+                <span role="columnheader">Criterion</span>
+                <span role="columnheader">What to check</span>
+                <span role="columnheader">Where to start</span>
+              </div>
+              {comparisonRows.map((row) => (
+                <div className="registry-comparison-row" key={row.criterion} role="row">
+                  <strong role="cell">{row.criterion}</strong>
+                  <span role="cell">{row.detail}</span>
+                  <Link href={row.link} role="cell">
+                    {row.linkLabel}
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="registry-home-faq" aria-labelledby="registry-faq">
+            <div className="category-section-header">
+              <span>FAQ</span>
+              <h2 id="registry-faq">Trusted MCP directory questions</h2>
+            </div>
+            <div className="category-faq-grid">
+              {homepageFaqs.map((faq) => (
+                <article className="category-faq-item" key={faq.question}>
+                  <h3>{faq.question}</h3>
+                  <p>{faq.answer}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <div className="registry-results-heading">
             <div>
               <span>{hasSearchQuery ? "Search results" : "Registry"}</span>
-              <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Published MCP servers"}</h2>
+              <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Trusted MCP server listings"}</h2>
             </div>
             <Link href="/categories">View categories</Link>
           </div>
