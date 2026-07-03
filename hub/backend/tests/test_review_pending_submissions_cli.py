@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from io import StringIO
 from typing import Any
 
@@ -10,6 +11,8 @@ from sqlalchemy.exc import DBAPIError
 
 from app.cli import review_pending_submissions as cli
 from app.db import session as db_session
+from app.modules.submissions import service as submissions_service
+from app.modules.submissions.exceptions import SubmissionValidationError
 
 
 class TtyStringIO(StringIO):
@@ -1238,6 +1241,36 @@ Please fix the metadata.
     output = stdout.getvalue()
     assert "Action failed for sub-1" in output
     assert "skipping it for this run" in output
+
+
+def test_database_review_client_wraps_submission_approval_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def approve_submission_by_system(_session: object, _submission_id: uuid.UUID) -> None:
+        raise SubmissionValidationError("server already exists; submit a new version")
+
+    client = cli.WardnHubDatabaseReviewClient()
+
+    def run_database_operation(operation: Any, *, commit: bool = False) -> Any:
+        assert commit is True
+
+        async def run() -> Any:
+            return await operation(object())
+
+        return client._loop.run_until_complete(run())
+
+    monkeypatch.setattr(
+        submissions_service,
+        "approve_submission_by_system",
+        approve_submission_by_system,
+    )
+    monkeypatch.setattr(client, "_run_database_operation", run_database_operation)
+
+    with pytest.raises(
+        cli.UserFacingError,
+        match="Unable to approve submission: server already exists; submit a new version",
+    ):
+        client.approve_submission(str(uuid.uuid4()))
 
 
 def test_review_loop_once_stops_after_review_error() -> None:

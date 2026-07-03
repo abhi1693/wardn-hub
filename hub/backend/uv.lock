@@ -1367,7 +1367,7 @@ wheels = [
 
 [[package]]
 name = "wardn-hub-api"
-version = "0.2.74"
+version = "0.2.75"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

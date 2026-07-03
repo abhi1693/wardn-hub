@@ -406,31 +406,43 @@ class WardnHubDatabaseReviewClient:
 
     def approve_submission(self, submission_id: str) -> dict[str, Any]:
         async def operation(session: Any) -> dict[str, Any]:
+            from app.modules.submissions.exceptions import SubmissionError
             from app.modules.submissions.service import approve_submission_by_system
 
-            submission = await approve_submission_by_system(session, uuid.UUID(submission_id))
+            try:
+                submission = await approve_submission_by_system(session, uuid.UUID(submission_id))
+            except SubmissionError as exc:
+                raise UserFacingError(f"Unable to approve submission: {exc}") from exc
             return submission_read_to_review_dict(submission)
 
         return self._run_database_operation(operation, commit=True)
 
     def publish_submission(self, submission_id: str) -> dict[str, Any]:
         async def operation(session: Any) -> dict[str, Any]:
+            from app.modules.submissions.exceptions import SubmissionError
             from app.modules.submissions.service import publish_submission_by_system
 
-            submission = await publish_submission_by_system(session, uuid.UUID(submission_id))
+            try:
+                submission = await publish_submission_by_system(session, uuid.UUID(submission_id))
+            except SubmissionError as exc:
+                raise UserFacingError(f"Unable to publish submission: {exc}") from exc
             return submission_read_to_review_dict(submission)
 
         return self._run_database_operation(operation, commit=True)
 
     def reject_submission(self, submission_id: str, message: str) -> dict[str, Any]:
         async def operation(session: Any) -> dict[str, Any]:
+            from app.modules.submissions.exceptions import SubmissionError
             from app.modules.submissions.service import reject_submission_by_system
 
-            submission = await reject_submission_by_system(
-                session,
-                uuid.UUID(submission_id),
-                message,
-            )
+            try:
+                submission = await reject_submission_by_system(
+                    session,
+                    uuid.UUID(submission_id),
+                    message,
+                )
+            except SubmissionError as exc:
+                raise UserFacingError(f"Unable to reject submission: {exc}") from exc
             return submission_read_to_review_dict(submission)
 
         return self._run_database_operation(operation, commit=True)
