@@ -19,6 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 CODEX_APP_SERVER_URL_ENV = "WARDN_HUB_CODEX_APP_SERVER_URL"
 CODEX_APP_SERVER_AUTH_TOKEN_ENV = "WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN"
+REVIEW_PROMPT_CHAR_LIMIT = 900_000
+REVIEW_JSON_STRING_LIMIT = 20_000
+REVIEW_JSON_LIST_LIMIT = 200
 
 SYSTEM_REVIEW_INSTRUCTIONS = """System review mode:
 - Use the submission JSON snapshot and submitted MCP server model JSON in this prompt as the Wardn Hub source of truth.
@@ -558,7 +561,94 @@ def submitted_mcp_server_model_json(submission: dict[str, Any]) -> dict[str, Any
         return server_json
 
 
+def truncate_review_string(value: str, *, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    omitted = len(value) - limit
+    head_length = max(limit - 160, limit // 2)
+    tail_length = max(limit - head_length, 0)
+    suffix = value[-tail_length:] if tail_length else ""
+    return (
+        value[:head_length]
+        + f"\n\n[Wardn review prompt truncated {omitted} characters from this string. "
+        "Use upstream public sources for omitted long-form content.]\n\n"
+        + suffix
+    )
+
+
+def compact_review_json(
+    value: Any,
+    *,
+    string_limit: int = REVIEW_JSON_STRING_LIMIT,
+    list_limit: int = REVIEW_JSON_LIST_LIMIT,
+) -> Any:
+    if isinstance(value, str):
+        return truncate_review_string(value, limit=string_limit)
+    if isinstance(value, list):
+        compacted = [
+            compact_review_json(item, string_limit=string_limit, list_limit=list_limit)
+            for item in value[:list_limit]
+        ]
+        if len(value) > list_limit:
+            compacted.append(
+                {
+                    "_wardnReviewPromptTruncated": (
+                        f"{len(value) - list_limit} list items omitted"
+                    )
+                }
+            )
+        return compacted
+    if isinstance(value, dict):
+        return {
+            str(key): compact_review_json(
+                item,
+                string_limit=string_limit,
+                list_limit=list_limit,
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
+def submission_snapshot_for_review(
+    submission: dict[str, Any],
+    *,
+    string_limit: int = REVIEW_JSON_STRING_LIMIT,
+    list_limit: int = REVIEW_JSON_LIST_LIMIT,
+) -> dict[str, Any]:
+    snapshot = {key: value for key, value in submission.items() if key != "serverJson"}
+    if "serverJson" in submission:
+        snapshot["serverJson"] = (
+            "[omitted from submission snapshot; see normalized Submitted MCP server model JSON below]"
+        )
+    return compact_review_json(snapshot, string_limit=string_limit, list_limit=list_limit)
+
+
 def build_review_prompt(context: dict[str, Any]) -> str:
+    prompt = ""
+    for string_limit, list_limit in (
+        (REVIEW_JSON_STRING_LIMIT, REVIEW_JSON_LIST_LIMIT),
+        (8_000, 120),
+        (2_000, 80),
+        (800, 40),
+        (300, 25),
+    ):
+        prompt = _build_review_prompt(
+            context,
+            string_limit=string_limit,
+            list_limit=list_limit,
+        )
+        if len(prompt) <= REVIEW_PROMPT_CHAR_LIMIT:
+            return prompt
+    return prompt
+
+
+def _build_review_prompt(
+    context: dict[str, Any],
+    *,
+    string_limit: int,
+    list_limit: int,
+) -> str:
     submission = context.get("submission") if isinstance(context.get("submission"), dict) else {}
     submission_id = str(submission.get("id") or "")
     server_name = str(submission.get("name") or "")
@@ -569,13 +659,13 @@ def build_review_prompt(context: dict[str, Any]) -> str:
     submission_snapshot = (
         "\nWardn Hub submission JSON snapshot:\n"
         "```json\n"
-        f"{json.dumps(submission, indent=2, sort_keys=True)}\n"
+        f"{json.dumps(submission_snapshot_for_review(submission, string_limit=string_limit, list_limit=list_limit), indent=2, sort_keys=True)}\n"
         "```\n"
     )
     server_model_snapshot = (
         "\nSubmitted MCP server model JSON from to_json_dict():\n"
         "```json\n"
-        f"{json.dumps(mcp_server_model, indent=2, sort_keys=True)}\n"
+        f"{json.dumps(compact_review_json(mcp_server_model, string_limit=string_limit, list_limit=list_limit), indent=2, sort_keys=True)}\n"
         "```\n"
     )
 

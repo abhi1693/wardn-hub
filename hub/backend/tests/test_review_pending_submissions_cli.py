@@ -618,6 +618,30 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "Call GET /submissions" not in prompt
 
 
+def test_build_review_prompt_omits_duplicate_server_json_and_truncates_large_fields() -> None:
+    submission = submitted_submission()
+    large_documentation = "A" * 1_100_000
+    submission["serverJson"] = {
+        "name": "io.github.example/large",
+        "version": "1.0.0",
+        "description": "Large docs.",
+        "documentation": large_documentation,
+        "packages": [{"registryType": "npm", "identifier": "@example/large"}],
+    }
+
+    prompt = cli.build_review_prompt({"submission": submission})
+
+    assert len(prompt) < 200_000
+    assert large_documentation not in prompt
+    assert (
+        "[omitted from submission snapshot; see normalized Submitted MCP server model JSON below]"
+        in prompt
+    )
+    assert "Wardn review prompt truncated" in prompt
+    assert "Use upstream public sources for omitted long-form content" in prompt
+    assert "io.github.example/large" in prompt
+
+
 def test_submitted_mcp_server_model_json_uses_schema_serializer() -> None:
     submission = submitted_submission()
     submission["serverJson"] = {
