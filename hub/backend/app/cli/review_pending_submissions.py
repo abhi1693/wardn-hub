@@ -13,7 +13,9 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, TextIO
+from typing import Any, Literal, Protocol, TextIO
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 CODEX_APP_SERVER_URL_ENV = "WARDN_HUB_CODEX_APP_SERVER_URL"
 CODEX_APP_SERVER_AUTH_TOKEN_ENV = "WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN"
@@ -44,6 +46,37 @@ VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = """- Remote endpoint URLs do not incl
 
 class UserFacingError(Exception):
     """Error that should be shown without a traceback."""
+
+
+class ReviewFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    severity: Literal["high", "medium", "low", "info"]
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class ReviewDecisionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    decision: Literal["pass", "needs_fixes", "reject", "cannot_validate", "skip"]
+    suggested_rejection_message: str | None = Field(
+        default=None,
+        alias="suggestedRejectionMessage",
+        max_length=2000,
+    )
+    suggested_approval_note: str | None = Field(
+        default=None,
+        alias="suggestedApprovalNote",
+        max_length=2000,
+    )
+    findings: list[ReviewFinding] = Field(default_factory=list)
+
+
+REVIEW_DECISION_SCHEMA_JSON = json.dumps(
+    ReviewDecisionPayload.model_json_schema(by_alias=True),
+    indent=2,
+    sort_keys=True,
+)
 
 
 TRANSIENT_DATABASE_DISCONNECT_SNIPPETS = (
@@ -587,12 +620,15 @@ Report format:
 - Submission ID
 - Server name and version
 - Repository/source files reviewed
-- Decision: pass, needs fixes, or cannot validate
 - Findings grouped by severity
 - Missing or incorrect environment variables
 - Missing or incorrect command arguments
 - Suggested rejection message if the submission should be rejected
 - Suggested approval note if the submission passes
+- Final section named exactly "Review result JSON" containing one fenced JSON object that validates against this schema:
+```json
+{REVIEW_DECISION_SCHEMA_JSON}
+```
 
 Decision rules:
 - Use "pass" only when the submitted metadata can be verified against source evidence.
@@ -602,7 +638,7 @@ Decision rules:
 After the report:
 - Do not call Wardn Hub API endpoints.
 - Do not approve, reject, publish, update, or delete anything directly.
-- The database review controller will apply configured automatic actions from your Decision and Suggested rejection message fields.
+- The database review controller will parse only the final Review result JSON for automatic actions. Markdown headings such as "Decision: pass" are ignored by automation.
 
 Do not mark a submission as passing if source review evidence is incomplete, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified."""
 
@@ -703,78 +739,29 @@ def normalize_suggested_rejection_message(message: str) -> str | None:
     return message
 
 
-def extract_review_decision(findings: str) -> str | None:
-    match = re.search(
-        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Decision(?:[*_`]+)?\s*:\s*(.+?)\s*$",
+def extract_review_result(findings: str) -> ReviewDecisionPayload | None:
+    label = re.search(
+        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Review result JSON(?:[*_`]+)?\s*:?\s*$",
         findings,
     )
-    if match is None:
-        block_match = re.search(
-            r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Decision(?:[*_`]+)?\s*:?\s*$",
-            findings,
-        )
-        if block_match is None:
-            return None
-        remaining = findings[block_match.end() :].splitlines()
-        value = next((line.strip() for line in remaining if line.strip()), "")
-    else:
-        value = match.group(1)
-
-    decision = re.sub(r"^[\-*]\s*", "", value)
-    decision = re.sub(r"[`*_]", "", decision).strip().lower()
-    decision = re.sub(r"\s+", " ", decision)
-    if decision.startswith("pass"):
-        return "pass"
-    if decision.startswith("needs fixes") or decision.startswith("needs fix"):
-        return "needs_fixes"
-    if (
-        decision.startswith("cannot validate")
-        or decision.startswith("cannot determine")
-        or decision.startswith("uncertain")
-        or decision.startswith("unsure")
-    ):
-        return "cannot_validate"
-    if decision.startswith("skip") or decision.startswith("leave unchanged"):
-        return "skip"
-    if decision.startswith("reject") or decision.startswith("rejected"):
-        return "reject"
-    return None
-
-
-def should_auto_reject(findings: str) -> bool:
-    return extract_review_decision(findings) in {"needs_fixes", "reject"}
-
-
-def should_auto_skip(findings: str) -> bool:
-    return extract_review_decision(findings) in {"cannot_validate", "skip"}
-
-
-def should_auto_approve(findings: str) -> bool:
-    return extract_review_decision(findings) == "pass"
-
-
-def extract_suggested_rejection_message(findings: str) -> str | None:
-    match = re.search(
-        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Suggested rejection message\s*:?\s*$",
-        findings,
-    )
-    if match is None:
+    if label is None:
         return None
 
-    remaining = findings[match.end() :].lstrip()
-    fenced = re.match(r"```[^\n]*\n(?P<message>.*?)\n```", remaining, flags=re.DOTALL)
+    search_from = label.end()
+    fenced = re.search(r"```(?:json)?\s*", findings[search_from:], re.IGNORECASE)
     if fenced is not None:
-        return normalize_suggested_rejection_message(fenced.group("message"))
+        payload_start = search_from + fenced.end()
+    else:
+        object_start = findings.find("{", search_from)
+        if object_start < 0:
+            return None
+        payload_start = object_start
 
-    next_section = re.search(
-        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?"
-        r"(?:Suggested approval note|Available actions|Decision|After the report|Submission ID|"
-        r"Server name and version|Repository/source files reviewed|Findings grouped by severity|"
-        r"Missing or incorrect environment variables|Missing or incorrect command arguments)\s*:?\s*$",
-        remaining,
-    )
-    message = remaining[: next_section.start()] if next_section is not None else remaining
-    return normalize_suggested_rejection_message(message)
+    try:
+        payload, _end = json.JSONDecoder().raw_decode(findings, payload_start)
+        return ReviewDecisionPayload.model_validate(payload)
+    except (json.JSONDecodeError, ValidationError):
+        return None
 
 
 def apply_decision(
@@ -881,8 +868,26 @@ def review_loop(
         print_heading(stdout, "LLM Findings")
         print(findings, file=stdout)
 
-        suggested_rejection_message = extract_suggested_rejection_message(findings)
-        if should_auto_skip(findings):
+        review_result = extract_review_result(findings)
+        suggested_rejection_message = (
+            normalize_suggested_rejection_message(review_result.suggested_rejection_message or "")
+            if review_result is not None
+            else None
+        )
+        if review_result is None and non_interactive:
+            completed_reviews += 1
+            skipped_ids.add(current_submission_id)
+            print(
+                f"No valid Review result JSON was returned for {current_submission_id}; "
+                "leaving submission unchanged and skipping it for this run.",
+                file=stdout,
+            )
+            if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                print("Review limit reached.", file=stdout)
+                return 1 if review_errors else 0
+            continue
+
+        if review_result is not None and review_result.decision in {"cannot_validate", "skip"}:
             completed_reviews += 1
             skipped_ids.add(current_submission_id)
             print(
@@ -895,7 +900,11 @@ def review_loop(
                 return 1 if review_errors else 0
             continue
 
-        if auto_reject and should_auto_reject(findings):
+        if (
+            auto_reject
+            and review_result is not None
+            and review_result.decision in {"needs_fixes", "reject"}
+        ):
             if suggested_rejection_message:
                 print(
                     "Auto-rejecting with suggested rejection message from LLM findings.",
@@ -941,7 +950,7 @@ def review_loop(
                     return 1 if review_errors else 0
                 continue
 
-        if auto_publish and should_auto_approve(findings):
+        if auto_publish and review_result is not None and review_result.decision == "pass":
             if can_publish:
                 print("Auto-publishing LLM pass decision.", file=stdout)
                 completed_reviews += 1
@@ -985,7 +994,12 @@ def review_loop(
                     return 1 if review_errors else 0
                 continue
 
-        if auto_approve and not auto_publish and should_auto_approve(findings):
+        if (
+            auto_approve
+            and not auto_publish
+            and review_result is not None
+            and review_result.decision == "pass"
+        ):
             print("Auto-approving LLM pass decision.", file=stdout)
             completed_reviews += 1
             try:

@@ -82,6 +82,21 @@ class FakeReviewer:
         return "## Summary\nLooks structurally valid.\n\n## Recommended decision\napprove"
 
 
+def review_result_json(
+    decision: str,
+    *,
+    suggested_rejection_message: str | None = None,
+    suggested_approval_note: str | None = None,
+) -> str:
+    payload = {
+        "decision": decision,
+        "suggestedRejectionMessage": suggested_rejection_message,
+        "suggestedApprovalNote": suggested_approval_note,
+        "findings": [],
+    }
+    return "\n\nReview result JSON:\n```json\n" + json.dumps(payload) + "\n```"
+
+
 class FakeCodexWebSocket:
     def __init__(self, received: list[dict[str, Any]]) -> None:
         self.sent: list[dict[str, Any]] = []
@@ -577,7 +592,9 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "Optional CLI flags/configurable arguments are represented" in prompt
     assert "Every documented environment variable is represented" in prompt
     assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt
-    assert "Decision: pass, needs fixes, or cannot validate" in prompt
+    assert "Review result JSON" in prompt
+    assert '"suggestedRejectionMessage"' in prompt
+    assert '"decision"' in prompt
     assert "Call GET /submissions" not in prompt
 
 
@@ -610,7 +627,10 @@ def test_review_loop_sets_only_submission_context_environment() -> None:
             assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in environment
             assert "WARDN_HUB_API_BASE_URL" not in environment
             assert environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] == "sub-1"
-            return "Decision: pass\n\nSuggested approval note:\nApproved."
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
 
     client = FakeClient([submitted_submission()])
     reviewer = EnvironmentCheckingReviewer()
@@ -634,69 +654,35 @@ def test_review_loop_sets_only_submission_context_environment() -> None:
     assert "System review mode:" in reviewer.prompts[0]
 
 
-def test_extract_suggested_rejection_message_from_fenced_section() -> None:
-    findings = """Decision: needs fixes
-
-Suggested rejection message:
-```text
-Please revise the metadata against upstream docs.
-The package transport args include optional flags.
-```
-
-Suggested approval note: none; submission should not be approved.
-"""
-
-    assert cli.extract_suggested_rejection_message(findings) == (
-        "Please revise the metadata against upstream docs.\n"
-        "The package transport args include optional flags."
+def test_extract_review_result_from_structured_json_block() -> None:
+    findings = (
+        "Decision: pass\n"
+        + review_result_json(
+            "pass",
+            suggested_approval_note="Looks good.",
+        )
     )
 
+    result = cli.extract_review_result(findings)
 
-def test_extract_suggested_rejection_message_ignores_none() -> None:
-    findings = """Decision: pass
-
-Suggested rejection message:
-none
-
-Suggested approval note:
-Looks good.
-"""
-
-    assert cli.extract_suggested_rejection_message(findings) is None
+    assert result is not None
+    assert result.decision == "pass"
+    assert result.suggested_approval_note == "Looks good."
 
 
-def test_extract_review_decision() -> None:
-    assert cli.extract_review_decision("Decision: pass") == "pass"
-    assert cli.extract_review_decision("**Decision: pass**") == "pass"
-    assert cli.extract_review_decision("Decision: needs fixes") == "needs_fixes"
-    assert cli.extract_review_decision("**Decision**\n- `needs fixes`") == "needs_fixes"
-    assert cli.extract_review_decision("Decision: cannot validate") == "cannot_validate"
-    assert cli.extract_review_decision("Decision: cannot determine") == "cannot_validate"
-    assert cli.extract_review_decision("Decision: uncertain") == "cannot_validate"
-    assert cli.extract_review_decision("Decision: skip") == "skip"
-    assert cli.extract_review_decision("Decision: leave unchanged") == "skip"
-    assert cli.extract_review_decision("Decision: reject") == "reject"
-    assert cli.extract_review_decision("No decision here") is None
+def test_extract_review_result_rejects_markdown_only_decision() -> None:
+    assert cli.extract_review_result("**Decision: pass**") is None
 
 
-def test_should_auto_reject_does_not_reject_uncertain_decisions() -> None:
-    assert cli.should_auto_reject("Decision: needs fixes") is True
-    assert cli.should_auto_reject("Decision: reject") is True
-    assert cli.should_auto_reject("Decision: cannot validate") is False
-    assert cli.should_auto_reject("Decision: cannot determine") is False
+def test_extract_review_result_validates_schema() -> None:
+    findings = (
+        "Review result JSON:\n"
+        "```json\n"
+        + json.dumps({"decision": "approved", "findings": []})
+        + "\n```"
+    )
 
-
-def test_should_auto_approve_only_passes_clean_pass_decision() -> None:
-    assert cli.should_auto_approve("Decision: pass") is True
-    assert cli.should_auto_approve("Decision: needs fixes") is False
-    assert cli.should_auto_approve("Decision: cannot validate") is False
-
-
-def test_should_auto_skip_uncertain_decisions() -> None:
-    assert cli.should_auto_skip("Decision: cannot validate") is True
-    assert cli.should_auto_skip("Decision: cannot determine") is True
-    assert cli.should_auto_skip("Decision: skip") is True
-    assert cli.should_auto_skip("Decision: pass") is False
+    assert cli.extract_review_result(findings) is None
 
 
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
@@ -759,13 +745,10 @@ def test_review_loop_rejects_with_suggested_message() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: needs fixes
-
-Suggested rejection message:
-```text
-Please fix the source review evidence.
-```
-"""
+            return "Decision: needs fixes" + review_result_json(
+                "needs_fixes",
+                suggested_rejection_message="Please fix the source review evidence.",
+            )
 
     client = FakeClient([submitted_submission()])
     reviewer = RejectingReviewer()
@@ -795,11 +778,10 @@ def test_review_loop_auto_rejects_llm_rejection_with_suggested_message() -> None
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: needs fixes
-
-Suggested rejection message:
-Please add missing package transport metadata.
-"""
+            return "Decision: needs fixes" + review_result_json(
+                "needs_fixes",
+                suggested_rejection_message="Please add missing package transport metadata.",
+            )
 
     client = FakeClient([submitted_submission()])
     reviewer = RejectingReviewer()
@@ -831,14 +813,11 @@ def test_review_loop_skips_uncertain_llm_decision_without_prompt_or_action() -> 
     class UncertainReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: cannot validate
-
-Findings grouped by severity:
-Source repository was unavailable, so no safe approval or rejection decision can be made.
-
-Suggested rejection message:
-none
-"""
+            return (
+                "Findings grouped by severity:\n"
+                "Source repository was unavailable.\n"
+                + review_result_json("cannot_validate")
+            )
 
     client = FakeClient([submitted_submission()])
     reviewer = UncertainReviewer()
@@ -926,11 +905,7 @@ def test_review_loop_non_interactive_skips_without_prompt() -> None:
     class NeedsHumanReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: needs fixes
-
-Suggested rejection message:
-none
-"""
+            return "Decision: needs fixes" + review_result_json("needs_fixes")
 
     client = FakeClient([submitted_submission()])
     reviewer = NeedsHumanReviewer()
@@ -957,15 +932,42 @@ none
     assert "Decision (" not in output
 
 
+def test_review_loop_non_interactive_skips_markdown_only_decision() -> None:
+    class MarkdownOnlyReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return "**Decision: pass**\n\nSuggested approval note:\nApproved."
+
+    client = FakeClient([submitted_submission()])
+    reviewer = MarkdownOnlyReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=True,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "No valid Review result JSON was returned" in output
+    assert "Decision (" not in output
+
+
 def test_review_loop_auto_reject_falls_back_without_suggested_message() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: needs fixes
-
-Suggested rejection message:
-none
-"""
+            return "Decision: needs fixes" + review_result_json("needs_fixes")
 
     client = FakeClient([submitted_submission()])
     reviewer = RejectingReviewer()
@@ -995,11 +997,10 @@ def test_review_loop_auto_approves_llm_pass_without_publishing() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: pass
-
-Suggested approval note:
-Approved.
-"""
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
 
     client = FakeClient([submitted_submission()])
     user = client.current_user()
@@ -1031,11 +1032,10 @@ def test_review_loop_auto_publishes_llm_pass_with_publish_access() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: pass
-
-Suggested approval note:
-Approved.
-"""
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
 
     client = FakeClient([submitted_submission()])
     user = client.current_user()
@@ -1072,11 +1072,10 @@ def test_review_loop_auto_publish_leaves_pass_without_publish_access() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: pass
-
-Suggested approval note:
-Approved.
-"""
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
 
     client = FakeClient([submitted_submission()])
     user = client.current_user()
@@ -1111,11 +1110,10 @@ def test_review_loop_auto_approve_leaves_non_pass_for_manual_decision() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return """Decision: needs fixes
-
-Suggested rejection message:
-Please fix the metadata.
-"""
+            return "Decision: needs fixes" + review_result_json(
+                "needs_fixes",
+                suggested_rejection_message="Please fix the metadata.",
+            )
 
     client = FakeClient([submitted_submission()])
     reviewer = RejectingReviewer()
@@ -1171,7 +1169,10 @@ def test_review_loop_continues_after_review_error() -> None:
             super().review(prompt, environment=environment)
             if len(self.prompts) == 1:
                 raise cli.UserFacingError("Codex app-server review timed out after 900 seconds")
-            return "Decision: pass\n\nSuggested approval note:\nApproved."
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
 
     client = FakeClient(
         [
@@ -1212,12 +1213,14 @@ def test_review_loop_continues_after_action_error() -> None:
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
             if len(self.prompts) == 1:
-                return """Decision: needs fixes
-
-Suggested rejection message:
-Please fix the metadata.
-"""
-            return "Decision: pass\n\nSuggested approval note:\nApproved."
+                return "Decision: needs fixes" + review_result_json(
+                    "needs_fixes",
+                    suggested_rejection_message="Please fix the metadata.",
+                )
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
 
     client = ActionFailingClient(
         [
