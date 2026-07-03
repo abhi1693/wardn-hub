@@ -1505,3 +1505,72 @@ async def test_get_server_detail_omits_private_source_evidence(monkeypatch) -> N
     assert "staleVersionReferences" not in public_version.server_json["packages"][0]
     assert "staleVersionReferencesReviewed" not in public_version.server_json["packages"][0]
     assert public_version.server_json["_meta"] == {"categories": ["weather"]}
+
+
+@pytest.mark.asyncio
+async def test_get_server_overview_tab_includes_public_target_metadata(monkeypatch) -> None:
+    server = server_model()
+    server.repository = {"source": "github", "url": "https://github.com/example/weather"}
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    version.quality_score = 78
+    version.repository = server.repository
+    version.packages = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "transport": {"type": "stdio", "command": "npx", "args": ["@example/weather-mcp"]},
+            "environmentVariables": [
+                {
+                    "name": "WEATHER_API_KEY",
+                    "description": "Weather API key.",
+                    "source": "README.md",
+                }
+            ],
+            "packageVersionEvidence": "Private reviewer note.",
+        }
+    ]
+    version.remotes = [{"type": "streamable-http", "url": "https://weather.example/mcp"}]
+    version.server_json = {
+        **version.server_json,
+        "repository": version.repository,
+        "packages": version.packages,
+        "remotes": version.remotes,
+        "_meta": {
+            "categories": ["weather"],
+            "sourceReview": {"filesRead": ["README.md"]},
+        },
+    }
+
+    async def get_server(*args, **kwargs):
+        return server
+
+    async def list_versions(*args, **kwargs):
+        return [version]
+
+    async def empty_context(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(service.repository, "get_published_server", get_server)
+    monkeypatch.setattr(service.repository, "list_published_server_versions", list_versions)
+    monkeypatch.setattr(service.repository, "list_partner_support_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_for_servers", empty_context)
+    monkeypatch.setattr(service.repository, "list_categories_by_slugs", categories_by_slug)
+    monkeypatch.setattr(service.repository, "list_organizations_by_ids", empty_context)
+    monkeypatch.setattr(service.repository, "list_users_by_ids", empty_context)
+
+    response = await service.get_server_overview_tab(FakeSession(), server.name)
+    public_version = response.versions[0]
+
+    assert public_version.registry_namespace.namespace == "io.github.example"
+    assert public_version.quality_score == 78
+    assert public_version.trust_report is not None
+    assert public_version.packages[0]["environmentVariables"] == [
+        {"name": "WEATHER_API_KEY", "description": "Weather API key."}
+    ]
+    assert "packageVersionEvidence" not in public_version.packages[0]
+    assert public_version.remotes == version.remotes
+    assert public_version.server_json["packages"][0]["environmentVariables"] == [
+        {"name": "WEATHER_API_KEY", "description": "Weather API key."}
+    ]
+    assert "packageVersionEvidence" not in public_version.server_json["packages"][0]
+    assert public_version.server_json["_meta"] == {"categories": ["weather"]}

@@ -6,18 +6,29 @@
  */
 import type { ActorSummary } from './actorSummary';
 import type { PartnerSupportSummary } from './partnerSupportSummary';
+import type { RegistryNamespace } from './registryNamespace';
+import type { RegistryServerOverviewVersionReadPackagesItem } from './registryServerOverviewVersionReadPackagesItem';
+import type { RegistryServerOverviewVersionReadRemotesItem } from './registryServerOverviewVersionReadRemotesItem';
 import type { RegistryServerOverviewVersionReadRepository } from './registryServerOverviewVersionReadRepository';
+import type { RegistryServerOverviewVersionReadServerJson } from './registryServerOverviewVersionReadServerJson';
+import type { RegistryTrustReport } from './registryTrustReport';
 
 export interface RegistryServerOverviewVersionRead {
   description: string;
   documentation?: string;
   id: string;
   isLatest: boolean;
+  packages?: RegistryServerOverviewVersionReadPackagesItem[];
   partnerSupport?: PartnerSupportSummary[];
   publishedAt: string;
   publishedBy?: ActorSummary | null;
+  qualityScore?: number | null;
+  registryNamespace?: RegistryNamespace;
+  remotes?: RegistryServerOverviewVersionReadRemotesItem[];
   repository?: RegistryServerOverviewVersionReadRepository;
+  serverJson?: RegistryServerOverviewVersionReadServerJson;
   title: string;
+  trustReport?: RegistryTrustReport | null;
   updatedAt: string;
   version: string;
   websiteUrl: string;

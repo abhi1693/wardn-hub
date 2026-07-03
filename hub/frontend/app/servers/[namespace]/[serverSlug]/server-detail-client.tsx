@@ -1367,32 +1367,91 @@ function versionDateSentence(version?: ServerTabVersion) {
   return parts.length > 0 ? `The ${parts.join(" and ")}.` : "";
 }
 
-function registryNamespaceSentence(registryNamespace?: RegistryNamespace | null) {
-  if (!registryNamespace?.namespace) return "";
-  const typeLabel =
-    registryNamespace.type === "github"
-      ? "GitHub"
-      : registryNamespace.type === "domain"
-        ? "domain"
-        : "registry";
-  const status = registryNamespace.verificationStatus || "unknown";
-  const verified =
-    status === "verified"
-      ? "verified"
-      : status === "imported"
-        ? "imported from registry evidence"
-        : status === "unverified"
-          ? "not verified"
-          : status === "conflict"
-            ? "conflicting"
-            : "unknown";
-  const evidence = registryNamespace.evidenceUrl
-    ? ` Evidence: ${registryNamespace.evidenceUrl}.`
-    : "";
-  return `Its MCP Registry namespace is ${registryNamespace.namespace}, a ${typeLabel} namespace with ${verified} ownership status.${evidence}`;
+function setupPathSummary({
+  commands,
+  packages,
+  remotes,
+  title,
+}: {
+  commands: string[];
+  packages: Record<string, unknown>[];
+  remotes: Record<string, unknown>[];
+  title: string;
+}) {
+  if (remotes.length > 0 && packages.length > 0) {
+    return `${title} lists both hosted and self-hosted setup paths. Use the hosted remote when your client supports it, or launch the package locally with ${sentenceList(commands, "the documented package command", 2)}.`;
+  }
+  if (remotes.length > 0) {
+    return `${title} is primarily listed as a hosted remote MCP server. Connect a compatible client to the published remote endpoint and verify any required query parameters before use.`;
+  }
+  if (commands.length > 0) {
+    return `${title} is primarily listed as a local package target. Launch it with ${sentenceList(commands, "the documented package command", 2)}.`;
+  }
+  return `${title} does not currently expose a concrete launch target in Wardn metadata, so upstream documentation should be checked before installation.`;
 }
 
-function ExtractableAnswerSections({
+function operationalSurfaceSummary({
+  argumentCount,
+  environmentVariableCount,
+  transports,
+}: {
+  argumentCount: number;
+  environmentVariableCount: number;
+  transports: string[];
+}) {
+  const transportText =
+    transports.length > 0
+      ? `${sentenceList(transports, "no listed transports")} transport support`
+      : "no listed transport metadata";
+  const configParts = [];
+  if (environmentVariableCount > 0) {
+    configParts.push(
+      `${environmentVariableCount} environment variable${environmentVariableCount === 1 ? "" : "s"}`,
+    );
+  }
+  if (argumentCount > 0) {
+    configParts.push(`${argumentCount} command argument${argumentCount === 1 ? "" : "s"}`);
+  }
+  return configParts.length > 0
+    ? `Wardn lists ${transportText} and ${sentenceList(configParts, "configuration metadata", 2)}.`
+    : `Wardn lists ${transportText}, with no additional configuration metadata published.`;
+}
+
+function reviewSignalSummary(
+  title: string,
+  trustReport: RegistryTrustReport | null,
+  selectedVersion?: ServerTabVersion,
+) {
+  const versionSentence = versionDateSentence(selectedVersion);
+  if (!trustReport) {
+    return `${title} does not have a published Wardn trust report yet. ${versionSentence}`.trim();
+  }
+  const weakComponents = (trustReport.components ?? [])
+    .filter((component) => component.status !== "passed")
+    .map((component) => component.label)
+    .slice(0, 2);
+  const weakText =
+    weakComponents.length > 0
+      ? ` Watch ${sentenceList(weakComponents, "review gaps", 2).toLowerCase()}.`
+      : " No major review gaps are highlighted.";
+  return `Wardn Score is ${trustScoreLabel(trustReport.overallScore)} (${trustScoreBand(trustReport.overallScore).toLowerCase()}). ${trustReport.summary}${weakText} ${versionSentence}`.trim();
+}
+
+function namespaceSummary(registryNamespace?: RegistryNamespace | null) {
+  if (!registryNamespace?.namespace) {
+    return "Namespace ownership evidence is not published for this listing.";
+  }
+  const status = registryNamespace.verificationStatus || "unknown";
+  if (status === "verified") {
+    return `${registryNamespace.namespace} has verified namespace ownership evidence.`;
+  }
+  if (status === "imported") {
+    return `${registryNamespace.namespace} was imported from registry namespace evidence.`;
+  }
+  return `${registryNamespace.namespace} is recognized, with ${status} namespace verification status.`;
+}
+
+function ServerOverviewSummary({
   categoryName,
   description,
   manifest,
@@ -1430,75 +1489,86 @@ function ExtractableAnswerSections({
     ...reviewListValues(sourceReview.commandArguments),
   ]);
   const transports = supportedTransportNames(targetData);
-  const versionSentence = versionDateSentence(selectedVersion);
-  const namespaceSentence = registryNamespaceSentence(registryNamespace);
   const sourceLinks = [repositoryUrl, websiteUrl].filter(Boolean);
+  const scoreTone = trustStatusTone(trustReport?.status, trustReport?.overallScore);
 
   return (
-    <section className="server-detail-card server-detail-answer-card" aria-label="AI answer summary">
-      <section className="server-detail-answer-section">
-        <h2>What is {title}?</h2>
-        <p>
-          {title} is a Model Context Protocol server
-          {categoryName ? ` in the ${categoryName} category` : ""}. {description || "Wardn Hub lists this server with community-submitted registry metadata."}
-        </p>
-      </section>
+    <section className="server-detail-card server-overview-summary-card" aria-label="Server summary">
+      <div className="server-overview-summary-header">
+        <div>
+          <h2>Summary</h2>
+          <p>
+            {title} is a Model Context Protocol server
+            {categoryName ? ` for ${categoryName.toLowerCase()}` : ""}.{" "}
+            {description || "Wardn Hub lists this server with community-submitted registry metadata."}
+          </p>
+        </div>
+        <div className={`server-overview-score tone-${scoreTone}`}>
+          <span>Wardn Score</span>
+          <strong>{trustScoreLabel(trustReport?.overallScore)}</strong>
+        </div>
+      </div>
 
-      <section className="server-detail-answer-section">
-        <h2>How to install {title}</h2>
-        <p>
-          {commands.length > 0
-            ? `Install or launch ${title} with ${sentenceList(commands, "the published package or remote target")}.`
-            : `Wardn Hub does not list a package launch command for ${title}. Check the upstream documentation before installing.`}
-        </p>
-      </section>
+      <div className="server-overview-insights">
+        <article>
+          <span>Best use</span>
+          <p>
+            {description ||
+              `${title} should be evaluated against upstream documentation before use.`}
+          </p>
+        </article>
+        <article>
+          <span>Setup path</span>
+          <p>
+            {setupPathSummary({
+              commands,
+              packages: targetData.packages,
+              remotes: targetData.remotes,
+              title,
+            })}
+          </p>
+        </article>
+        <article>
+          <span>Operational surface</span>
+          <p>
+            {operationalSurfaceSummary({
+              argumentCount: argumentsList.length,
+              environmentVariableCount: environmentVariables.length,
+              transports,
+            })}
+          </p>
+        </article>
+        <article>
+          <span>Review signal</span>
+          <p>{reviewSignalSummary(title, trustReport, selectedVersion)}</p>
+        </article>
+        <article>
+          <span>Namespace</span>
+          <p>{namespaceSummary(registryNamespace)}</p>
+        </article>
+        <article>
+          <span>Source check</span>
+          <p>
+            {sourceLinks.length > 0
+              ? `Verify behavior against ${sentenceList(sourceLinks, "upstream source", 2)} before installing.`
+              : "No upstream source link is published in Wardn metadata."}
+          </p>
+        </article>
+      </div>
 
-      <section className="server-detail-answer-section">
-        <h2>Configuration</h2>
-        <p>
-          {environmentVariables.length > 0
-            ? `${title} documents these configuration environment variables: ${sentenceList(environmentVariables, "none")}.`
-            : `${title} does not list required environment variables in the published registry metadata.`}
-          {argumentsList.length > 0
-            ? ` Configurable command arguments include ${sentenceList(argumentsList, "none")}.`
-            : " No configurable command arguments are listed."}
-        </p>
-      </section>
-
-      <section className="server-detail-answer-section">
-        <h2>Environment variables</h2>
-        <p>
-          {environmentVariables.length > 0
-            ? `The published metadata for ${title} includes ${environmentVariables.length} environment variable${environmentVariables.length === 1 ? "" : "s"}: ${sentenceList(environmentVariables, "none", 8)}.`
-            : `The published metadata for ${title} does not include environment variables.`}
-        </p>
-      </section>
-
-      <section className="server-detail-answer-section">
-        <h2>Supported transports</h2>
-        <p>
-          {transports.length > 0
-            ? `${title} is listed with ${sentenceList(transports, "no listed transports")} transport support.`
-            : `${title} does not have a listed transport in Wardn Hub metadata.`}
-        </p>
-      </section>
-
-      <section className="server-detail-answer-section">
-        <h2>Trust and maintenance</h2>
-        <p>
-          {trustReport
-            ? `${title} has a Wardn Score of ${trustScoreLabel(trustReport.overallScore)}. ${trustReport.summary}`
-            : `${title} does not have a published Wardn trust report yet.`}{" "}
-          {versionSentence} {namespaceSentence}
-          {sourceLinks.length > 0
-            ? ` Verify runtime behavior against the upstream source: ${sentenceList(sourceLinks, "upstream documentation", 2)}.`
-            : " Verify runtime behavior against upstream documentation before installation."}
-        </p>
-      </section>
-
-      <section className="server-detail-answer-section">
-        <h2>Source disclaimer</h2>
-        <p>{sourceDisclaimer}</p>
+      <section className="server-overview-link-row" aria-label="Primary links">
+        {websiteUrl ? (
+          <a href={websiteUrl} rel="noreferrer" target="_blank">
+            Website
+            <ExternalLink size={16} />
+          </a>
+        ) : null}
+        {repositoryUrl ? (
+          <a href={repositoryUrl} rel="noreferrer" target="_blank">
+            Repository
+            <ExternalLink size={16} />
+          </a>
+        ) : null}
       </section>
     </section>
   );
@@ -1508,101 +1578,6 @@ function SourceDisclaimer() {
   return (
     <section className="server-source-disclaimer" aria-label="Source disclaimer">
       {sourceDisclaimer}
-    </section>
-  );
-}
-
-function ServerFaq({
-  categoryName,
-  description,
-  manifest,
-  registryNamespace,
-  repositoryUrl,
-  selectedVersion,
-  targetData,
-  title,
-  trustReport,
-}: {
-  categoryName: string;
-  description: string;
-  manifest: Record<string, unknown> | null;
-  registryNamespace?: RegistryNamespace | null;
-  repositoryUrl: string;
-  selectedVersion?: ServerTabVersion;
-  targetData: {
-    packages: Record<string, unknown>[];
-    remotes: Record<string, unknown>[];
-  };
-  title: string;
-  trustReport: RegistryTrustReport | null;
-}) {
-  const sourceReview = sourceReviewRecord(manifest);
-  const commands = installationCommands(targetData.packages, sourceReview);
-  const environmentVariables = uniqueValues([
-    ...packageEnvironmentNames(targetData.packages),
-    ...remoteEnvironmentNames(targetData.remotes),
-    ...sourceReviewEnvironmentNames(sourceReview),
-  ]);
-  const argumentsList = uniqueValues([
-    ...packageArgumentNames(targetData.packages),
-    ...reviewListValues(sourceReview.commandArguments),
-  ]);
-  const transports = supportedTransportNames(targetData);
-  const versionSentence = versionDateSentence(selectedVersion);
-  const namespaceSentence = registryNamespaceSentence(registryNamespace);
-  const faqs = [
-    {
-      answer: `${title} is a Model Context Protocol server${categoryName ? ` in the ${categoryName} category` : ""}. ${description || "Wardn Hub lists this server with community-submitted registry metadata."}`,
-      question: `What is ${title}?`,
-    },
-    {
-      answer:
-        commands.length > 0
-          ? `Install or launch ${title} with ${sentenceList(commands, "the published package or remote target")}. Verify the current command in upstream documentation before installing.`
-          : `Wardn Hub does not list a package launch command for ${title}. Check the upstream documentation before installing.`,
-      question: `How do I install ${title}?`,
-    },
-    {
-      answer:
-        environmentVariables.length > 0 || argumentsList.length > 0
-          ? `${title} lists ${environmentVariables.length} environment variable${environmentVariables.length === 1 ? "" : "s"}${environmentVariables.length > 0 ? ` including ${sentenceList(environmentVariables, "none", 6)}` : ""}.${argumentsList.length > 0 ? ` Command arguments include ${sentenceList(argumentsList, "none", 6)}.` : ""}`
-          : `${title} does not list environment variables or command arguments in the published registry metadata.`,
-      question: `What configuration does ${title} need?`,
-    },
-    {
-      answer:
-        transports.length > 0
-          ? `${title} is listed with ${sentenceList(transports, "no listed transports")} transport support.`
-          : `${title} does not have a listed transport in Wardn Hub metadata.`,
-      question: `Which transports does ${title} support?`,
-    },
-    {
-      answer: trustReport
-        ? `${title} has a Wardn Score of ${trustScoreLabel(trustReport.overallScore)}. ${trustReport.summary} ${versionSentence} ${namespaceSentence}`
-        : `${title} does not have a published Wardn trust report yet. ${versionSentence} ${namespaceSentence}`,
-      question: `Is ${title} trusted or maintained?`,
-    },
-    {
-      answer: repositoryUrl
-        ? `${sourceDisclaimer} Upstream source is listed as ${repositoryUrl}.`
-        : sourceDisclaimer,
-      question: `Does Wardn Hub verify runtime behavior for ${title}?`,
-    },
-  ];
-
-  return (
-    <section className="category-landing-section" aria-labelledby="server-faq">
-      <div className="category-section-header">
-        <h2 id="server-faq">FAQ</h2>
-      </div>
-      <div className="category-faq-grid">
-        {faqs.map((faq) => (
-          <article className="category-faq-item" key={faq.question}>
-            <h3>{faq.question}</h3>
-            <p>{faq.answer}</p>
-          </article>
-        ))}
-      </div>
     </section>
   );
 }
@@ -1797,7 +1772,7 @@ export function ServerDetailClient({
               {activeTab === "overview" ? (
                 <>
                   <div className="server-detail-content">
-                    <ExtractableAnswerSections
+                    <ServerOverviewSummary
                       categoryName={categoryName}
                       description={description}
                       manifest={manifest}
@@ -1809,37 +1784,6 @@ export function ServerDetailClient({
                       trustReport={trustReport}
                       websiteUrl={websiteUrl}
                     />
-
-                    <ServerFaq
-                      categoryName={categoryName}
-                      description={description}
-                      manifest={manifest}
-                      registryNamespace={registryNamespace}
-                      repositoryUrl={repoUrl}
-                      selectedVersion={selectedVersion}
-                      targetData={targets}
-                      title={title}
-                      trustReport={trustReport}
-                    />
-
-                    <section className="server-detail-card">
-                      <h2>Overview</h2>
-                      <p className="server-detail-summary">{description}</p>
-                      <div className="server-detail-links">
-                        {websiteUrl ? (
-                          <a href={websiteUrl} rel="noreferrer" target="_blank">
-                            Website
-                            <ExternalLink size={16} />
-                          </a>
-                        ) : null}
-                        {repoUrl ? (
-                          <a href={repoUrl} rel="noreferrer" target="_blank">
-                            Repository
-                            <ExternalLink size={16} />
-                          </a>
-                        ) : null}
-                      </div>
-                    </section>
 
                     {hasPartnerSupport ? (
                       <section className="server-detail-card">

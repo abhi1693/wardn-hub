@@ -798,6 +798,10 @@ class RegistryServerSummaryResponse(BaseModel):
 
 class RegistryServerOverviewServerRead(RegistryServerTabServerRead):
     description: str
+    registry_namespace: RegistryNamespace = Field(
+        default_factory=unknown_registry_namespace,
+        alias="registryNamespace",
+    )
     website_url: str = Field(alias="websiteUrl")
     repository: dict[str, Any] | None = None
     categories: list[RegistryCategoryRead] = Field(default_factory=list)
@@ -814,6 +818,15 @@ class RegistryServerOverviewVersionRead(BaseModel):
     documentation: str = ""
     website_url: str = Field(alias="websiteUrl")
     repository: dict[str, Any] | None = None
+    registry_namespace: RegistryNamespace = Field(
+        default_factory=unknown_registry_namespace,
+        alias="registryNamespace",
+    )
+    packages: list[dict[str, Any]] = Field(default_factory=list)
+    remotes: list[dict[str, Any]] = Field(default_factory=list)
+    server_json: dict[str, Any] = Field(default_factory=dict, alias="serverJson")
+    quality_score: int | None = Field(default=None, alias="qualityScore")
+    trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
     is_latest: bool = Field(alias="isLatest")
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,

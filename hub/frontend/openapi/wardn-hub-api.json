@@ -3171,6 +3171,9 @@
             "title": "Name",
             "type": "string"
           },
+          "registryNamespace": {
+            "$ref": "#/components/schemas/RegistryNamespace"
+          },
           "repository": {
             "anyOf": [
               {
@@ -3254,6 +3257,14 @@
             "title": "Islatest",
             "type": "boolean"
           },
+          "packages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
           "partnerSupport": {
             "items": {
               "$ref": "#/components/schemas/PartnerSupportSummary"
@@ -3276,6 +3287,28 @@
               }
             ]
           },
+          "qualityScore": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityscore"
+          },
+          "registryNamespace": {
+            "$ref": "#/components/schemas/RegistryNamespace"
+          },
+          "remotes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Remotes",
+            "type": "array"
+          },
           "repository": {
             "anyOf": [
               {
@@ -3288,9 +3321,24 @@
             ],
             "title": "Repository"
           },
+          "serverJson": {
+            "additionalProperties": true,
+            "title": "Serverjson",
+            "type": "object"
+          },
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "trustReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistryTrustReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updatedAt": {
             "format": "date-time",

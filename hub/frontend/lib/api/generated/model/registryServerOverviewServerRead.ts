@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.2.79
  */
 import type { RegistryCategoryRead } from './registryCategoryRead';
+import type { RegistryNamespace } from './registryNamespace';
 import type { RegistryServerOverviewServerReadIconsItem } from './registryServerOverviewServerReadIconsItem';
 import type { RegistryServerOverviewServerReadRepository } from './registryServerOverviewServerReadRepository';
 
@@ -14,6 +15,7 @@ export interface RegistryServerOverviewServerRead {
   icons?: RegistryServerOverviewServerReadIconsItem[];
   id: string;
   name: string;
+  registryNamespace?: RegistryNamespace;
   repository?: RegistryServerOverviewServerReadRepository;
   title: string;
   updatedAt: string;

@@ -2572,6 +2572,7 @@ def server_tab_summary(
 
 def server_overview_tab_summary(
     server: RegistryServer,
+    latest_version: RegistryServerVersion | None,
     *,
     trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
 ) -> RegistryServerOverviewServerRead:
@@ -2581,6 +2582,19 @@ def server_overview_tab_summary(
         title=server.title,
         icons=server.icons,
         description=server.description,
+        registry_namespace=registry_namespace_info(
+            name=server.name,
+            namespace=latest_version.registry_namespace if latest_version is not None else "",
+            namespace_type=(
+                latest_version.registry_namespace_type if latest_version is not None else ""
+            ),
+            verification_status=(
+                latest_version.registry_namespace_verification_status
+                if latest_version is not None
+                else ""
+            ),
+            server_json=latest_version.server_json if latest_version is not None else {},
+        ),
         website_url=server.website_url,
         repository=server.repository,
         categories=categories_for_server(server.id, trust),
@@ -2609,9 +2623,10 @@ async def get_server_overview_tab(
     name: str,
 ) -> RegistryServerOverviewTabResponse:
     server, versions = await published_server_with_versions(session, name)
+    latest = next((candidate for candidate in versions if candidate.is_latest), None)
     trust = await build_trust_context(session, servers=[server], versions=versions)
     return RegistryServerOverviewTabResponse(
-        server=server_overview_tab_summary(server, trust=trust),
+        server=server_overview_tab_summary(server, latest, trust=trust),
         versions=[
             RegistryServerOverviewVersionRead(
                 id=version.id,
@@ -2621,6 +2636,18 @@ async def get_server_overview_tab(
                 documentation=version.documentation,
                 website_url=version.website_url,
                 repository=version.repository,
+                registry_namespace=registry_namespace_info(
+                    name=version.name,
+                    namespace=version.registry_namespace,
+                    namespace_type=version.registry_namespace_type,
+                    verification_status=version.registry_namespace_verification_status,
+                    server_json=version.server_json,
+                ),
+                packages=public_registry_json(version.packages),
+                remotes=public_registry_json(registry_remotes_json(version.remotes)),
+                server_json=public_registry_json(version.server_json),
+                quality_score=version.quality_score,
+                trust_report=trust_report_for_version(version, trust=trust),
                 is_latest=version.is_latest,
                 partner_support=partner_support_summary(
                     version.name,
