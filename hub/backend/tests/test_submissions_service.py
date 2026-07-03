@@ -307,6 +307,52 @@ async def test_system_fix_eligibility_allows_active_partner_org(monkeypatch) -> 
     )
 
 
+@pytest.mark.asyncio
+async def test_fix_submission_by_system_emits_supported_fixed_and_submitted_events(
+    monkeypatch,
+) -> None:
+    submission = submission_record(
+        submitter_user_id=uuid4(),
+        owner_user_id=uuid4(),
+        status="rejected",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def allowed_owner(*args, **kwargs):
+        return True
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    async def no_active_submission(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service, "submission_owned_by_superuser_or_partner", allowed_owner)
+    monkeypatch.setattr(service, "ensure_version_not_published", no_published_version)
+    monkeypatch.setattr(service, "ensure_no_active_submission_for_version", no_active_submission)
+    session = FakeSession()
+
+    response = await service.fix_submission_by_system(
+        session,
+        submission.id,
+        complete_registry_payload(),
+    )
+
+    events = [item for item in session.added if isinstance(item, EventRecord)]
+    assert response.status == "submitted"
+    assert [event.event_type for event in events] == [
+        "submission.fixed",
+        "submission.submitted",
+    ]
+    assert events[0].payload["submission"]["status"] == "submitted"
+    assert events[0].payload["eventType"] == "submission.fixed"
+    assert events[0].payload["actor"]["userId"] is None
+    assert events[1].payload["eventType"] == "submission.submitted"
+
+
 def test_validation_rejects_new_server_registry_version_after_one_zero_zero() -> None:
     result = service.validation_result_for(
         complete_registry_payload(version="1.5.0"),

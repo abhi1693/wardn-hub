@@ -29,6 +29,12 @@ EVENT_TYPES: tuple[EventTypeDefinition, ...] = (
         subject_type="server_submission",
     ),
     EventTypeDefinition(
+        event_type="submission.fixed",
+        label="Submission fixed",
+        description="A draft or rejected server submission was fixed by system automation.",
+        subject_type="server_submission",
+    ),
+    EventTypeDefinition(
         event_type="submission.withdrawn",
         label="Submission withdrawn",
         description="A submitted server submission was withdrawn.",
