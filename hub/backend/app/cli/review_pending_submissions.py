@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, TextIO
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 CODEX_APP_SERVER_URL_ENV = "WARDN_HUB_CODEX_APP_SERVER_URL"
 CODEX_APP_SERVER_AUTH_TOKEN_ENV = "WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN"
@@ -70,6 +70,16 @@ class ReviewDecisionPayload(BaseModel):
         max_length=2000,
     )
     findings: list[ReviewFinding] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_action_notes(self) -> ReviewDecisionPayload:
+        if self.decision in {"needs_fixes", "reject"} and not (
+            self.suggested_rejection_message or ""
+        ).strip():
+            raise ValueError(
+                "suggestedRejectionMessage is required when decision is needs_fixes or reject"
+            )
+        return self
 
 
 REVIEW_DECISION_SCHEMA_JSON = json.dumps(
@@ -632,7 +642,8 @@ Report format:
 
 Decision rules:
 - Use "pass" only when the submitted metadata can be verified against source evidence.
-- Use "needs fixes" or "reject" only when the submitted metadata is clearly wrong or incomplete.
+- Use "needs_fixes" or "reject" only when the submitted metadata is clearly wrong or incomplete.
+- If decision is "needs_fixes" or "reject", suggestedRejectionMessage must be a non-empty, user-facing message that explains the exact changes needed.
 - Use "cannot validate" when source evidence is unavailable, ambiguous, or insufficient to make a safe approval/rejection decision. This leaves the submission unchanged so it can be retried or reviewed manually later.
 
 After the report:
@@ -874,7 +885,7 @@ def review_loop(
             if review_result is not None
             else None
         )
-        if review_result is None and non_interactive:
+        if review_result is None:
             completed_reviews += 1
             skipped_ids.add(current_submission_id)
             print(

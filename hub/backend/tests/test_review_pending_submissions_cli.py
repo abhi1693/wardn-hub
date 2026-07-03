@@ -873,7 +873,7 @@ def test_review_loop_targets_exact_submission_id() -> None:
     assert len(reviewer.prompts) == 1
     assert "sub-2" in reviewer.prompts[0]
     assert "sub-1" not in reviewer.prompts[0]
-    assert "Skipped sub-2" in stdout.getvalue()
+    assert "No valid Review result JSON was returned for sub-2" in stdout.getvalue()
 
 
 def test_review_loop_skips_missing_exact_submission_id() -> None:
@@ -963,7 +963,7 @@ def test_review_loop_non_interactive_skips_markdown_only_decision() -> None:
     assert "Decision (" not in output
 
 
-def test_review_loop_auto_reject_falls_back_without_suggested_message() -> None:
+def test_review_loop_auto_reject_requires_suggested_message() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
@@ -989,8 +989,8 @@ def test_review_loop_auto_reject_falls_back_without_suggested_message() -> None:
     assert result == 0
     assert client.actions == []
     output = stdout.getvalue()
-    assert "Auto-reject requested, but no suggested rejection message was found" in output
-    assert "Skipped sub-1" in output
+    assert "No valid Review result JSON was returned for sub-1" in output
+    assert "Decision (" not in output
 
 
 def test_review_loop_auto_approves_llm_pass_without_publishing() -> None:
@@ -1160,7 +1160,7 @@ def test_review_loop_skips_submission_for_current_run() -> None:
     assert result == 0
     assert len(reviewer.prompts) == 1
     assert client.actions == []
-    assert "Skipped sub-1" in stdout.getvalue()
+    assert "No valid Review result JSON was returned for sub-1" in stdout.getvalue()
 
 
 def test_review_loop_continues_after_review_error() -> None:
