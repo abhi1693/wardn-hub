@@ -11,6 +11,8 @@ from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
 )
 from app.modules.registry.schemas import (
+    RegistryCategoryListResponse,
+    RegistryCategoryRead,
     RegistryLatestVersionSummary,
     RegistryListMetadata,
     RegistryOwnershipClaimResponse,
@@ -322,6 +324,45 @@ def test_server_list_allows_anonymous_access(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"servers": [], "metadata": {"count": 0, "nextCursor": ""}}
+
+
+def test_category_list_allows_anonymous_access(monkeypatch) -> None:
+    app = create_app()
+    category_id = uuid4()
+
+    async def fake_session():
+        yield object()
+
+    async def list_categories(*args, **kwargs):
+        return RegistryCategoryListResponse(
+            categories=[
+                RegistryCategoryRead(
+                    id=category_id,
+                    slug="automation",
+                    name="Automation",
+                    description="Workflow automation servers",
+                    sortOrder=120,
+                ),
+            ],
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_categories", list_categories)
+
+    response = TestClient(app).get("/api/v1/mcp/categories")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "categories": [
+            {
+                "id": str(category_id),
+                "slug": "automation",
+                "name": "Automation",
+                "description": "Workflow automation servers",
+                "sortOrder": 120,
+            },
+        ],
+    }
 
 
 def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:

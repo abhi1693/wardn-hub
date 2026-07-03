@@ -169,7 +169,6 @@ def quality_score_badge_svg(score: int | None) -> str:
 )
 async def list_mcp_categories(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
 ) -> RegistryCategoryListResponse:
     return await list_categories(session)
 

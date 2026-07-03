@@ -125,6 +125,7 @@ def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() ->
     assert "Submitted MCP server model JSON from to_json_dict()" in prompt
     assert "Do not call Wardn Hub API endpoints." in prompt
     assert "The database fix controller will apply your returned serverJson" in prompt
+    assert 'If submissionType is "new_server", keep serverJson.version' in prompt
     assert "Updated serverJson:" in prompt
     assert "WARDN_HUB_TOKEN" not in prompt
     assert "GET /submissions" not in prompt
@@ -158,6 +159,30 @@ def test_fix_loop_applies_updated_server_json_and_submits() -> None:
     assert client.fixed[0][0] == "oldest"
     assert client.get_submission("oldest")["status"] == "submitted"
     assert "Submitted oldest for review." in stdout.getvalue()
+
+
+def test_fix_loop_preserves_new_server_registry_version() -> None:
+    server_json = complete_server_json(version="2026.5.54")
+    server_json["packages"][0]["version"] = "2026.5.54"
+    client = FakeClient([rejected_submission()])
+    reviewer = FakeReviewer(server_json)
+    stdout = StringIO()
+
+    result = cli.fix_loop(
+        client=client,
+        reviewer=reviewer,
+        user={"id": "database"},
+        max_fixes=None,
+        once=True,
+        dry_run=False,
+        stdout=stdout,
+    )
+
+    assert result == 0
+    applied_server_json = client.fixed[0][1]
+    assert applied_server_json["version"] == "1.0.0"
+    assert applied_server_json["packages"][0]["version"] == "2026.5.54"
+    assert client.get_submission("sub-1")["version"] == "1.0.0"
 
 
 def test_fix_loop_skips_cannot_fix_decision() -> None:

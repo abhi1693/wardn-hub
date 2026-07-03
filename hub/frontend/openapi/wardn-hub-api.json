@@ -6109,7 +6109,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.69"
+    "version": "0.2.70"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7976,24 +7976,6 @@
     "/api/v1/mcp/categories": {
       "get": {
         "operationId": "mcp_categories_list",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8004,16 +7986,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "List Mcp Categories",

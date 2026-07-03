@@ -106,11 +106,18 @@ class WardnHubDatabaseFixClient:
                 payload = RegistryServerVersionCreate.model_validate(server_json)
             except ValueError as exc:
                 raise UserFacingError(f"Updated serverJson is invalid: {exc}") from exc
-            submission = await fix_submission_by_system(
-                session,
-                uuid.UUID(submission_id),
-                payload,
-            )
+            try:
+                submission = await fix_submission_by_system(
+                    session,
+                    uuid.UUID(submission_id),
+                    payload,
+                )
+            except Exception as exc:
+                from app.modules.submissions.exceptions import SubmissionError
+
+                if isinstance(exc, SubmissionError):
+                    raise UserFacingError(f"Unable to apply updated serverJson: {exc}") from exc
+                raise
             return submission_read_to_review_dict(submission)
 
         return self._run_database_operation(operation, commit=True)
@@ -239,6 +246,7 @@ Goal:
 - Do not guess source-review evidence. It must reflect URLs/files actually inspected.
 - If the submission lacks enough source links to verify the server, return Decision: cannot fix and state the official repository or documentation URL needed from the user.
 - {REGISTRY_METADATA_SCOPE_RULE}
+- If submissionType is "new_server", keep serverJson.version as the Wardn registry version from the submission snapshot, normally "1.0.0". Put upstream package, image, CLI, npm, PyPI, or MCP registry versions only in packages[].version, remotes metadata, documentation, or _meta evidence.
 
 Source review requirements:
 - Derive the registry namespace from serverJson.name. If the source is the official MCP registry, set serverJson._meta.registryNamespace with namespace, type, authority, verificationStatus "verified", verificationMethod "official_registry", evidenceUrl, and source "modelcontextprotocol-registry".
@@ -291,6 +299,18 @@ def should_skip_fix(findings: str) -> bool:
         return False
     decision = re.sub(r"[`*_]", "", match.group(1)).strip().lower()
     return decision.startswith("cannot fix") or decision.startswith("skip")
+
+
+def normalize_updated_server_json(
+    server_json: dict[str, Any],
+    submission: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = dict(server_json)
+    submission_type = str(submission.get("submissionType") or submission.get("submission_type") or "")
+    if submission_type == "new_server":
+        submission_version = str(submission.get("version") or "").strip() or "1.0.0"
+        normalized["version"] = submission_version
+    return normalized
 
 
 def fix_loop(
@@ -351,6 +371,10 @@ def fix_loop(
                     updated_server_json = extract_updated_server_json(findings)
                     if updated_server_json is None:
                         raise UserFacingError("LLM did not return Updated serverJson")
+                    updated_server_json = normalize_updated_server_json(
+                        updated_server_json,
+                        context["submission"],
+                    )
                     final_submission = client.fix_submission(
                         current_submission_id,
                         updated_server_json,
