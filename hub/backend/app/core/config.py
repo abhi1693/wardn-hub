@@ -58,6 +58,18 @@ class Settings(BaseSettings):
     otel_exporter_otlp_traces_headers: str = ""
     otel_traces_sample_ratio: float = 1.0
     otel_excluded_urls: str = ""
+    public_rate_limit_enabled: bool = False
+    public_rate_limit_requests: int = 120
+    public_rate_limit_window_seconds: int = 60
+    public_rate_limit_key_prefix: str = "wardn-hub:public-api-rate-limit"
+    public_rate_limit_trust_forwarded_for: bool = True
+    public_rate_limit_valkey_url: str = ""
+    public_rate_limit_valkey_sentinels: str = ""
+    public_rate_limit_valkey_sentinel_service: str = "valkey"
+    public_rate_limit_valkey_db: int = 5
+    public_rate_limit_valkey_password: str = ""
+    public_rate_limit_valkey_sentinel_password: str = ""
+    public_rate_limit_valkey_socket_timeout_seconds: float = 5.0
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -99,6 +111,27 @@ class Settings(BaseSettings):
             raise ValueError("session_ttl_seconds must be positive")
         return value
 
+    @field_validator("public_rate_limit_requests", "public_rate_limit_window_seconds")
+    @classmethod
+    def validate_positive_public_rate_limit_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("public rate limit values must be positive")
+        return value
+
+    @field_validator("public_rate_limit_valkey_db")
+    @classmethod
+    def validate_public_rate_limit_valkey_db(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("public_rate_limit_valkey_db must be zero or positive")
+        return value
+
+    @field_validator("public_rate_limit_valkey_socket_timeout_seconds")
+    @classmethod
+    def validate_public_rate_limit_valkey_socket_timeout_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("public_rate_limit_valkey_socket_timeout_seconds must be positive")
+        return value
+
     @field_validator("otel_traces_sample_ratio")
     @classmethod
     def validate_otel_traces_sample_ratio(cls, value: float) -> float:
@@ -108,6 +141,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_release_settings(self) -> "Settings":
+        self.validate_public_rate_limit_settings()
         if self.environment in LOCAL_ENVIRONMENTS:
             self.validate_auth_provider_settings()
             return self
@@ -132,6 +166,15 @@ class Settings(BaseSettings):
             raise ValueError("cors_origins cannot contain * outside local/test environments")
 
         return self
+
+    def validate_public_rate_limit_settings(self) -> None:
+        if not self.public_rate_limit_enabled:
+            return
+        if not self.public_rate_limit_valkey_url and not self.public_rate_limit_valkey_sentinels:
+            raise ValueError(
+                "public_rate_limit_valkey_url or public_rate_limit_valkey_sentinels is required "
+                "when public rate limiting is enabled"
+            )
 
     def validate_auth_provider_settings(self) -> None:
         supported_providers = {"local", "clerk"}

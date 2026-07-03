@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.rate_limit import FixedWindowValkeyRateLimiter, PublicAPIRateLimitMiddleware
 from app.core.telemetry import configure_telemetry
 from app.modules.mcp_registry_v01.router import router as mcp_registry_v01_router
 from app.modules.metrics.router import router as metrics_router
@@ -16,7 +17,12 @@ from app.modules.metrics.router import router as metrics_router
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
-    yield
+    try:
+        yield
+    finally:
+        rate_limiter = getattr(app.state, "public_rate_limiter", None)
+        if rate_limiter is not None:
+            await rate_limiter.close()
 
 
 def create_app() -> FastAPI:
@@ -38,6 +44,15 @@ def create_app() -> FastAPI:
     @app.get("/redoc", include_in_schema=False)
     async def redoc_redirect() -> RedirectResponse:
         return RedirectResponse(f"{settings.api_prefix}/redoc")
+
+    rate_limiter = FixedWindowValkeyRateLimiter.from_settings(settings)
+    if rate_limiter is not None:
+        app.state.public_rate_limiter = rate_limiter
+        app.add_middleware(
+            PublicAPIRateLimitMiddleware,
+            settings=settings,
+            limiter=rate_limiter,
+        )
 
     app.add_middleware(
         CORSMiddleware,

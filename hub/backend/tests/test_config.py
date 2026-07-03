@@ -190,3 +190,49 @@ def test_otel_trace_sample_ratio_must_be_between_zero_and_one(monkeypatch) -> No
 
     with pytest.raises(ValidationError, match="otel_traces_sample_ratio"):
         Settings(_env_file=None)
+
+
+def test_public_rate_limit_defaults_to_disabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.public_rate_limit_enabled is False
+    assert settings.public_rate_limit_requests == 120
+    assert settings.public_rate_limit_window_seconds == 60
+    assert settings.public_rate_limit_valkey_db == 5
+
+
+def test_public_rate_limit_requires_valkey_when_enabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch, {"WARDN_HUB_PUBLIC_RATE_LIMIT_ENABLED": "true"})
+
+    with pytest.raises(ValidationError, match="public_rate_limit_valkey"):
+        Settings(_env_file=None)
+
+
+def test_public_rate_limit_accepts_valkey_sentinels_when_enabled(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_PUBLIC_RATE_LIMIT_ENABLED": "true",
+            "WARDN_HUB_PUBLIC_RATE_LIMIT_VALKEY_SENTINELS": "valkey.valkey.svc:26379",
+        },
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.public_rate_limit_enabled is True
+    assert settings.public_rate_limit_valkey_sentinels == "valkey.valkey.svc:26379"
+
+
+def test_public_rate_limit_values_must_be_positive(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_PUBLIC_RATE_LIMIT_REQUESTS": "0",
+            "WARDN_HUB_PUBLIC_RATE_LIMIT_WINDOW_SECONDS": "60",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="public_rate_limit_requests"):
+        Settings(_env_file=None)
