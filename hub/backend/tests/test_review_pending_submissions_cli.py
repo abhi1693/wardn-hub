@@ -141,6 +141,24 @@ def submitted_submission_with_id(submission_id: str) -> dict[str, Any]:
     return submission
 
 
+def submitted_submission_with_validation_warning() -> dict[str, Any]:
+    submission = submitted_submission()
+    submission["validationResult"] = {
+        "status": "warning",
+        "checks": [
+            {
+                "name": "environmentMetadata",
+                "status": "warning",
+                "message": (
+                    "Transport env defaults should have matching environmentVariables metadata: "
+                    "touchpoint-py: TOUCHPOINT_MODE"
+                ),
+            }
+        ],
+    }
+    return submission
+
+
 def test_verbose_argument() -> None:
     default_args = cli.build_parser().parse_args([])
     args = cli.build_parser().parse_args(["--verbose"])
@@ -591,6 +609,8 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "packages[].transport.args contains only the concrete default launch arguments" in prompt
     assert "Optional CLI flags/configurable arguments are represented" in prompt
     assert "Every documented environment variable is represented" in prompt
+    assert 'validationResult.status is "passed"' in prompt
+    assert "validationResult has warning or failing checks" in prompt
     assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt
     assert "Review result JSON" in prompt
     assert '"suggestedRejectionMessage"' in prompt
@@ -807,6 +827,85 @@ def test_review_loop_auto_rejects_llm_rejection_with_suggested_message() -> None
     output = stdout.getvalue()
     assert "Auto-rejecting with suggested rejection message" in output
     assert "Decision (" not in output
+
+
+def test_review_loop_auto_rejects_llm_pass_when_validation_is_not_ready() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
+
+    client = FakeClient([submitted_submission_with_validation_warning()])
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        auto_approve=False,
+        auto_publish=True,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert client.actions == [
+        (
+            "reject",
+            "sub-1",
+            "Resolve Wardn validation issues before approval. "
+            "Transport env defaults should have matching environmentVariables metadata: "
+            "touchpoint-py: TOUCHPOINT_MODE",
+        ),
+    ]
+    output = stdout.getvalue()
+    assert "LLM returned pass, but Wardn validation says the submission is not ready" in output
+    assert "Auto-publishing" not in output
+
+
+def test_review_loop_skips_llm_pass_when_validation_is_not_ready_without_auto_reject() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
+
+    client = FakeClient([submitted_submission_with_validation_warning()])
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=False,
+        auto_publish=True,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "LLM returned pass, but Wardn validation says the submission is not ready" in output
+    assert "Transport env defaults should have matching environmentVariables metadata" in output
+    assert "Auto-publishing" not in output
 
 
 def test_review_loop_skips_uncertain_llm_decision_without_prompt_or_action() -> None:

@@ -624,7 +624,7 @@ Required checks:
 - sourceReview.filesRead, installCommands, commandArguments, environmentVariables, prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns are complete.
 - capabilitiesReviewed and limitationsReviewed are true.
 - sourceReview.unknowns is empty unless there is a specific documented reason.
-- validationResult has no failing checks that remain unresolved.
+- validationResult.status is "passed"; warning or failing checks mean the submission is not ready for approval until resolved.
 
 Report format:
 - Submission ID
@@ -641,7 +641,7 @@ Report format:
 ```
 
 Decision rules:
-- Use "pass" only when the submitted metadata can be verified against source evidence.
+- Use "pass" only when the submitted metadata can be verified against source evidence and validationResult.status is "passed".
 - Use "needs_fixes" or "reject" only when the submitted metadata is clearly wrong or incomplete.
 - If decision is "needs_fixes" or "reject", suggestedRejectionMessage must be a non-empty, user-facing message that explains the exact changes needed.
 - Use "cannot validate" when source evidence is unavailable, ambiguous, or insufficient to make a safe approval/rejection decision. This leaves the submission unchanged so it can be retried or reviewed manually later.
@@ -651,7 +651,7 @@ After the report:
 - Do not approve, reject, publish, update, or delete anything directly.
 - The database review controller will parse only the final Review result JSON for automatic actions. Markdown headings such as "Decision: pass" are ignored by automation.
 
-Do not mark a submission as passing if source review evidence is incomplete, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified."""
+Do not mark a submission as passing if source review evidence is incomplete, validationResult has warning or failing checks, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified."""
 
 
 def submission_label(submission: dict[str, Any]) -> str:
@@ -748,6 +748,35 @@ def normalize_suggested_rejection_message(message: str) -> str | None:
     if len(message) > 2000:
         return message[:2000].rstrip()
     return message
+
+
+def validation_blocking_messages(submission: dict[str, Any]) -> list[str]:
+    validation_result = submission.get("validationResult")
+    if not isinstance(validation_result, dict):
+        return []
+
+    status = str(validation_result.get("status") or "").lower()
+    checks = validation_result.get("checks")
+    messages = [
+        str(check.get("message") or "").strip()
+        for check in checks
+        if isinstance(check, dict)
+        and str(check.get("status") or "").lower() in {"failed", "warning"}
+        and str(check.get("message") or "").strip()
+    ] if isinstance(checks, list) else []
+    if messages:
+        return messages
+    if status and status != "passed":
+        return [f"validationResult.status is {status}."]
+    return []
+
+
+def validation_rejection_message(messages: list[str]) -> str:
+    details = "; ".join(messages)
+    return (
+        "Resolve Wardn validation issues before approval. "
+        f"{details}"
+    )
 
 
 def extract_review_result(findings: str) -> ReviewDecisionPayload | None:
@@ -885,6 +914,7 @@ def review_loop(
             if review_result is not None
             else None
         )
+        validation_messages = validation_blocking_messages(submission)
         if review_result is None:
             completed_reviews += 1
             skipped_ids.add(current_submission_id)
@@ -910,6 +940,55 @@ def review_loop(
                 print("Review limit reached.", file=stdout)
                 return 1 if review_errors else 0
             continue
+
+        if review_result is not None and review_result.decision == "pass" and validation_messages:
+            validation_message = validation_rejection_message(validation_messages)
+            if auto_reject:
+                print(
+                    "LLM returned pass, but Wardn validation says the submission is not ready; "
+                    "auto-rejecting with validation messages.",
+                    file=stdout,
+                )
+                completed_reviews += 1
+                try:
+                    apply_decision(
+                        client,
+                        current_submission_id,
+                        "reject",
+                        dry_run=dry_run,
+                        stdin=stdin,
+                        stdout=stdout,
+                        suggested_rejection_message=validation_message,
+                    )
+                except UserFacingError as exc:
+                    review_errors += 1
+                    skipped_ids.add(current_submission_id)
+                    print(
+                        f"Action failed for {current_submission_id}; skipping it for this run: {exc}",
+                        file=stdout,
+                    )
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
+
+            print(
+                "LLM returned pass, but Wardn validation says the submission is not ready: "
+                f"{'; '.join(validation_messages)} "
+                + (
+                    "Leaving submission unchanged and skipping it for this run."
+                    if non_interactive
+                    else "Leaving this submission for manual decision."
+                ),
+                file=stdout,
+            )
+            if non_interactive:
+                completed_reviews += 1
+                skipped_ids.add(current_submission_id)
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
 
         if (
             auto_reject
