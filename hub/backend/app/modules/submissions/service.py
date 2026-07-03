@@ -1059,13 +1059,18 @@ async def ensure_submission_type_allowed(
     owner_organization_id: uuid.UUID | None,
 ) -> None:
     server = await registry_repository.get_server(session, name)
+    published_versions = (
+        await registry_repository.list_published_server_versions(session, server)
+        if server is not None
+        else []
+    )
 
     if submission_type == "new_server":
-        if server is not None:
+        if published_versions:
             raise SubmissionValidationError("server already exists; submit a new version")
         return
 
-    if server is None:
+    if server is None or not published_versions:
         raise SubmissionValidationError("new version submissions require a published server")
 
     if server.owner_user_id is not None:
