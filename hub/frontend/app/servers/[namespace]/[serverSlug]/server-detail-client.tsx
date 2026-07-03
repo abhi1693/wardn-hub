@@ -16,7 +16,6 @@ import { ServerIcon, serverIconUrl } from "@/components/server-icon";
 import { PublicHeader } from "@/components/site-header";
 import { claimServerOwnership, currentUser, getServerDetailTab } from "@/lib/api/hub";
 import type {
-  RegistryNamespace,
   RegistryTrustReport,
   RegistryTrustReportComponent,
   UserRead,
@@ -34,9 +33,6 @@ type RepositoryReference = {
   tag?: string;
   url?: string;
 };
-
-const sourceDisclaimer =
-  "Wardn Hub lists registry metadata. Verify runtime behavior in upstream docs before installing.";
 
 const packageHiddenFields = new Set([
   "environmentVariables",
@@ -69,12 +65,6 @@ function versionTargets(version?: ServerTabVersion) {
     packages: records(version?.packages),
     remotes: records(version?.remotes),
   };
-}
-
-function repositoryUrl(repository: unknown) {
-  return repository && typeof repository === "object"
-    ? stringValue((repository as Record<string, unknown>).url)
-    : "";
 }
 
 function repositoryReference(repository: unknown): RepositoryReference | null {
@@ -1252,336 +1242,6 @@ function EmptyDetailPanel({ detail, title }: { detail: string; title: string }) 
   );
 }
 
-function uniqueValues(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-}
-
-function readableReviewItem(value: unknown) {
-  if (typeof value === "string") return value.trim();
-  if (!isRecord(value)) return "";
-  return [
-    stringValue(value.flag),
-    stringValue(value.name),
-    stringValue(value.value),
-    stringValue(value.default),
-    stringValue(value.description),
-  ]
-    .filter(Boolean)
-    .join(" - ");
-}
-
-function reviewListValues(value: unknown) {
-  if (!Array.isArray(value)) return [];
-  return uniqueValues(value.map(readableReviewItem));
-}
-
-function sourceReviewRecord(manifest: Record<string, unknown> | null) {
-  const meta = isRecord(manifest?._meta) ? manifest._meta : {};
-  const sourceReview = isRecord(meta.sourceReview) ? meta.sourceReview : {};
-  const llmReview = isRecord(sourceReview.llm) ? sourceReview.llm : {};
-  const humanReview = isRecord(sourceReview.human) ? sourceReview.human : {};
-  if (Object.keys(llmReview).length > 0) return llmReview;
-  if (Object.keys(humanReview).length > 0) return humanReview;
-  return sourceReview;
-}
-
-function sourceReviewEnvironmentNames(sourceReview: Record<string, unknown>) {
-  return reviewListValues(sourceReview.environmentVariables).map((value) => value.split(" - ")[0]);
-}
-
-function packageEnvironmentNames(packages: Record<string, unknown>[]) {
-  return uniqueValues(
-    packages.flatMap((packageTarget) =>
-      records(packageTarget.environmentVariables).map((envVar) => stringValue(envVar.name)),
-    ),
-  );
-}
-
-function remoteEnvironmentNames(remotes: Record<string, unknown>[]) {
-  return uniqueValues(
-    remotes.flatMap((remote) =>
-      records(remote.environmentVariables).map((envVar) => stringValue(envVar.name)),
-    ),
-  );
-}
-
-function packageArgumentNames(packages: Record<string, unknown>[]) {
-  return uniqueValues(
-    packages.flatMap((packageTarget) =>
-      records(packageTarget.packageArguments).map(
-        (argument) =>
-          stringValue(argument.flag) ||
-          stringValue(argument.name) ||
-          stringValue(argument.value),
-      ),
-    ),
-  );
-}
-
-function supportedTransportNames(targets: {
-  packages: Record<string, unknown>[];
-  remotes: Record<string, unknown>[];
-}) {
-  return uniqueValues([
-    ...targets.packages.map((packageTarget) =>
-      stringValue(nestedRecord(packageTarget, "transport").type) || "stdio",
-    ),
-    ...targets.remotes.map((remote) => targetType(remote, "remote")),
-  ]);
-}
-
-function packageLaunchCommand(packageTarget: Record<string, unknown>) {
-  const transport = nestedRecord(packageTarget, "transport");
-  const command = stringValue(transport.command);
-  const args = strings(transport.args);
-  const identifier = targetValue(packageTarget, "");
-  if (!command) return identifier;
-  if (args.length > 0) return [command, ...args].join(" ");
-  if (identifier && ["npx", "uvx", "pipx"].includes(command.toLowerCase())) {
-    return `${command} ${identifier}`;
-  }
-  return command;
-}
-
-function installationCommands(
-  packages: Record<string, unknown>[],
-  sourceReview: Record<string, unknown>,
-) {
-  const reviewedCommands = reviewListValues(sourceReview.installCommands);
-  if (reviewedCommands.length > 0) return reviewedCommands;
-  return uniqueValues(packages.map(packageLaunchCommand));
-}
-
-function sentenceList(values: string[], emptyLabel: string, limit = 4) {
-  if (values.length === 0) return emptyLabel;
-  const visible = values.slice(0, limit).join(", ");
-  const remaining = values.length - limit;
-  return remaining > 0 ? `${visible}, and ${remaining} more` : visible;
-}
-
-function versionDateSentence(version?: ServerTabVersion) {
-  const parts = [];
-  if (version?.version) parts.push(`latest listed version is ${version.version}`);
-  const updated = formatDate(version?.updatedAt);
-  if (updated !== "Not available") parts.push(`last updated ${updated}`);
-  return parts.length > 0 ? `The ${parts.join(" and ")}.` : "";
-}
-
-function setupPathSummary({
-  commands,
-  packages,
-  remotes,
-  title,
-}: {
-  commands: string[];
-  packages: Record<string, unknown>[];
-  remotes: Record<string, unknown>[];
-  title: string;
-}) {
-  if (remotes.length > 0 && packages.length > 0) {
-    return `${title} lists both hosted and self-hosted setup paths. Use the hosted remote when your client supports it, or launch the package locally with ${sentenceList(commands, "the documented package command", 2)}.`;
-  }
-  if (remotes.length > 0) {
-    return `${title} is primarily listed as a hosted remote MCP server. Connect a compatible client to the published remote endpoint and verify any required query parameters before use.`;
-  }
-  if (commands.length > 0) {
-    return `${title} is primarily listed as a local package target. Launch it with ${sentenceList(commands, "the documented package command", 2)}.`;
-  }
-  return `${title} does not currently expose a concrete launch target in Wardn metadata, so upstream documentation should be checked before installation.`;
-}
-
-function operationalSurfaceSummary({
-  argumentCount,
-  environmentVariableCount,
-  transports,
-}: {
-  argumentCount: number;
-  environmentVariableCount: number;
-  transports: string[];
-}) {
-  const transportText =
-    transports.length > 0
-      ? `${sentenceList(transports, "no listed transports")} transport support`
-      : "no listed transport metadata";
-  const configParts = [];
-  if (environmentVariableCount > 0) {
-    configParts.push(
-      `${environmentVariableCount} environment variable${environmentVariableCount === 1 ? "" : "s"}`,
-    );
-  }
-  if (argumentCount > 0) {
-    configParts.push(`${argumentCount} command argument${argumentCount === 1 ? "" : "s"}`);
-  }
-  return configParts.length > 0
-    ? `Wardn lists ${transportText} and ${sentenceList(configParts, "configuration metadata", 2)}.`
-    : `Wardn lists ${transportText}, with no additional configuration metadata published.`;
-}
-
-function reviewSignalSummary(
-  title: string,
-  trustReport: RegistryTrustReport | null,
-  selectedVersion?: ServerTabVersion,
-) {
-  const versionSentence = versionDateSentence(selectedVersion);
-  if (!trustReport) {
-    return `${title} does not have a published Wardn trust report yet. ${versionSentence}`.trim();
-  }
-  const weakComponents = (trustReport.components ?? [])
-    .filter((component) => component.status !== "passed")
-    .map((component) => component.label)
-    .slice(0, 2);
-  const weakText =
-    weakComponents.length > 0
-      ? ` Watch ${sentenceList(weakComponents, "review gaps", 2).toLowerCase()}.`
-      : " No major review gaps are highlighted.";
-  return `Wardn Score is ${trustScoreLabel(trustReport.overallScore)} (${trustScoreBand(trustReport.overallScore).toLowerCase()}). ${trustReport.summary}${weakText} ${versionSentence}`.trim();
-}
-
-function namespaceSummary(registryNamespace?: RegistryNamespace | null) {
-  if (!registryNamespace?.namespace) {
-    return "Namespace ownership evidence is not published for this listing.";
-  }
-  const status = registryNamespace.verificationStatus || "unknown";
-  if (status === "verified") {
-    return `${registryNamespace.namespace} has verified namespace ownership evidence.`;
-  }
-  if (status === "imported") {
-    return `${registryNamespace.namespace} was imported from registry namespace evidence.`;
-  }
-  return `${registryNamespace.namespace} is recognized, with ${status} namespace verification status.`;
-}
-
-function ServerOverviewSummary({
-  categoryName,
-  description,
-  manifest,
-  registryNamespace,
-  repositoryUrl,
-  selectedVersion,
-  targetData,
-  title,
-  trustReport,
-  websiteUrl,
-}: {
-  categoryName: string;
-  description: string;
-  manifest: Record<string, unknown> | null;
-  registryNamespace?: RegistryNamespace | null;
-  repositoryUrl: string;
-  selectedVersion?: ServerTabVersion;
-  targetData: {
-    packages: Record<string, unknown>[];
-    remotes: Record<string, unknown>[];
-  };
-  title: string;
-  trustReport: RegistryTrustReport | null;
-  websiteUrl: string;
-}) {
-  const sourceReview = sourceReviewRecord(manifest);
-  const commands = installationCommands(targetData.packages, sourceReview);
-  const environmentVariables = uniqueValues([
-    ...packageEnvironmentNames(targetData.packages),
-    ...remoteEnvironmentNames(targetData.remotes),
-    ...sourceReviewEnvironmentNames(sourceReview),
-  ]);
-  const argumentsList = uniqueValues([
-    ...packageArgumentNames(targetData.packages),
-    ...reviewListValues(sourceReview.commandArguments),
-  ]);
-  const transports = supportedTransportNames(targetData);
-  const sourceLinks = [repositoryUrl, websiteUrl].filter(Boolean);
-  const scoreTone = trustStatusTone(trustReport?.status, trustReport?.overallScore);
-
-  return (
-    <section className="server-detail-card server-overview-summary-card" aria-label="Server summary">
-      <div className="server-overview-summary-header">
-        <div>
-          <h2>Summary</h2>
-          <p>
-            {title} is a Model Context Protocol server
-            {categoryName ? ` for ${categoryName.toLowerCase()}` : ""}.{" "}
-            {description || "Wardn Hub lists this server with community-submitted registry metadata."}
-          </p>
-        </div>
-        <div className={`server-overview-score tone-${scoreTone}`}>
-          <span>Wardn Score</span>
-          <strong>{trustScoreLabel(trustReport?.overallScore)}</strong>
-        </div>
-      </div>
-
-      <div className="server-overview-insights">
-        <article>
-          <span>Best use</span>
-          <p>
-            {description ||
-              `${title} should be evaluated against upstream documentation before use.`}
-          </p>
-        </article>
-        <article>
-          <span>Setup path</span>
-          <p>
-            {setupPathSummary({
-              commands,
-              packages: targetData.packages,
-              remotes: targetData.remotes,
-              title,
-            })}
-          </p>
-        </article>
-        <article>
-          <span>Operational surface</span>
-          <p>
-            {operationalSurfaceSummary({
-              argumentCount: argumentsList.length,
-              environmentVariableCount: environmentVariables.length,
-              transports,
-            })}
-          </p>
-        </article>
-        <article>
-          <span>Review signal</span>
-          <p>{reviewSignalSummary(title, trustReport, selectedVersion)}</p>
-        </article>
-        <article>
-          <span>Namespace</span>
-          <p>{namespaceSummary(registryNamespace)}</p>
-        </article>
-        <article>
-          <span>Source check</span>
-          <p>
-            {sourceLinks.length > 0
-              ? `Verify behavior against ${sentenceList(sourceLinks, "upstream source", 2)} before installing.`
-              : "No upstream source link is published in Wardn metadata."}
-          </p>
-        </article>
-      </div>
-
-      <section className="server-overview-link-row" aria-label="Primary links">
-        {websiteUrl ? (
-          <a href={websiteUrl} rel="noreferrer" target="_blank">
-            Website
-            <ExternalLink size={16} />
-          </a>
-        ) : null}
-        {repositoryUrl ? (
-          <a href={repositoryUrl} rel="noreferrer" target="_blank">
-            Repository
-            <ExternalLink size={16} />
-          </a>
-        ) : null}
-      </section>
-    </section>
-  );
-}
-
-function SourceDisclaimer() {
-  return (
-    <section className="server-source-disclaimer" aria-label="Source disclaimer">
-      {sourceDisclaimer}
-    </section>
-  );
-}
-
 export function ServerDetailClient({
   initialDetail,
   initialError = "",
@@ -1657,11 +1317,8 @@ export function ServerDetailClient({
 
   const targets = useMemo(() => versionTargets(selectedVersion), [selectedVersion]);
   const repository = repositoryReference(selectedVersion?.repository ?? server?.repository);
-  const repoUrl = repositoryUrl(selectedVersion?.repository ?? server?.repository);
   const title = selectedVersion?.title || server?.title || server?.name || "MCP Server";
-  const description = selectedVersion?.description || server?.description || "";
   const documentation = selectedVersion?.documentation || "";
-  const websiteUrl = selectedVersion?.websiteUrl || server?.websiteUrl || "";
   const category = server?.categories?.[0];
   const categoryName = category?.name ?? "";
   const badgeVersion = selectedVersion && !selectedVersion.isLatest ? selectedVersion.version : "";
@@ -1766,25 +1423,10 @@ export function ServerDetailClient({
               ))}
             </div>
 
-            <SourceDisclaimer />
-
             <div className="server-detail-layout">
               {activeTab === "overview" ? (
                 <>
                   <div className="server-detail-content">
-                    <ServerOverviewSummary
-                      categoryName={categoryName}
-                      description={description}
-                      manifest={manifest}
-                      registryNamespace={registryNamespace}
-                      repositoryUrl={repoUrl}
-                      selectedVersion={selectedVersion}
-                      targetData={targets}
-                      title={title}
-                      trustReport={trustReport}
-                      websiteUrl={websiteUrl}
-                    />
-
                     {hasPartnerSupport ? (
                       <section className="server-detail-card">
                         <h2>Partner Support</h2>

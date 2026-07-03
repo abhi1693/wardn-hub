@@ -2792,133 +2792,6 @@ button {
   text-transform: uppercase;
 }
 
-.server-overview-summary-card {
-  gap: 20px;
-}
-
-.server-overview-summary-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px;
-  align-items: start;
-}
-
-.server-overview-summary-header p {
-  margin: 10px 0 0;
-  color: #1f2937;
-  font-size: 15px;
-  line-height: 24px;
-}
-
-.server-overview-score {
-  min-width: 120px;
-  border: 1px solid #d8dee6;
-  border-radius: 8px;
-  background: #f8fafc;
-  padding: 12px 14px;
-  text-align: right;
-}
-
-.server-overview-score span {
-  display: block;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  line-height: 14px;
-  text-transform: uppercase;
-}
-
-.server-overview-score strong {
-  display: block;
-  margin-top: 4px;
-  color: #111827;
-  font-size: 22px;
-  line-height: 28px;
-}
-
-.server-overview-score.tone-passed {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
-.server-overview-score.tone-warning {
-  border-color: #fde68a;
-  background: #fffbeb;
-}
-
-.server-overview-score.tone-failed {
-  border-color: #fecaca;
-  background: #fef2f2;
-}
-
-.server-overview-insights {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.server-overview-insights article {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 14px;
-}
-
-.server-overview-insights span {
-  display: block;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  line-height: 14px;
-  text-transform: uppercase;
-}
-
-.server-overview-insights p {
-  margin: 8px 0 0;
-  color: #334155;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.server-overview-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.server-overview-link-row a {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #d8dee6;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 18px;
-  padding: 9px 12px;
-  text-decoration: none;
-}
-
-.server-overview-link-row a:hover {
-  border-color: #2563eb;
-  color: #1d4ed8;
-}
-
-.server-source-disclaimer {
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background: #eff6ff;
-  color: #1e3a8a;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 22px;
-  padding: 12px 14px;
-}
-
 .server-detail-card-title-row {
   display: flex;
   min-width: 0;
@@ -4657,12 +4530,10 @@ button {
 			  .user-grid,
 		  .user-card-access,
 		  .catalog-grid,
-	  .registry-layout,
-	  .server-detail-layout,
-	  .server-detail-field-grid,
-	  .server-overview-summary-header,
-	  .server-overview-insights,
-	  .trust-report-meta-grid,
+		  .registry-layout,
+		  .server-detail-layout,
+		  .server-detail-field-grid,
+		  .trust-report-meta-grid,
 	  .trust-report-legend,
 	  .technical-remote-grid,
 	  .technical-pair-grid,
@@ -4688,10 +4559,6 @@ button {
 
 	  .server-version-picker select {
 	    flex: 1;
-	  }
-
-	  .server-overview-score {
-	    text-align: left;
 	  }
 
 	  .technical-card-header {
