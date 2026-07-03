@@ -247,13 +247,9 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
     )
 
 
-def test_published_servers_route_requires_authentication() -> None:
-    response = TestClient(create_app()).get("/api/v1/mcp/catalog?page=2")
-
-    assert response.status_code == 401
-
-
-def test_published_servers_route_accepts_session_and_uses_fixed_page_size(monkeypatch) -> None:
+def test_published_servers_route_allows_anonymous_access_and_uses_fixed_page_size(
+    monkeypatch,
+) -> None:
     app = create_app()
     captured: dict[str, int] = {}
 
@@ -271,7 +267,6 @@ def test_published_servers_route_accepts_session_and_uses_fixed_page_size(monkey
         )
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_published_servers", published_servers)
 
     response = TestClient(app).get("/api/v1/mcp/catalog?page=2")

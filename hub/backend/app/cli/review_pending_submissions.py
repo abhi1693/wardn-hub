@@ -46,6 +46,25 @@ class UserFacingError(Exception):
     """Error that should be shown without a traceback."""
 
 
+TRANSIENT_DATABASE_DISCONNECT_SNIPPETS = (
+    "connection was closed",
+    "connection is closed",
+    "server closed the connection",
+    "connection reset",
+    "connection refused",
+    "connectiondoesnotexisterror",
+)
+
+
+def is_transient_database_disconnect(exc: BaseException) -> bool:
+    from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+
+    if not isinstance(exc, DBAPIError | InterfaceError | OperationalError):
+        return False
+    message = str(exc).lower()
+    return any(snippet in message for snippet in TRANSIENT_DATABASE_DISCONNECT_SNIPPETS)
+
+
 def int_from_env(name: str, default: int) -> int:
     value = os.getenv(name, "").strip()
     if not value:
@@ -358,7 +377,14 @@ class WardnHubDatabaseReviewClient:
                     await session.rollback()
                     raise
 
-        return self._loop.run_until_complete(run())
+        for attempt in range(2):
+            try:
+                return self._loop.run_until_complete(run())
+            except Exception as exc:
+                if commit or attempt == 1 or not is_transient_database_disconnect(exc):
+                    raise
+                time.sleep(1)
+        raise RuntimeError("unreachable database retry state")
 
     def list_submissions(self) -> list[dict[str, Any]]:
         async def operation(session: Any) -> list[dict[str, Any]]:

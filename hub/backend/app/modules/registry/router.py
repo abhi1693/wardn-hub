@@ -78,8 +78,6 @@ from app.modules.users.dependencies import (
 )
 from app.modules.users.models import User
 
-CatalogReadUser = Annotated[User, Depends(require_api_token_scopes("catalog:read"))]
-
 catalog_router = APIRouter(prefix="/mcp/catalog", tags=["mcp"])
 badges_router = APIRouter(prefix="/mcp/badges", tags=["mcp"])
 public_router = APIRouter(prefix="/mcp/servers", tags=["mcp"])
@@ -346,7 +344,6 @@ async def search_mcp_servers(
 )
 async def list_mcp_catalog(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
     page: Annotated[int, Query(ge=1)] = 1,
     fields: str | None = None,
 ) -> RegistryPublishedServerListResponse | JSONResponse:

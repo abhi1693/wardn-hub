@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from app.cli.review_pending_submissions import (
     CodexAppServerReviewer,
     UserFacingError,
     display_user,
+    is_transient_database_disconnect,
     print_heading,
     submission_label,
     submission_read_to_review_dict,
@@ -78,7 +80,14 @@ class WardnHubDatabaseFixClient:
                     await session.rollback()
                     raise
 
-        return self._loop.run_until_complete(run())
+        for attempt in range(2):
+            try:
+                return self._loop.run_until_complete(run())
+            except Exception as exc:
+                if commit or attempt == 1 or not is_transient_database_disconnect(exc):
+                    raise
+                time.sleep(1)
+        raise RuntimeError("unreachable database retry state")
 
     def list_submissions(self) -> list[dict[str, Any]]:
         async def operation(session: Any) -> list[dict[str, Any]]:

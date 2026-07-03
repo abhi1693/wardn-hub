@@ -6109,7 +6109,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.70"
+    "version": "0.2.71"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7926,22 +7926,6 @@
                 }
               ],
               "title": "Fields"
-            }
-          },
-          {
-            "in": "header",
-            "name": "authorization",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
             }
           }
         ],

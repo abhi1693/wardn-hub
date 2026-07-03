@@ -6,8 +6,10 @@ from io import StringIO
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import DBAPIError
 
 from app.cli import review_pending_submissions as cli
+from app.db import session as db_session
 
 
 class TtyStringIO(StringIO):
@@ -428,6 +430,90 @@ def test_main_requires_app_server_without_explicit_review_command(
 
     assert result == 1
     assert "Codex app-server review is required" in capsys.readouterr().err
+
+
+def transient_database_error() -> DBAPIError:
+    return DBAPIError(
+        "select 1",
+        {},
+        Exception(
+            "asyncpg.exceptions.ConnectionDoesNotExistError: "
+            "connection was closed in the middle of operation"
+        ),
+    )
+
+
+def test_transient_database_disconnect_detection() -> None:
+    assert cli.is_transient_database_disconnect(transient_database_error()) is True
+    assert cli.is_transient_database_disconnect(ValueError("connection was closed")) is False
+
+
+def test_database_review_client_retries_read_only_transient_disconnect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSession:
+        async def __aenter__(self) -> FakeSession:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    def fake_session_local() -> FakeSession:
+        return FakeSession()
+
+    attempts = 0
+
+    async def operation(_session: object) -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise transient_database_error()
+        return "ok"
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", fake_session_local)
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+    client = cli.WardnHubDatabaseReviewClient()
+    try:
+        assert client._run_database_operation(operation) == "ok"
+    finally:
+        client._loop.close()
+    assert attempts == 2
+
+
+def test_database_review_client_does_not_retry_commit_transient_disconnect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSession:
+        async def __aenter__(self) -> FakeSession:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    def fake_session_local() -> FakeSession:
+        return FakeSession()
+
+    attempts = 0
+
+    async def operation(_session: object) -> str:
+        nonlocal attempts
+        attempts += 1
+        raise transient_database_error()
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", fake_session_local)
+    client = cli.WardnHubDatabaseReviewClient()
+    try:
+        with pytest.raises(DBAPIError):
+            client._run_database_operation(operation, commit=True)
+    finally:
+        client._loop.close()
+    assert attempts == 1
 
 
 def test_pending_submissions_filters_status_and_skips() -> None:
