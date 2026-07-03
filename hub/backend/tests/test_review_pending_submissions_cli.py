@@ -667,7 +667,9 @@ Looks good.
 
 def test_extract_review_decision() -> None:
     assert cli.extract_review_decision("Decision: pass") == "pass"
+    assert cli.extract_review_decision("**Decision: pass**") == "pass"
     assert cli.extract_review_decision("Decision: needs fixes") == "needs_fixes"
+    assert cli.extract_review_decision("**Decision**\n- `needs fixes`") == "needs_fixes"
     assert cli.extract_review_decision("Decision: cannot validate") == "cannot_validate"
     assert cli.extract_review_decision("Decision: cannot determine") == "cannot_validate"
     assert cli.extract_review_decision("Decision: uncertain") == "cannot_validate"

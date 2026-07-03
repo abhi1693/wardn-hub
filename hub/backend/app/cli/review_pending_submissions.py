@@ -704,11 +704,24 @@ def normalize_suggested_rejection_message(message: str) -> str | None:
 
 
 def extract_review_decision(findings: str) -> str | None:
-    match = re.search(r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?Decision\s*:\s*(.+?)\s*$", findings)
+    match = re.search(
+        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Decision(?:[*_`]+)?\s*:\s*(.+?)\s*$",
+        findings,
+    )
     if match is None:
-        return None
+        block_match = re.search(
+            r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Decision(?:[*_`]+)?\s*:?\s*$",
+            findings,
+        )
+        if block_match is None:
+            return None
+        remaining = findings[block_match.end() :].splitlines()
+        value = next((line.strip() for line in remaining if line.strip()), "")
+    else:
+        value = match.group(1)
 
-    decision = re.sub(r"[`*_]", "", match.group(1)).strip().lower()
+    decision = re.sub(r"^[\-*]\s*", "", value)
+    decision = re.sub(r"[`*_]", "", decision).strip().lower()
     decision = re.sub(r"\s+", " ", decision)
     if decision.startswith("pass"):
         return "pass"
