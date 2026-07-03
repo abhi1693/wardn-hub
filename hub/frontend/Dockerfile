@@ -35,8 +35,7 @@ COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=deps --chown=nextjs:nodejs /app/package.json /app/package-lock.json ./
 COPY --chown=nextjs:nodejs hub/frontend ./hub/frontend
 
-RUN mkdir -p /app/hub/frontend/.next \
-  && chown -R nextjs:nodejs /app \
+RUN install -d -o nextjs -g nodejs /app/hub/frontend/.next \
   && chmod +x /app/hub/frontend/docker-build-next.sh /app/hub/frontend/docker-entrypoint.sh
 
 ARG APP_VERSION=0.0.0
