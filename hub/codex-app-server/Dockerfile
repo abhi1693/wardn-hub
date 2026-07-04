@@ -21,6 +21,7 @@ RUN install -d -m 1777 /tmp/codex-tmp && \
       gnupg \
       jq \
       python3 \
+      python-is-python3 \
       bubblewrap \
       git \
       ripgrep && \
@@ -36,6 +37,7 @@ RUN install -d -m 1777 /tmp/codex-tmp && \
     bwrap --version && \
     jq --version && \
     rg --version && \
+    python --version && \
     python3 --version && \
     install -d -m 0777 /workspace /tmp/codex-work /tmp/codex-user /codex-home /codex-auth && \
     rm -rf /var/lib/apt/lists/*

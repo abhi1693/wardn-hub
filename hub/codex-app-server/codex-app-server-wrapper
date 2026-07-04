@@ -276,7 +276,7 @@ if [ -z "${CODEX_HOME:-}" ]; then
   exit 1
 fi
 
-for command_name in "$codex_bin" bwrap curl git jq python3 rg timeout node; do
+for command_name in "$codex_bin" bwrap curl git jq python python3 rg timeout node; do
   require_command "$command_name"
 done
 
