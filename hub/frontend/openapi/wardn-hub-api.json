@@ -6157,7 +6157,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.83"
+    "version": "0.2.84"
   },
   "openapi": "3.1.0",
   "paths": {

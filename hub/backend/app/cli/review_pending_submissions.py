@@ -46,6 +46,11 @@ VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = """- Remote endpoint URLs do not incl
 - Remote URL query parameters are represented in remotes[].queryParameters, not remotes[].authentication.queryParameters.
 - If docs show a hosted URL with query authentication, the base endpoint is stored in remotes[].url and the query auth fields are stored in remotes[].queryParameters."""
 
+NEW_SERVER_INITIAL_VERSION_MESSAGE = (
+    "New server submissions must start at Wardn registry version 1.0.0. "
+    "Keep upstream package, image, or server versions in packages[].version."
+)
+
 
 class UserFacingError(Exception):
     """Error that should be shown without a traceback."""
@@ -685,7 +690,7 @@ Validation workflow for each submission:
 3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
 4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
 5. {REGISTRY_METADATA_SCOPE_RULE}
-6. If submissionType is "new_server", serverJson.version is the Wardn registry version and is normally "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
+6. If submissionType is "new_server", serverJson.version is the Wardn registry version and must be "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.
@@ -707,6 +712,7 @@ Required checks:
 - capabilitiesReviewed and limitationsReviewed are true.
 - sourceReview.unknowns is empty unless there is a specific documented reason.
 - validationResult.status is "passed"; warning or failing checks mean the submission is not ready for approval until resolved.
+- If submissionType is "new_server", serverJson.version must be "1.0.0"; upstream artifact versions belong in packages[].version, remotes metadata, documentation, or _meta evidence.
 
 Report format:
 - Submission ID
@@ -841,23 +847,42 @@ def normalize_suggested_rejection_message(message: str) -> str | None:
 
 
 def validation_blocking_messages(submission: dict[str, Any]) -> list[str]:
+    messages = deterministic_submission_blocking_messages(submission)
     validation_result = submission.get("validationResult")
     if not isinstance(validation_result, dict):
-        return []
+        return messages
 
     status = str(validation_result.get("status") or "").lower()
     checks = validation_result.get("checks")
-    messages = [
+    validation_messages = [
         str(check.get("message") or "").strip()
         for check in checks
         if isinstance(check, dict)
         and str(check.get("status") or "").lower() in {"failed", "warning"}
         and str(check.get("message") or "").strip()
     ] if isinstance(checks, list) else []
+    for message in validation_messages:
+        if message not in messages:
+            messages.append(message)
     if messages:
         return messages
     if status and status != "passed":
         return [f"validationResult.status is {status}."]
+    return []
+
+
+def deterministic_submission_blocking_messages(submission: dict[str, Any]) -> list[str]:
+    submission_type = str(
+        submission.get("submissionType") or submission.get("submission_type") or ""
+    )
+    server_json = submission.get("serverJson") or submission.get("server_json")
+    server_version = (
+        str(server_json.get("version") or "")
+        if isinstance(server_json, dict)
+        else ""
+    )
+    if submission_type == "new_server" and server_version != "1.0.0":
+        return [NEW_SERVER_INITIAL_VERSION_MESSAGE]
     return []
 
 
@@ -1004,7 +1029,12 @@ def review_loop(
             if review_result is not None
             else None
         )
-        validation_messages = validation_blocking_messages(submission)
+        review_submission = (
+            context.get("submission")
+            if isinstance(context.get("submission"), dict)
+            else submission
+        )
+        validation_messages = validation_blocking_messages(review_submission)
         if review_result is None:
             completed_reviews += 1
             skipped_ids.add(current_submission_id)

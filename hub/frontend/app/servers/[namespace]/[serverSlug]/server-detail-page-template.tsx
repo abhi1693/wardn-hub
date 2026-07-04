@@ -2,10 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import {
-  getPublishedRegistryServerSummary,
   getPublishedRegistryServerTab,
   isRegistryNotFoundError,
-  listPublishedRegistryServers,
 } from "@/lib/public-registry";
 import type { DetailTab } from "@/lib/server-detail-tabs";
 import { siteConfig } from "@/lib/site";
@@ -25,30 +23,6 @@ type ServerDetailTemplateProps = {
 };
 
 const routeTabs = new Set<DetailTab>(["schema", "score"]);
-
-export async function generateServerDetailStaticParams(tabs: DetailTab[]) {
-  try {
-    const servers = await listPublishedRegistryServers();
-    return servers.flatMap((server) => {
-      const [namespace, serverSlug] = server.name.split("/");
-      if (!namespace || !serverSlug) return [];
-      return tabs.map((tab) =>
-        tab === "overview" ? { namespace, serverSlug } : { namespace, serverSlug, tab },
-      );
-    });
-  } catch (error) {
-    console.error("Unable to prebuild server detail pages from the registry API.", error);
-    return [];
-  }
-}
-
-export function generateServerDetailOverviewStaticParams() {
-  return generateServerDetailStaticParams(["overview"]);
-}
-
-export function generateServerDetailTabStaticParams() {
-  return generateServerDetailStaticParams(["schema", "score"]);
-}
 
 function serverNameFromParams(params: ServerDetailParams) {
   const namespace = params.namespace ?? "";
@@ -76,6 +50,22 @@ function serverMetadataTitle(serverTitle: string, tab: DetailTab) {
   return `${serverTitle} MCP Server - Install, Configuration, Packages, and Trust Score`;
 }
 
+function serverMetadataDescription(
+  serverName: string,
+  serverTitle: string,
+  tab: DetailTab,
+  description?: string,
+) {
+  if (tab === "overview" && description) return description;
+  if (tab === "schema") {
+    return `Review ${serverTitle} MCP server package, transport, schema, and configuration metadata on Wardn Hub.`;
+  }
+  if (tab === "score") {
+    return `Review ${serverTitle} MCP server quality score, trust report, and maintenance signals on Wardn Hub.`;
+  }
+  return `Review ${serverName} MCP server metadata, installation details, and trust signals on Wardn Hub.`;
+}
+
 async function resolveServerDetailRoute({ fixedTab, params }: ServerDetailTemplateProps) {
   const resolvedParams = await params;
   const serverName = serverNameFromParams(resolvedParams);
@@ -94,10 +84,15 @@ export async function generateServerDetailMetadata(
   const { canonical, serverName, tab } = await resolveServerDetailRoute(props);
 
   try {
-    const server = await getPublishedRegistryServerSummary(serverName);
-    const serverTitle = server.title || server.name;
+    const detail = await getPublishedRegistryServerTab(serverName, tab);
+    const serverTitle = detail.server.title || detail.server.name;
     const title = serverMetadataTitle(serverTitle, tab);
-    const description = server.description;
+    const description = serverMetadataDescription(
+      serverName,
+      serverTitle,
+      tab,
+      detail.server.description,
+    );
 
     return {
       alternates: {

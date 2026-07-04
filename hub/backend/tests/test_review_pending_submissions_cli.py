@@ -159,6 +159,17 @@ def submitted_submission_with_validation_warning() -> dict[str, Any]:
     return submission
 
 
+def submitted_new_server_with_non_initial_version() -> dict[str, Any]:
+    submission = submitted_submission()
+    submission["version"] = "0.1.0"
+    submission["serverJson"] = {
+        **submission["serverJson"],
+        "version": "0.1.0",
+    }
+    submission["validationResult"] = {"status": "passed", "checks": []}
+    return submission
+
+
 def test_verbose_argument() -> None:
     default_args = cli.build_parser().parse_args([])
     args = cli.build_parser().parse_args(["--verbose"])
@@ -744,6 +755,14 @@ def test_extract_review_result_validates_schema() -> None:
     assert cli.extract_review_result(findings) is None
 
 
+def test_validation_blocking_messages_rejects_new_server_non_initial_version() -> None:
+    messages = cli.validation_blocking_messages(
+        submitted_new_server_with_non_initial_version()
+    )
+
+    assert messages == [cli.NEW_SERVER_INITIAL_VERSION_MESSAGE]
+
+
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
     client = FakeClient()
 
@@ -1203,6 +1222,45 @@ def test_review_loop_auto_publishes_llm_pass_with_publish_access() -> None:
     output = stdout.getvalue()
     assert "Auto-publishing LLM pass decision." in output
     assert "Approved and published sub-1." in output
+    assert "Decision (" not in output
+
+
+def test_review_loop_auto_publish_blocks_new_server_non_initial_version() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return "Decision: pass" + review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
+
+    client = FakeClient([submitted_new_server_with_non_initial_version()])
+    user = client.current_user()
+    user["_wardnHubCanPublish"] = True
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=user,
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=False,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+        auto_publish=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "Auto-publishing LLM pass decision." not in output
+    assert cli.NEW_SERVER_INITIAL_VERSION_MESSAGE in output
+    assert "Leaving submission unchanged and skipping it for this run." in output
     assert "Decision (" not in output
 
 

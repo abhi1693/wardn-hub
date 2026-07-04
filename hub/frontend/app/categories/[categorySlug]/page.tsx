@@ -3,12 +3,8 @@ import Link from "next/link";
 
 import { ServerCard } from "@/components/server-card";
 import { PublicHeader } from "@/components/site-header";
-import type {
-  RegistryServerDetailResponse,
-  RegistryServerRead,
-} from "@/lib/api/generated/model";
+import type { RegistryServerRead } from "@/lib/api/generated/model";
 import {
-  getPublishedRegistryServer,
   listPublicCategories,
   listPublishedRegistryServers,
   serverDetailPath,
@@ -18,39 +14,11 @@ import { categoryDetailJsonLd, JsonLdScript } from "@/lib/structured-data";
 
 export const revalidate = 3600;
 
-const DETAIL_SAMPLE_SIZE = 8;
 const TOP_TABLE_SIZE = 10;
 
 type CategoryDetailPageProps = {
   params: Promise<{ categorySlug?: string }>;
 };
-
-function stringValue(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function records(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter(
-        (item): item is Record<string, unknown> =>
-          Boolean(item) && typeof item === "object" && !Array.isArray(item),
-      )
-    : [];
-}
-
-function uniqueStrings(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-}
-
-function latestDetailVersion(detail: RegistryServerDetailResponse) {
-  return detail.versions?.find((version) => version.isLatest) ?? detail.versions?.[0] ?? null;
-}
 
 function scoreValue(server: RegistryServerRead) {
   return server.qualityScore ?? server.latestVersion?.qualityScore ?? null;
@@ -78,62 +46,6 @@ function sortedServers(servers: RegistryServerRead[]) {
     if (rightScore !== leftScore) return rightScore - leftScore;
     return right.updatedAt.localeCompare(left.updatedAt);
   });
-}
-
-async function fetchServerDetails(servers: RegistryServerRead[]) {
-  const results = await Promise.allSettled(
-    servers.slice(0, DETAIL_SAMPLE_SIZE).map((server) => getPublishedRegistryServer(server.name)),
-  );
-  return results
-    .filter((result): result is PromiseFulfilledResult<RegistryServerDetailResponse> => result.status === "fulfilled")
-    .map((result) => result.value);
-}
-
-function detailPackages(detail: RegistryServerDetailResponse) {
-  return records(latestDetailVersion(detail)?.packages);
-}
-
-function detailRemotes(detail: RegistryServerDetailResponse) {
-  return records(latestDetailVersion(detail)?.remotes);
-}
-
-function transportNames(details: RegistryServerDetailResponse[]) {
-  return uniqueStrings(
-    details.flatMap((detail) => [
-      ...detailPackages(detail).map(
-        (packageTarget) => stringValue(recordValue(packageTarget.transport).type) || "stdio",
-      ),
-      ...detailRemotes(detail).map((remoteTarget) => stringValue(remoteTarget.type) || "remote"),
-    ]),
-  );
-}
-
-function environmentVariableNames(details: RegistryServerDetailResponse[]) {
-  return uniqueStrings(
-    details.flatMap((detail) => [
-      ...detailPackages(detail).flatMap((packageTarget) =>
-        records(packageTarget.environmentVariables).map((envVar) => stringValue(envVar.name)),
-      ),
-      ...detailRemotes(detail).flatMap((remoteTarget) =>
-        records(remoteTarget.environmentVariables).map((envVar) => stringValue(envVar.name)),
-      ),
-    ]),
-  );
-}
-
-function commandArgumentNames(details: RegistryServerDetailResponse[]) {
-  return uniqueStrings(
-    details.flatMap((detail) =>
-      detailPackages(detail).flatMap((packageTarget) =>
-        records(packageTarget.packageArguments).map(
-          (argument) =>
-            stringValue(argument.flag) ||
-            stringValue(argument.name) ||
-            stringValue(argument.value),
-        ),
-      ),
-    ),
-  );
 }
 
 function sentenceList(values: string[], emptyLabel: string, limit = 5) {
@@ -308,16 +220,6 @@ function CategoryFaq({
   );
 }
 
-export async function generateStaticParams() {
-  try {
-    const categories = await listPublicCategories();
-    return categories.map((category) => ({ categorySlug: category.slug }));
-  } catch (error) {
-    console.error("Unable to prebuild category pages from the registry API.", error);
-    return [];
-  }
-}
-
 export async function generateMetadata({ params }: CategoryDetailPageProps): Promise<Metadata> {
   const { categorySlug = "" } = await params;
   const canonical = `/categories/${encodeURIComponent(categorySlug)}`;
@@ -385,10 +287,9 @@ export default async function CategoryDetailPage({ params }: CategoryDetailPageP
   const category = categories.find((item) => item.slug === categorySlug);
   const categoryName = category?.name ?? categorySlug;
   const topServers = sortedServers(servers);
-  const serverDetails = error ? [] : await fetchServerDetails(topServers);
-  const transports = transportNames(serverDetails);
-  const environmentNames = environmentVariableNames(serverDetails);
-  const argumentNames = commandArgumentNames(serverDetails);
+  const transports: string[] = [];
+  const environmentNames: string[] = [];
+  const argumentNames: string[] = [];
   const explanation = categoryExplanation(categoryName, category?.description);
 
   return (
