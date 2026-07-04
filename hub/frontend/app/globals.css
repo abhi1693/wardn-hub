@@ -3396,6 +3396,10 @@ button {
   align-content: start;
 }
 
+.technical-main.full-width {
+  grid-column: 1 / -1;
+}
+
 .technical-card,
 .technical-side-card {
   border: 1px solid #e5e7eb;
@@ -3649,6 +3653,18 @@ button {
 
 .technical-package-list {
   display: grid;
+}
+
+.technical-empty-state {
+  padding: 20px;
+}
+
+.technical-description {
+  margin: 0;
+  max-width: 78ch;
+  color: #1a1c1c;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .technical-remote-grid,

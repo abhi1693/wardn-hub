@@ -61,11 +61,15 @@ from app.modules.registry.schemas import (
     RegistryServerScoreVersionRead,
     RegistryServerSummaryResponse,
     RegistryServerTabServerRead,
+    RegistryServerToolsTabResponse,
+    RegistryServerToolsVersionRead,
     RegistryServerVersionCreate,
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
     RegistryServerVersionRead,
     RegistryServerVersionUpdate,
+    RegistryToolParameterRead,
+    RegistryToolRead,
     RegistryTrustReport,
     RegistryTrustReportComponent,
     RegistryUserDetailResponse,
@@ -235,6 +239,174 @@ def public_registry_json(value, *, parent_key: str = ""):
             continue
         public_value[key] = public_registry_json(item, parent_key=str(key))
     return public_value
+
+
+def tool_candidate_lists_from_value(value: Any) -> list[list[Any]]:
+    if isinstance(value, list):
+        return [value]
+    if not isinstance(value, dict):
+        return []
+
+    result = value.get("result")
+    if isinstance(result, dict):
+        nested = tool_candidate_lists_from_value(result)
+        if nested:
+            return nested
+
+    tools = value.get("tools")
+    if isinstance(tools, list):
+        return [tools]
+    return []
+
+
+def registry_tool_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]]:
+    record = registry_record(server_json)
+    meta = registry_record(record.get("_meta"))
+    candidates: list[Any] = [
+        record.get("tools"),
+        record.get("toolDefinitions"),
+        record.get("mcpTools"),
+        registry_record(record.get("capabilities")).get("tools"),
+        registry_record(record.get("introspection")).get("tools"),
+        registry_record(record.get("introspection")).get("tools/list"),
+        registry_record(record.get("tools/list")),
+        registry_record(record.get("mcp")).get("tools"),
+        registry_record(record.get("mcp")).get("tools/list"),
+        meta.get("tools"),
+        registry_record(meta.get("capabilities")).get("tools"),
+        registry_record(meta.get("introspection")).get("tools"),
+        registry_record(meta.get("introspection")).get("tools/list"),
+        registry_record(meta.get("mcp")).get("tools"),
+        registry_record(meta.get("mcp")).get("tools/list"),
+    ]
+
+    lists: list[list[Any]] = []
+    for candidate in candidates:
+        lists.extend(tool_candidate_lists_from_value(candidate))
+    return lists
+
+
+def schema_type_label(schema: dict[str, Any]) -> str:
+    type_value = schema.get("type")
+    if isinstance(type_value, list):
+        return " | ".join(str(item) for item in type_value if item)
+    if isinstance(type_value, str) and type_value:
+        if type_value == "array":
+            items = registry_record(schema.get("items"))
+            item_type = schema_type_label(items)
+            return f"array<{item_type}>" if item_type else "array"
+        return type_value
+    if "enum" in schema:
+        return "enum"
+    if "anyOf" in schema:
+        return "anyOf"
+    if "oneOf" in schema:
+        return "oneOf"
+    if "allOf" in schema:
+        return "allOf"
+    return ""
+
+
+def tool_parameters_from_schema(schema: dict[str, Any]) -> list[RegistryToolParameterRead]:
+    properties = registry_record(schema.get("properties"))
+    required = {
+        str(item)
+        for item in schema.get("required", [])
+        if isinstance(item, str) and item
+    }
+    parameters: list[RegistryToolParameterRead] = []
+    for name, property_schema in properties.items():
+        if not isinstance(name, str) or not isinstance(property_schema, dict):
+            continue
+        public_schema = public_registry_json(property_schema)
+        if not isinstance(public_schema, dict):
+            public_schema = {}
+        parameters.append(
+            RegistryToolParameterRead(
+                name=name,
+                type=schema_type_label(property_schema),
+                description=str(property_schema.get("description") or ""),
+                required=name in required,
+                schema=public_schema,
+            )
+        )
+    return parameters
+
+
+def tool_parameters_from_list(value: Any) -> list[RegistryToolParameterRead]:
+    parameters: list[RegistryToolParameterRead] = []
+    parameter_values = value if isinstance(value, list) else []
+    for parameter in parameter_values:
+        if not isinstance(parameter, dict):
+            continue
+        name = str(parameter.get("name") or "").strip()
+        if not name:
+            continue
+        public_schema = public_registry_json(parameter.get("schema") or parameter)
+        if not isinstance(public_schema, dict):
+            public_schema = {}
+        parameters.append(
+            RegistryToolParameterRead(
+                name=name,
+                type=str(parameter.get("type") or parameter.get("format") or ""),
+                description=str(parameter.get("description") or ""),
+                required=bool(parameter.get("required") or parameter.get("isRequired")),
+                schema=public_schema,
+            )
+        )
+    return parameters
+
+
+def tool_annotations(tool: dict[str, Any]) -> dict[str, Any]:
+    annotations = registry_record(tool.get("annotations"))
+    for key in ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
+        if key in tool and key not in annotations:
+            annotations[key] = tool[key]
+    public_annotations = public_registry_json(annotations)
+    return public_annotations if isinstance(public_annotations, dict) else {}
+
+
+def registry_tools_from_server_json(server_json: dict[str, Any]) -> list[RegistryToolRead]:
+    tools: list[RegistryToolRead] = []
+    seen_names: set[str] = set()
+    for candidate_list in registry_tool_candidate_lists(server_json):
+        for candidate in candidate_list:
+            if not isinstance(candidate, dict):
+                continue
+            name = str(candidate.get("name") or "").strip()
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+
+            input_schema = registry_record(
+                candidate.get("inputSchema")
+                or candidate.get("input_schema")
+                or candidate.get("schema")
+            )
+            output_schema = registry_record(
+                candidate.get("outputSchema") or candidate.get("output_schema")
+            )
+            listed_parameters = tool_parameters_from_list(candidate.get("parameters"))
+            parameters = tool_parameters_from_schema(input_schema) or listed_parameters
+
+            public_input_schema = public_registry_json(input_schema)
+            public_output_schema = public_registry_json(output_schema)
+            safe_input_schema = public_input_schema if isinstance(public_input_schema, dict) else {}
+            safe_output_schema = (
+                public_output_schema if isinstance(public_output_schema, dict) else {}
+            )
+            tools.append(
+                RegistryToolRead(
+                    name=name,
+                    title=str(candidate.get("title") or ""),
+                    description=str(candidate.get("description") or ""),
+                    inputSchema=safe_input_schema,
+                    outputSchema=safe_output_schema,
+                    annotations=tool_annotations(candidate),
+                    parameters=parameters,
+                )
+            )
+    return tools
 
 
 def github_repository_from_registry_repository(
@@ -2714,6 +2886,27 @@ async def get_server_schema_tab(
                 packages=public_registry_json(version.packages),
                 remotes=public_registry_json(registry_remotes_json(version.remotes)),
                 server_json=public_registry_json(version.server_json),
+                tools=registry_tools_from_server_json(version.server_json),
+            )
+            for version in versions
+        ],
+    )
+
+
+async def get_server_tools_tab(
+    session,
+    name: str,
+) -> RegistryServerToolsTabResponse:
+    server, versions = await published_server_with_versions(session, name)
+    return RegistryServerToolsTabResponse(
+        server=server_tab_summary(server),
+        versions=[
+            RegistryServerToolsVersionRead(
+                id=version.id,
+                version=version.version,
+                title=version.title,
+                is_latest=version.is_latest,
+                tools=registry_tools_from_server_json(version.server_json),
             )
             for version in versions
         ],

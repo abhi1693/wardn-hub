@@ -3607,6 +3607,13 @@
             "title": "Title",
             "type": "string"
           },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryToolRead"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -3757,6 +3764,61 @@
           "title"
         ],
         "title": "RegistryServerTabServerRead",
+        "type": "object"
+      },
+      "RegistryServerToolsTabResponse": {
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerTabServerRead"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerToolsVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "RegistryServerToolsTabResponse",
+        "type": "object"
+      },
+      "RegistryServerToolsVersionRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryToolRead"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "isLatest"
+        ],
+        "title": "RegistryServerToolsVersionRead",
         "type": "object"
       },
       "RegistryServerVersionCreate": {
@@ -4338,6 +4400,84 @@
           "version"
         ],
         "title": "RegistryServerVersionUpdate",
+        "type": "object"
+      },
+      "RegistryToolParameterRead": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "schema": {
+            "additionalProperties": true,
+            "title": "Schema",
+            "type": "object"
+          },
+          "type": {
+            "default": "",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RegistryToolParameterRead",
+        "type": "object"
+      },
+      "RegistryToolRead": {
+        "properties": {
+          "annotations": {
+            "additionalProperties": true,
+            "title": "Annotations",
+            "type": "object"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "inputSchema": {
+            "additionalProperties": true,
+            "title": "Inputschema",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outputSchema": {
+            "additionalProperties": true,
+            "title": "Outputschema",
+            "type": "object"
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryToolParameterRead"
+            },
+            "title": "Parameters",
+            "type": "array"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RegistryToolRead",
         "type": "object"
       },
       "RegistryTransport": {
@@ -9209,6 +9349,58 @@
           }
         },
         "summary": "Get Mcp Server Score Tab",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/tabs/tools": {
+      "get": {
+        "operationId": "mcp_servers_get_tools_tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerToolsTabResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Tools Tab",
         "tags": [
           "mcp"
         ]

@@ -213,6 +213,55 @@ def test_version_summary_normalizes_stored_remote_query_parameters() -> None:
     ]
 
 
+def test_registry_tools_from_server_json_extracts_mcp_tool_metadata() -> None:
+    tools = service.registry_tools_from_server_json(
+        {
+            "name": "io.github.example/weather",
+            "_meta": {
+                "introspection": {
+                    "tools/list": {
+                        "result": {
+                            "tools": [
+                                {
+                                    "name": "get_forecast",
+                                    "title": "Get forecast",
+                                    "description": "Get a weather forecast.",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "location": {
+                                                "type": "string",
+                                                "description": "City or ZIP code.",
+                                            },
+                                            "days": {"type": "integer"},
+                                        },
+                                        "required": ["location"],
+                                    },
+                                    "outputSchema": {"type": "object"},
+                                    "annotations": {"readOnlyHint": True},
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+        }
+    )
+
+    assert len(tools) == 1
+    assert tools[0].name == "get_forecast"
+    assert tools[0].title == "Get forecast"
+    assert tools[0].annotations == {"readOnlyHint": True}
+    assert tools[0].input_schema["type"] == "object"
+    assert tools[0].output_schema["type"] == "object"
+    assert tools[0].parameters[0].name == "location"
+    assert tools[0].parameters[0].type_ == "string"
+    assert tools[0].parameters[0].required is True
+    assert tools[0].parameters[1].name == "days"
+    assert tools[0].parameters[1].type_ == "integer"
+    assert tools[0].parameters[1].required is False
+
+
 def test_trust_report_explains_quality_score_components() -> None:
     version = version_model(uuid4(), "1.0.0", is_latest=True)
     version.quality_score = 96

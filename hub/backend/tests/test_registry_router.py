@@ -760,6 +760,54 @@ def test_server_schema_tab_route_preserves_server_name(monkeypatch) -> None:
     assert set(body["server"]) == {"id", "name", "title", "icons"}
 
 
+def test_server_tools_tab_route_preserves_server_name(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_tools_tab(_session, server_name):
+        captured["server_name"] = server_name
+        return {
+            "server": {
+                "id": str(server_id),
+                "name": "io.github.example/weather",
+                "title": "Weather",
+                "icons": [],
+            },
+            "versions": [
+                {
+                    "id": str(version_id),
+                    "version": "1.0.0",
+                    "title": "Weather",
+                    "isLatest": True,
+                    "tools": [
+                        {
+                            "name": "get_forecast",
+                            "description": "Get a weather forecast.",
+                            "inputSchema": {"type": "object"},
+                            "parameters": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_tools_tab", get_tools_tab)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers/io.github.example/weather/tabs/tools"
+    )
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    assert response.json()["versions"][0]["tools"][0]["name"] == "get_forecast"
+
+
 def test_server_overview_tab_route_allows_anonymous_access(monkeypatch) -> None:
     app = create_app()
     server_id = uuid4()

@@ -19,6 +19,7 @@ import type {
   RegistryServerSchemaTabResponse,
   RegistryServerScoreTabResponse,
   RegistryServerSummaryResponse,
+  RegistryServerToolsTabResponse,
   RegistryServerVersionDetailResponse,
   RegistryServerVersionListResponse
 } from '../model';
@@ -649,6 +650,60 @@ export const mcpServersGetScoreTab = async (serverName: string, options?: Reques
 
   const data: mcpServersGetScoreTabResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as mcpServersGetScoreTabResponse
+}
+
+
+export type mcpServersGetToolsTabResponse200 = {
+  data: RegistryServerToolsTabResponse
+  status: 200
+}
+
+export type mcpServersGetToolsTabResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetToolsTabResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetToolsTabResponseSuccess = (mcpServersGetToolsTabResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetToolsTabResponseError = (mcpServersGetToolsTabResponse404 | mcpServersGetToolsTabResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetToolsTabResponse = (mcpServersGetToolsTabResponseSuccess | mcpServersGetToolsTabResponseError)
+
+export const getMcpServersGetToolsTabUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/tabs/tools`
+}
+
+/**
+ * @summary Get Mcp Server Tools Tab
+ */
+export const mcpServersGetToolsTab = async (serverName: string, options?: RequestInit): Promise<mcpServersGetToolsTabResponse> => {
+
+  const res = await fetch(getMcpServersGetToolsTabUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetToolsTabResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetToolsTabResponse
 }
 
 

@@ -22,7 +22,7 @@ type ServerDetailTemplateProps = {
   params: Promise<ServerDetailParams>;
 };
 
-const routeTabs = new Set<DetailTab>(["schema", "score"]);
+const routeTabs = new Set<DetailTab>(["tools", "schema", "score"]);
 
 function serverNameFromParams(params: ServerDetailParams) {
   const namespace = params.namespace ?? "";
@@ -41,6 +41,9 @@ function serverCanonicalPath(serverName: string, tab: DetailTab) {
 }
 
 function serverMetadataTitle(serverTitle: string, tab: DetailTab) {
+  if (tab === "tools") {
+    return `${serverTitle} MCP Server Tools`;
+  }
   if (tab === "schema") {
     return `${serverTitle} MCP Server Schema - Packages, Transports, and Configuration`;
   }
@@ -57,6 +60,9 @@ function serverMetadataDescription(
   description?: string,
 ) {
   if (tab === "overview" && description) return description;
+  if (tab === "tools") {
+    return `Review ${serverTitle} MCP server tool definitions, parameters, schemas, and annotations on Wardn Hub.`;
+  }
   if (tab === "schema") {
     return `Review ${serverTitle} MCP server package, transport, schema, and configuration metadata on Wardn Hub.`;
   }

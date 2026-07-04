@@ -837,6 +837,28 @@ class RegistryServerOverviewVersionRead(BaseModel):
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
 
 
+class RegistryToolParameterRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    type_: str = Field(default="", alias="type")
+    description: str = ""
+    required: bool = False
+    schema_: dict[str, Any] = Field(default_factory=dict, alias="schema")
+
+
+class RegistryToolRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    title: str = ""
+    description: str = ""
+    input_schema: dict[str, Any] = Field(default_factory=dict, alias="inputSchema")
+    output_schema: dict[str, Any] = Field(default_factory=dict, alias="outputSchema")
+    annotations: dict[str, Any] = Field(default_factory=dict)
+    parameters: list[RegistryToolParameterRead] = Field(default_factory=list)
+
+
 class RegistryServerSchemaVersionRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -847,6 +869,17 @@ class RegistryServerSchemaVersionRead(BaseModel):
     packages: list[dict[str, Any]] = Field(default_factory=list)
     remotes: list[dict[str, Any]] = Field(default_factory=list)
     server_json: dict[str, Any] = Field(default_factory=dict, alias="serverJson")
+    tools: list[RegistryToolRead] = Field(default_factory=list)
+
+
+class RegistryServerToolsVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    title: str
+    is_latest: bool = Field(alias="isLatest")
+    tools: list[RegistryToolRead] = Field(default_factory=list)
 
 
 class RegistryServerScoreVersionRead(BaseModel):
@@ -872,6 +905,11 @@ class RegistryServerOverviewTabResponse(BaseModel):
 class RegistryServerSchemaTabResponse(BaseModel):
     server: RegistryServerTabServerRead
     versions: list[RegistryServerSchemaVersionRead] = Field(default_factory=list)
+
+
+class RegistryServerToolsTabResponse(BaseModel):
+    server: RegistryServerTabServerRead
+    versions: list[RegistryServerToolsVersionRead] = Field(default_factory=list)
 
 
 class RegistryServerScoreTabResponse(BaseModel):

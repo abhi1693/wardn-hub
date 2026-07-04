@@ -8,10 +8,11 @@ import type {
   RegistryTrustReport,
 } from "@/lib/api/generated/model";
 
-export type DetailTab = "overview" | "schema" | "score";
+export type DetailTab = "overview" | "tools" | "schema" | "score";
 
 export const detailTabs: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "tools", label: "Tools" },
   { id: "schema", label: "Schema" },
   { id: "score", label: "Score" },
 ];
@@ -54,6 +55,7 @@ export type ServerTabVersion = Pick<
   remotes?: Record<string, unknown>[];
   repository?: Record<string, unknown> | null;
   serverJson?: Record<string, unknown>;
+  tools?: Record<string, unknown>[];
   trustReport?: RegistryTrustReport | null;
   updatedAt?: string;
   websiteUrl?: string;

@@ -43,6 +43,7 @@ from app.modules.registry.schemas import (
     RegistryServerSchemaTabResponse,
     RegistryServerScoreTabResponse,
     RegistryServerSummaryResponse,
+    RegistryServerToolsTabResponse,
     RegistryServerVersionCreate,
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
@@ -60,6 +61,7 @@ from app.modules.registry.service import (
     get_server_schema_tab,
     get_server_score_tab,
     get_server_summary,
+    get_server_tools_tab,
     get_version_detail,
     list_categories,
     list_published_servers,
@@ -493,6 +495,22 @@ async def get_mcp_server_schema_tab(
 ) -> RegistryServerSchemaTabResponse:
     try:
         return await get_server_schema_tab(session, server_name)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
+
+
+@public_router.get(
+    "/{server_name:path}/tabs/tools",
+    response_model=RegistryServerToolsTabResponse,
+    operation_id="mcp_servers_get_tools_tab",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_server_tools_tab(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryServerToolsTabResponse:
+    try:
+        return await get_server_tools_tab(session, server_name)
     except RegistryServerNotFoundError as exc:
         raise not_found(exc, detail="server not found") from exc
 

@@ -7,6 +7,7 @@
 import type { RegistryServerSchemaVersionReadPackagesItem } from './registryServerSchemaVersionReadPackagesItem';
 import type { RegistryServerSchemaVersionReadRemotesItem } from './registryServerSchemaVersionReadRemotesItem';
 import type { RegistryServerSchemaVersionReadServerJson } from './registryServerSchemaVersionReadServerJson';
+import type { RegistryToolRead } from './registryToolRead';
 
 export interface RegistryServerSchemaVersionRead {
   id: string;
@@ -15,5 +16,6 @@ export interface RegistryServerSchemaVersionRead {
   remotes?: RegistryServerSchemaVersionReadRemotesItem[];
   serverJson?: RegistryServerSchemaVersionReadServerJson;
   title: string;
+  tools?: RegistryToolRead[];
   version: string;
 }

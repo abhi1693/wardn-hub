@@ -36,6 +36,65 @@ function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => isRecord(item))
+    : [];
+}
+
+function toolCandidateLists(value: unknown): Record<string, unknown>[][] {
+  if (Array.isArray(value)) return [records(value)];
+  if (!isRecord(value)) return [];
+  if (isRecord(value.result)) {
+    const nested = toolCandidateLists(value.result);
+    if (nested.length > 0) return nested;
+  }
+  if (Array.isArray(value.tools)) return [records(value.tools)];
+  return [];
+}
+
+function toolsFromServerJson(serverJson: unknown) {
+  if (!isRecord(serverJson)) return [];
+  const meta = isRecord(serverJson._meta) ? serverJson._meta : {};
+  const capabilities = isRecord(serverJson.capabilities) ? serverJson.capabilities : {};
+  const introspection = isRecord(serverJson.introspection) ? serverJson.introspection : {};
+  const mcp = isRecord(serverJson.mcp) ? serverJson.mcp : {};
+  const metaCapabilities = isRecord(meta.capabilities) ? meta.capabilities : {};
+  const metaIntrospection = isRecord(meta.introspection) ? meta.introspection : {};
+  const metaMcp = isRecord(meta.mcp) ? meta.mcp : {};
+  const candidates = [
+    serverJson.tools,
+    serverJson.toolDefinitions,
+    serverJson.mcpTools,
+    capabilities.tools,
+    introspection.tools,
+    introspection["tools/list"],
+    serverJson["tools/list"],
+    mcp.tools,
+    mcp["tools/list"],
+    meta.tools,
+    metaCapabilities.tools,
+    metaIntrospection.tools,
+    metaIntrospection["tools/list"],
+    metaMcp.tools,
+    metaMcp["tools/list"],
+  ];
+  const seen = new Set<string>();
+  return candidates
+    .flatMap(toolCandidateLists)
+    .flat()
+    .filter((tool) => {
+      const name = typeof tool.name === "string" ? tool.name.trim() : "";
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+}
+
 function resolveApiBaseUrl() {
   const raw =
     process.env.WARDN_HUB_API_INTERNAL_BASE_URL?.trim() ||
@@ -228,6 +287,19 @@ function serverDetailTabFallback(
         remotes: version.remotes,
         serverJson: version.serverJson,
         title: version.title,
+        version: version.version,
+      })),
+    };
+  }
+
+  if (tab === "tools") {
+    return {
+      server: baseServer,
+      versions: detail.versions?.map((version) => ({
+        id: version.id,
+        isLatest: version.isLatest,
+        title: version.title,
+        tools: toolsFromServerJson(version.serverJson),
         version: version.version,
       })),
     };

@@ -44,6 +44,18 @@ const packageHiddenFields = new Set([
   "version",
 ]);
 
+const toolHiddenFields = new Set([
+  "annotations",
+  "description",
+  "inputSchema",
+  "input_schema",
+  "name",
+  "outputSchema",
+  "output_schema",
+  "parameters",
+  "title",
+]);
+
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
@@ -64,6 +76,7 @@ function versionTargets(version?: ServerTabVersion) {
   return {
     packages: records(version?.packages),
     remotes: records(version?.remotes),
+    tools: records(version?.tools),
   };
 }
 
@@ -1016,6 +1029,203 @@ function PackageArgumentsTable({
   );
 }
 
+function compactJson(value: unknown) {
+  if (!isRecord(value) && !Array.isArray(value)) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function annotationLabel(value: string) {
+  if (value === "readOnlyHint") return "Read-only";
+  if (value === "destructiveHint") return "Destructive";
+  if (value === "idempotentHint") return "Idempotent";
+  if (value === "openWorldHint") return "Open world";
+  return labelFromKey(value);
+}
+
+function toolAnnotationRows(tool: Record<string, unknown>) {
+  const annotations = isRecord(tool.annotations) ? tool.annotations : {};
+  const merged: Record<string, unknown> = { ...annotations };
+  for (const key of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"]) {
+    if (key in tool && !(key in merged)) {
+      merged[key] = tool[key];
+    }
+  }
+  return Object.entries(merged).filter(([, value]) => typeof value === "boolean");
+}
+
+function schemaParameterRows(tool: Record<string, unknown>) {
+  const inputSchema = nestedRecord(tool, "inputSchema");
+  const properties = isRecord(inputSchema.properties) ? inputSchema.properties : {};
+  const required = new Set(strings(inputSchema.required));
+  return Object.entries(properties)
+    .filter(([, value]) => isRecord(value))
+    .map(([name, schema]) => {
+      const record = schema as Record<string, unknown>;
+      return {
+        description: stringValue(record.description),
+        name,
+        required: required.has(name),
+        type: schemaTypeLabel(record),
+      };
+    });
+}
+
+function listedParameterRows(tool: Record<string, unknown>) {
+  return records(tool.parameters).map((parameter) => ({
+    description: stringValue(parameter.description),
+    name: stringValue(parameter.name),
+    required: Boolean(parameter.required ?? parameter.isRequired),
+    type: stringValue(parameter.type) || stringValue(parameter.format),
+  })).filter((parameter) => parameter.name);
+}
+
+function schemaTypeLabel(schema: Record<string, unknown>): string {
+  const typeValue = schema.type;
+  if (Array.isArray(typeValue)) {
+    return typeValue.map(String).filter(Boolean).join(" | ");
+  }
+  if (typeof typeValue === "string" && typeValue) {
+    if (typeValue === "array" && isRecord(schema.items)) {
+      const itemType = schemaTypeLabel(schema.items);
+      return itemType ? `array<${itemType}>` : "array";
+    }
+    return typeValue;
+  }
+  if (Array.isArray(schema.enum)) return "enum";
+  if (Array.isArray(schema.anyOf)) return "anyOf";
+  if (Array.isArray(schema.oneOf)) return "oneOf";
+  if (Array.isArray(schema.allOf)) return "allOf";
+  return "value";
+}
+
+function ToolParametersTable({ tool }: { tool: Record<string, unknown> }) {
+  const rows = schemaParameterRows(tool);
+  const parameterRows = rows.length > 0 ? rows : listedParameterRows(tool);
+
+  if (parameterRows.length === 0) {
+    return (
+      <div className="technical-subtable">
+        <label>Parameters</label>
+        <p className="server-detail-muted">None</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="technical-subtable">
+      <label>Parameters</label>
+      <div className="technical-table-wrap">
+        <table className="technical-table compact">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Required</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parameterRows.map((parameter) => (
+              <tr key={parameter.name}>
+                <td>
+                  <strong>{parameter.name}</strong>
+                  {parameter.description ? <span>{parameter.description}</span> : null}
+                </td>
+                <td>
+                  <FormatBadge value={parameter.type || "value"} />
+                </td>
+                <td>
+                  <BooleanMark value={parameter.required} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ToolSchemas({ tool }: { tool: Record<string, unknown> }) {
+  const inputSchema = isRecord(tool.inputSchema) ? tool.inputSchema : nestedRecord(tool, "input_schema");
+  const outputSchema = isRecord(tool.outputSchema) ? tool.outputSchema : nestedRecord(tool, "output_schema");
+  const inputJson = compactJson(inputSchema);
+  const outputJson = compactJson(outputSchema);
+
+  if (!inputJson && !outputJson) return null;
+
+  return (
+    <div className="technical-pair-grid">
+      {inputJson ? (
+        <div className="wide">
+          <label>Input Schema</label>
+          <div className="technical-code-field">
+            <span>{inputJson}</span>
+            <CopyButton label="Copy input schema" value={inputJson} />
+          </div>
+        </div>
+      ) : null}
+      {outputJson ? (
+        <div className="wide">
+          <label>Output Schema</label>
+          <div className="technical-code-field">
+            <span>{outputJson}</span>
+            <CopyButton label="Copy output schema" value={outputJson} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ToolsPanel({ tools }: { tools: Record<string, unknown>[] }) {
+  return (
+    <section className="technical-card">
+      <TechnicalHeader count={`${tools.length} declared`} title="Tools" />
+      {tools.length === 0 ? (
+        <div className="technical-empty-state">
+          <p className="server-detail-muted">No tool definitions are published for this version.</p>
+        </div>
+      ) : (
+        <div className="technical-package-list">
+          {tools.map((tool, index) => {
+            const name = stringValue(tool.name) || `tool-${index + 1}`;
+            const title = stringValue(tool.title);
+            const description = stringValue(tool.description);
+            const annotations = toolAnnotationRows(tool);
+            return (
+              <details className="technical-package-item" key={`${name}-${index}`} open={index === 0}>
+                <summary>
+                  <span>
+                    <strong>{name}</strong>
+                    <em>
+                      {title ? <span>{title}</span> : null}
+                      {annotations.map(([key, value]) => (
+                        <TechnicalPill key={key} tone={value ? "boolean" : "neutral"}>
+                          {annotationLabel(key)}: {value ? "Yes" : "No"}
+                        </TechnicalPill>
+                      ))}
+                    </em>
+                  </span>
+                </summary>
+                <div className="technical-package-body">
+                  {description ? <p className="technical-description">{description}</p> : null}
+                  <ToolParametersTable tool={tool} />
+                  <ToolSchemas tool={tool} />
+                  <VisualFields hiddenFields={toolHiddenFields} value={tool} />
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
   if (remotes.length === 0) return null;
 
@@ -1538,6 +1748,12 @@ export function ServerDetailClient({
                     <ManifestMetadataPanel manifest={manifest} version={selectedVersion?.version} />
                   </aside>
                 </>
+              ) : null}
+
+              {activeTab === "tools" ? (
+                <div className="technical-main full-width">
+                  <ToolsPanel tools={targets.tools} />
+                </div>
               ) : null}
 
               {activeTab === "score" ? (
