@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wardn-hub-api"
-version = "0.2.87"
+version = "0.2.88"
 description = "Wardn Hub backend API"
 requires-python = ">=3.12"
 dependencies = [
