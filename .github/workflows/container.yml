@@ -55,3 +55,25 @@ jobs:
         org.opencontainers.image.title=wardn-hub-frontend
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  codex-app-server:
+    name: Codex app-server linux/arm64
+    uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
+    with:
+      runs-on: ubuntu-24.04-arm
+      image: ghcr.io/abhi1693/wardn-hub-codex-app-server
+      context: hub/codex-app-server
+      file: hub/codex-app-server/Dockerfile
+      platforms: linux/arm64
+      cache-scope: wardn-hub-codex-app-server-arm64
+      build-args: |
+        APP_VERSION=${{ github.event.release.tag_name || inputs.version }}
+        CODEX_VERSION=0.142.3
+      tags: |
+        type=semver,pattern={{version}}
+        type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+      labels: |
+        org.opencontainers.image.source=https://github.com/abhi1693/wardn-hub
+        org.opencontainers.image.title=wardn-hub-codex-app-server
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}

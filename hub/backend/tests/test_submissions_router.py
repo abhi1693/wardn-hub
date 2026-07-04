@@ -273,6 +273,7 @@ def test_submission_delete_rejects_token_without_write_scope(monkeypatch) -> Non
 def test_submissions_list_passes_pagination_filters(monkeypatch) -> None:
     app = create_app()
     captured: dict[str, object] = {}
+    user_id = uuid4()
 
     async def fake_session():
         yield object()
@@ -296,7 +297,8 @@ def test_submissions_list_passes_pagination_filters(monkeypatch) -> None:
     monkeypatch.setattr(submissions_router, "list_submissions", list_submission_records)
 
     response = TestClient(app).get(
-        "/api/v1/submissions?page=2&perPage=10&status=submitted&ownerScope=all",
+        "/api/v1/submissions"
+        f"?page=2&perPage=10&status=submitted&ownerScope=all&q=weather&userId={user_id}",
         headers={"Authorization": "Bearer wardn_hub_key.secret"},
     )
 
@@ -312,6 +314,8 @@ def test_submissions_list_passes_pagination_filters(monkeypatch) -> None:
     assert captured["per_page"] == 10
     assert captured["status"] == "submitted"
     assert captured["owner_scope"] == "all"
+    assert captured["query"] == "weather"
+    assert captured["filter_user_id"] == user_id
 
 
 def test_publish_submission_validation_error_returns_bad_request(monkeypatch) -> None:

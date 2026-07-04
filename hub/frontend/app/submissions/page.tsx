@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   Archive,
@@ -17,11 +17,11 @@ import {
   GitBranch,
   Pencil,
   Plus,
+  Search,
   SearchX,
   Sparkles,
   Trash2,
   User as UserIcon,
-  Users,
   XCircle,
 } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -34,12 +34,21 @@ import { ProtectedRouteState } from "@/components/protected-route-state";
 import { PublicHeader } from "@/components/site-header";
 import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   HubApiError,
   archiveServer,
   currentUser,
   deleteSubmission,
   listSubmissions,
+  listUsers,
   rejectSubmission,
   submissionAction,
 } from "@/lib/api/hub";
@@ -47,6 +56,7 @@ import type {
   SubmissionListMetadata,
   SubmissionRead,
   SubmissionStatusCounts,
+  UserDirectoryRead,
   UserRead,
 } from "@/lib/api/generated/model";
 import { cn } from "@/lib/utils";
@@ -54,6 +64,7 @@ import { cn } from "@/lib/utils";
 type LoadState = "loading" | "ready" | "error" | "auth";
 type StatusFilter = "all" | SubmissionRead["status"];
 type OwnerScopeFilter = "mine" | "all";
+type UserFilterValue = "mine" | "all" | string;
 type SubmissionGroup = {
   latest: SubmissionRead;
   name: string;
@@ -166,6 +177,14 @@ function ownerScopeFromQuery(value: string | null): OwnerScopeFilter {
   return ownerScopeValues.has(value as OwnerScopeFilter) ? (value as OwnerScopeFilter) : "mine";
 }
 
+function searchFromQuery(value: string | null) {
+  return value?.trim() ?? "";
+}
+
+function userIdFromQuery(value: string | null) {
+  return value?.trim() ?? "";
+}
+
 function pageFromQuery(value: string | null) {
   const page = Number.parseInt(value ?? "", 10);
   return Number.isFinite(page) && page > 0 ? page : 1;
@@ -186,6 +205,19 @@ function sortSubmissions(submissions: SubmissionRead[]) {
   return [...submissions].sort((left, right) => {
     return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
   });
+}
+
+function userLabel(user: UserDirectoryRead) {
+  return user.displayName || user.name || user.login || user.email || user.id;
+}
+
+function userDetail(user: UserDirectoryRead) {
+  if (user.email && user.email !== userLabel(user)) return user.email;
+  return user.login;
+}
+
+function sortUsers(users: UserDirectoryRead[]) {
+  return [...users].sort((left, right) => userLabel(left).localeCompare(userLabel(right)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -656,9 +688,12 @@ function SubmissionGroupCard({
 
 function SubmissionsPageContent() {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const filter = statusFilterFromQuery(searchParams.get("status"));
   const ownerScope = ownerScopeFromQuery(searchParams.get("ownerScope"));
+  const searchQuery = searchFromQuery(searchParams.get("q"));
+  const selectedUserId = userIdFromQuery(searchParams.get("userId"));
   const page = pageFromQuery(searchParams.get("page"));
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
@@ -670,6 +705,7 @@ function SubmissionsPageContent() {
   const [validationPromptSubmission, setValidationPromptSubmission] =
     useState<SubmissionRead | null>(null);
   const [user, setUser] = useState<UserRead | null>(null);
+  const [userDirectory, setUserDirectory] = useState<UserDirectoryRead[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRead[]>([]);
   const [metadata, setMetadata] = useState<SubmissionListMetadata | null>(null);
   const [statusCounts, setStatusCounts] =
@@ -680,18 +716,23 @@ function SubmissionsPageContent() {
     const timeoutId = window.setTimeout(() => {
       setState("loading");
       setError("");
+      const effectiveOwnerScope = selectedUserId ? "all" : ownerScope;
       Promise.all([
         currentUser(),
         listSubmissions({
           page,
           perPage: SUBMISSIONS_PAGE_SIZE,
-          ownerScope,
+          ownerScope: effectiveOwnerScope,
+          q: searchQuery || undefined,
           status: filter === "all" ? undefined : filter,
+          userId: selectedUserId || undefined,
         }),
+        listUsers().catch(() => ({ users: [] })),
       ])
-        .then(([current, response]) => {
+        .then(([current, response, usersResponse]) => {
           if (!active) return;
           setUser(current);
+          setUserDirectory(sortUsers(usersResponse.users));
           setSubmissions(sortSubmissions(response.submissions));
           setMetadata(response.metadata);
           setStatusCounts({ ...emptyStatusCounts, ...response.statusCounts });
@@ -707,7 +748,7 @@ function SubmissionsPageContent() {
       active = false;
       window.clearTimeout(timeoutId);
     };
-  }, [filter, ownerScope, page]);
+  }, [filter, ownerScope, page, searchQuery, selectedUserId]);
 
   const counts = statusCounts;
   const groupedSubmissions = useMemo(() => groupSubmissionsByServer(submissions), [submissions]);
@@ -721,7 +762,12 @@ function SubmissionsPageContent() {
   const lastVisibleSubmission = metadata
     ? Math.min(metadata.page * metadata.perPage, metadata.total)
     : submissions.length;
-  const showOwnerScopeFilter = canReviewSubmissions(user);
+  const showUserFilter = canReviewSubmissions(user);
+  const hasSearchQuery = searchQuery.length > 0;
+  const userFilterValue: UserFilterValue = selectedUserId || ownerScope;
+  const selectedDirectoryUser = selectedUserId
+    ? userDirectory.find((directoryUser) => directoryUser.id === selectedUserId)
+    : null;
 
   function filterHref(nextFilter: StatusFilter) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -735,12 +781,16 @@ function SubmissionsPageContent() {
     return queryString ? `${pathname}?${queryString}` : pathname;
   }
 
-  function ownerScopeHref(nextOwnerScope: OwnerScopeFilter) {
+  function userFilterHref(nextValue: UserFilterValue) {
     const nextParams = new URLSearchParams(searchParams.toString());
-    if (nextOwnerScope === "mine") {
+    nextParams.delete("userId");
+    if (nextValue === "mine") {
       nextParams.delete("ownerScope");
+    } else if (nextValue === "all") {
+      nextParams.set("ownerScope", "all");
     } else {
-      nextParams.set("ownerScope", nextOwnerScope);
+      nextParams.set("ownerScope", "all");
+      nextParams.set("userId", nextValue);
     }
     nextParams.delete("page");
     const queryString = nextParams.toString();
@@ -756,6 +806,33 @@ function SubmissionsPageContent() {
     }
     const queryString = nextParams.toString();
     return queryString ? `${pathname}?${queryString}` : pathname;
+  }
+
+  function searchHref(nextSearch: string) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    const trimmedSearch = nextSearch.trim();
+    if (trimmedSearch) {
+      nextParams.set("q", trimmedSearch);
+    } else {
+      nextParams.delete("q");
+    }
+    nextParams.delete("page");
+    const queryString = nextParams.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }
+
+  function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    router.replace(searchHref(String(formData.get("q") ?? "")), { scroll: false });
+  }
+
+  function clearSearch() {
+    router.replace(searchHref(""), { scroll: false });
+  }
+
+  function handleUserFilterChange(nextValue: UserFilterValue) {
+    router.replace(userFilterHref(nextValue), { scroll: false });
   }
 
   async function handleDeleteSubmission(submission: SubmissionRead) {
@@ -868,87 +945,111 @@ function SubmissionsPageContent() {
             ) : null}
             {state === "ready" ? (
               <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="mr-1 text-sm font-bold text-foreground">
-                  {groupedSubmissions.length}{" "}
-                  {groupedSubmissions.length === 1 ? "server" : "servers"}
-                  <span className="ml-1 text-muted-foreground">
-                    / {totalSubmissions}{" "}
-                    {totalSubmissions === 1 ? "submission" : "submissions"}
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <form
+                    className="flex min-w-[240px] flex-1 items-center gap-2 sm:flex-none"
+                    onSubmit={handleSearchSubmit}
+                  >
+                    <label className="relative min-w-0 flex-1 sm:w-72">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <span className="sr-only">Search submissions</span>
+                      <Input
+                        aria-label="Search submissions"
+                        className="bg-white pl-9 pr-9"
+                        defaultValue={searchQuery}
+                        key={searchQuery}
+                        name="q"
+                        placeholder="Search submissions"
+                        type="search"
+                      />
+                      {hasSearchQuery ? (
+                        <button
+                          aria-label="Clear search"
+                          className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={clearSearch}
+                          type="button"
+                        >
+                          <XCircle className="size-4" />
+                        </button>
+                      ) : null}
+                    </label>
+                    <Button size="sm" type="submit" variant="outline">
+                      <Search className="size-4" />
+                      Search
+                    </Button>
+                  </form>
+                  <span className="mr-1 text-sm font-bold text-foreground">
+                    {groupedSubmissions.length}{" "}
+                    {groupedSubmissions.length === 1 ? "server" : "servers"}
+                    <span className="ml-1 text-muted-foreground">
+                      / {totalSubmissions}{" "}
+                      {totalSubmissions === 1 ? "submission" : "submissions"}
+                    </span>
                   </span>
-                </span>
-                {showOwnerScopeFilter ? (
-                  <div className="inline-flex overflow-hidden rounded-md border border-border bg-white">
-                    <Link
-                      className={cn(
-                        "inline-flex min-h-9 items-center gap-2 px-3 text-sm font-bold",
-                        ownerScope === "mine"
-                          ? "bg-slate-900 text-white"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                      href={ownerScopeHref("mine")}
-                      replace
-                      scroll={false}
-                    >
-                      <UserIcon className="size-4" />
-                      Mine
-                    </Link>
-                    <Link
-                      className={cn(
-                        "inline-flex min-h-9 items-center gap-2 border-l border-border px-3 text-sm font-bold",
-                        ownerScope === "all"
-                          ? "bg-slate-900 text-white"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                      href={ownerScopeHref("all")}
-                      replace
-                      scroll={false}
-                    >
-                      <Users className="size-4" />
-                      All users
-                    </Link>
-                  </div>
-                ) : null}
-                <Link
-                  className={cn(
-                    "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
-                    filter === "all"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                  href={filterHref("all")}
-                  replace
-                  scroll={false}
-                >
-                  All
-                  <span className="rounded bg-white/15 px-1.5 text-xs">{counts.all ?? 0}</span>
-                </Link>
-                {visibleStatusFilters.map((status) => (
+                  {showUserFilter ? (
+                    <Select onValueChange={handleUserFilterChange} value={userFilterValue}>
+                      <SelectTrigger
+                        aria-label="Filter submissions by user"
+                        className="w-[240px] bg-white"
+                      >
+                        <UserIcon className="size-4 text-muted-foreground" />
+                        <SelectValue placeholder="Filter by user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mine">My submissions</SelectItem>
+                        <SelectItem value="all">All users</SelectItem>
+                        {selectedUserId && !selectedDirectoryUser ? (
+                          <SelectItem value={selectedUserId}>Selected user</SelectItem>
+                        ) : null}
+                        {userDirectory.map((directoryUser) => (
+                          <SelectItem key={directoryUser.id} value={directoryUser.id}>
+                            {userLabel(directoryUser)}
+                            {userDetail(directoryUser) ? ` (${userDetail(directoryUser)})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
                   <Link
                     className={cn(
                       "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
-                      filter === status
+                      filter === "all"
                         ? "border-slate-900 bg-slate-900 text-white"
                         : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
-                    href={filterHref(status)}
-                    key={status}
+                    href={filterHref("all")}
                     replace
                     scroll={false}
                   >
-                    {statusMeta[status].label}
-                    <span className="rounded bg-current/10 px-1.5 text-xs">
-                      {counts[status] ?? 0}
-                    </span>
+                    All
+                    <span className="rounded bg-white/15 px-1.5 text-xs">{counts.all ?? 0}</span>
                   </Link>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CalendarClock className="size-4" />
-                {metadata && metadata.total > 0
-                  ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
-                  : "Sorted by latest update"}
-              </div>
+                  {visibleStatusFilters.map((status) => (
+                    <Link
+                      className={cn(
+                        "inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold",
+                        filter === status
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                      href={filterHref(status)}
+                      key={status}
+                      replace
+                      scroll={false}
+                    >
+                      {statusMeta[status].label}
+                      <span className="rounded bg-current/10 px-1.5 text-xs">
+                        {counts[status] ?? 0}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CalendarClock className="size-4" />
+                  {metadata && metadata.total > 0
+                    ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
+                    : "Sorted by latest update"}
+                </div>
               </div>
             ) : null}
 
@@ -961,7 +1062,14 @@ function SubmissionsPageContent() {
             {state === "error" ? (
               <StatePanel detail={error} icon={AlertCircle} title="Unable to load submissions" tone="danger" />
             ) : null}
-            {state === "ready" && (counts.all ?? 0) === 0 ? (
+            {state === "ready" && hasSearchQuery && totalSubmissions === 0 ? (
+              <StatePanel
+                detail={`No submissions match "${searchQuery}".`}
+                icon={SearchX}
+                title="No matching submissions"
+              />
+            ) : null}
+            {state === "ready" && !hasSearchQuery && (counts.all ?? 0) === 0 ? (
               <StatePanel
                 action={<AddSubmissionMenu />}
                 detail="Create the first registry submission for a server or version."
@@ -969,7 +1077,7 @@ function SubmissionsPageContent() {
                 title="No submissions yet"
               />
             ) : null}
-            {state === "ready" && (counts.all ?? 0) > 0 && totalSubmissions === 0 ? (
+            {state === "ready" && !hasSearchQuery && (counts.all ?? 0) > 0 && totalSubmissions === 0 ? (
               <StatePanel
                 detail="No submissions match the selected status."
                 icon={SearchX}

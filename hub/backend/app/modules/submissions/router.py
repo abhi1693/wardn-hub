@@ -92,6 +92,8 @@ async def list_submission_records(
     per_page: Annotated[int, Query(alias="perPage", ge=1, le=100)] = 20,
     submission_status: Annotated[SubmissionStatus | None, Query(alias="status")] = None,
     owner_scope: Annotated[SubmissionOwnerScope, Query(alias="ownerScope")] = "mine",
+    query: Annotated[str | None, Query(alias="q", max_length=200)] = None,
+    filter_user_id: Annotated[UUID | None, Query(alias="userId")] = None,
 ) -> SubmissionListResponse:
     return await list_submissions(
         session,
@@ -101,6 +103,8 @@ async def list_submission_records(
         per_page=per_page,
         status=submission_status,
         owner_scope=owner_scope,
+        query=query,
+        filter_user_id=filter_user_id,
     )
 
 

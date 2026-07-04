@@ -47,6 +47,7 @@ from app.modules.users.service import (
     delete_user_api_token,
     list_auth_providers,
     list_user_api_tokens,
+    rotate_user_api_token,
     update_user_api_token,
 )
 
@@ -199,6 +200,28 @@ async def update_api_token(
     except UserAPITokenNotFoundError as exc:
         raise not_found(exc) from exc
     return UserAPITokenRead.model_validate(await commit_and_refresh(session, record))
+
+
+@router.post(
+    "/api-tokens/{token_id}/rotate",
+    response_model=UserAPITokenCreated,
+    operation_id="auth_rotate_api_token",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def rotate_api_token(
+    token_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_api_token_scopes("tokens:write"))],
+) -> UserAPITokenCreated:
+    try:
+        record, token = await rotate_user_api_token(session, current_user.id, token_id)
+    except UserAPITokenNotFoundError as exc:
+        raise not_found(exc) from exc
+    record = await commit_and_refresh(session, record)
+    return UserAPITokenCreated(
+        token=token,
+        record=UserAPITokenRead.model_validate(record),
+    )
 
 
 @router.delete(

@@ -6157,7 +6157,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.84"
+    "version": "0.2.85"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6911,6 +6911,75 @@
           }
         },
         "summary": "Update Api Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/api-tokens/{token_id}/rotate": {
+      "post": {
+        "operationId": "auth_rotate_api_token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Token Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAPITokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Api Token",
         "tags": [
           "auth"
         ]
@@ -10485,6 +10554,40 @@
               ],
               "title": "Ownerscope",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Userid"
             }
           },
           {

@@ -7,6 +7,7 @@ import {
   Clipboard,
   KeyRound,
   Pencil,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -540,6 +541,12 @@ export function TokenCard({ token }: { token: UserAPITokenRead }) {
           <Link href={`/account/api-tokens/${token.id}/edit`}>
             <Pencil className="size-4" />
             Edit
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link href={`/account/api-tokens/${token.id}/rotate`}>
+            <RefreshCw className="size-4" />
+            Rotate
           </Link>
         </Button>
         <Button asChild size="sm" variant="destructive">

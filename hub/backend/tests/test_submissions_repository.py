@@ -60,3 +60,44 @@ async def test_list_submissions_includes_owned_organization_memberships() -> Non
     assert "organization_memberships.organization_id" in statement
     assert f"organization_memberships.user_id = '{user_id}'" in statement
     assert "organization_memberships.is_active IS true" in statement
+
+
+@pytest.mark.asyncio
+async def test_list_submissions_applies_search_to_status_counts_and_results() -> None:
+    session = CaptureSession()
+
+    await repository.list_submissions(
+        session,
+        include_all=True,
+        search="weather",
+    )
+
+    status_counts_statement = sql(session.statements[0])
+    total_statement = sql(session.statements[1])
+    list_statement = sql(session.statements[2])
+
+    for statement in (status_counts_statement, total_statement, list_statement):
+        assert "server_submissions.name ILIKE '%%weather%%'" in statement
+        assert "server_submissions.version ILIKE '%%weather%%'" in statement
+        assert "server_submissions.server_json ->> 'title'" in statement
+        assert "server_submissions.server_json ->> 'description'" in statement
+
+
+@pytest.mark.asyncio
+async def test_list_submissions_applies_user_filter_to_status_counts_and_results() -> None:
+    user_id = uuid4()
+    session = CaptureSession()
+
+    await repository.list_submissions(
+        session,
+        include_all=True,
+        filter_user_id=user_id,
+    )
+
+    status_counts_statement = sql(session.statements[0])
+    total_statement = sql(session.statements[1])
+    list_statement = sql(session.statements[2])
+
+    for statement in (status_counts_statement, total_statement, list_statement):
+        assert f"server_submissions.submitter_user_id = '{user_id}'" in statement
+        assert f"server_submissions.owner_user_id = '{user_id}'" in statement

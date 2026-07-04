@@ -12,7 +12,6 @@ import time
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, Protocol, TextIO
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -518,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
         reviewer: Reviewer = CodexAppServerReviewer(
             url=codex_app_server_url,
             timeout_seconds=args.review_timeout,
-            cwd=Path.cwd(),
+            cwd=None,
             progress_stream=sys.stdout if args.verbose else None,
             stream_output=args.verbose,
             auth_token=os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip(),

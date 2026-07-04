@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -98,6 +99,56 @@ def test_api_token_create_rejects_disallowed_scope(monkeypatch) -> None:
     assert response.json() == {
         "detail": "API token scope not allowed for current user: registry:score",
     }
+
+
+def test_api_token_rotate_returns_one_time_token(monkeypatch) -> None:
+    app = create_app()
+    user_id = uuid4()
+    token_id = uuid4()
+
+    async def fake_session():
+        yield object()
+
+    async def authenticate_api_token(*args, **kwargs):
+        return (
+            SimpleNamespace(id=user_id, is_active=True),
+            SimpleNamespace(scopes=["tokens:write"]),
+        )
+
+    async def rotate_user_api_token(*args, **kwargs):
+        now = datetime(2026, 6, 23, tzinfo=UTC)
+        record = SimpleNamespace(
+            id=token_id,
+            user_id=user_id,
+            name="Automation",
+            description="",
+            token_prefix="newprefix",
+            scopes=["catalog:read"],
+            organization_ids=[],
+            is_active=True,
+            expires_at=None,
+            last_used_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+        return record, "wardn_hub_new.secret"
+
+    async def commit_and_refresh(*args, **kwargs):
+        return args[1]
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_api_token)
+    monkeypatch.setattr(auth_router, "rotate_user_api_token", rotate_user_api_token)
+    monkeypatch.setattr(auth_router, "commit_and_refresh", commit_and_refresh)
+
+    response = TestClient(app).post(
+        f"/api/v1/auth/api-tokens/{token_id}/rotate",
+        headers={"Authorization": "Bearer wardn_hub_key.secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["token"] == "wardn_hub_new.secret"
+    assert response.json()["record"]["token_prefix"] == "newprefix"
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,24 @@ from app.modules.organizations.models import OrganizationMembership
 from app.modules.submissions.models import ServerSubmission
 
 
+def submission_search_filter(search: str | None) -> object | None:
+    if not search:
+        return None
+
+    pattern = f"%{search}%"
+    return or_(
+        ServerSubmission.name.ilike(pattern),
+        ServerSubmission.version.ilike(pattern),
+        ServerSubmission.submission_type.ilike(pattern),
+        ServerSubmission.status.ilike(pattern),
+        ServerSubmission.rejection_message.ilike(pattern),
+        ServerSubmission.server_json["title"].as_string().ilike(pattern),
+        ServerSubmission.server_json["description"].as_string().ilike(pattern),
+        ServerSubmission.server_json["repository"]["url"].as_string().ilike(pattern),
+        ServerSubmission.server_json["websiteUrl"].as_string().ilike(pattern),
+    )
+
+
 def submission_visibility_filters(
     *,
     user_id: uuid.UUID | None,
@@ -48,6 +66,8 @@ async def list_submissions(
     include_all: bool = False,
     organization_ids: set[str] | None = None,
     status: str | None = None,
+    search: str | None = None,
+    filter_user_id: uuid.UUID | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[ServerSubmission], int, dict[str, int]]:
@@ -56,16 +76,28 @@ async def list_submissions(
         include_all=include_all,
         organization_ids=organization_ids,
     )
+    search_filter = submission_search_filter(search)
+    count_filters = [*base_filters]
+    if search_filter is not None:
+        count_filters.append(search_filter)
+    if filter_user_id is not None:
+        count_filters.append(
+            or_(
+                ServerSubmission.submitter_user_id == filter_user_id,
+                ServerSubmission.owner_user_id == filter_user_id,
+            )
+        )
+
     status_counts_result = await session.execute(
         select(ServerSubmission.status, func.count())
-        .where(*base_filters)
+        .where(*count_filters)
         .group_by(ServerSubmission.status)
     )
     status_counts = {
         str(status_name): count for status_name, count in status_counts_result.all()
     }
 
-    filters = [*base_filters]
+    filters = [*count_filters]
     if status is not None:
         filters.append(ServerSubmission.status == status)
 

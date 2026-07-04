@@ -293,6 +293,8 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
     assert websocket.sent[1]["params"]["ephemeral"] is True
     assert websocket.sent[1]["params"]["approvalPolicy"] == "never"
     assert websocket.sent[1]["params"]["config"]["web_search"] == "live"
+    assert "cwd" not in websocket.sent[1]["params"]
+    assert "runtimeWorkspaceRoots" not in websocket.sent[1]["params"]
     assert "model" not in websocket.sent[1]["params"]
     assert websocket.sent[2]["method"] == "turn/start"
     assert websocket.sent[2]["params"]["threadId"] == "thread-1"
@@ -399,7 +401,7 @@ def test_main_uses_codex_app_server_without_login(
         {
             "url": "ws://127.0.0.1:41237",
             "timeout_seconds": 900,
-            "cwd": cli.Path.cwd(),
+            "cwd": None,
             "progress_stream": sys.stdout,
             "stream_output": True,
             "auth_token": "",

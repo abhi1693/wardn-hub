@@ -76,6 +76,7 @@ import {
   getAuthLogoutUrl,
   getAuthMeUrl,
   getAuthRegisterUrl,
+  getAuthRotateApiTokenUrl,
   getAuthUpdateApiTokenUrl,
 } from "@/lib/api/generated/auth/auth";
 import {
@@ -668,6 +669,13 @@ export function updateApiToken(tokenId: string, payload: UserAPITokenUpdate) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     },
+  );
+}
+
+export function rotateApiToken(tokenId: string) {
+  return generatedRequest<UserAPITokenCreated>(
+    getAuthRotateApiTokenUrl(encodeURIComponent(tokenId)),
+    { method: "POST" },
   );
 }
 

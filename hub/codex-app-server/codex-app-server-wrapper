@@ -1,0 +1,335 @@
+#!/bin/sh
+set -eu
+
+codex_bin="${CODEX_BIN:-codex}"
+status_timeout="${CODEX_STATUS_TIMEOUT_SECONDS:-15}"
+failure_sleep="${CODEX_LOGIN_FAILURE_SLEEP_SECONDS:-600}"
+ws_token_file="${CODEX_WS_TOKEN_FILE:-/tmp/codex-ws-token}"
+codex_workdir="${CODEX_WORKDIR:-/tmp/codex-work}"
+persistent_home="${CODEX_PERSISTENT_HOME:-$CODEX_HOME}"
+history_persistence="${CODEX_HISTORY_PERSISTENCE:-none}"
+unified_exec="${CODEX_UNIFIED_EXEC:-false}"
+shell_snapshot="${CODEX_SHELL_SNAPSHOT:-false}"
+analytics_enabled="${CODEX_ANALYTICS_ENABLED:-true}"
+otel_environment="${CODEX_OTEL_ENVIRONMENT:-}"
+otel_exporter="${CODEX_OTEL_EXPORTER:-none}"
+otel_exporter_endpoint="${CODEX_OTEL_ENDPOINT:-}"
+otel_exporter_protocol="${CODEX_OTEL_PROTOCOL:-binary}"
+otel_log_user_prompt="${CODEX_OTEL_LOG_USER_PROMPT:-false}"
+otel_trace_exporter="${CODEX_OTEL_TRACE_EXPORTER:-}"
+otel_trace_endpoint="${CODEX_OTEL_TRACE_ENDPOINT:-}"
+otel_trace_protocol="${CODEX_OTEL_TRACE_PROTOCOL:-binary}"
+otel_metrics_exporter="${CODEX_OTEL_METRICS_EXPORTER:-}"
+otel_metrics_endpoint="${CODEX_OTEL_METRICS_ENDPOINT:-}"
+otel_metrics_protocol="${CODEX_OTEL_METRICS_PROTOCOL:-binary}"
+
+toml_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+write_otel_exporter() {
+  key="$1"
+  exporter="$2"
+  endpoint="$3"
+  protocol="$4"
+
+  case "$exporter" in
+    "")
+      return 0
+      ;;
+    none|statsig)
+      printf '%s = "%s"\n' "$key" "$exporter"
+      ;;
+    otlp-http)
+      if [ -z "$endpoint" ]; then
+        echo "Skipping $key OTLP/HTTP exporter because no endpoint was configured." >&2
+        return 0
+      fi
+      printf '%s = { otlp-http = { endpoint = "%s", protocol = "%s" } }\n' \
+        "$key" \
+        "$(toml_escape "$endpoint")" \
+        "$(toml_escape "$protocol")"
+      ;;
+    otlp-grpc)
+      if [ -z "$endpoint" ]; then
+        echo "Skipping $key OTLP/gRPC exporter because no endpoint was configured." >&2
+        return 0
+      fi
+      printf '%s = { otlp-grpc = { endpoint = "%s" } }\n' \
+        "$key" \
+        "$(toml_escape "$endpoint")"
+      ;;
+    *)
+      echo "Skipping $key because unsupported OTEL exporter '$exporter' was configured." >&2
+      ;;
+  esac
+}
+
+write_codex_config() {
+  config_path="$CODEX_HOME/config.toml"
+  : > "$config_path"
+
+  if [ -n "${CODEX_MODEL:-}" ]; then
+    printf 'model = "%s"\n' "$(toml_escape "$CODEX_MODEL")" >> "$config_path"
+  fi
+  if [ -n "${CODEX_MODEL_REASONING_EFFORT:-}" ]; then
+    printf 'model_reasoning_effort = "%s"\n' "$(toml_escape "$CODEX_MODEL_REASONING_EFFORT")" >> "$config_path"
+  fi
+  if [ -n "${CODEX_WEB_SEARCH_MODE:-}" ]; then
+    printf 'web_search = "%s"\n' "$(toml_escape "$CODEX_WEB_SEARCH_MODE")" >> "$config_path"
+  fi
+  if [ -n "$history_persistence" ]; then
+    printf 'history.persistence = "%s"\n' "$(toml_escape "$history_persistence")" >> "$config_path"
+  fi
+  if [ -n "$unified_exec" ]; then
+    printf 'features.unified_exec = %s\n' "$unified_exec" >> "$config_path"
+  fi
+  if [ -n "$shell_snapshot" ]; then
+    printf 'features.shell_snapshot = %s\n' "$shell_snapshot" >> "$config_path"
+  fi
+  if [ -n "$analytics_enabled" ]; then
+    printf '\n[analytics]\n' >> "$config_path"
+    printf 'enabled = %s\n' "$analytics_enabled" >> "$config_path"
+  fi
+
+  {
+    printf '\n[otel]\n'
+    if [ -n "$otel_environment" ]; then
+      printf 'environment = "%s"\n' "$(toml_escape "$otel_environment")"
+    fi
+    write_otel_exporter "exporter" "$otel_exporter" "$otel_exporter_endpoint" "$otel_exporter_protocol"
+    if [ -n "$otel_log_user_prompt" ]; then
+      printf 'log_user_prompt = %s\n' "$otel_log_user_prompt"
+    fi
+    write_otel_exporter "trace_exporter" "$otel_trace_exporter" "$otel_trace_endpoint" "$otel_trace_protocol"
+    write_otel_exporter "metrics_exporter" "$otel_metrics_exporter" "$otel_metrics_endpoint" "$otel_metrics_protocol"
+  } >> "$config_path"
+
+  chmod 600 "$config_path"
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Required command '$1' is missing from the Codex app-server image." >&2
+    exit 1
+  fi
+}
+
+codex_login_status() {
+  timeout "$status_timeout" "$codex_bin" login status
+}
+
+run_device_auth_login() {
+  node <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+const issuer = process.env.CODEX_AUTH_ISSUER || "https://auth.openai.com";
+const clientId =
+  process.env.CODEX_APP_SERVER_LOGIN_CLIENT_ID ||
+  process.env.CODEX_AUTH_CLIENT_ID ||
+  "app_EMoamEEZ73f0CkXaXp7hrann";
+const codexHome = process.env.CODEX_HOME;
+const maxWaitMs = Number(process.env.CODEX_DEVICE_AUTH_TIMEOUT_SECONDS || "900") * 1000;
+
+if (!codexHome) {
+  throw new Error("CODEX_HOME is required");
+}
+
+function formBody(values) {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    body.set(key, value);
+  }
+  return body;
+}
+
+function jwtPayload(token) {
+  const payload = token.split(".")[1];
+  if (!payload) return {};
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+}
+
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { body: text };
+  }
+  return { response, data };
+}
+
+async function postForm(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: formBody(payload),
+  });
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { body: text };
+  }
+  if (!response.ok) {
+    throw new Error(`token exchange failed with status ${response.status}: ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function main() {
+  const apiBase = `${issuer}/api/accounts`;
+  const userCodeResult = await postJson(`${apiBase}/deviceauth/usercode`, { client_id: clientId });
+  if (!userCodeResult.response.ok) {
+    throw new Error(`device code request failed with status ${userCodeResult.response.status}: ${JSON.stringify(userCodeResult.data)}`);
+  }
+
+  const deviceAuthId = userCodeResult.data.device_auth_id;
+  const userCode = userCodeResult.data.user_code || userCodeResult.data.usercode;
+  const intervalSeconds = Number(userCodeResult.data.interval || "5");
+  if (!deviceAuthId || !userCode) {
+    throw new Error(`device code response was incomplete: ${JSON.stringify(userCodeResult.data)}`);
+  }
+
+  console.log("");
+  console.log("Welcome to Codex");
+  console.log("Follow these steps to sign in with ChatGPT using device code authorization:");
+  console.log("");
+  console.log("1. Open this link in your browser and sign in to your account");
+  console.log(`   ${issuer}/codex/device`);
+  console.log("");
+  console.log("2. Enter this one-time code");
+  console.log(`   ${userCode}`);
+  console.log("");
+
+  const start = Date.now();
+  let codeResponse;
+  while (Date.now() - start < maxWaitMs) {
+    const pollResult = await postJson(`${apiBase}/deviceauth/token`, {
+      device_auth_id: deviceAuthId,
+      user_code: userCode,
+    });
+    if (pollResult.response.ok) {
+      codeResponse = pollResult.data;
+      break;
+    }
+    if (pollResult.response.status !== 403 && pollResult.response.status !== 404) {
+      throw new Error(`device auth failed with status ${pollResult.response.status}: ${JSON.stringify(pollResult.data)}`);
+    }
+    await sleep(Math.min(intervalSeconds * 1000, maxWaitMs - (Date.now() - start)));
+  }
+
+  if (!codeResponse) {
+    throw new Error("device auth timed out");
+  }
+
+  const tokens = await postForm(`${issuer}/oauth/token`, {
+    grant_type: "authorization_code",
+    code: codeResponse.authorization_code,
+    redirect_uri: `${issuer}/deviceauth/callback`,
+    client_id: clientId,
+    code_verifier: codeResponse.code_verifier,
+  });
+
+  const authClaims = jwtPayload(tokens.id_token)["https://api.openai.com/auth"] || {};
+  const auth = {
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: null,
+    tokens: {
+      id_token: tokens.id_token,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      account_id: authClaims.chatgpt_account_id || null,
+    },
+    last_refresh: new Date().toISOString(),
+  };
+
+  fs.mkdirSync(codexHome, { recursive: true });
+  const authPath = path.join(codexHome, "auth.json");
+  fs.writeFileSync(authPath, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+  console.log("Codex device authorization completed and credentials were saved.");
+}
+
+main().catch((error) => {
+  console.error(error && error.stack ? error.stack : error);
+  process.exit(1);
+});
+NODE
+}
+
+if [ -z "${CODEX_HOME:-}" ]; then
+  echo "CODEX_HOME is required." >&2
+  exit 1
+fi
+
+for command_name in "$codex_bin" bwrap curl git jq python3 rg timeout node; do
+  require_command "$command_name"
+done
+
+rm -rf "$TMPDIR"
+mkdir -p "$HOME" "$CODEX_HOME" "$persistent_home" "$TMPDIR" "$codex_workdir"
+rm -rf "$CODEX_HOME/tmp/arg0" "$CODEX_HOME/sessions" "$CODEX_HOME/archived_sessions"
+rm -f "$CODEX_HOME/history.jsonl" "$CODEX_HOME"/*.sqlite "$CODEX_HOME"/*.sqlite-shm "$CODEX_HOME"/*.sqlite-wal
+find "$persistent_home" -mindepth 1 -maxdepth 1 ! -name auth.json ! -name lost+found -exec rm -rf {} +
+if [ "$persistent_home" != "$CODEX_HOME" ] && [ -s "$persistent_home/auth.json" ]; then
+  cp "$persistent_home/auth.json" "$CODEX_HOME/auth.json"
+  chmod 600 "$CODEX_HOME/auth.json"
+fi
+
+if codex_login_status; then
+  echo "Codex is logged in."
+else
+  status="$?"
+  if [ "$status" = "124" ] && [ -s "$CODEX_HOME/auth.json" ]; then
+    echo "Codex login status timed out after ${status_timeout}s; using existing auth.json."
+  else
+    if [ "$status" = "124" ]; then
+      echo "Codex login status timed out after ${status_timeout}s and no auth.json exists; starting Node device authorization."
+    else
+      echo "Codex is not logged in. Starting Node device authorization."
+    fi
+    echo "Complete the browser login from the device-auth prompt; this command waits until the flow finishes."
+    if ! run_device_auth_login; then
+      echo "Codex device authorization exited before login completed. Sleeping before container restart."
+      sleep "$failure_sleep"
+      exit 1
+    fi
+    if [ "$persistent_home" != "$CODEX_HOME" ]; then
+      cp "$CODEX_HOME/auth.json" "$persistent_home/auth.json"
+      chmod 600 "$persistent_home/auth.json"
+    fi
+  fi
+fi
+
+if [ ! -s "$CODEX_HOME/auth.json" ]; then
+  echo "Codex auth file is missing after device authorization. Sleeping before container restart."
+  sleep "$failure_sleep"
+  exit 1
+fi
+
+if [ -z "${WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN:-}" ]; then
+  echo "WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN is required for Codex websocket authentication. Sleeping before container restart."
+  sleep "$failure_sleep"
+  exit 1
+fi
+
+printf '%s\n' "$WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN" > "$ws_token_file"
+chmod 600 "$ws_token_file"
+write_codex_config
+
+cd "$codex_workdir"
+exec "$codex_bin" app-server --listen ws://0.0.0.0:41237 --ws-auth capability-token --ws-token-file "$ws_token_file"

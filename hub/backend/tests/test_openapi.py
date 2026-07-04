@@ -23,6 +23,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/audit/events",
         "/api/v1/auth/api-tokens",
         "/api/v1/auth/api-tokens/{token_id}",
+        "/api/v1/auth/api-tokens/{token_id}/rotate",
         "/api/v1/auth/login",
         "/api/v1/auth/logout",
         "/api/v1/auth/me",

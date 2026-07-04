@@ -1127,14 +1127,21 @@ async def list_submissions(
     per_page: int = 20,
     status: SubmissionStatus | None = None,
     owner_scope: SubmissionOwnerScope = "mine",
+    query: str | None = None,
+    filter_user_id: uuid.UUID | None = None,
 ) -> SubmissionListResponse:
     offset = (page - 1) * per_page
+    normalized_query = query.strip() if query else None
+    include_all = can_review_submissions(user) and owner_scope == "all"
+    effective_filter_user_id = filter_user_id if include_all else None
     submissions, total, raw_status_counts = await repository.list_submissions(
         session,
         user_id=user.id,
-        include_all=can_review_submissions(user) and owner_scope == "all",
+        include_all=include_all,
         organization_ids=api_token_organization_ids(api_token),
         status=status,
+        search=normalized_query,
+        filter_user_id=effective_filter_user_id,
         offset=offset,
         limit=per_page,
     )

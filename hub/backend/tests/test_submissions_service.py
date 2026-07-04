@@ -1211,6 +1211,28 @@ async def test_global_moderator_can_list_all_submissions(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_global_moderator_can_filter_submissions_by_user(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    filter_user_id = uuid4()
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return [], 0, {}
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    await service.list_submissions(
+        FakeSession(),
+        current_user(is_global_moderator=True),
+        owner_scope="all",
+        filter_user_id=filter_user_id,
+    )
+
+    assert captured["include_all"] is True
+    assert captured["filter_user_id"] == filter_user_id
+
+
+@pytest.mark.asyncio
 async def test_regular_user_cannot_force_all_submission_scope(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -1227,6 +1249,27 @@ async def test_regular_user_cannot_force_all_submission_scope(monkeypatch) -> No
     )
 
     assert captured["include_all"] is False
+
+
+@pytest.mark.asyncio
+async def test_regular_user_cannot_filter_submissions_by_user(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return [], 0, {}
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    await service.list_submissions(
+        FakeSession(),
+        current_user(),
+        owner_scope="all",
+        filter_user_id=uuid4(),
+    )
+
+    assert captured["include_all"] is False
+    assert captured["filter_user_id"] is None
 
 
 @pytest.mark.asyncio
@@ -1256,6 +1299,25 @@ async def test_list_submissions_passes_pagination_and_status(monkeypatch) -> Non
     assert captured["offset"] == 20
     assert captured["limit"] == 10
     assert captured["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_list_submissions_passes_trimmed_search_query(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def list_submission_records(*args, **kwargs):
+        captured.update(kwargs)
+        return [], 0, {}
+
+    monkeypatch.setattr(service.repository, "list_submissions", list_submission_records)
+
+    await service.list_submissions(
+        FakeSession(),
+        current_user(),
+        query="  weather  ",
+    )
+
+    assert captured["search"] == "weather"
 
 
 @pytest.mark.asyncio

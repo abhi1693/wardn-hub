@@ -301,6 +301,23 @@ async def update_user_api_token(
     return token
 
 
+async def rotate_user_api_token(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    token_id: uuid.UUID,
+) -> tuple[UserAPIToken, str]:
+    token = await repository.get_user_api_token_by_id(session, user_id, token_id)
+    if token is None:
+        raise UserAPITokenNotFoundError("API token not found")
+
+    token_prefix, plaintext_token = generate_api_token()
+    token.token_prefix = token_prefix
+    token.token_hash = hash_api_token(plaintext_token)
+    token.last_used_at = None
+    await session.flush()
+    return token, plaintext_token
+
+
 async def delete_user_api_token(
     session: AsyncSession,
     user_id: uuid.UUID,

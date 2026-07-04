@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.security import verify_password
+from app.core.security import verify_api_token, verify_password
 from app.modules.users import service
 from app.modules.users.auth_providers import ExternalIdentityClaims
 from app.modules.users.exceptions import (
@@ -399,3 +399,45 @@ async def test_update_user_api_token_rejects_admin_scope_for_regular_user(monkey
         )
 
     assert token.scopes == ["catalog:read"]
+
+
+@pytest.mark.asyncio
+async def test_rotate_user_api_token_replaces_secret(monkeypatch) -> None:
+    user_id = uuid4()
+    token = UserAPIToken(
+        user_id=user_id,
+        name="Automation",
+        description="",
+        token_prefix="oldprefix",
+        token_hash="oldhash",
+        scopes=["catalog:read"],
+        organization_ids=[],
+        is_active=True,
+        last_used_at=datetime(2026, 6, 23, tzinfo=UTC),
+    )
+    token.id = uuid4()
+
+    async def get_token(*args, **kwargs):
+        return token
+
+    monkeypatch.setattr(service.repository, "get_user_api_token_by_id", get_token)
+
+    rotated, plaintext = await service.rotate_user_api_token(FakeSession(), user_id, token.id)
+
+    assert rotated is token
+    assert plaintext.startswith("wardn_hub_")
+    assert token.token_prefix != "oldprefix"
+    assert token.token_hash != "oldhash"
+    assert token.last_used_at is None
+    assert verify_api_token(plaintext, token.token_hash)
+
+
+@pytest.mark.asyncio
+async def test_rotate_user_api_token_raises_for_missing_token(monkeypatch) -> None:
+    async def missing_token(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_user_api_token_by_id", missing_token)
+
+    with pytest.raises(service.UserAPITokenNotFoundError):
+        await service.rotate_user_api_token(FakeSession(), uuid4(), uuid4())
