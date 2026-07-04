@@ -36,13 +36,6 @@ import { ServerIcon } from "@/components/server-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   HubApiError,
   archiveServer,
   currentUser,
@@ -710,6 +703,7 @@ function SubmissionsPageContent() {
   const [metadata, setMetadata] = useState<SubmissionListMetadata | null>(null);
   const [statusCounts, setStatusCounts] =
     useState<Required<SubmissionStatusCounts>>(emptyStatusCounts);
+  const [searchDraft, setSearchDraft] = useState({ query: searchQuery, value: searchQuery });
 
   useEffect(() => {
     let active = true;
@@ -751,6 +745,7 @@ function SubmissionsPageContent() {
   }, [filter, ownerScope, page, searchQuery, selectedUserId]);
 
   const counts = statusCounts;
+  const searchInput = searchDraft.query === searchQuery ? searchDraft.value : searchQuery;
   const groupedSubmissions = useMemo(() => groupSubmissionsByServer(submissions), [submissions]);
   const visibleStatusFilters = useMemo(() => {
     return statusOrder.filter((status) => (counts[status] ?? 0) > 0 || filter === status);
@@ -821,14 +816,19 @@ function SubmissionsPageContent() {
     return queryString ? `${pathname}?${queryString}` : pathname;
   }
 
+  function applySearch(nextSearch: string) {
+    const nextHref = searchHref(nextSearch);
+    router.replace(nextHref, { scroll: false });
+  }
+
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    router.replace(searchHref(String(formData.get("q") ?? "")), { scroll: false });
+    applySearch(searchInput);
   }
 
   function clearSearch() {
-    router.replace(searchHref(""), { scroll: false });
+    setSearchDraft({ query: "", value: "" });
+    applySearch("");
   }
 
   function handleUserFilterChange(nextValue: UserFilterValue) {
@@ -944,25 +944,27 @@ function SubmissionsPageContent() {
               </div>
             ) : null}
             {state === "ready" ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)] lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="grid gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)]">
+                <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <form
-                    className="flex min-w-[240px] flex-1 items-center gap-2 sm:flex-none"
+                    className="flex min-w-0 flex-1 items-center gap-2"
                     onSubmit={handleSearchSubmit}
                   >
-                    <label className="relative min-w-0 flex-1 sm:w-72">
+                    <label className="relative min-w-0 flex-1 lg:max-w-md">
                       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                       <span className="sr-only">Search submissions</span>
                       <Input
                         aria-label="Search submissions"
                         className="bg-white pl-9 pr-9"
-                        defaultValue={searchQuery}
-                        key={searchQuery}
                         name="q"
+                        onChange={(event) =>
+                          setSearchDraft({ query: searchQuery, value: event.target.value })
+                        }
                         placeholder="Search submissions"
                         type="search"
+                        value={searchInput}
                       />
-                      {hasSearchQuery ? (
+                      {searchInput || hasSearchQuery ? (
                         <button
                           aria-label="Clear search"
                           className="absolute right-2 top-1/2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -978,37 +980,50 @@ function SubmissionsPageContent() {
                       Search
                     </Button>
                   </form>
-                  <span className="mr-1 text-sm font-bold text-foreground">
-                    {groupedSubmissions.length}{" "}
-                    {groupedSubmissions.length === 1 ? "server" : "servers"}
-                    <span className="ml-1 text-muted-foreground">
-                      / {totalSubmissions}{" "}
-                      {totalSubmissions === 1 ? "submission" : "submissions"}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                    <span className="font-bold text-foreground">
+                      {groupedSubmissions.length}{" "}
+                      {groupedSubmissions.length === 1 ? "server" : "servers"}
+                      <span className="ml-1 text-muted-foreground">
+                        / {totalSubmissions}{" "}
+                        {totalSubmissions === 1 ? "submission" : "submissions"}
+                      </span>
                     </span>
-                  </span>
+                    <span className="inline-flex items-center gap-2 text-muted-foreground">
+                      <CalendarClock className="size-4" />
+                      {metadata && metadata.total > 0
+                        ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
+                        : "Sorted by latest update"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   {showUserFilter ? (
-                    <Select onValueChange={handleUserFilterChange} value={userFilterValue}>
-                      <SelectTrigger
+                    <label className="relative min-w-0">
+                      <span className="sr-only">Filter submissions by user</span>
+                      <UserIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <select
                         aria-label="Filter submissions by user"
-                        className="w-[240px] bg-white"
+                        className="h-9 w-[260px] max-w-full appearance-none rounded-[var(--radius)] border border-input bg-white px-9 py-2 text-sm font-medium text-foreground shadow-[var(--shadow-card)] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                        onChange={(event) =>
+                          handleUserFilterChange(event.target.value as UserFilterValue)
+                        }
+                        value={userFilterValue}
                       >
-                        <UserIcon className="size-4 text-muted-foreground" />
-                        <SelectValue placeholder="Filter by user" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="mine">My submissions</SelectItem>
-                        <SelectItem value="all">All users</SelectItem>
+                        <option value="mine">My submissions</option>
+                        <option value="all">All users</option>
                         {selectedUserId && !selectedDirectoryUser ? (
-                          <SelectItem value={selectedUserId}>Selected user</SelectItem>
+                          <option value={selectedUserId}>Selected user</option>
                         ) : null}
                         {userDirectory.map((directoryUser) => (
-                          <SelectItem key={directoryUser.id} value={directoryUser.id}>
+                          <option key={directoryUser.id} value={directoryUser.id}>
                             {userLabel(directoryUser)}
                             {userDetail(directoryUser) ? ` (${userDetail(directoryUser)})` : ""}
-                          </SelectItem>
+                          </option>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    </label>
                   ) : null}
                   <Link
                     className={cn(
@@ -1043,12 +1058,6 @@ function SubmissionsPageContent() {
                       </span>
                     </Link>
                   ))}
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CalendarClock className="size-4" />
-                  {metadata && metadata.total > 0
-                    ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
-                    : "Sorted by latest update"}
                 </div>
               </div>
             ) : null}
