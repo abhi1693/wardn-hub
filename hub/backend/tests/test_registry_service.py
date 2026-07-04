@@ -239,6 +239,13 @@ def test_registry_tools_from_server_json_extracts_mcp_tool_metadata() -> None:
                                     },
                                     "outputSchema": {"type": "object"},
                                     "annotations": {"readOnlyHint": True},
+                                    "icons": [
+                                        {
+                                            "src": "https://example.com/weather.png",
+                                            "mimeType": "image/png",
+                                        }
+                                    ],
+                                    "execution": {"taskSupport": "optional"},
                                 }
                             ]
                         }
@@ -252,6 +259,10 @@ def test_registry_tools_from_server_json_extracts_mcp_tool_metadata() -> None:
     assert tools[0].name == "get_forecast"
     assert tools[0].title == "Get forecast"
     assert tools[0].annotations == {"readOnlyHint": True}
+    assert tools[0].icons == [
+        {"src": "https://example.com/weather.png", "mimeType": "image/png"}
+    ]
+    assert tools[0].execution == {"taskSupport": "optional"}
     assert tools[0].input_schema["type"] == "object"
     assert tools[0].output_schema["type"] == "object"
     assert tools[0].parameters[0].name == "location"

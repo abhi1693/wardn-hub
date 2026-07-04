@@ -6,12 +6,16 @@
  */
 import type { RegistryToolParameterRead } from './registryToolParameterRead';
 import type { RegistryToolReadAnnotations } from './registryToolReadAnnotations';
+import type { RegistryToolReadExecution } from './registryToolReadExecution';
+import type { RegistryToolReadIconsItem } from './registryToolReadIconsItem';
 import type { RegistryToolReadInputSchema } from './registryToolReadInputSchema';
 import type { RegistryToolReadOutputSchema } from './registryToolReadOutputSchema';
 
 export interface RegistryToolRead {
   annotations?: RegistryToolReadAnnotations;
   description?: string;
+  execution?: RegistryToolReadExecution;
+  icons?: RegistryToolReadIconsItem[];
   inputSchema?: RegistryToolReadInputSchema;
   name: string;
   outputSchema?: RegistryToolReadOutputSchema;

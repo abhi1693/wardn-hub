@@ -532,10 +532,16 @@ def registry_tools_from_server_json(server_json: dict[str, Any]) -> list[Registr
 
             public_input_schema = public_registry_json(input_schema)
             public_output_schema = public_registry_json(output_schema)
+            public_icons = public_registry_json(candidate.get("icons"))
+            public_execution = public_registry_json(candidate.get("execution"))
             safe_input_schema = public_input_schema if isinstance(public_input_schema, dict) else {}
             safe_output_schema = (
                 public_output_schema if isinstance(public_output_schema, dict) else {}
             )
+            safe_icons = [
+                icon for icon in public_icons if isinstance(icon, dict)
+            ] if isinstance(public_icons, list) else []
+            safe_execution = public_execution if isinstance(public_execution, dict) else {}
             tools.append(
                 RegistryToolRead(
                     name=name,
@@ -544,6 +550,8 @@ def registry_tools_from_server_json(server_json: dict[str, Any]) -> list[Registr
                     inputSchema=safe_input_schema,
                     outputSchema=safe_output_schema,
                     annotations=tool_annotations(candidate),
+                    icons=safe_icons,
+                    execution=safe_execution,
                     parameters=parameters,
                 )
             )

@@ -47,6 +47,8 @@ const packageHiddenFields = new Set([
 const toolHiddenFields = new Set([
   "annotations",
   "description",
+  "execution",
+  "icons",
   "inputSchema",
   "input_schema",
   "name",
@@ -1219,6 +1221,8 @@ function ToolsPanel({ tools }: { tools: Record<string, unknown>[] }) {
             const title = stringValue(tool.title);
             const description = stringValue(tool.description);
             const annotations = toolAnnotationRows(tool);
+            const execution = isRecord(tool.execution) ? tool.execution : {};
+            const taskSupport = stringValue(execution.taskSupport);
             return (
               <details className="technical-package-item" key={`${name}-${index}`} open={index === 0}>
                 <summary>
@@ -1231,6 +1235,9 @@ function ToolsPanel({ tools }: { tools: Record<string, unknown>[] }) {
                           {annotationLabel(key)}: {value ? "Yes" : "No"}
                         </TechnicalPill>
                       ))}
+                      {taskSupport ? (
+                        <TechnicalPill tone="command">Task: {taskSupport}</TechnicalPill>
+                      ) : null}
                     </em>
                   </span>
                 </summary>

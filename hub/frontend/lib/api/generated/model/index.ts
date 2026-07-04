@@ -186,6 +186,8 @@ export * from './registryToolParameterRead';
 export * from './registryToolParameterReadSchema';
 export * from './registryToolRead';
 export * from './registryToolReadAnnotations';
+export * from './registryToolReadExecution';
+export * from './registryToolReadIconsItem';
 export * from './registryToolReadInputSchema';
 export * from './registryToolReadOutputSchema';
 export * from './registryTransport';

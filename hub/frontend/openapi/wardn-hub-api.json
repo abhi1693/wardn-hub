@@ -4728,6 +4728,19 @@
             "title": "Description",
             "type": "string"
           },
+          "execution": {
+            "additionalProperties": true,
+            "title": "Execution",
+            "type": "object"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
           "inputSchema": {
             "additionalProperties": true,
             "title": "Inputschema",

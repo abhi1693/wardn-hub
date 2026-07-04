@@ -856,6 +856,8 @@ class RegistryToolRead(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict, alias="inputSchema")
     output_schema: dict[str, Any] = Field(default_factory=dict, alias="outputSchema")
     annotations: dict[str, Any] = Field(default_factory=dict)
+    icons: list[dict[str, Any]] = Field(default_factory=list)
+    execution: dict[str, Any] = Field(default_factory=dict)
     parameters: list[RegistryToolParameterRead] = Field(default_factory=list)
 
 
