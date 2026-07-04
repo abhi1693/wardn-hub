@@ -616,6 +616,21 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert '"suggestedRejectionMessage"' in prompt
     assert '"decision"' in prompt
     assert "Call GET /submissions" not in prompt
+    assert prompt.index("System review mode:") < prompt.index("Submission context:")
+    assert prompt.index("Report format:") < prompt.index("Submission context:")
+    assert prompt.index("Submission context:") < prompt.index("In-review submission ID shown in UI")
+
+
+def test_build_review_prompt_keeps_submission_data_after_stable_prefix() -> None:
+    context = {"submission": submitted_submission_with_id("sub-cache-test")}
+
+    prompt = cli.build_review_prompt(context)
+
+    assert prompt.startswith("Validate one Wardn Hub MCP server version")
+    assert prompt.index("System review mode:") < prompt.index("sub-cache-test")
+    assert prompt.index("Review result JSON") < prompt.index("sub-cache-test")
+    snapshot = prompt[prompt.index("Wardn Hub submission JSON snapshot:"):]
+    assert snapshot.index('"id"') < snapshot.index('"name"') < snapshot.index('"serverJson"')
 
 
 def test_build_review_prompt_omits_duplicate_server_json_and_truncates_large_fields() -> None:

@@ -654,7 +654,6 @@ def _build_review_prompt(
     server_name = str(submission.get("name") or "")
     version = str(submission.get("version") or "")
     id_list = f"- {submission_id}" if submission_id else "- none"
-    expected_version = version or "the listed version"
     mcp_server_model = submitted_mcp_server_model_json(submission)
     submission_snapshot = (
         "\nWardn Hub submission JSON snapshot:\n"
@@ -671,19 +670,12 @@ def _build_review_prompt(
 
     return f"""Validate one Wardn Hub MCP server version that is currently in review.
 
-Server: {server_name}
-Version: {version or "unknown"}
-In-review submission ID shown in UI:
-{id_list}
-
 {SYSTEM_REVIEW_INSTRUCTIONS}
-{submission_snapshot}
-{server_model_snapshot}
 
 Scope:
-1. Validate only the in-review submission ID listed above.
+1. Validate only the in-review submission ID listed in the Submission context section below.
 2. Use the Wardn Hub submission JSON snapshot for submission ID, status, validation result, and workflow fields.
-3. Confirm the snapshot has status "submitted", name "{server_name}", and version "{expected_version}". In the Wardn Hub UI, this status is shown as "In review".
+3. Confirm the snapshot has status "submitted" and that its name/version match the Submission context section. In the Wardn Hub UI, this status is shown as "In review".
 4. Ignore any other submissions or versions.
 5. If the listed snapshot is not an in-review submission for this version, report that clearly and stop.
 
@@ -741,7 +733,15 @@ After the report:
 - Do not approve, reject, publish, update, or delete anything directly.
 - The database review controller will parse only the final Review result JSON for automatic actions. Markdown headings such as "Decision: pass" are ignored by automation.
 
-Do not mark a submission as passing if source review evidence is incomplete, validationResult has warning or failing checks, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified."""
+Do not mark a submission as passing if source review evidence is incomplete, validationResult has warning or failing checks, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified.
+
+Submission context:
+Server: {server_name}
+Version: {version or "unknown"}
+In-review submission ID shown in UI:
+{id_list}
+{submission_snapshot}
+{server_model_snapshot}"""
 
 
 def submission_label(submission: dict[str, Any]) -> str:

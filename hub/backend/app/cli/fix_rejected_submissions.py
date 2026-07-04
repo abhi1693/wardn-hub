@@ -247,22 +247,6 @@ def build_fix_prompt(context: dict[str, Any]) -> str:
 
     return f"""Fix this Wardn Hub draft or rejected MCP server submission so it can be submitted for review.
 
-Submission ID: {submission_id}
-Server name: {server_name or "unknown"}
-Version: {version or "unknown"}
-Current status: {status}
-Current submit/review feedback: {rejection_message or "unknown"}
-
-Wardn Hub submission JSON snapshot:
-```json
-{submission_snapshot}
-```
-
-Submitted MCP server model JSON from to_json_dict():
-```json
-{server_model_snapshot}
-```
-
 System fix mode:
 - Use the submission JSON snapshot and submitted MCP server model JSON in this prompt as the Wardn Hub source of truth.
 - Do not call Wardn Hub API endpoints.
@@ -310,7 +294,24 @@ Return format:
 ```
 
 If you cannot fix it, set decision to "cannot_fix", set updatedServerJson to null, and include the exact missing information needed from the user in missingInformation.
-The database fix controller will parse only the final Fix result JSON for automatic actions. Markdown headings such as "Decision: fixed" and "Updated serverJson" are ignored by automation."""
+The database fix controller will parse only the final Fix result JSON for automatic actions. Markdown headings such as "Decision: fixed" and "Updated serverJson" are ignored by automation.
+
+Submission context:
+Submission ID: {submission_id}
+Server name: {server_name or "unknown"}
+Version: {version or "unknown"}
+Current status: {status}
+Current submit/review feedback: {rejection_message or "unknown"}
+
+Wardn Hub submission JSON snapshot:
+```json
+{submission_snapshot}
+```
+
+Submitted MCP server model JSON from to_json_dict():
+```json
+{server_model_snapshot}
+```"""
 
 
 def extract_fix_result(findings: str) -> FixDecisionPayload | None:

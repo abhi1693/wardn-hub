@@ -145,6 +145,22 @@ def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() ->
     assert "WARDN_HUB_TOKEN" not in prompt
     assert "GET /submissions" not in prompt
     assert "PUT /submissions" not in prompt
+    assert prompt.index("System fix mode:") < prompt.index("Submission context:")
+    assert prompt.index("Return format:") < prompt.index("Submission context:")
+    assert prompt.index("Submission context:") < prompt.index("Submission ID: sub-1")
+
+
+def test_build_fix_prompt_keeps_submission_data_after_stable_prefix() -> None:
+    client = FakeClient([rejected_submission(submission_id="sub-cache-test")])
+    context = cli.build_fix_context(client, client.submissions[0])
+
+    prompt = cli.build_fix_prompt(context)
+
+    assert prompt.startswith("Fix this Wardn Hub draft or rejected MCP server submission")
+    assert prompt.index("System fix mode:") < prompt.index("sub-cache-test")
+    assert prompt.index("Fix result JSON") < prompt.index("sub-cache-test")
+    snapshot = prompt[prompt.index("Wardn Hub submission JSON snapshot:"):]
+    assert snapshot.index('"id"') < snapshot.index('"name"') < snapshot.index('"rejectionMessage"')
 
 
 def test_fix_loop_applies_updated_server_json_and_submits() -> None:
