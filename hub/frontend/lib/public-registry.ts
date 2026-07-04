@@ -57,6 +57,17 @@ function toolCandidateLists(value: unknown): Record<string, unknown>[][] {
   return [];
 }
 
+function promptCandidateLists(value: unknown): Record<string, unknown>[][] {
+  if (Array.isArray(value)) return [records(value)];
+  if (!isRecord(value)) return [];
+  if (isRecord(value.result)) {
+    const nested = promptCandidateLists(value.result);
+    if (nested.length > 0) return nested;
+  }
+  if (Array.isArray(value.prompts)) return [records(value.prompts)];
+  return [];
+}
+
 function toolsFromServerJson(serverJson: unknown) {
   if (!isRecord(serverJson)) return [];
   const meta = isRecord(serverJson._meta) ? serverJson._meta : {};
@@ -89,6 +100,44 @@ function toolsFromServerJson(serverJson: unknown) {
     .flat()
     .filter((tool) => {
       const name = typeof tool.name === "string" ? tool.name.trim() : "";
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+}
+
+function promptsFromServerJson(serverJson: unknown) {
+  if (!isRecord(serverJson)) return [];
+  const meta = isRecord(serverJson._meta) ? serverJson._meta : {};
+  const capabilities = isRecord(serverJson.capabilities) ? serverJson.capabilities : {};
+  const introspection = isRecord(serverJson.introspection) ? serverJson.introspection : {};
+  const mcp = isRecord(serverJson.mcp) ? serverJson.mcp : {};
+  const metaCapabilities = isRecord(meta.capabilities) ? meta.capabilities : {};
+  const metaIntrospection = isRecord(meta.introspection) ? meta.introspection : {};
+  const metaMcp = isRecord(meta.mcp) ? meta.mcp : {};
+  const candidates = [
+    serverJson.prompts,
+    serverJson.promptDefinitions,
+    serverJson.mcpPrompts,
+    capabilities.prompts,
+    introspection.prompts,
+    introspection["prompts/list"],
+    serverJson["prompts/list"],
+    mcp.prompts,
+    mcp["prompts/list"],
+    meta.prompts,
+    metaCapabilities.prompts,
+    metaIntrospection.prompts,
+    metaIntrospection["prompts/list"],
+    metaMcp.prompts,
+    metaMcp["prompts/list"],
+  ];
+  const seen = new Set<string>();
+  return candidates
+    .flatMap(promptCandidateLists)
+    .flat()
+    .filter((prompt) => {
+      const name = typeof prompt.name === "string" ? prompt.name.trim() : "";
       if (!name || seen.has(name)) return false;
       seen.add(name);
       return true;
@@ -300,6 +349,19 @@ function serverDetailTabFallback(
         isLatest: version.isLatest,
         title: version.title,
         tools: toolsFromServerJson(version.serverJson),
+        version: version.version,
+      })),
+    };
+  }
+
+  if (tab === "prompts") {
+    return {
+      server: baseServer,
+      versions: detail.versions?.map((version) => ({
+        id: version.id,
+        isLatest: version.isLatest,
+        prompts: promptsFromServerJson(version.serverJson),
+        title: version.title,
         version: version.version,
       })),
     };

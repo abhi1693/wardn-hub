@@ -50,6 +50,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/mcp/servers/{server_name}/claim",
         "/api/v1/mcp/servers/{server_name}/summary",
         "/api/v1/mcp/servers/{server_name}/tabs/overview",
+        "/api/v1/mcp/servers/{server_name}/tabs/prompts",
         "/api/v1/mcp/servers/{server_name}/tabs/schema",
         "/api/v1/mcp/servers/{server_name}/tabs/score",
         "/api/v1/mcp/servers/{server_name}/tabs/tools",

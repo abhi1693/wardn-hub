@@ -262,6 +262,46 @@ def test_registry_tools_from_server_json_extracts_mcp_tool_metadata() -> None:
     assert tools[0].parameters[1].required is False
 
 
+def test_registry_prompts_from_server_json_extracts_mcp_prompt_metadata() -> None:
+    prompts = service.registry_prompts_from_server_json(
+        {
+            "name": "io.github.example/weather",
+            "_meta": {
+                "introspection": {
+                    "prompts/list": {
+                        "result": {
+                            "prompts": [
+                                {
+                                    "name": "daily_briefing",
+                                    "title": "Daily briefing",
+                                    "description": "Create a weather briefing.",
+                                    "arguments": [
+                                        {
+                                            "name": "location",
+                                            "description": "City or ZIP code.",
+                                            "required": True,
+                                        }
+                                    ],
+                                    "icons": [{"src": "https://example.com/weather.svg"}],
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+        }
+    )
+
+    assert len(prompts) == 1
+    assert prompts[0].name == "daily_briefing"
+    assert prompts[0].title == "Daily briefing"
+    assert prompts[0].description == "Create a weather briefing."
+    assert prompts[0].arguments[0].name == "location"
+    assert prompts[0].arguments[0].description == "City or ZIP code."
+    assert prompts[0].arguments[0].required is True
+    assert prompts[0].icons == [{"src": "https://example.com/weather.svg"}]
+
+
 def test_trust_report_explains_quality_score_components() -> None:
     version = version_model(uuid4(), "1.0.0", is_latest=True)
     version.quality_score = 96

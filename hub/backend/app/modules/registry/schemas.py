@@ -859,6 +859,24 @@ class RegistryToolRead(BaseModel):
     parameters: list[RegistryToolParameterRead] = Field(default_factory=list)
 
 
+class RegistryPromptArgumentRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    description: str = ""
+    required: bool = False
+
+
+class RegistryPromptRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    title: str = ""
+    description: str = ""
+    arguments: list[RegistryPromptArgumentRead] = Field(default_factory=list)
+    icons: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class RegistryServerSchemaVersionRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -880,6 +898,16 @@ class RegistryServerToolsVersionRead(BaseModel):
     title: str
     is_latest: bool = Field(alias="isLatest")
     tools: list[RegistryToolRead] = Field(default_factory=list)
+
+
+class RegistryServerPromptsVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    title: str
+    is_latest: bool = Field(alias="isLatest")
+    prompts: list[RegistryPromptRead] = Field(default_factory=list)
 
 
 class RegistryServerScoreVersionRead(BaseModel):
@@ -910,6 +938,11 @@ class RegistryServerSchemaTabResponse(BaseModel):
 class RegistryServerToolsTabResponse(BaseModel):
     server: RegistryServerTabServerRead
     versions: list[RegistryServerToolsVersionRead] = Field(default_factory=list)
+
+
+class RegistryServerPromptsTabResponse(BaseModel):
+    server: RegistryServerTabServerRead
+    versions: list[RegistryServerPromptsVersionRead] = Field(default_factory=list)
 
 
 class RegistryServerScoreTabResponse(BaseModel):

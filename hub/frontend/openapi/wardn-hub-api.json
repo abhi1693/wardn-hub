@@ -2773,6 +2773,67 @@
         "title": "RegistryPageMetadata",
         "type": "object"
       },
+      "RegistryPromptArgumentRead": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RegistryPromptArgumentRead",
+        "type": "object"
+      },
+      "RegistryPromptRead": {
+        "properties": {
+          "arguments": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryPromptArgumentRead"
+            },
+            "title": "Arguments",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RegistryPromptRead",
+        "type": "object"
+      },
       "RegistryPublishedServerListResponse": {
         "properties": {
           "metadata": {
@@ -3365,6 +3426,61 @@
           "updatedAt"
         ],
         "title": "RegistryServerOverviewVersionRead",
+        "type": "object"
+      },
+      "RegistryServerPromptsTabResponse": {
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerTabServerRead"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerPromptsVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "RegistryServerPromptsTabResponse",
+        "type": "object"
+      },
+      "RegistryServerPromptsVersionRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryPromptRead"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "isLatest"
+        ],
+        "title": "RegistryServerPromptsVersionRead",
         "type": "object"
       },
       "RegistryServerRead": {
@@ -9245,6 +9361,58 @@
           }
         },
         "summary": "Get Mcp Server Overview Tab",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/tabs/prompts": {
+      "get": {
+        "operationId": "mcp_servers_get_prompts_tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerPromptsTabResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Prompts Tab",
         "tags": [
           "mcp"
         ]

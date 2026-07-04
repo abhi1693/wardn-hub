@@ -75,6 +75,7 @@ function strings(value: unknown) {
 function versionTargets(version?: ServerTabVersion) {
   return {
     packages: records(version?.packages),
+    prompts: records(version?.prompts),
     remotes: records(version?.remotes),
     tools: records(version?.tools),
   };
@@ -1226,6 +1227,93 @@ function ToolsPanel({ tools }: { tools: Record<string, unknown>[] }) {
   );
 }
 
+function PromptArgumentsTable({ prompt }: { prompt: Record<string, unknown> }) {
+  const rows = records(prompt.arguments)
+    .map((argument) => ({
+      description: stringValue(argument.description),
+      name: stringValue(argument.name),
+      required: Boolean(argument.required ?? argument.isRequired),
+    }))
+    .filter((argument) => argument.name);
+
+  if (rows.length === 0) {
+    return (
+      <div className="technical-subtable">
+        <label>Arguments</label>
+        <p className="server-detail-muted">None</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="technical-subtable">
+      <label>Arguments</label>
+      <div className="technical-table-wrap">
+        <table className="technical-table compact">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Required</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((argument) => (
+              <tr key={argument.name}>
+                <td>
+                  <strong>{argument.name}</strong>
+                  {argument.description ? <span>{argument.description}</span> : null}
+                </td>
+                <td>
+                  <BooleanMark value={argument.required} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PromptsPanel({ prompts }: { prompts: Record<string, unknown>[] }) {
+  return (
+    <section className="technical-card">
+      <TechnicalHeader count={`${prompts.length} declared`} title="Prompts" />
+      {prompts.length === 0 ? (
+        <div className="technical-empty-state">
+          <p className="server-detail-muted">No prompt definitions are published for this version.</p>
+        </div>
+      ) : (
+        <div className="technical-package-list">
+          {prompts.map((prompt, index) => {
+            const name = stringValue(prompt.name) || `prompt-${index + 1}`;
+            const title = stringValue(prompt.title);
+            const description = stringValue(prompt.description);
+            return (
+              <details className="technical-package-item" key={`${name}-${index}`} open={index === 0}>
+                <summary>
+                  <span>
+                    <strong>{name}</strong>
+                    <em>{title ? <span>{title}</span> : "Prompt template"}</em>
+                  </span>
+                </summary>
+                <div className="technical-package-body">
+                  {description ? <p className="technical-description">{description}</p> : null}
+                  <PromptArgumentsTable prompt={prompt} />
+                  <VisualFields
+                    hiddenFields={new Set(["arguments", "description", "icons", "name", "title"])}
+                    value={prompt}
+                  />
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
   if (remotes.length === 0) return null;
 
@@ -1753,6 +1841,12 @@ export function ServerDetailClient({
               {activeTab === "tools" ? (
                 <div className="technical-main full-width">
                   <ToolsPanel tools={targets.tools} />
+                </div>
+              ) : null}
+
+              {activeTab === "prompts" ? (
+                <div className="technical-main full-width">
+                  <PromptsPanel prompts={targets.prompts} />
                 </div>
               ) : null}
 

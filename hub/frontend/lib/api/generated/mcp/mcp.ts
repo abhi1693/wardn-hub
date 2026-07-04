@@ -16,6 +16,7 @@ import type {
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerOverviewTabResponse,
+  RegistryServerPromptsTabResponse,
   RegistryServerSchemaTabResponse,
   RegistryServerScoreTabResponse,
   RegistryServerSummaryResponse,
@@ -542,6 +543,60 @@ export const mcpServersGetOverviewTab = async (serverName: string, options?: Req
 
   const data: mcpServersGetOverviewTabResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as mcpServersGetOverviewTabResponse
+}
+
+
+export type mcpServersGetPromptsTabResponse200 = {
+  data: RegistryServerPromptsTabResponse
+  status: 200
+}
+
+export type mcpServersGetPromptsTabResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetPromptsTabResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetPromptsTabResponseSuccess = (mcpServersGetPromptsTabResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetPromptsTabResponseError = (mcpServersGetPromptsTabResponse404 | mcpServersGetPromptsTabResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetPromptsTabResponse = (mcpServersGetPromptsTabResponseSuccess | mcpServersGetPromptsTabResponseError)
+
+export const getMcpServersGetPromptsTabUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/tabs/prompts`
+}
+
+/**
+ * @summary Get Mcp Server Prompts Tab
+ */
+export const mcpServersGetPromptsTab = async (serverName: string, options?: RequestInit): Promise<mcpServersGetPromptsTabResponse> => {
+
+  const res = await fetch(getMcpServersGetPromptsTabUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetPromptsTabResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetPromptsTabResponse
 }
 
 

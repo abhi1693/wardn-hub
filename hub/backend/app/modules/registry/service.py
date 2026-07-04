@@ -47,6 +47,8 @@ from app.modules.registry.schemas import (
     RegistryNamespace,
     RegistryOwnershipClaimResponse,
     RegistryPageMetadata,
+    RegistryPromptArgumentRead,
+    RegistryPromptRead,
     RegistryPublishedServerListResponse,
     RegistryPublishedServerVersionRead,
     RegistryServerDetailResponse,
@@ -54,6 +56,8 @@ from app.modules.registry.schemas import (
     RegistryServerOverviewServerRead,
     RegistryServerOverviewTabResponse,
     RegistryServerOverviewVersionRead,
+    RegistryServerPromptsTabResponse,
+    RegistryServerPromptsVersionRead,
     RegistryServerRead,
     RegistryServerSchemaTabResponse,
     RegistryServerSchemaVersionRead,
@@ -259,6 +263,24 @@ def tool_candidate_lists_from_value(value: Any) -> list[list[Any]]:
     return []
 
 
+def prompt_candidate_lists_from_value(value: Any) -> list[list[Any]]:
+    if isinstance(value, list):
+        return [value]
+    if not isinstance(value, dict):
+        return []
+
+    result = value.get("result")
+    if isinstance(result, dict):
+        nested = prompt_candidate_lists_from_value(result)
+        if nested:
+            return nested
+
+    prompts = value.get("prompts")
+    if isinstance(prompts, list):
+        return [prompts]
+    return []
+
+
 def registry_tool_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]]:
     record = registry_record(server_json)
     meta = registry_record(record.get("_meta"))
@@ -283,6 +305,33 @@ def registry_tool_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]
     lists: list[list[Any]] = []
     for candidate in candidates:
         lists.extend(tool_candidate_lists_from_value(candidate))
+    return lists
+
+
+def registry_prompt_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]]:
+    record = registry_record(server_json)
+    meta = registry_record(record.get("_meta"))
+    candidates: list[Any] = [
+        record.get("prompts"),
+        record.get("promptDefinitions"),
+        record.get("mcpPrompts"),
+        registry_record(record.get("capabilities")).get("prompts"),
+        registry_record(record.get("introspection")).get("prompts"),
+        registry_record(record.get("introspection")).get("prompts/list"),
+        registry_record(record.get("prompts/list")),
+        registry_record(record.get("mcp")).get("prompts"),
+        registry_record(record.get("mcp")).get("prompts/list"),
+        meta.get("prompts"),
+        registry_record(meta.get("capabilities")).get("prompts"),
+        registry_record(meta.get("introspection")).get("prompts"),
+        registry_record(meta.get("introspection")).get("prompts/list"),
+        registry_record(meta.get("mcp")).get("prompts"),
+        registry_record(meta.get("mcp")).get("prompts/list"),
+    ]
+
+    lists: list[list[Any]] = []
+    for candidate in candidates:
+        lists.extend(prompt_candidate_lists_from_value(candidate))
     return lists
 
 
@@ -407,6 +456,50 @@ def registry_tools_from_server_json(server_json: dict[str, Any]) -> list[Registr
                 )
             )
     return tools
+
+
+def prompt_arguments_from_list(value: Any) -> list[RegistryPromptArgumentRead]:
+    arguments: list[RegistryPromptArgumentRead] = []
+    argument_values = value if isinstance(value, list) else []
+    for argument in argument_values:
+        if not isinstance(argument, dict):
+            continue
+        name = str(argument.get("name") or "").strip()
+        if not name:
+            continue
+        arguments.append(
+            RegistryPromptArgumentRead(
+                name=name,
+                description=str(argument.get("description") or ""),
+                required=bool(argument.get("required") or argument.get("isRequired")),
+            )
+        )
+    return arguments
+
+
+def registry_prompts_from_server_json(server_json: dict[str, Any]) -> list[RegistryPromptRead]:
+    prompts: list[RegistryPromptRead] = []
+    seen_names: set[str] = set()
+    for candidate_list in registry_prompt_candidate_lists(server_json):
+        for candidate in candidate_list:
+            if not isinstance(candidate, dict):
+                continue
+            name = str(candidate.get("name") or "").strip()
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+
+            public_icons = public_registry_json(candidate.get("icons"))
+            prompts.append(
+                RegistryPromptRead(
+                    name=name,
+                    title=str(candidate.get("title") or ""),
+                    description=str(candidate.get("description") or ""),
+                    arguments=prompt_arguments_from_list(candidate.get("arguments")),
+                    icons=public_icons if isinstance(public_icons, list) else [],
+                )
+            )
+    return prompts
 
 
 def github_repository_from_registry_repository(
@@ -2907,6 +3000,26 @@ async def get_server_tools_tab(
                 title=version.title,
                 is_latest=version.is_latest,
                 tools=registry_tools_from_server_json(version.server_json),
+            )
+            for version in versions
+        ],
+    )
+
+
+async def get_server_prompts_tab(
+    session,
+    name: str,
+) -> RegistryServerPromptsTabResponse:
+    server, versions = await published_server_with_versions(session, name)
+    return RegistryServerPromptsTabResponse(
+        server=server_tab_summary(server),
+        versions=[
+            RegistryServerPromptsVersionRead(
+                id=version.id,
+                version=version.version,
+                title=version.title,
+                is_latest=version.is_latest,
+                prompts=registry_prompts_from_server_json(version.server_json),
             )
             for version in versions
         ],

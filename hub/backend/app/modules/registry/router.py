@@ -40,6 +40,7 @@ from app.modules.registry.schemas import (
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerOverviewTabResponse,
+    RegistryServerPromptsTabResponse,
     RegistryServerSchemaTabResponse,
     RegistryServerScoreTabResponse,
     RegistryServerSummaryResponse,
@@ -58,6 +59,7 @@ from app.modules.registry.service import (
     delete_server_version,
     get_server_detail,
     get_server_overview_tab,
+    get_server_prompts_tab,
     get_server_schema_tab,
     get_server_score_tab,
     get_server_summary,
@@ -511,6 +513,22 @@ async def get_mcp_server_tools_tab(
 ) -> RegistryServerToolsTabResponse:
     try:
         return await get_server_tools_tab(session, server_name)
+    except RegistryServerNotFoundError as exc:
+        raise not_found(exc, detail="server not found") from exc
+
+
+@public_router.get(
+    "/{server_name:path}/tabs/prompts",
+    response_model=RegistryServerPromptsTabResponse,
+    operation_id="mcp_servers_get_prompts_tab",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_mcp_server_prompts_tab(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryServerPromptsTabResponse:
+    try:
+        return await get_server_prompts_tab(session, server_name)
     except RegistryServerNotFoundError as exc:
         raise not_found(exc, detail="server not found") from exc
 
