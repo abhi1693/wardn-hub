@@ -877,6 +877,31 @@ class RegistryPromptRead(BaseModel):
     icons: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class RegistryResourceRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    uri: str
+    name: str = ""
+    title: str = ""
+    description: str = ""
+    mime_type: str = Field(default="", alias="mimeType")
+    size: int | None = None
+    annotations: dict[str, Any] = Field(default_factory=dict)
+    icons: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RegistryResourceTemplateRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    uri_template: str = Field(alias="uriTemplate")
+    name: str = ""
+    title: str = ""
+    description: str = ""
+    mime_type: str = Field(default="", alias="mimeType")
+    annotations: dict[str, Any] = Field(default_factory=dict)
+    icons: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class RegistryServerSchemaVersionRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -908,6 +933,20 @@ class RegistryServerPromptsVersionRead(BaseModel):
     title: str
     is_latest: bool = Field(alias="isLatest")
     prompts: list[RegistryPromptRead] = Field(default_factory=list)
+
+
+class RegistryServerResourcesVersionRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    version: str
+    title: str
+    is_latest: bool = Field(alias="isLatest")
+    resources: list[RegistryResourceRead] = Field(default_factory=list)
+    resource_templates: list[RegistryResourceTemplateRead] = Field(
+        default_factory=list,
+        alias="resourceTemplates",
+    )
 
 
 class RegistryServerScoreVersionRead(BaseModel):
@@ -943,6 +982,11 @@ class RegistryServerToolsTabResponse(BaseModel):
 class RegistryServerPromptsTabResponse(BaseModel):
     server: RegistryServerTabServerRead
     versions: list[RegistryServerPromptsVersionRead] = Field(default_factory=list)
+
+
+class RegistryServerResourcesTabResponse(BaseModel):
+    server: RegistryServerTabServerRead
+    versions: list[RegistryServerResourcesVersionRead] = Field(default_factory=list)
 
 
 class RegistryServerScoreTabResponse(BaseModel):

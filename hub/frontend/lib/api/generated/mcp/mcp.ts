@@ -17,6 +17,7 @@ import type {
   RegistryServerListResponse,
   RegistryServerOverviewTabResponse,
   RegistryServerPromptsTabResponse,
+  RegistryServerResourcesTabResponse,
   RegistryServerSchemaTabResponse,
   RegistryServerScoreTabResponse,
   RegistryServerSummaryResponse,
@@ -597,6 +598,60 @@ export const mcpServersGetPromptsTab = async (serverName: string, options?: Requ
 
   const data: mcpServersGetPromptsTabResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as mcpServersGetPromptsTabResponse
+}
+
+
+export type mcpServersGetResourcesTabResponse200 = {
+  data: RegistryServerResourcesTabResponse
+  status: 200
+}
+
+export type mcpServersGetResourcesTabResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type mcpServersGetResourcesTabResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type mcpServersGetResourcesTabResponseSuccess = (mcpServersGetResourcesTabResponse200) & {
+  headers: Headers;
+};
+export type mcpServersGetResourcesTabResponseError = (mcpServersGetResourcesTabResponse404 | mcpServersGetResourcesTabResponse422) & {
+  headers: Headers;
+};
+
+export type mcpServersGetResourcesTabResponse = (mcpServersGetResourcesTabResponseSuccess | mcpServersGetResourcesTabResponseError)
+
+export const getMcpServersGetResourcesTabUrl = (serverName: string,) => {
+
+
+
+
+  return `http://localhost:8000/api/v1/mcp/servers/${serverName}/tabs/resources`
+}
+
+/**
+ * @summary Get Mcp Server Resources Tab
+ */
+export const mcpServersGetResourcesTab = async (serverName: string, options?: RequestInit): Promise<mcpServersGetResourcesTabResponse> => {
+
+  const res = await fetch(getMcpServersGetResourcesTabUrl(serverName),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: mcpServersGetResourcesTabResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as mcpServersGetResourcesTabResponse
 }
 
 

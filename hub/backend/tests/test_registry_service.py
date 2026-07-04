@@ -302,6 +302,61 @@ def test_registry_prompts_from_server_json_extracts_mcp_prompt_metadata() -> Non
     assert prompts[0].icons == [{"src": "https://example.com/weather.svg"}]
 
 
+def test_registry_resources_from_server_json_extracts_mcp_resource_metadata() -> None:
+    server_json = {
+        "name": "io.github.example/weather",
+        "_meta": {
+            "introspection": {
+                "resources/list": {
+                    "result": {
+                        "resources": [
+                            {
+                                "uri": "file:///project/README.md",
+                                "name": "README.md",
+                                "title": "Project documentation",
+                                "description": "Primary docs.",
+                                "mimeType": "text/markdown",
+                                "size": 2048,
+                                "annotations": {"audience": ["user"], "priority": 0.8},
+                                "icons": [{"src": "https://example.com/readme.svg"}],
+                            }
+                        ]
+                    }
+                },
+                "resources/templates/list": {
+                    "result": {
+                        "resourceTemplates": [
+                            {
+                                "uriTemplate": "file:///{path}",
+                                "name": "Project files",
+                                "description": "Read project files.",
+                                "mimeType": "application/octet-stream",
+                            }
+                        ]
+                    }
+                },
+            }
+        },
+    }
+
+    resources = service.registry_resources_from_server_json(server_json)
+    templates = service.registry_resource_templates_from_server_json(server_json)
+
+    assert len(resources) == 1
+    assert resources[0].uri == "file:///project/README.md"
+    assert resources[0].name == "README.md"
+    assert resources[0].title == "Project documentation"
+    assert resources[0].description == "Primary docs."
+    assert resources[0].mime_type == "text/markdown"
+    assert resources[0].size == 2048
+    assert resources[0].annotations == {"audience": ["user"], "priority": 0.8}
+    assert resources[0].icons == [{"src": "https://example.com/readme.svg"}]
+    assert len(templates) == 1
+    assert templates[0].uri_template == "file:///{path}"
+    assert templates[0].name == "Project files"
+    assert templates[0].mime_type == "application/octet-stream"
+
+
 def test_trust_report_explains_quality_score_components() -> None:
     version = version_model(uuid4(), "1.0.0", is_latest=True)
     version.quality_score = 96

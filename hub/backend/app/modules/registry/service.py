@@ -51,6 +51,8 @@ from app.modules.registry.schemas import (
     RegistryPromptRead,
     RegistryPublishedServerListResponse,
     RegistryPublishedServerVersionRead,
+    RegistryResourceRead,
+    RegistryResourceTemplateRead,
     RegistryServerDetailResponse,
     RegistryServerListResponse,
     RegistryServerOverviewServerRead,
@@ -59,6 +61,8 @@ from app.modules.registry.schemas import (
     RegistryServerPromptsTabResponse,
     RegistryServerPromptsVersionRead,
     RegistryServerRead,
+    RegistryServerResourcesTabResponse,
+    RegistryServerResourcesVersionRead,
     RegistryServerSchemaTabResponse,
     RegistryServerSchemaVersionRead,
     RegistryServerScoreTabResponse,
@@ -281,6 +285,42 @@ def prompt_candidate_lists_from_value(value: Any) -> list[list[Any]]:
     return []
 
 
+def resource_candidate_lists_from_value(value: Any) -> list[list[Any]]:
+    if isinstance(value, list):
+        return [value]
+    if not isinstance(value, dict):
+        return []
+
+    result = value.get("result")
+    if isinstance(result, dict):
+        nested = resource_candidate_lists_from_value(result)
+        if nested:
+            return nested
+
+    resources = value.get("resources")
+    if isinstance(resources, list):
+        return [resources]
+    return []
+
+
+def resource_template_candidate_lists_from_value(value: Any) -> list[list[Any]]:
+    if isinstance(value, list):
+        return [value]
+    if not isinstance(value, dict):
+        return []
+
+    result = value.get("result")
+    if isinstance(result, dict):
+        nested = resource_template_candidate_lists_from_value(result)
+        if nested:
+            return nested
+
+    templates = value.get("resourceTemplates")
+    if isinstance(templates, list):
+        return [templates]
+    return []
+
+
 def registry_tool_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]]:
     record = registry_record(server_json)
     meta = registry_record(record.get("_meta"))
@@ -305,6 +345,58 @@ def registry_tool_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]
     lists: list[list[Any]] = []
     for candidate in candidates:
         lists.extend(tool_candidate_lists_from_value(candidate))
+    return lists
+
+
+def registry_resource_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]]:
+    record = registry_record(server_json)
+    meta = registry_record(record.get("_meta"))
+    candidates: list[Any] = [
+        record.get("resources"),
+        record.get("resourceDefinitions"),
+        record.get("mcpResources"),
+        registry_record(record.get("capabilities")).get("resources"),
+        registry_record(record.get("introspection")).get("resources"),
+        registry_record(record.get("introspection")).get("resources/list"),
+        registry_record(record.get("resources/list")),
+        registry_record(record.get("mcp")).get("resources"),
+        registry_record(record.get("mcp")).get("resources/list"),
+        meta.get("resources"),
+        registry_record(meta.get("capabilities")).get("resources"),
+        registry_record(meta.get("introspection")).get("resources"),
+        registry_record(meta.get("introspection")).get("resources/list"),
+        registry_record(meta.get("mcp")).get("resources"),
+        registry_record(meta.get("mcp")).get("resources/list"),
+    ]
+
+    lists: list[list[Any]] = []
+    for candidate in candidates:
+        lists.extend(resource_candidate_lists_from_value(candidate))
+    return lists
+
+
+def registry_resource_template_candidate_lists(server_json: dict[str, Any]) -> list[list[Any]]:
+    record = registry_record(server_json)
+    meta = registry_record(record.get("_meta"))
+    candidates: list[Any] = [
+        record.get("resourceTemplates"),
+        record.get("resourceTemplateDefinitions"),
+        registry_record(record.get("resources/templates/list")),
+        registry_record(record.get("introspection")).get("resourceTemplates"),
+        registry_record(record.get("introspection")).get("resources/templates/list"),
+        registry_record(record.get("mcp")).get("resourceTemplates"),
+        registry_record(record.get("mcp")).get("resources/templates/list"),
+        meta.get("resourceTemplates"),
+        registry_record(meta.get("resources/templates/list")),
+        registry_record(meta.get("introspection")).get("resourceTemplates"),
+        registry_record(meta.get("introspection")).get("resources/templates/list"),
+        registry_record(meta.get("mcp")).get("resourceTemplates"),
+        registry_record(meta.get("mcp")).get("resources/templates/list"),
+    ]
+
+    lists: list[list[Any]] = []
+    for candidate in candidates:
+        lists.extend(resource_template_candidate_lists_from_value(candidate))
     return lists
 
 
@@ -500,6 +592,72 @@ def registry_prompts_from_server_json(server_json: dict[str, Any]) -> list[Regis
                 )
             )
     return prompts
+
+
+def resource_annotations(value: dict[str, Any]) -> dict[str, Any]:
+    annotations = public_registry_json(registry_record(value.get("annotations")))
+    return annotations if isinstance(annotations, dict) else {}
+
+
+def resource_icons(value: dict[str, Any]) -> list[dict[str, Any]]:
+    icons = public_registry_json(value.get("icons"))
+    return [item for item in icons if isinstance(item, dict)] if isinstance(icons, list) else []
+
+
+def registry_resources_from_server_json(server_json: dict[str, Any]) -> list[RegistryResourceRead]:
+    resources: list[RegistryResourceRead] = []
+    seen_uris: set[str] = set()
+    for candidate_list in registry_resource_candidate_lists(server_json):
+        for candidate in candidate_list:
+            if not isinstance(candidate, dict):
+                continue
+            uri = str(candidate.get("uri") or "").strip()
+            if not uri or uri in seen_uris:
+                continue
+            seen_uris.add(uri)
+            size = candidate.get("size")
+            resources.append(
+                RegistryResourceRead(
+                    uri=uri,
+                    name=str(candidate.get("name") or ""),
+                    title=str(candidate.get("title") or ""),
+                    description=str(candidate.get("description") or ""),
+                    mimeType=str(candidate.get("mimeType") or candidate.get("mime_type") or ""),
+                    size=size if isinstance(size, int) else None,
+                    annotations=resource_annotations(candidate),
+                    icons=resource_icons(candidate),
+                )
+            )
+    return resources
+
+
+def registry_resource_templates_from_server_json(
+    server_json: dict[str, Any],
+) -> list[RegistryResourceTemplateRead]:
+    templates: list[RegistryResourceTemplateRead] = []
+    seen_uri_templates: set[str] = set()
+    for candidate_list in registry_resource_template_candidate_lists(server_json):
+        for candidate in candidate_list:
+            if not isinstance(candidate, dict):
+                continue
+            uri_template = str(
+                candidate.get("uriTemplate") or candidate.get("uri_template") or ""
+            ).strip()
+            if not uri_template or uri_template in seen_uri_templates:
+                continue
+            seen_uri_templates.add(uri_template)
+            templates.append(
+                RegistryResourceTemplateRead(
+                    uriTemplate=uri_template,
+                    name=str(candidate.get("name") or ""),
+                    title=str(candidate.get("title") or ""),
+                    description=str(candidate.get("description") or ""),
+                    mimeType=str(candidate.get("mimeType") or candidate.get("mime_type") or ""),
+                    annotations=resource_annotations(candidate),
+                    icons=resource_icons(candidate),
+                )
+            )
+    return templates
 
 
 def github_repository_from_registry_repository(
@@ -3020,6 +3178,29 @@ async def get_server_prompts_tab(
                 title=version.title,
                 is_latest=version.is_latest,
                 prompts=registry_prompts_from_server_json(version.server_json),
+            )
+            for version in versions
+        ],
+    )
+
+
+async def get_server_resources_tab(
+    session,
+    name: str,
+) -> RegistryServerResourcesTabResponse:
+    server, versions = await published_server_with_versions(session, name)
+    return RegistryServerResourcesTabResponse(
+        server=server_tab_summary(server),
+        versions=[
+            RegistryServerResourcesVersionRead(
+                id=version.id,
+                version=version.version,
+                title=version.title,
+                is_latest=version.is_latest,
+                resources=registry_resources_from_server_json(version.server_json),
+                resourceTemplates=registry_resource_templates_from_server_json(
+                    version.server_json
+                ),
             )
             for version in versions
         ],

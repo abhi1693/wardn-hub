@@ -76,6 +76,8 @@ function versionTargets(version?: ServerTabVersion) {
   return {
     packages: records(version?.packages),
     prompts: records(version?.prompts),
+    resourceTemplates: records(version?.resourceTemplates),
+    resources: records(version?.resources),
     remotes: records(version?.remotes),
     tools: records(version?.tools),
   };
@@ -1047,6 +1049,26 @@ function annotationLabel(value: string) {
   return labelFromKey(value);
 }
 
+function resourceAnnotationRows(value: Record<string, unknown>) {
+  const annotations = isRecord(value.annotations) ? value.annotations : {};
+  return Object.entries(annotations).filter(([, item]) => !isEmptyValue(item));
+}
+
+function ResourceAnnotationPills({ value }: { value: Record<string, unknown> }) {
+  const annotations = resourceAnnotationRows(value);
+  if (annotations.length === 0) return null;
+
+  return (
+    <>
+      {annotations.map(([key, item]) => (
+        <TechnicalPill key={key} tone={key === "priority" ? "number" : "neutral"}>
+          {annotationLabel(key)}: {Array.isArray(item) ? item.map(String).join(", ") : String(item)}
+        </TechnicalPill>
+      ))}
+    </>
+  );
+}
+
 function toolAnnotationRows(tool: Record<string, unknown>) {
   const annotations = isRecord(tool.annotations) ? tool.annotations : {};
   const merged: Record<string, unknown> = { ...annotations };
@@ -1304,6 +1326,120 @@ function PromptsPanel({ prompts }: { prompts: Record<string, unknown>[] }) {
                     hiddenFields={new Set(["arguments", "description", "icons", "name", "title"])}
                     value={prompt}
                   />
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ResourcesPanel({
+  resources,
+  resourceTemplates,
+}: {
+  resources: Record<string, unknown>[];
+  resourceTemplates: Record<string, unknown>[];
+}) {
+  const totalCount = resources.length + resourceTemplates.length;
+
+  return (
+    <section className="technical-card">
+      <TechnicalHeader count={`${totalCount} declared`} title="Resources" />
+      {totalCount === 0 ? (
+        <div className="technical-empty-state">
+          <p className="server-detail-muted">
+            No resource definitions or templates are published for this version.
+          </p>
+        </div>
+      ) : (
+        <div className="technical-package-list">
+          {resources.map((resource, index) => {
+            const uri = stringValue(resource.uri) || `resource-${index + 1}`;
+            const name = stringValue(resource.name);
+            const title = stringValue(resource.title);
+            const description = stringValue(resource.description);
+            const mimeType = stringValue(resource.mimeType) || stringValue(resource.mime_type);
+            const size = typeof resource.size === "number" ? resource.size : null;
+            return (
+              <details className="technical-package-item" key={`${uri}-${index}`} open={index === 0}>
+                <summary>
+                  <span>
+                    <strong>{name || uri}</strong>
+                    <em>
+                      {title ? <span>{title}</span> : null}
+                      {mimeType ? <TechnicalPill tone="structured">{mimeType}</TechnicalPill> : null}
+                      <ResourceAnnotationPills value={resource} />
+                    </em>
+                  </span>
+                </summary>
+                <div className="technical-package-body">
+                  {description ? <p className="technical-description">{description}</p> : null}
+                  <div className="technical-pair-grid">
+                    <div className="wide">
+                      <label>URI</label>
+                      <div className="technical-code-field">
+                        <span>{uri}</span>
+                        <CopyButton label="Copy resource URI" value={uri} />
+                      </div>
+                    </div>
+                    {mimeType ? (
+                      <div>
+                        <label>MIME Type</label>
+                        <FormatBadge value={mimeType} />
+                      </div>
+                    ) : null}
+                    {size !== null ? (
+                      <div>
+                        <label>Size</label>
+                        <TechnicalPill tone="number">{size} bytes</TechnicalPill>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+
+          {resourceTemplates.map((template, index) => {
+            const uriTemplate =
+              stringValue(template.uriTemplate) || stringValue(template.uri_template) || `template-${index + 1}`;
+            const name = stringValue(template.name);
+            const title = stringValue(template.title);
+            const description = stringValue(template.description);
+            const mimeType = stringValue(template.mimeType) || stringValue(template.mime_type);
+            return (
+              <details className="technical-package-item" key={`${uriTemplate}-${index}`} open={resources.length === 0 && index === 0}>
+                <summary>
+                  <span>
+                    <strong>{name || uriTemplate}</strong>
+                    <em>
+                      <TechnicalPill tone="command">Template</TechnicalPill>
+                      {title ? <span>{title}</span> : null}
+                      {mimeType ? <TechnicalPill tone="structured">{mimeType}</TechnicalPill> : null}
+                      <ResourceAnnotationPills value={template} />
+                    </em>
+                  </span>
+                </summary>
+                <div className="technical-package-body">
+                  {description ? <p className="technical-description">{description}</p> : null}
+                  <div className="technical-pair-grid">
+                    <div className="wide">
+                      <label>URI Template</label>
+                      <div className="technical-code-field">
+                        <span>{uriTemplate}</span>
+                        <CopyButton label="Copy resource URI template" value={uriTemplate} />
+                      </div>
+                    </div>
+                    {mimeType ? (
+                      <div>
+                        <label>MIME Type</label>
+                        <FormatBadge value={mimeType} />
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </details>
             );
@@ -1847,6 +1983,15 @@ export function ServerDetailClient({
               {activeTab === "prompts" ? (
                 <div className="technical-main full-width">
                   <PromptsPanel prompts={targets.prompts} />
+                </div>
+              ) : null}
+
+              {activeTab === "resources" ? (
+                <div className="technical-main full-width">
+                  <ResourcesPanel
+                    resourceTemplates={targets.resourceTemplates}
+                    resources={targets.resources}
+                  />
                 </div>
               ) : null}
 

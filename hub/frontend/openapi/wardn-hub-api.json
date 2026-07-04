@@ -3163,6 +3163,109 @@
         "title": "RegistryRepository",
         "type": "object"
       },
+      "RegistryResourceRead": {
+        "properties": {
+          "annotations": {
+            "additionalProperties": true,
+            "title": "Annotations",
+            "type": "object"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "mimeType": {
+            "default": "",
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "uri": {
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "title": "RegistryResourceRead",
+        "type": "object"
+      },
+      "RegistryResourceTemplateRead": {
+        "properties": {
+          "annotations": {
+            "additionalProperties": true,
+            "title": "Annotations",
+            "type": "object"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "icons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Icons",
+            "type": "array"
+          },
+          "mimeType": {
+            "default": "",
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "uriTemplate": {
+            "title": "Uritemplate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uriTemplate"
+        ],
+        "title": "RegistryResourceTemplateRead",
+        "type": "object"
+      },
       "RegistryServerDetailResponse": {
         "properties": {
           "server": {
@@ -3666,6 +3769,68 @@
           "updatedAt"
         ],
         "title": "RegistryServerRead",
+        "type": "object"
+      },
+      "RegistryServerResourcesTabResponse": {
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/RegistryServerTabServerRead"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryServerResourcesVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "title": "RegistryServerResourcesTabResponse",
+        "type": "object"
+      },
+      "RegistryServerResourcesVersionRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isLatest": {
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "resourceTemplates": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryResourceTemplateRead"
+            },
+            "title": "Resourcetemplates",
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryResourceRead"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title",
+          "isLatest"
+        ],
+        "title": "RegistryServerResourcesVersionRead",
         "type": "object"
       },
       "RegistryServerSchemaTabResponse": {
@@ -9413,6 +9578,58 @@
           }
         },
         "summary": "Get Mcp Server Prompts Tab",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/{server_name}/tabs/resources": {
+      "get": {
+        "operationId": "mcp_servers_get_resources_tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryServerResourcesTabResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mcp Server Resources Tab",
         "tags": [
           "mcp"
         ]

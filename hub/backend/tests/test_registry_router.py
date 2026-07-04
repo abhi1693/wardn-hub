@@ -855,6 +855,60 @@ def test_server_prompts_tab_route_preserves_server_name(monkeypatch) -> None:
     assert response.json()["versions"][0]["prompts"][0]["name"] == "daily_briefing"
 
 
+def test_server_resources_tab_route_preserves_server_name(monkeypatch) -> None:
+    app = create_app()
+    server_id = uuid4()
+    version_id = uuid4()
+    captured: dict[str, str] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def get_resources_tab(_session, server_name):
+        captured["server_name"] = server_name
+        return {
+            "server": {
+                "id": str(server_id),
+                "name": "io.github.example/weather",
+                "title": "Weather",
+                "icons": [],
+            },
+            "versions": [
+                {
+                    "id": str(version_id),
+                    "version": "1.0.0",
+                    "title": "Weather",
+                    "isLatest": True,
+                    "resources": [
+                        {
+                            "uri": "file:///project/README.md",
+                            "name": "README.md",
+                            "mimeType": "text/markdown",
+                        }
+                    ],
+                    "resourceTemplates": [
+                        {
+                            "uriTemplate": "file:///{path}",
+                            "name": "Project files",
+                        }
+                    ],
+                }
+            ],
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_server_resources_tab", get_resources_tab)
+
+    response = TestClient(app).get(
+        "/api/v1/mcp/servers/io.github.example/weather/tabs/resources"
+    )
+
+    assert response.status_code == 200
+    assert captured["server_name"] == "io.github.example/weather"
+    assert response.json()["versions"][0]["resources"][0]["uri"] == "file:///project/README.md"
+    assert response.json()["versions"][0]["resourceTemplates"][0]["uriTemplate"] == "file:///{path}"
+
+
 def test_server_overview_tab_route_allows_anonymous_access(monkeypatch) -> None:
     app = create_app()
     server_id = uuid4()

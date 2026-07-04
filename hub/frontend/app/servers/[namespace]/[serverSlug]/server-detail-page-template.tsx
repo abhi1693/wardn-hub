@@ -22,7 +22,7 @@ type ServerDetailTemplateProps = {
   params: Promise<ServerDetailParams>;
 };
 
-const routeTabs = new Set<DetailTab>(["tools", "prompts", "schema", "score"]);
+const routeTabs = new Set<DetailTab>(["tools", "prompts", "resources", "schema", "score"]);
 
 function serverNameFromParams(params: ServerDetailParams) {
   const namespace = params.namespace ?? "";
@@ -47,6 +47,9 @@ function serverMetadataTitle(serverTitle: string, tab: DetailTab) {
   if (tab === "prompts") {
     return `${serverTitle} MCP Server Prompts`;
   }
+  if (tab === "resources") {
+    return `${serverTitle} MCP Server Resources`;
+  }
   if (tab === "schema") {
     return `${serverTitle} MCP Server Schema - Packages, Transports, and Configuration`;
   }
@@ -68,6 +71,9 @@ function serverMetadataDescription(
   }
   if (tab === "prompts") {
     return `Review ${serverTitle} MCP server prompt templates, arguments, and prompt metadata on Wardn Hub.`;
+  }
+  if (tab === "resources") {
+    return `Review ${serverTitle} MCP server resources, resource templates, MIME types, and annotations on Wardn Hub.`;
   }
   if (tab === "schema") {
     return `Review ${serverTitle} MCP server package, transport, schema, and configuration metadata on Wardn Hub.`;

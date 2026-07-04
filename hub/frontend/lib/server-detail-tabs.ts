@@ -8,12 +8,13 @@ import type {
   RegistryTrustReport,
 } from "@/lib/api/generated/model";
 
-export type DetailTab = "overview" | "tools" | "prompts" | "schema" | "score";
+export type DetailTab = "overview" | "tools" | "prompts" | "resources" | "schema" | "score";
 
 export const detailTabs: { id: DetailTab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "tools", label: "Tools" },
   { id: "prompts", label: "Prompts" },
+  { id: "resources", label: "Resources" },
   { id: "schema", label: "Schema" },
   { id: "score", label: "Score" },
 ];
@@ -53,6 +54,8 @@ export type ServerTabVersion = Pick<
   publishedBy?: ActorSummary | null;
   qualityScore?: number | null;
   prompts?: Record<string, unknown>[];
+  resourceTemplates?: Record<string, unknown>[];
+  resources?: Record<string, unknown>[];
   registryNamespace?: RegistryNamespace;
   remotes?: Record<string, unknown>[];
   repository?: Record<string, unknown> | null;
