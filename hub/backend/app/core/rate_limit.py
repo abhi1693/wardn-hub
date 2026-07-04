@@ -23,6 +23,7 @@ DEFAULT_PUBLIC_RATE_LIMIT_PREFIXES = (
     "/mcp/servers",
     "/mcp/badges",
 )
+ROOT_PUBLIC_RATE_LIMIT_PREFIXES = ("/v0.1/servers",)
 
 
 class ValkeyClient(Protocol):
@@ -69,10 +70,11 @@ def normalize_valkey_url(url: str) -> str:
 
 def public_rate_limit_path_prefixes(api_prefix: str) -> tuple[str, ...]:
     normalized_api_prefix = api_prefix.rstrip("/")
-    return tuple(
+    api_prefixed = tuple(
         f"{normalized_api_prefix}{path_prefix}"
         for path_prefix in DEFAULT_PUBLIC_RATE_LIMIT_PREFIXES
     )
+    return ROOT_PUBLIC_RATE_LIMIT_PREFIXES + api_prefixed
 
 
 def is_public_rate_limited_request(method: str, path: str, *, api_prefix: str) -> bool:

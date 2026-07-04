@@ -23,12 +23,9 @@ from app.modules.registry.service import (
     public_registry_json,
     registry_remotes_json,
 )
-from app.modules.users.dependencies import require_api_token_scopes
-from app.modules.users.models import User
 
 router = APIRouter(prefix="/v0.1", tags=["mcp-registry-v0.1"])
 
-CatalogReadUser = Annotated[User, Depends(require_api_token_scopes("catalog:read"))]
 OFFICIAL_META_KEY = "io.modelcontextprotocol.registry/official"
 WARDN_META_KEY = "ai.wardn.hub"
 
@@ -144,7 +141,6 @@ def server_response(
 )
 async def list_registry_servers_v01(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
     search: str | None = None,
@@ -191,7 +187,6 @@ async def get_registry_server_version_v01(
     server_name: str,
     version: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
     include_deleted: bool = False,
 ) -> Any:
     _ = include_deleted
@@ -213,7 +208,6 @@ async def get_registry_server_version_v01(
 async def list_registry_server_versions_v01(
     server_name: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    _current_user: CatalogReadUser,
     include_deleted: bool = False,
 ) -> Any:
     _ = include_deleted

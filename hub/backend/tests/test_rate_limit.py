@@ -41,6 +41,12 @@ class FailingLimiter:
 
 
 def test_public_rate_limit_path_scoping() -> None:
+    assert is_public_rate_limited_request("GET", "/v0.1/servers", api_prefix="/api/v1")
+    assert is_public_rate_limited_request(
+        "HEAD",
+        "/v0.1/servers/io.github.example/demo/versions/latest",
+        api_prefix="/api/v1",
+    )
     assert is_public_rate_limited_request("GET", "/api/v1/mcp/catalog", api_prefix="/api/v1")
     assert is_public_rate_limited_request(
         "HEAD",
@@ -52,8 +58,8 @@ def test_public_rate_limit_path_scoping() -> None:
         "/api/v1/mcp/servers/io.github.example/demo/claim",
         api_prefix="/api/v1",
     )
+    assert not is_public_rate_limited_request("POST", "/v0.1/servers", api_prefix="/api/v1")
     assert not is_public_rate_limited_request("GET", "/api/v1/health/ready", api_prefix="/api/v1")
-    assert not is_public_rate_limited_request("GET", "/v0.1/servers", api_prefix="/api/v1")
 
 
 def test_normalize_valkey_url_accepts_valkey_scheme() -> None:

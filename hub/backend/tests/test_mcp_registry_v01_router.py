@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -16,21 +15,6 @@ from app.modules.registry.schemas import (
     RegistryServerVersionListResponse,
     RegistryServerVersionRead,
 )
-from app.modules.users import dependencies
-
-
-async def catalog_read_user():
-    return SimpleNamespace(
-        id=uuid4(),
-        is_active=True,
-        is_superuser=False,
-        is_global_moderator=False,
-        is_global_partner_manager=False,
-    )
-
-
-def allow_catalog_read_session(app) -> None:
-    app.dependency_overrides[dependencies.get_current_user] = catalog_read_user
 
 
 async def fake_session():
@@ -124,10 +108,22 @@ def registry_detail(version="1.0.0", *, is_latest=True) -> RegistryServerVersion
     )
 
 
-def test_v01_servers_requires_authentication() -> None:
-    response = TestClient(create_app()).get("/v0.1/servers")
+def test_v01_servers_are_public_read_only(monkeypatch) -> None:
+    app = create_app()
 
-    assert response.status_code == 401
+    async def list_servers(*args, **kwargs):
+        return RegistryServerListResponse(
+            servers=[],
+            metadata=RegistryListMetadata(count=0, nextCursor=""),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+
+    response = TestClient(app).get("/v0.1/servers")
+
+    assert response.status_code == 200
+    assert response.json() == {"servers": [], "metadata": {"count": 0, "nextCursor": ""}}
 
 
 def test_v01_servers_lists_official_registry_envelope(monkeypatch) -> None:
@@ -147,7 +143,6 @@ def test_v01_servers_lists_official_registry_envelope(monkeypatch) -> None:
         return registry_detail()
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_servers", list_servers)
     monkeypatch.setattr(router, "get_version_detail", get_version_detail)
 
@@ -187,7 +182,6 @@ def test_v01_server_version_accepts_encoded_server_name(monkeypatch) -> None:
         return registry_detail("1.0.0")
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "get_version_detail", get_version_detail)
 
     response = TestClient(app).get("/v0.1/servers/io.github.example%2Fweather/versions/latest")
@@ -213,7 +207,6 @@ def test_v01_server_versions_lists_all_versions(monkeypatch) -> None:
         return registry_detail("1.1.0")
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "list_versions", list_versions)
     monkeypatch.setattr(router, "get_version_detail", get_version_detail)
 
@@ -238,7 +231,6 @@ def test_v01_server_version_returns_official_error_shape(monkeypatch) -> None:
         raise RegistryServerNotFoundError("server not found")
 
     app.dependency_overrides[get_db_session] = fake_session
-    allow_catalog_read_session(app)
     monkeypatch.setattr(router, "get_version_detail", get_version_detail)
 
     response = TestClient(app).get("/v0.1/servers/io.github.example/weather/versions/latest")
