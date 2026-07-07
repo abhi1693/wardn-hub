@@ -8,6 +8,7 @@ const footerSections = [
       { href: "/", label: "Explore" },
       { href: "/categories", label: "Categories" },
       { href: "/docs/api", label: "API docs" },
+      { href: "/methodology/quality-score", label: "Score method" },
       { href: "/advertise", label: "Advertise" },
     ],
     title: "Discover",

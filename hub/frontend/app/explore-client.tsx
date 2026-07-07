@@ -1,45 +1,18 @@
 "use client";
 
-import {
-  ArrowRight,
-  Clock3,
-  Database,
-  Network,
-  PackageCheck,
-  Search,
-  Server,
-  ShieldCheck,
-} from "lucide-react";
+import { Search, Server } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { ServerCard } from "@/components/server-card";
 import { listPublishedServers } from "@/lib/api/hub";
 import type { RegistryServerRead } from "@/lib/api/generated/model";
-import { serverDetailPath } from "@/lib/public-registry";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
 import type { RegistryFacts } from "@/lib/registry-facts-shared";
 import { formatFactDate } from "@/lib/registry-facts-shared";
 
 const EXPLORE_PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 250;
-const directorySignals = [
-  {
-    detail: "Package targets, remote endpoints, launch commands, and version metadata.",
-    icon: PackageCheck,
-    title: "Install shape",
-  },
-  {
-    detail: "Transport type, environment variables, arguments, and auth requirements.",
-    icon: Network,
-    title: "Runtime surface",
-  },
-  {
-    detail: "Namespace evidence, review status, source links, and Wardn Score.",
-    icon: ShieldCheck,
-    title: "Review signals",
-  },
-];
 const homepageFaqs = [
   {
     answer:
@@ -57,11 +30,6 @@ const homepageFaqs = [
     question: "Does Wardn Hub run MCP servers?",
   },
 ];
-
-function formatCount(value: number | null, fallback: string) {
-  if (typeof value !== "number") return fallback;
-  return new Intl.NumberFormat("en").format(value);
-}
 
 function EmptyState({ title, detail }: { detail: string; title: string }) {
   return (
@@ -132,11 +100,7 @@ export function ExploreHomeClient({
   const hasSearchQuery = trimmedQuery.length > 0;
   const servers = hasSearchQuery ? searchServers : baseServers;
   const nextCursor = hasSearchQuery ? searchNextCursor : baseNextCursor;
-  const featuredServerLinks = initialServers.slice(0, 3);
   const lastUpdatedText = formatFactDate(registryFacts.lastRegistryUpdate);
-  const generatedAtText = formatFactDate(registryFacts.generatedAt);
-  const publishedCountText = formatCount(registryFacts.publishedServerCount, "Live");
-  const categoryCountText = formatCount(registryFacts.categoryCount, "Curated");
 
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
@@ -267,54 +231,6 @@ export function ExploreHomeClient({
               <Link href="/transports/streamable-http">Remote servers</Link>
             </nav>
           </div>
-
-          <aside className="registry-hero-panel" aria-label="Registry snapshot">
-            <div className="registry-hero-panel-header">
-              <span>
-                <Database size={18} />
-                Registry snapshot
-              </span>
-              <small>
-                <Clock3 size={14} />
-                {lastUpdatedText}
-              </small>
-            </div>
-            <div className="registry-hero-stats" aria-label="Registry facts">
-              <span>
-                <strong>{publishedCountText}</strong>
-                <small>Published listings</small>
-              </span>
-              <span>
-                <strong>{categoryCountText}</strong>
-                <small>Categories</small>
-              </span>
-            </div>
-            <div className="registry-hero-signal-list">
-              {directorySignals.map((signal) => {
-                const Icon = signal.icon;
-                return (
-                  <div key={signal.title}>
-                    <Icon aria-hidden="true" size={18} />
-                    <span>
-                      <strong>{signal.title}</strong>
-                      <small>{signal.detail}</small>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {featuredServerLinks.length > 0 ? (
-              <div className="registry-featured-links">
-                <span>Recently indexed</span>
-                {featuredServerLinks.map((server) => (
-                  <Link href={serverDetailPath(server.name)} key={server.id}>
-                    {server.title || server.name}
-                    <ArrowRight size={14} />
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </aside>
         </div>
       </section>
       <section className="workspace">
@@ -326,56 +242,54 @@ export function ExploreHomeClient({
             Last registry update observed {formatFactDate(registryFacts.lastRegistryUpdate)}.
           </p>
 
-          <div className="registry-results-heading">
-            <div>
-              <span>{hasSearchQuery ? "Search results" : "Registry"}</span>
-              <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Trusted MCP server listings"}</h2>
-              <p>
-                {hasSearchQuery
-                  ? "Filtered by server name, title, description, package, and namespace metadata."
-                  : "Scan published listings with their category, summary, and Wardn Score."}
-              </p>
-            </div>
-            <div className="registry-results-meta">
-              <span>Generated {generatedAtText}</span>
-              <Link href={registryFacts.methodologyPath}>Score method</Link>
-            </div>
-          </div>
-          {error ? <EmptyState detail={error} title="Registry unavailable" /> : null}
-          {!error && loading ? <EmptyState detail="Searching published servers." title="Searching" /> : null}
-          {!error && !loading && servers.length === 0 ? (
-            <EmptyServerCard
-              detail={
-                hasSearchQuery
-                  ? "Try a different server name, title, or description keyword."
-                  : "Once community listings are published, this page will show one card per MCP server."
-              }
-              title={hasSearchQuery ? "No matching MCP servers" : "No MCP servers published yet"}
-            />
-          ) : null}
-          {servers.length > 0 ? (
-            <>
-              <div className="server-grid">
-                {servers.map((server) => (
-                  <ServerCard key={server.id} server={server} showQualityScore />
-                ))}
+          <section className="registry-results-shell" aria-label="Server listings">
+            <div className="registry-results-heading">
+              <div>
+                <span>{hasSearchQuery ? "Search results" : "Registry"}</span>
+                <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Trusted MCP server listings"}</h2>
+                <p>
+                  {hasSearchQuery
+                    ? "Filtered by server name, title, description, package, and namespace metadata."
+                    : "Scan published listings with their category, summary, and Wardn Score."}
+                </p>
               </div>
-              {nextCursor || error ? (
-                <div className="server-grid-more">
-                  {error ? <p>{error}</p> : null}
-                  {nextCursor ? (
-                    <button
-                      className="server-grid-load-more"
-                      disabled={loading}
-                      onClick={() => void loadMore()}
-                    >
-                      {loading ? "Loading..." : "Load more"}
-                    </button>
-                  ) : null}
+            </div>
+            {error ? <EmptyState detail={error} title="Registry unavailable" /> : null}
+            {!error && loading ? <EmptyState detail="Searching published servers." title="Searching" /> : null}
+            {!error && !loading && servers.length === 0 ? (
+              <EmptyServerCard
+                detail={
+                  hasSearchQuery
+                    ? "Try a different server name, title, or description keyword."
+                    : "Once community listings are published, this page will show one card per MCP server."
+                }
+                title={hasSearchQuery ? "No matching MCP servers" : "No MCP servers published yet"}
+              />
+            ) : null}
+            {servers.length > 0 ? (
+              <>
+                <div className="server-grid">
+                  {servers.map((server) => (
+                    <ServerCard key={server.id} server={server} showQualityScore />
+                  ))}
                 </div>
-              ) : null}
-            </>
-          ) : null}
+                {nextCursor || error ? (
+                  <div className="server-grid-more">
+                    {error ? <p>{error}</p> : null}
+                    {nextCursor ? (
+                      <button
+                        className="server-grid-load-more"
+                        disabled={loading}
+                        onClick={() => void loadMore()}
+                      >
+                        {loading ? "Loading..." : "Load more"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </section>
 
           {!hasSearchQuery ? (
             <section className="registry-support-section" aria-label="Directory guide">
@@ -388,7 +302,6 @@ export function ExploreHomeClient({
                 </p>
                 <div className="registry-update-line">
                   <span>Last registry update: {lastUpdatedText}</span>
-                  <span>Page generated: {generatedAtText}</span>
                 </div>
               </article>
               <article className="registry-faq-panel">
