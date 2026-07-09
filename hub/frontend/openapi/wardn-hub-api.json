@@ -971,8 +971,67 @@
         "title": "MCPRegistryV01ServerResponse",
         "type": "object"
       },
+      "OfficialSkillOwner": {
+        "properties": {
+          "featuredRepo": {
+            "title": "Featuredrepo",
+            "type": "string"
+          },
+          "featuredSkill": {
+            "title": "Featuredskill",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "ownerUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerurl"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillRead"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "sourceOwnerIconUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceownericonurl"
+          }
+        },
+        "required": [
+          "owner",
+          "featuredRepo",
+          "featuredSkill",
+          "skills"
+        ],
+        "title": "OfficialSkillOwner",
+        "type": "object"
+      },
       "OrganizationCreate": {
         "properties": {
+          "iconUrl": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Iconurl",
+            "type": "string"
+          },
           "name": {
             "maxLength": 150,
             "minLength": 1,
@@ -1140,6 +1199,10 @@
             "title": "Currentuserrole",
             "type": "string"
           },
+          "iconUrl": {
+            "title": "Iconurl",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1168,6 +1231,7 @@
           "name",
           "slug",
           "status",
+          "iconUrl",
           "currentUserRole",
           "createdAt",
           "updatedAt"
@@ -1289,6 +1353,12 @@
       },
       "OrganizationUpdate": {
         "properties": {
+          "iconUrl": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Iconurl",
+            "type": "string"
+          },
           "name": {
             "maxLength": 150,
             "minLength": 1,
@@ -1333,6 +1403,10 @@
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
+            "type": "string"
+          },
+          "iconUrl": {
+            "title": "Iconurl",
             "type": "string"
           },
           "id": {
@@ -1415,6 +1489,7 @@
           "partnerStatus",
           "partnerTier",
           "partnerSupportLevel",
+          "iconUrl",
           "websiteUrl",
           "supportEmail",
           "partnerProfile",
@@ -1426,6 +1501,18 @@
       },
       "PartnerOrganizationUpdate": {
         "properties": {
+          "iconUrl": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iconurl"
+          },
           "isPartner": {
             "anyOf": [
               {
@@ -5405,6 +5492,434 @@
         "title": "ServerSourceImportSubmissionPayload",
         "type": "object"
       },
+      "SkillAuditRead": {
+        "properties": {
+          "auditedAt": {
+            "format": "date-time",
+            "title": "Auditedat",
+            "type": "string"
+          },
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "riskLevel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risklevel"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "slug",
+          "status",
+          "summary",
+          "auditedAt"
+        ],
+        "title": "SkillAuditRead",
+        "type": "object"
+      },
+      "SkillAuditResponse": {
+        "properties": {
+          "audits": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAuditRead"
+            },
+            "title": "Audits",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "slug",
+          "audits"
+        ],
+        "title": "SkillAuditResponse",
+        "type": "object"
+      },
+      "SkillDetailResponse": {
+        "properties": {
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SkillFileRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hash"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "sourceName": {
+            "default": "",
+            "title": "Sourcename",
+            "type": "string"
+          },
+          "sourceOwner": {
+            "default": "",
+            "title": "Sourceowner",
+            "type": "string"
+          },
+          "sourceOwnerIconUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceownericonurl"
+          },
+          "sourceOwnerUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceownerurl"
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceurl"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "slug"
+        ],
+        "title": "SkillDetailResponse",
+        "type": "object"
+      },
+      "SkillFileRead": {
+        "properties": {
+          "contents": {
+            "title": "Contents",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "contents"
+        ],
+        "title": "SkillFileRead",
+        "type": "object"
+      },
+      "SkillListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SkillRead"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/SkillPagination"
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ],
+        "title": "SkillListResponse",
+        "type": "object"
+      },
+      "SkillOfficialResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OfficialSkillOwner"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+          },
+          "totalOwners": {
+            "title": "Totalowners",
+            "type": "integer"
+          },
+          "totalSkills": {
+            "title": "Totalskills",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "data",
+          "totalOwners",
+          "totalSkills",
+          "generatedAt"
+        ],
+        "title": "SkillOfficialResponse",
+        "type": "object"
+      },
+      "SkillPagination": {
+        "properties": {
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "perPage": {
+            "title": "Perpage",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "perPage",
+          "total",
+          "hasMore"
+        ],
+        "title": "SkillPagination",
+        "type": "object"
+      },
+      "SkillRead": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "installUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installurl"
+          },
+          "isDuplicate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isduplicate"
+          },
+          "isOfficial": {
+            "default": false,
+            "title": "Isofficial",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "sourceName": {
+            "default": "",
+            "title": "Sourcename",
+            "type": "string"
+          },
+          "sourceOwner": {
+            "default": "",
+            "title": "Sourceowner",
+            "type": "string"
+          },
+          "sourceOwnerIconUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceownericonurl"
+          },
+          "sourceOwnerUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceownerurl"
+          },
+          "sourceType": {
+            "title": "Sourcetype",
+            "type": "string"
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceurl"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "source",
+          "sourceType",
+          "url"
+        ],
+        "title": "SkillRead",
+        "type": "object"
+      },
+      "SkillSearchResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SkillRead"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "searchType": {
+            "title": "Searchtype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "query",
+          "searchType",
+          "count",
+          "durationMs"
+        ],
+        "title": "SkillSearchResponse",
+        "type": "object"
+      },
       "SubmissionCreate": {
         "examples": [
           {
@@ -6591,7 +7106,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.89"
+    "version": "0.2.90"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -11078,6 +11593,333 @@
         "summary": "Update Partner Server Support Record",
         "tags": [
           "partners"
+        ]
+      }
+    },
+    "/api/v1/skills": {
+      "get": {
+        "operationId": "skills_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "all-time",
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Per Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "official",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Official"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Skill Catalog",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/audit/{skill_id}": {
+      "get": {
+        "operationId": "skills_audit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillAuditResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Skill Catalog Audit",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/official": {
+      "get": {
+        "operationId": "skills_official",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillOfficialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Official Skill Catalog",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/search": {
+      "get": {
+        "operationId": "skills_search",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 2,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Skill Catalog",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}": {
+      "get": {
+        "operationId": "skills_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Skill Catalog Detail",
+        "tags": [
+          "skills"
         ]
       }
     },

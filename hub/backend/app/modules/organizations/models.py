@@ -40,6 +40,7 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    icon_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     support_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
     partner_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

@@ -81,6 +81,7 @@ def organization_response(
         name=organization.name,
         slug=organization.slug,
         status=organization.status,
+        iconUrl=organization.icon_url or "",
         currentUserRole=role,
         createdAt=organization.created_at,
         updatedAt=organization.updated_at,
@@ -211,6 +212,7 @@ async def create_organization(
         name=payload.name.strip(),
         slug=slug,
         status="active",
+        icon_url=payload.icon_url.strip(),
         created_by_id=user.id,
     )
     session.add(organization)
@@ -246,6 +248,7 @@ async def update_organization(
     organization, membership = await require_organization_admin(session, user, organization_id)
     organization.name = payload.name.strip()
     organization.status = payload.status
+    organization.icon_url = payload.icon_url.strip()
     await session.flush()
     await session.refresh(organization)
     return organization_response(organization, role=role_slug_for_user(user, membership))

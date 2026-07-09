@@ -126,9 +126,19 @@ export default function PartnersPage() {
             </div>
             {partners.map((partner) => (
               <div className="partner-table-row" key={partner.id}>
-                <div>
-                  <strong>{partner.name}</strong>
-                  <small>{partner.slug}</small>
+                <div className="partner-organization-cell">
+                  <span className="partner-organization-icon" aria-hidden="true">
+                    {partner.iconUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img alt="" src={partner.iconUrl} />
+                    ) : (
+                      partner.name.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span>
+                    <strong>{partner.name}</strong>
+                    <small>{partner.slug}</small>
+                  </span>
                 </div>
                 <span>{partner.partnerStatus}</span>
                 <span>{partner.partnerTier}</span>

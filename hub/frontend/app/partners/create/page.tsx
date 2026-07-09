@@ -36,6 +36,7 @@ export default function CreatePartnerPage() {
   const [partnerStatus, setPartnerStatus] = useState<PartnerStatus>("active");
   const [partnerTier, setPartnerTier] = useState<PartnerTier>("verified");
   const [partnerSupportLevel, setPartnerSupportLevel] = useState<PartnerSupportLevel>("compatible");
+  const [iconUrl, setIconUrl] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
@@ -69,12 +70,14 @@ export default function CreatePartnerPage() {
       const organization = await createOrganization({
         name: name.trim(),
         slug: normalizedSlug,
+        iconUrl: iconUrl.trim(),
       });
       await updatePartnerOrganization(organization.id, {
         isPartner: true,
         partnerStatus,
         partnerTier,
         partnerSupportLevel,
+        iconUrl: iconUrl.trim() || null,
         websiteUrl: websiteUrl.trim() || null,
         supportEmail: supportEmail.trim() || null,
         partnerInternalNotes: internalNotes.trim() || null,
@@ -174,8 +177,21 @@ export default function CreatePartnerPage() {
               </select>
             </label>
             <label>
+              <span>Icon URL</span>
+              <input
+                onChange={(event) => setIconUrl(event.target.value)}
+                placeholder="https://example.com/icon.svg"
+                type="url"
+                value={iconUrl}
+              />
+            </label>
+            <label>
               <span>Website URL</span>
-              <input onChange={(event) => setWebsiteUrl(event.target.value)} value={websiteUrl} />
+              <input
+                onChange={(event) => setWebsiteUrl(event.target.value)}
+                type="url"
+                value={websiteUrl}
+              />
             </label>
             <label>
               <span>Support Email</span>
@@ -186,6 +202,14 @@ export default function CreatePartnerPage() {
               />
             </label>
           </div>
+
+          {iconUrl.trim() ? (
+            <div className="partner-icon-preview">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="" src={iconUrl.trim()} />
+              <span>{iconUrl.trim()}</span>
+            </div>
+          ) : null}
 
           <label>
             <span>Internal Notes</span>

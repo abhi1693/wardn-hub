@@ -11,6 +11,7 @@ from app.modules.registry.router import badges_router as registry_badges_router
 from app.modules.registry.router import catalog_router as registry_catalog_router
 from app.modules.registry.router import categories_router as registry_categories_router
 from app.modules.registry.router import public_router as registry_public_router
+from app.modules.skills.router import router as skills_router
 from app.modules.submissions.router import router as submissions_router
 from app.modules.submissions.router import system_review_router
 from app.modules.users.auth_router import router as auth_router
@@ -32,3 +33,4 @@ api_router.include_router(registry_badges_router)
 api_router.include_router(registry_categories_router)
 api_router.include_router(registry_public_router)
 api_router.include_router(registry_admin_router)
+api_router.include_router(skills_router)

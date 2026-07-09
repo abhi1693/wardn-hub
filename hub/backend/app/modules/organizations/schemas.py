@@ -10,11 +10,13 @@ OrganizationStatus = Literal["active", "suspended", "archived"]
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     slug: str = Field(min_length=1, max_length=160, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    icon_url: str = Field(default="", alias="iconUrl", max_length=2048)
 
 
 class OrganizationUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     status: OrganizationStatus = "active"
+    icon_url: str = Field(default="", alias="iconUrl", max_length=2048)
 
 
 class OrganizationRead(BaseModel):
@@ -24,6 +26,7 @@ class OrganizationRead(BaseModel):
     name: str
     slug: str
     status: str
+    icon_url: str = Field(alias="iconUrl")
     current_user_role: str = Field(alias="currentUserRole")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
@@ -84,4 +87,3 @@ class OrganizationMembershipRead(BaseModel):
 
 class OrganizationMembershipListResponse(BaseModel):
     memberships: list[OrganizationMembershipRead]
-

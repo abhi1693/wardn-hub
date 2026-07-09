@@ -92,6 +92,7 @@ Important route groups:
 | Users | `/api/v1/users`, `/api/v1/users/bootstrap`, `/api/v1/users/{user_id}` |
 | Organizations | `/api/v1/organizations`, roles, and memberships |
 | Registry | `/api/v1/mcp/servers`, `/api/v1/mcp/catalog`, `/api/v1/mcp/categories` |
+| Skills | `/api/v1/skills`, `/api/v1/skills/search`, `/api/v1/skills/official` |
 | Admin registry | `/api/v1/admin/mcp/servers` |
 | Imports | `POST /api/v1/imports/server-source` |
 | Submissions | `/api/v1/submissions` and lifecycle actions |
@@ -143,6 +144,40 @@ curl -X POST http://localhost:8000/api/v1/users/bootstrap \
 
 The bootstrap endpoint succeeds only while no user exists. Later calls return a
 conflict response.
+
+Import skills from a GitHub repository:
+
+```sh
+cd hub/backend
+uv run python -m app.manage skills import-github \
+  https://github.com/acme/agent-skills \
+  --subfolder skills/weather
+```
+
+Omit `--subfolder` to import every `SKILL.md` discovered in the repository. The
+subfolder can point at one skill folder or a parent folder containing many
+skills. The importer reads `name` and `description` from `SKILL.md` frontmatter
+when available, stores text supporting files from the skill folder, and honors
+`GITHUB_TOKEN` when set. Use `--ref` for a branch, tag, or commit SHA.
+
+Import every skill under a repository subfolder:
+
+```sh
+cd hub/backend
+uv run python -m app.manage skills import-github \
+  https://github.com/anthropics/skills \
+  --ref main \
+  --subfolder skills
+```
+
+Mark an imported skills owner as official:
+
+```sh
+cd hub/backend
+uv run python -m app.manage skills mark-official vercel-labs
+```
+
+Use `--unset` to remove official status from that source owner.
 
 ### Frontend
 

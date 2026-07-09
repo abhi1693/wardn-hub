@@ -107,6 +107,7 @@ export default function EditPartnerPage() {
   const [partnerTier, setPartnerTier] = useState<PartnerTier>("verified");
   const [partnerSupportLevel, setPartnerSupportLevel] =
     useState<PartnerSupportLevel>("compatible");
+  const [iconUrl, setIconUrl] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
 
@@ -151,6 +152,7 @@ export default function EditPartnerPage() {
     setPartnerStatus(current.partnerStatus as PartnerStatus);
     setPartnerTier(current.partnerTier as PartnerTier);
     setPartnerSupportLevel(current.partnerSupportLevel);
+    setIconUrl(current.iconUrl);
     setWebsiteUrl(current.websiteUrl);
     setSupportEmail(current.supportEmail);
     setMemberships(membershipResponse.memberships);
@@ -207,6 +209,7 @@ export default function EditPartnerPage() {
         partnerStatus,
         partnerTier,
         partnerSupportLevel,
+        iconUrl: iconUrl.trim() || null,
         websiteUrl: websiteUrl.trim() || null,
         supportEmail: supportEmail.trim() || null,
       });
@@ -436,8 +439,21 @@ export default function EditPartnerPage() {
                     </select>
                   </label>
                   <label>
+                    <span>Icon URL</span>
+                    <input
+                      onChange={(event) => setIconUrl(event.target.value)}
+                      placeholder="https://example.com/icon.svg"
+                      type="url"
+                      value={iconUrl}
+                    />
+                  </label>
+                  <label>
                     <span>Website URL</span>
-                    <input onChange={(event) => setWebsiteUrl(event.target.value)} value={websiteUrl} />
+                    <input
+                      onChange={(event) => setWebsiteUrl(event.target.value)}
+                      type="url"
+                      value={websiteUrl}
+                    />
                   </label>
                   <label>
                     <span>Support Email</span>
@@ -448,6 +464,13 @@ export default function EditPartnerPage() {
                     />
                   </label>
                 </div>
+                {iconUrl.trim() ? (
+                  <div className="partner-icon-preview">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img alt="" src={iconUrl.trim()} />
+                    <span>{iconUrl.trim()}</span>
+                  </div>
+                ) : null}
                 <div className="partner-form-actions">
                   <button className="site-nav-cta" disabled={isSaving} type="submit">
                     {isSaving ? "Saving" : "Save Partner"}
