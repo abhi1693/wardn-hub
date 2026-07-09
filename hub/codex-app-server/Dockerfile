@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 ARG APP_VERSION=0.0.0
-ARG CODEX_VERSION=0.142.3
+ARG CODEX_VERSION=0.144.0
 ARG NODE_MAJOR=24
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -24,7 +24,8 @@ RUN install -d -m 1777 /tmp/codex-tmp && \
       python-is-python3 \
       bubblewrap \
       git \
-      ripgrep && \
+      ripgrep \
+      tini && \
     install -d -m 0755 /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
       | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
@@ -39,6 +40,7 @@ RUN install -d -m 1777 /tmp/codex-tmp && \
     rg --version && \
     python --version && \
     python3 --version && \
+    tini --version && \
     install -d -m 0777 /workspace /tmp/codex-work /tmp/codex-user /codex-home /codex-auth && \
     rm -rf /var/lib/apt/lists/*
 
@@ -53,4 +55,4 @@ LABEL org.opencontainers.image.version=$APP_VERSION \
 
 EXPOSE 41237
 
-ENTRYPOINT ["/usr/local/bin/codex-app-server-wrapper"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "-g", "--", "/usr/local/bin/codex-app-server-wrapper"]

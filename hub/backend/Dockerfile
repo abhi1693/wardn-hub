@@ -1,7 +1,7 @@
 FROM ghcr.io/astral-sh/uv:0.11.13 AS uv
 FROM node:24-bookworm-slim AS codex
 
-ARG CODEX_VERSION=0.142.3
+ARG CODEX_VERSION=0.144.0
 RUN npm install -g @openai/codex@${CODEX_VERSION} && \
     codex --version
 

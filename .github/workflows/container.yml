@@ -68,7 +68,7 @@ jobs:
       cache-scope: wardn-hub-codex-app-server-arm64
       build-args: |
         APP_VERSION=${{ github.event.release.tag_name || inputs.version }}
-        CODEX_VERSION=0.142.3
+        CODEX_VERSION=0.144.0
       tags: |
         type=semver,pattern={{version}}
         type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
