@@ -201,6 +201,7 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_ENVIRONMENT` | Environment name. Use `local` for development and a non-local value such as `production` for releases. |
 | `WARDN_HUB_API_PREFIX` | API prefix. Defaults to `/api/v1`. |
 | `WARDN_HUB_DATABASE_URL` | PostgreSQL SQLAlchemy URL, for example `postgresql+asyncpg://user:password@localhost:5432/wardn_hub`. |
+| `WARDN_HUB_DATABASE_CLIENT_POOL_ENABLED` | Enables the application-side SQLAlchemy connection pool. Defaults to `true`; set to `false` when the database URL targets an external session pooler such as PgBouncer. |
 | `WARDN_HUB_CORS_ORIGINS` | Comma-separated browser origins allowed by the backend. |
 | `WARDN_HUB_SESSION_SECRET` | Secret used for signed session cookies. Must be high entropy in production. |
 | `WARDN_HUB_API_TOKEN_SECRET` | Secret used for API token signing. Must be independent from the session secret in production. |

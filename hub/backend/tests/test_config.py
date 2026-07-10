@@ -106,6 +106,26 @@ def test_database_url_is_required_without_env(monkeypatch) -> None:
         Settings(_env_file=None)
 
 
+def test_database_client_pool_defaults_to_enabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_DATABASE_CLIENT_POOL_ENABLED", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.database_client_pool_enabled is True
+
+
+def test_database_client_pool_can_be_disabled(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {"WARDN_HUB_DATABASE_CLIENT_POOL_ENABLED": "false"},
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.database_client_pool_enabled is False
+
+
 def test_release_environment_rejects_placeholder_secrets(monkeypatch) -> None:
     set_required_settings(
         monkeypatch,

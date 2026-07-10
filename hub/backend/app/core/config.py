@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     system_review_secret: str = ""
     registry_public_base_url: str
     database_url: str
+    database_client_pool_enabled: bool = True
     cors_origins: list[str] = []
     otel_enabled: bool = False
     otel_service_name: str = "wardn-hub-api"
