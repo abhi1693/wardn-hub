@@ -103,6 +103,64 @@ def test_parse_github_repository_url_supports_tree_subpath() -> None:
     assert repo.path == "skills/weather"
 
 
+@pytest.mark.parametrize(
+    ("content", "expected_error"),
+    [
+        (
+            b"first\nsecond\x00",
+            "GitHub file contains a NUL byte at offset 12 (line 2): "
+            "skills/binary/SKILL.md",
+        ),
+        (
+            b"\xff",
+            "GitHub file is not UTF-8 text: skills/binary/SKILL.md",
+        ),
+    ],
+)
+async def test_github_raw_file_rejects_invalid_text(
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes,
+    expected_error: str,
+) -> None:
+    async def fake_get(url: str) -> SimpleNamespace:
+        assert url.endswith("/acme/agent-skills/main/skills/binary/SKILL.md")
+        return SimpleNamespace(
+            status_code=200,
+            content=content,
+            text="",
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        with pytest.raises(skills.InvalidSkillTextError) as exc_info:
+            await client.raw_file(repo, "main", "skills/binary/SKILL.md")
+
+    assert str(exc_info.value) == expected_error
+
+
+async def test_github_raw_file_http_error_is_not_invalid_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(url: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            status_code=500,
+            content=b"",
+            text="upstream failure",
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        with pytest.raises(skills.SkillCliError) as exc_info:
+            await client.raw_file(repo, "main", "skills/weather/SKILL.md")
+
+    assert not isinstance(exc_info.value, skills.InvalidSkillTextError)
+    assert str(exc_info.value) == (
+        "GitHub raw file fetch failed for skills/weather/SKILL.md: upstream failure"
+    )
+
+
 def test_discover_skill_paths_uses_exact_skill_subfolder() -> None:
     tree = [
         skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
@@ -304,6 +362,279 @@ async def test_import_github_logs_progress(
     assert saved_record.skill_id == "acme/agent-skills/weather-skill"
     assert saved_record.source_path == "skills/weather/SKILL.md"
     assert records[6].skill_count == 1
+    assert records[6].skipped_skill_count == 0
+    assert records[6].discovered_skill_count == 1
+
+
+async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            assert token == "github-token"
+            assert timeout_seconds == 3.0
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            return skills.GitHubRepositoryMetadata(
+                default_branch="main",
+                owner_avatar_url="https://avatars.example/acme.png",
+            )
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            return [
+                skills.GitHubTreeItem(path="skills/binary/SKILL.md", type="blob"),
+                skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob"),
+            ]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            if path == "skills/binary/SKILL.md":
+                raise skills.InvalidSkillTextError(
+                    path,
+                    "GitHub file contains a NUL byte at offset 42 (line 3)",
+                )
+            assert path == "skills/weather/SKILL.md"
+            return "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n"
+
+    commits = 0
+
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            nonlocal commits
+            commits += 1
+
+    saved_paths: list[str] = []
+
+    async def fake_add_skill(session: object, payload: skills.SkillAddInput):
+        saved_paths.append(payload.repository_subfolder)
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash="sha256:abc123"),
+        )
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
+    caplog.set_level(logging.INFO, logger=skills.logger.name)
+
+    result = await skills.import_github_from_args(
+        Namespace(
+            repository_url="https://github.com/acme/agent-skills",
+            subfolder="skills",
+            ref="",
+            slug="",
+            name="",
+            description="",
+            install_url="",
+            website_url="",
+            github_token="github-token",
+            timeout_seconds=3.0,
+        )
+    )
+
+    assert result == 0
+    assert saved_paths == ["skills/weather"]
+    assert commits == 1
+    output_lines = capsys.readouterr().out.splitlines()
+    assert output_lines[-2:] == [
+        "imported 1 skill(s)",
+        "skipped 1 invalid skill(s)",
+    ]
+
+    records = [record for record in caplog.records if record.name == skills.logger.name]
+    skipped_records = [
+        record
+        for record in records
+        if record.message == "github skill import skipped invalid skill"
+    ]
+    assert len(skipped_records) == 1
+    assert skipped_records[0].levelno == logging.WARNING
+    assert skipped_records[0].source_path == "skills/binary/SKILL.md"
+    assert skipped_records[0].skip_reason == (
+        "GitHub file contains a NUL byte at offset 42 (line 3): skills/binary/SKILL.md"
+    )
+    assert "github skills import failed" not in [record.message for record in records]
+
+    completed_record = next(
+        record for record in records if record.message == "github skills import completed"
+    )
+    assert completed_record.skill_count == 1
+    assert completed_record.skipped_skill_count == 1
+    assert completed_record.discovered_skill_count == 2
+
+
+async def test_import_github_fails_when_all_discovered_skills_are_invalid(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            return skills.GitHubRepositoryMetadata(default_branch="main", owner_avatar_url="")
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            return [
+                skills.GitHubTreeItem(path="skills/binary/SKILL.md", type="blob"),
+                skills.GitHubTreeItem(path="skills/not-utf8/SKILL.md", type="blob"),
+            ]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            raise skills.InvalidSkillTextError(path, "Invalid SKILL.md")
+
+    def fail_if_session_is_opened() -> None:
+        raise AssertionError("database session should not open when no skill is importable")
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", fail_if_session_is_opened)
+    caplog.set_level(logging.INFO, logger=skills.logger.name)
+
+    with pytest.raises(skills.SkillCliError):
+        await skills.import_github_from_args(
+            Namespace(
+                repository_url="https://github.com/acme/agent-skills",
+                subfolder="skills",
+                ref="",
+                slug="",
+                name="",
+                description="",
+                install_url="",
+                website_url="",
+                github_token="github-token",
+                timeout_seconds=3.0,
+            )
+        )
+
+    records = [record for record in caplog.records if record.name == skills.logger.name]
+    assert sum(
+        record.message == "github skill import skipped invalid skill" for record in records
+    ) == 2
+    assert "github skills import completed" not in [record.message for record in records]
+    assert records[-1].message == "github skills import failed"
+
+
+@pytest.mark.parametrize(
+    ("skill_paths", "failure_kind"),
+    [
+        (["skills/binary/SKILL.md"], "invalid-text"),
+        (
+            ["skills/unavailable/SKILL.md", "skills/weather/SKILL.md"],
+            "http",
+        ),
+    ],
+)
+async def test_import_github_does_not_skip_targeted_or_non_text_errors(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    skill_paths: list[str],
+    failure_kind: str,
+) -> None:
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            return skills.GitHubRepositoryMetadata(default_branch="main", owner_avatar_url="")
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            return [skills.GitHubTreeItem(path=path, type="blob") for path in skill_paths]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            if failure_kind == "invalid-text":
+                raise skills.InvalidSkillTextError(path, "Invalid SKILL.md")
+            raise skills.SkillCliError(f"GitHub raw file fetch failed for {path}: unavailable")
+
+    def fail_if_session_is_opened() -> None:
+        raise AssertionError("database session should not open after a fatal fetch error")
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", fail_if_session_is_opened)
+    caplog.set_level(logging.INFO, logger=skills.logger.name)
+
+    with pytest.raises(skills.SkillCliError):
+        await skills.import_github_from_args(
+            Namespace(
+                repository_url="https://github.com/acme/agent-skills",
+                subfolder="skills" if len(skill_paths) > 1 else "skills/binary",
+                ref="",
+                slug="",
+                name="",
+                description="",
+                install_url="",
+                website_url="",
+                github_token="github-token",
+                timeout_seconds=3.0,
+            )
+        )
+
+    records = [record for record in caplog.records if record.name == skills.logger.name]
+    assert "github skill import skipped invalid skill" not in [
+        record.message for record in records
+    ]
+    assert "github skills import completed" not in [record.message for record in records]
+    assert records[-1].message == "github skills import failed"
 
 
 def test_manage_dispatches_skills_mark_official(monkeypatch: pytest.MonkeyPatch) -> None:

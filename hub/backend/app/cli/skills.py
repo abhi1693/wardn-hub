@@ -67,6 +67,13 @@ class SkillCliError(Exception):
     pass
 
 
+class InvalidSkillTextError(SkillCliError):
+    def __init__(self, path: str, reason: str) -> None:
+        self.path = path
+        self.reason = reason
+        super().__init__(f"{reason}: {path}")
+
+
 @dataclass(frozen=True)
 class SkillAddInput:
     source: str
@@ -495,12 +502,18 @@ class GitHubClient:
         if response.status_code >= 400:
             raise SkillCliError(f"GitHub raw file fetch failed for {path}: {response.text}")
         content = response.content
-        if b"\x00" in content:
-            raise SkillCliError(f"GitHub file appears to be binary: {path}")
+        nul_offset = content.find(b"\x00")
+        if nul_offset >= 0:
+            line_number = content.count(b"\n", 0, nul_offset) + 1
+            raise InvalidSkillTextError(
+                path,
+                f"GitHub file contains a NUL byte at offset {nul_offset} "
+                f"(line {line_number})",
+            )
         try:
             return content.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise SkillCliError(f"GitHub file is not UTF-8 text: {path}") from exc
+            raise InvalidSkillTextError(path, "GitHub file is not UTF-8 text") from exc
 
 
 def tree_blob_paths(tree: list[GitHubTreeItem]) -> set[str]:
@@ -629,6 +642,7 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
     repo = parse_github_repository_url(args.repository_url)
     subfolder = normalize_repo_subfolder(args.subfolder or repo.path)
     token = args.github_token or os.getenv(GITHUB_TOKEN_ENV, "")
+    skipped: list[tuple[str, str]] = []
     log_context = {
         "source": repo.source,
         "repository_url": repo.url,
@@ -672,20 +686,41 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     "--slug, --name, and --description can only be used when importing one skill; "
                     "pass --subfolder to target a single skill"
                 )
-            imported = [
-                await import_skill_from_github_path(
-                    client=client,
-                    repo=repo,
-                    ref=ref,
-                    tree=tree,
-                    skill_path=skill_path,
-                    owner_avatar_url=metadata.owner_avatar_url,
-                    import_subfolder=subfolder,
-                    is_multi_skill_import=len(skill_paths) > 1,
-                    args=args,
+            imported = []
+            for skill_path in skill_paths:
+                try:
+                    imported_skill = await import_skill_from_github_path(
+                        client=client,
+                        repo=repo,
+                        ref=ref,
+                        tree=tree,
+                        skill_path=skill_path,
+                        owner_avatar_url=metadata.owner_avatar_url,
+                        import_subfolder=subfolder,
+                        is_multi_skill_import=len(skill_paths) > 1,
+                        args=args,
+                    )
+                except InvalidSkillTextError as exc:
+                    if len(skill_paths) == 1:
+                        raise
+                    skipped.append((skill_path, str(exc)))
+                    logger.warning(
+                        "github skill import skipped invalid skill",
+                        extra={
+                            **log_context,
+                            "ref": ref,
+                            "source_path": skill_path,
+                            "skip_reason": str(exc),
+                        },
+                    )
+                    continue
+                imported.append(imported_skill)
+
+            if not imported:
+                raise SkillCliError(
+                    f"No valid SKILL.md files could be imported; skipped {len(skipped)} "
+                    "invalid skill(s)"
                 )
-                for skill_path in skill_paths
-            ]
 
         async with AsyncSessionLocal() as session:
             results = []
@@ -705,7 +740,12 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
             await session.commit()
             logger.info(
                 "github skills import completed",
-                extra={**log_context, "skill_count": len(results)},
+                extra={
+                    **log_context,
+                    "skill_count": len(results),
+                    "skipped_skill_count": len(skipped),
+                    "discovered_skill_count": len(skill_paths),
+                },
             )
     except Exception:
         logger.exception("github skills import failed", extra=log_context)
@@ -717,6 +757,8 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
         print(f"snapshot {snapshot.content_hash}")
         print(f"detail /api/v1/skills/{skill_id}")
     print(f"imported {len(results)} skill(s)")
+    if skipped:
+        print(f"skipped {len(skipped)} invalid skill(s)")
     return 0
 
 
