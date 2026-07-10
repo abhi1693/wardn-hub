@@ -1,5 +1,6 @@
 import type {
   SkillDetailResponse,
+  SkillFileRead,
   SkillListResponse,
   SkillPagination,
   SkillRead,
@@ -76,6 +77,37 @@ async function skillsRequest<T>(path: string, params?: Record<string, boolean | 
 
 export function skillDetailPath(skillId: string) {
   return `/skills/${skillId.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+export function skillFilePathSegments(segments: string[]) {
+  if (
+    !segments.length ||
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment.includes("/") ||
+        segment.includes("\\") ||
+        Array.from(segment).some((character) => {
+          const codePoint = character.codePointAt(0) ?? 0;
+          return codePoint < 32 || codePoint === 127;
+        }),
+    )
+  ) {
+    return null;
+  }
+  return segments.join("/");
+}
+
+export function skillFilePath(skillId: string, filePath: string) {
+  const normalizedPath = skillFilePathSegments(filePath.split("/"));
+  if (!normalizedPath || normalizedPath !== filePath) return null;
+  if (filePath === "SKILL.md") return skillDetailPath(skillId);
+  return `${skillDetailPath(skillId)}/files/${filePath
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
 }
 
 export function skillOwner(source: string) {
@@ -199,15 +231,20 @@ export async function listPublicSkillsPage(params?: {
   return { pagination: response.pagination, skills: response.data };
 }
 
-export async function getPublicSkill(skillId: string) {
+export async function getPublicSkill(
+  skillId: string,
+  options?: { includeBundle?: boolean },
+) {
   return skillsRequest<SkillDetailResponse>(
     `/skills/${skillId.split("/").map(encodeURIComponent).join("/")}`,
+    options?.includeBundle ? { include_bundle: true } : undefined,
   );
 }
 
-export function findSkillMd(skill: SkillDetailResponse) {
-  const file = skill.files?.find((candidate) => candidate.path === "SKILL.md");
-  return file && (!file.encoding || file.encoding === "utf-8") ? file.contents : "";
+export function publishedSkillFiles(skill: SkillDetailResponse) {
+  return (skill.files ?? []).filter(
+    (file): file is SkillFileRead => skillFilePath(skill.id, file.path) !== null,
+  );
 }
 
 export function stripMarkdownFrontmatter(markdown: string) {

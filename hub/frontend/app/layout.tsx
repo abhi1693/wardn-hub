@@ -18,11 +18,30 @@ function googleAnalyticsId() {
 }
 
 export const metadata: Metadata = {
+  applicationName: siteConfig.name,
   description: siteConfig.description,
+  icons: {
+    apple: [{ sizes: "180x180", type: "image/png", url: "/apple-touch-icon.png" }],
+    icon: [
+      { url: "/favicon.ico" },
+      { sizes: "16x16", type: "image/png", url: "/favicon-16x16.png" },
+      { sizes: "32x32", type: "image/png", url: "/favicon-32x32.png" },
+    ],
+    shortcut: ["/favicon.ico"],
+  },
   keywords: [...siteConfig.keywords],
+  manifest: "/site.webmanifest",
   metadataBase: new URL(siteConfig.url),
   openGraph: {
     description: siteConfig.description,
+    images: [
+      {
+        alt: siteConfig.name,
+        height: 630,
+        url: "/og-image.png",
+        width: 1200,
+      },
+    ],
     locale: "en_US",
     siteName: siteConfig.name,
     title: siteConfig.tagline,
@@ -38,9 +57,14 @@ export const metadata: Metadata = {
     template: `%s | ${siteConfig.name}`,
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     description: siteConfig.description,
+    images: ["/og-image.png"],
     title: siteConfig.tagline,
+  },
+  other: {
+    "msapplication-TileColor": "#0f172a",
+    "msapplication-TileImage": "/mstile-150x150.png",
   },
 };
 

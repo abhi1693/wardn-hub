@@ -1,11 +1,19 @@
-import { ExternalLink, Sparkles } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  FileArchive,
+  FileCode2,
+  FileText,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import type { SkillRead } from "@/lib/api/generated/model";
+import type { SkillFileRead, SkillRead } from "@/lib/api/generated/model";
 import {
   groupSkillsBySource,
   skillDetailPath,
+  skillFilePath,
   skillOwnerPath,
   skillSourcePath,
   type SkillOwnerGroup,
@@ -251,6 +259,87 @@ export function RelatedSkills({ currentId, skills }: { currentId: string; skills
         ))}
       </div>
     </section>
+  );
+}
+
+function SkillFileIcon({ file }: { file: SkillFileRead }) {
+  if (file.encoding === "base64") {
+    return <FileArchive aria-hidden="true" size={16} />;
+  }
+  if (/\.(?:md|markdown)$/i.test(file.path)) {
+    return <FileText aria-hidden="true" size={16} />;
+  }
+  return <FileCode2 aria-hidden="true" size={16} />;
+}
+
+type SkillFilesProps = {
+  activePath: string;
+  files: SkillFileRead[];
+  skillId: string;
+};
+
+function sortedSkillFiles(files: SkillFileRead[]) {
+  return [...files].sort((left, right) => {
+    if (left.path === "SKILL.md") return -1;
+    if (right.path === "SKILL.md") return 1;
+    return left.path.localeCompare(right.path);
+  });
+}
+
+function SkillFileLinks({
+  activePath,
+  files,
+  skillId,
+}: SkillFilesProps) {
+  return (
+    <nav aria-label="Skill files" className="skill-file-list">
+      {sortedSkillFiles(files).map((file) => {
+        const href = skillFilePath(skillId, file.path);
+        if (!href) return null;
+        const active = file.path === activePath;
+        return (
+          <Link
+            aria-current={active ? "page" : undefined}
+            className={`skill-file-list-item${active ? " active" : ""}`}
+            href={href}
+            key={file.path}
+            title={file.path}
+          >
+            <SkillFileIcon file={file} />
+            <span>{file.path}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function SkillFiles(props: SkillFilesProps) {
+  if (!props.files.length) return null;
+
+  return (
+    <section className="skills-side-section skill-files-section">
+      <h2>
+        Files <span className="skill-file-count">{props.files.length}</span>
+      </h2>
+      <SkillFileLinks {...props} />
+    </section>
+  );
+}
+
+export function SkillFilesDisclosure(props: SkillFilesProps) {
+  if (!props.files.length) return null;
+
+  return (
+    <details className="skill-file-disclosure">
+      <summary>
+        <span>
+          Files <span className="skill-file-count">{props.files.length}</span>
+        </span>
+        <ChevronDown aria-hidden="true" size={16} />
+      </summary>
+      <SkillFileLinks {...props} />
+    </details>
   );
 }
 

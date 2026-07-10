@@ -145,27 +145,38 @@ curl -X POST http://localhost:8000/api/v1/users/bootstrap \
 The bootstrap endpoint succeeds only while no user exists. Later calls return a
 conflict response.
 
-Import skills from a GitHub repository:
+Import skills from every active public repository owned by a GitHub user or
+organization:
 
 ```sh
 cd hub/backend
 uv run python -m app.manage skills import-github \
-  https://github.com/acme/agent-skills \
-  --subfolder skills/weather
+  acme \
+  --subfolder skills
 ```
 
-Omit `--subfolder` to import every `SKILL.md` discovered in the repository. The
-subfolder can point at one skill folder or a parent folder containing many
-skills. The importer reads `name` and `description` from `SKILL.md` frontmatter
-when available, stores regular supporting files from the skill folder, and
-honors `GITHUB_TOKEN` when set. UTF-8 files are stored as text; binary files are
-stored as base64 with encoding metadata. Nested skill folders own their own
-files. Dependency/build directories, symlinks, and gitlinks are excluded. A
-bundle may contain up to 256 files, 8 MiB per file, and 16 MiB total. Use
-`--ref` for a branch, tag, or commit SHA. One import command is capped at 256
-MiB across all discovered bundles; narrow large repositories with
-`--subfolder`. Only public GitHub repositories are accepted because imported
-skills are published through the public Hub API.
+The positional value must be a bare GitHub account login, not a repository URL.
+The importer resolves whether it is a user or organization, paginates all of
+its public repositories, and excludes private, forked, archived, and disabled
+repositories. It scans the required `--subfolder` on each remaining repository's
+default branch. Repositories without that subfolder or a `SKILL.md` beneath it
+are skipped normally; matching repositories commit independently. The command
+returns a nonzero status when no skills were imported, any repository failed,
+or any discovered skill was invalid, even though successful repository commits
+are retained. Authentication, rate-limit, GitHub server, and transport failures
+stop the remaining repository requests. When imported content changes, prior
+skill audit results are cleared so the new snapshot must be audited again.
+
+The subfolder can point at one skill folder or a parent folder containing many
+skills. The importer reads `name` and `description` from `SKILL.md` frontmatter,
+stores regular supporting files from the skill folder, and honors
+`GITHUB_TOKEN` when set. UTF-8 files are stored as text; binary files are stored
+as base64 with encoding metadata. Nested skill folders own their own files.
+Dependency/build directories, symlinks, and gitlinks are excluded. A bundle may
+contain up to 256 files, 8 MiB per file, and 16 MiB total. Each matching
+repository is capped at 256 MiB across its discovered bundles; choose a narrower
+`--subfolder` for larger repositories. Imported skills are additive: repositories
+excluded or absent from a later owner scan are not unpublished.
 
 Skill detail responses return only the root `SKILL.md` by default. Pass
 `include_bundle=true` to retrieve its stored scripts, references, and assets:
@@ -176,13 +187,33 @@ curl --get \
   http://localhost:8000/api/v1/skills/acme/agent-skills/weather
 ```
 
-Import every skill under a repository subfolder:
+Refresh every active GitHub skill from its recorded repository, branch, and
+exact skill directory:
+
+```sh
+cd hub/backend
+uv run python -m app.manage skills refresh
+```
+
+The refresh command updates snapshot bundles for existing skills only. It does
+not discover new skills, change catalog metadata or visibility, or replace a
+missing skill with a nested one. Only skills with the exact GitHub branch and
+directory provenance recorded by `import-github` are fetched. Successful skills
+commit independently; the command returns a nonzero status when any recorded
+skill cannot be refreshed. Failed records keep their last snapshot and
+publication state so transient GitHub failures cannot silently unpublish catalog
+entries; review the structured failure logs. Changed snapshot hashes clear prior
+skill audit results and must be audited again. The command uses `GITHUB_TOKEN`
+when present. Authentication, rate-limit, GitHub server, and transport failures
+stop the remaining refresh requests to avoid a request storm.
+
+For example, import every skill under `skills` across an organization's active
+repositories:
 
 ```sh
 cd hub/backend
 uv run python -m app.manage skills import-github \
-  https://github.com/anthropics/skills \
-  --ref main \
+  anthropics \
   --subfolder skills
 ```
 

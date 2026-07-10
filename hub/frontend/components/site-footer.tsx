@@ -103,7 +103,7 @@ export function SiteFooter() {
         </nav>
 
         <div className="site-footer-bottom">
-          <span>© {year} Wardn AI</span>
+          <span>© {year} {siteConfig.name}</span>
         </div>
       </div>
     </footer>
