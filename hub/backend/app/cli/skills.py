@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -14,13 +15,17 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import configure_logging
 from app.db.session import AsyncSessionLocal
 from app.modules.skills.models import Skill, SkillSnapshot, SkillSourceOwner
+
+logger = logging.getLogger(__name__)
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 DEFAULT_USER_AGENT = "WardnHubSkillsImporter/0.1"
 DEFAULT_IMPORT_TIMEOUT_SECONDS = 20.0
+MAX_LOGGED_SKILL_PATHS = 20
 SKIPPED_PATH_PARTS = {
     ".git",
     ".hg",
@@ -586,6 +591,18 @@ async def import_skill_from_github_path(
     repository_url = repo.url
     if root:
         repository_url = f"{repo.url}/tree/{ref}/{root}"
+    logger.info(
+        "github skill import fetched skill file",
+        extra={
+            "source": repo.source,
+            "ref": ref,
+            "source_path": skill_path,
+            "skill_slug": slug,
+            "skill_name": name,
+            "skill_root": root,
+            "skill_md_bytes": len(skill_md.encode("utf-8")),
+        },
+    )
     payload = SkillAddInput(
         source=repo.source,
         source_owner=repo.owner,
@@ -612,37 +629,87 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
     repo = parse_github_repository_url(args.repository_url)
     subfolder = normalize_repo_subfolder(args.subfolder or repo.path)
     token = args.github_token or os.getenv(GITHUB_TOKEN_ENV, "")
-    async with GitHubClient(token=token, timeout_seconds=args.timeout_seconds) as client:
-        metadata = await client.repository_metadata(repo)
-        ref = args.ref or repo.ref or metadata.default_branch
-        tree = await client.recursive_tree(repo, ref)
-        skill_paths = discover_skill_paths(tree, subfolder=subfolder)
-        if len(skill_paths) > 1 and (args.slug or args.name or args.description):
-            raise SkillCliError(
-                "--slug, --name, and --description can only be used when importing one skill; "
-                "pass --subfolder to target a single skill"
-            )
-        imported = [
-            await import_skill_from_github_path(
-                client=client,
-                repo=repo,
-                ref=ref,
-                tree=tree,
-                skill_path=skill_path,
-                owner_avatar_url=metadata.owner_avatar_url,
-                import_subfolder=subfolder,
-                is_multi_skill_import=len(skill_paths) > 1,
-                args=args,
-            )
-            for skill_path in skill_paths
-        ]
+    log_context = {
+        "source": repo.source,
+        "repository_url": repo.url,
+        "subfolder": subfolder,
+        "requested_ref": args.ref or repo.ref,
+        "github_token_configured": bool(token.strip()),
+    }
+    logger.info("github skills import started", extra=log_context)
 
-    async with AsyncSessionLocal() as session:
-        results = []
-        for item in imported:
-            skill, snapshot = await add_skill(session, item.payload)
-            results.append((skill, snapshot, item.source_path))
-        await session.commit()
+    try:
+        async with GitHubClient(token=token, timeout_seconds=args.timeout_seconds) as client:
+            metadata = await client.repository_metadata(repo)
+            ref = args.ref or repo.ref or metadata.default_branch
+            logger.info(
+                "github skills import repository resolved",
+                extra={
+                    **log_context,
+                    "ref": ref,
+                    "default_branch": metadata.default_branch,
+                    "owner_avatar_url_configured": bool(metadata.owner_avatar_url),
+                },
+            )
+            tree = await client.recursive_tree(repo, ref)
+            logger.info(
+                "github skills import tree fetched",
+                extra={**log_context, "ref": ref, "tree_item_count": len(tree)},
+            )
+            skill_paths = discover_skill_paths(tree, subfolder=subfolder)
+            logger.info(
+                "github skills import discovered skills",
+                extra={
+                    **log_context,
+                    "ref": ref,
+                    "skill_count": len(skill_paths),
+                    "skill_paths": skill_paths[:MAX_LOGGED_SKILL_PATHS],
+                    "skill_paths_truncated": len(skill_paths) > MAX_LOGGED_SKILL_PATHS,
+                },
+            )
+            if len(skill_paths) > 1 and (args.slug or args.name or args.description):
+                raise SkillCliError(
+                    "--slug, --name, and --description can only be used when importing one skill; "
+                    "pass --subfolder to target a single skill"
+                )
+            imported = [
+                await import_skill_from_github_path(
+                    client=client,
+                    repo=repo,
+                    ref=ref,
+                    tree=tree,
+                    skill_path=skill_path,
+                    owner_avatar_url=metadata.owner_avatar_url,
+                    import_subfolder=subfolder,
+                    is_multi_skill_import=len(skill_paths) > 1,
+                    args=args,
+                )
+                for skill_path in skill_paths
+            ]
+
+        async with AsyncSessionLocal() as session:
+            results = []
+            for item in imported:
+                skill, snapshot = await add_skill(session, item.payload)
+                results.append((skill, snapshot, item.source_path))
+                logger.info(
+                    "github skill import saved skill",
+                    extra={
+                        **log_context,
+                        "skill_id": f"{skill.source}/{skill.slug}",
+                        "source_path": item.source_path,
+                        "repository_subfolder": item.payload.repository_subfolder,
+                        "snapshot_hash": snapshot.content_hash,
+                    },
+                )
+            await session.commit()
+            logger.info(
+                "github skills import completed",
+                extra={**log_context, "skill_count": len(results)},
+            )
+    except Exception:
+        logger.exception("github skills import failed", extra=log_context)
+        raise
 
     for skill, snapshot, source_path in results:
         skill_id = f"{skill.source}/{skill.slug}"
@@ -803,6 +870,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(str(exc))
     if args.command == "import-github":
         try:
+            configure_logging()
             return asyncio.run(import_github_from_args(args))
         except SkillCliError as exc:
             parser.error(str(exc))

@@ -1,5 +1,7 @@
+import logging
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -195,6 +197,113 @@ def test_manage_import_github_rejects_removed_curated_flag() -> None:
                 "--curated",
             ]
         )
+
+
+async def test_import_github_logs_progress(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            assert token == "github-token"
+            assert timeout_seconds == 3.0
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            assert repo.source == "acme/agent-skills"
+            return skills.GitHubRepositoryMetadata(
+                default_branch="main",
+                owner_avatar_url="https://avatars.example/acme.png",
+            )
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            assert repo.source == "acme/agent-skills"
+            assert ref == "main"
+            return [skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob")]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            assert repo.source == "acme/agent-skills"
+            assert ref == "main"
+            assert path == "skills/weather/SKILL.md"
+            return "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n"
+
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+    async def fake_add_skill(session: object, payload: skills.SkillAddInput):
+        assert payload.source == "acme/agent-skills"
+        assert payload.repository_subfolder == "skills/weather"
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash="sha256:abc123"),
+        )
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
+    caplog.set_level(logging.INFO, logger=skills.logger.name)
+
+    result = await skills.import_github_from_args(
+        Namespace(
+            repository_url="https://github.com/acme/agent-skills",
+            subfolder="skills",
+            ref="",
+            slug="",
+            name="",
+            description="",
+            install_url="",
+            website_url="",
+            github_token="github-token",
+            timeout_seconds=3.0,
+        )
+    )
+
+    assert result == 0
+    records = [record for record in caplog.records if record.name == skills.logger.name]
+    assert [record.message for record in records] == [
+        "github skills import started",
+        "github skills import repository resolved",
+        "github skills import tree fetched",
+        "github skills import discovered skills",
+        "github skill import fetched skill file",
+        "github skill import saved skill",
+        "github skills import completed",
+    ]
+    start_record = records[0]
+    assert start_record.repository_url == "https://github.com/acme/agent-skills"
+    assert start_record.github_token_configured is True
+    assert not hasattr(start_record, "github_token")
+    discovered_record = records[3]
+    assert discovered_record.skill_count == 1
+    assert discovered_record.skill_paths == ["skills/weather/SKILL.md"]
+    saved_record = records[5]
+    assert saved_record.skill_id == "acme/agent-skills/weather-skill"
+    assert saved_record.source_path == "skills/weather/SKILL.md"
+    assert records[6].skill_count == 1
 
 
 def test_manage_dispatches_skills_mark_official(monkeypatch: pytest.MonkeyPatch) -> None:

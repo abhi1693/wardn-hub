@@ -8,6 +8,7 @@ from app.cli.skills import (
     import_github_from_args,
     mark_official_from_args,
 )
+from app.core.logging import configure_logging
 from app.db.session import AsyncSessionLocal
 from app.modules.registry.service import seed_default_categories
 
@@ -123,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "skills" and args.skills_command == "add":
         return asyncio.run(add_skill_from_args(args))
     elif args.command == "skills" and args.skills_command == "import-github":
+        configure_logging()
         return asyncio.run(import_github_from_args(args))
     elif args.command == "skills" and args.skills_command == "mark-official":
         return asyncio.run(mark_official_from_args(args))
