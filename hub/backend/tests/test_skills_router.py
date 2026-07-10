@@ -52,6 +52,8 @@ def test_skills_openapi_exposes_public_paths() -> None:
     assert schema["paths"]["/api/v1/skills/search"]["get"]["operationId"] == "skills_search"
     assert schema["paths"]["/api/v1/skills/official"]["get"]["operationId"] == "skills_official"
     assert schema["paths"]["/api/v1/skills/{skill_id}"]["get"]["operationId"] == "skills_get"
+    detail_parameters = schema["paths"]["/api/v1/skills/{skill_id}"]["get"]["parameters"]
+    assert any(parameter["name"] == "include_bundle" for parameter in detail_parameters)
     assert (
         schema["paths"]["/api/v1/skills/audit/{skill_id}"]["get"]["operationId"]
         == "skills_audit_get"
@@ -167,6 +169,7 @@ def test_official_skills_groups_by_owner(monkeypatch) -> None:
 def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:
     async def get_skill_detail(*args, **kwargs):
         assert args[1] == "vercel-labs/skills/find-skills"
+        assert kwargs == {"include_bundle": False}
         return SkillDetailResponse(
             id="vercel-labs/skills/find-skills",
             source="vercel-labs/skills",
@@ -187,6 +190,53 @@ def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["hash"] == "abc123"
     assert response.json()["files"] == [{"path": "SKILL.md", "contents": "# Find skills"}]
+
+
+def test_get_skill_detail_can_return_complete_bundle(monkeypatch) -> None:
+    async def get_skill_detail(*args, **kwargs):
+        assert kwargs == {"include_bundle": True}
+        return SkillDetailResponse(
+            id="vercel-labs/skills/find-skills",
+            source="vercel-labs/skills",
+            slug="find-skills",
+            hash="abc123",
+            files=[
+                SkillFileRead(path="SKILL.md", contents="# Find skills"),
+                SkillFileRead(path="references/api.md", contents="# API"),
+                SkillFileRead(
+                    path="assets/logo.png",
+                    contents="iVBORw0KGgo=",
+                    encoding="base64",
+                ),
+                SkillFileRead(
+                    path="scripts/find.sh",
+                    contents="#!/bin/sh\n",
+                    executable=True,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(router, "get_skill_detail", get_skill_detail)
+
+    response = TestClient(create_app()).get(
+        "/api/v1/skills/vercel-labs/skills/find-skills?include_bundle=true"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["files"] == [
+        {"path": "SKILL.md", "contents": "# Find skills"},
+        {"path": "references/api.md", "contents": "# API"},
+        {
+            "path": "assets/logo.png",
+            "contents": "iVBORw0KGgo=",
+            "encoding": "base64",
+        },
+        {
+            "path": "scripts/find.sh",
+            "contents": "#!/bin/sh\n",
+            "executable": True,
+        },
+    ]
 
 
 def test_get_skill_detail_returns_404(monkeypatch) -> None:

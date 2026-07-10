@@ -2742,7 +2742,6 @@ button:disabled,
 .skill-file-markdown {
   display: flow-root;
   overflow: auto;
-  max-height: 72vh;
   color: var(--foreground);
   font-size: 14px;
   line-height: 22px;

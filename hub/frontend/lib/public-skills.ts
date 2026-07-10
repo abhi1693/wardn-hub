@@ -206,7 +206,8 @@ export async function getPublicSkill(skillId: string) {
 }
 
 export function findSkillMd(skill: SkillDetailResponse) {
-  return skill.files?.find((file) => file.path === "SKILL.md")?.contents ?? "";
+  const file = skill.files?.find((candidate) => candidate.path === "SKILL.md");
+  return file && (!file.encoding || file.encoding === "utf-8") ? file.contents : "";
 }
 
 export function stripMarkdownFrontmatter(markdown: string) {

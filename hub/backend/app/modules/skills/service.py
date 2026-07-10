@@ -140,12 +140,21 @@ async def search_skills(
     )
 
 
-async def get_skill_detail(session: AsyncSession, skill_id: str) -> SkillDetailResponse:
+async def get_skill_detail(
+    session: AsyncSession,
+    skill_id: str,
+    *,
+    include_bundle: bool = False,
+) -> SkillDetailResponse:
     source, slug = split_skill_id(skill_id)
     skill = await repository.get_skill(session, source, slug)
     if skill is None:
         raise SkillNotFoundError("skill not found")
-    snapshot = await repository.get_skill_snapshot(session, skill)
+    snapshot = await repository.get_skill_snapshot(
+        session,
+        skill,
+        include_files=include_bundle,
+    )
     if snapshot is None:
         return SkillDetailResponse(
             id=f"{skill.source}/{skill.slug}",
@@ -159,6 +168,11 @@ async def get_skill_detail(session: AsyncSession, skill_id: str) -> SkillDetailR
             hash=None,
             files=None,
         )
+    snapshot_files = (
+        snapshot.files or []
+        if include_bundle
+        else [{"path": "SKILL.md", "contents": snapshot.skill_md}]
+    )
     return SkillDetailResponse(
         id=f"{skill.source}/{skill.slug}",
         source=skill.source,
@@ -169,11 +183,7 @@ async def get_skill_detail(session: AsyncSession, skill_id: str) -> SkillDetailR
         sourceOwnerIconUrl=skill.source_owner_icon_url or None,
         sourceUrl=skill.source_url or None,
         hash=snapshot.content_hash,
-        files=[
-            SkillFileRead.model_validate(file)
-            for file in snapshot.files
-            if file.get("path") == "SKILL.md"
-        ],
+        files=[SkillFileRead.model_validate(file) for file in snapshot_files],
     )
 
 

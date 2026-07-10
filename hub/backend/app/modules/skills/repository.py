@@ -1,5 +1,6 @@
 from sqlalchemy import Select, and_, exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.modules.skills.models import Skill, SkillAudit, SkillSnapshot, SkillSourceOwner
 
@@ -127,15 +128,26 @@ async def get_skill(session: AsyncSession, source: str, slug: str) -> Skill | No
     return result.scalar_one_or_none()
 
 
-async def get_skill_snapshot(session: AsyncSession, skill: Skill) -> SkillSnapshot | None:
-    result = await session.execute(
-        select(SkillSnapshot).where(
-            SkillSnapshot.id == skill.current_snapshot_id,
-            SkillSnapshot.skill_id == skill.id,
-            SkillSnapshot.status == "active",
-            SkillSnapshot.is_latest.is_(True),
-        )
+async def get_skill_snapshot(
+    session: AsyncSession,
+    skill: Skill,
+    *,
+    include_files: bool = True,
+) -> SkillSnapshot | None:
+    query = select(SkillSnapshot).where(
+        SkillSnapshot.id == skill.current_snapshot_id,
+        SkillSnapshot.skill_id == skill.id,
+        SkillSnapshot.status == "active",
+        SkillSnapshot.is_latest.is_(True),
     )
+    if not include_files:
+        query = query.options(
+            load_only(
+                SkillSnapshot.content_hash,
+                SkillSnapshot.skill_md,
+            )
+        )
+    result = await session.execute(query)
     return result.scalar_one_or_none()
 
 

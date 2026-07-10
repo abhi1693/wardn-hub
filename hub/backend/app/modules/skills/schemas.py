@@ -7,6 +7,7 @@ SkillSourceType = Literal["github", "well-known"]
 SkillStatus = Literal["active", "deprecated", "deleted", "quarantined"]
 SkillVisibility = Literal["public", "unlisted", "private_preview"]
 SkillAuditStatus = Literal["pass", "warn", "fail"]
+SkillFileEncoding = Literal["utf-8", "base64"]
 
 
 class SkillRead(BaseModel):
@@ -56,6 +57,11 @@ class SkillSearchResponse(BaseModel):
 class SkillFileRead(BaseModel):
     path: str
     contents: str
+    encoding: SkillFileEncoding = Field(
+        default="utf-8",
+        exclude_if=lambda value: value == "utf-8",
+    )
+    executable: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class SkillDetailResponse(BaseModel):

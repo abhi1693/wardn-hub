@@ -8,6 +8,8 @@ import pytest
 from app import manage
 from app.cli import skills
 
+RESOLVED_COMMIT_SHA = "a" * 40
+
 
 def test_parse_frontmatter_extracts_name_and_description() -> None:
     assert skills.parse_frontmatter(
@@ -115,6 +117,11 @@ def test_parse_github_repository_url_supports_tree_subpath() -> None:
             b"\xff",
             "GitHub file is not UTF-8 text: skills/binary/SKILL.md",
         ),
+        (
+            b"# Skill\n\x1b",
+            "GitHub file contains unsupported control character U+001B at "
+            "character offset 8: skills/binary/SKILL.md",
+        ),
     ],
 )
 async def test_github_raw_file_rejects_invalid_text(
@@ -161,6 +168,70 @@ async def test_github_raw_file_http_error_is_not_invalid_text(
     )
 
 
+async def test_github_raw_file_encodes_ref_and_path_segments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(url: str) -> SimpleNamespace:
+        assert url.endswith(
+            "/feature/api%23v2/skills/weather/references/a%23b%3F%25%20file.txt"
+        )
+        return SimpleNamespace(status_code=200, content=b"reference", text="")
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        contents = await client.raw_file_bytes(
+            repo,
+            "feature/api#v2",
+            "skills/weather/references/a#b?% file.txt",
+        )
+
+    assert contents == b"reference"
+
+
+async def test_github_repository_metadata_rejects_private_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(url: str) -> SimpleNamespace:
+        assert url.endswith("/repos/acme/agent-skills")
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {
+                "default_branch": "main",
+                "private": True,
+                "visibility": "private",
+                "owner": {"avatar_url": ""},
+            },
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        with pytest.raises(skills.SkillCliError, match="only supports public repositories"):
+            await client.repository_metadata(repo)
+
+
+async def test_github_resolve_commit_sha_pins_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(url: str, *, params: dict[str, str]) -> SimpleNamespace:
+        assert url.endswith("/repos/acme/agent-skills/commits")
+        assert params == {"sha": "main", "per_page": "1"}
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: [{"sha": RESOLVED_COMMIT_SHA.upper()}],
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        resolved = await client.resolve_commit_sha(repo, "main")
+
+    assert resolved == RESOLVED_COMMIT_SHA
+
+
 def test_discover_skill_paths_uses_exact_skill_subfolder() -> None:
     tree = [
         skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
@@ -185,6 +256,178 @@ def test_discover_skill_paths_recurses_under_parent_subfolder() -> None:
         "skills/docs/SKILL.md",
         "skills/weather/SKILL.md",
     ]
+
+
+def test_skill_bundle_tree_items_uses_nearest_skill_root() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/weather/README.md", type="blob"),
+        skills.GitHubTreeItem(
+            path="skills/weather/scripts/run.sh",
+            type="blob",
+            mode="100755",
+        ),
+        skills.GitHubTreeItem(path="skills/weather/assets/logo.png", type="blob"),
+        skills.GitHubTreeItem(path="skills/weather/nested/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/weather/nested/reference.md", type="blob"),
+        skills.GitHubTreeItem(
+            path="skills/weather/node_modules/package/index.js",
+            type="blob",
+        ),
+        skills.GitHubTreeItem(
+            path="skills/weather/current",
+            type="blob",
+            mode="120000",
+        ),
+        skills.GitHubTreeItem(path="skills/weather/vendor-repo", type="commit"),
+    ]
+
+    parent_items = skills.skill_bundle_tree_items(
+        tree,
+        skill_path="skills/weather/SKILL.md",
+    )
+    nested_items = skills.skill_bundle_tree_items(
+        tree,
+        skill_path="skills/weather/nested/SKILL.md",
+    )
+
+    assert [item.path for item in parent_items] == [
+        "skills/weather/SKILL.md",
+        "skills/weather/README.md",
+        "skills/weather/assets/logo.png",
+        "skills/weather/scripts/run.sh",
+    ]
+    assert [item.path for item in nested_items] == [
+        "skills/weather/nested/SKILL.md",
+        "skills/weather/nested/reference.md",
+    ]
+
+
+async def test_fetch_skill_bundle_preserves_text_binary_and_executable_files() -> None:
+    class FakeGitHubClient:
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            assert path == "skills/weather/SKILL.md"
+            return "---\nname: Weather\ndescription: Weather APIs.\n---\n\n# Weather\n"
+
+        async def raw_file_bytes(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> bytes:
+            return {
+                "skills/weather/assets/logo.bin": b"\x00\xff",
+                "skills/weather/references/guide.md": b"# Guide\n",
+                "skills/weather/scripts/run.sh": b"#!/bin/sh\necho weather\n",
+            }[path]
+
+    tree = [
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=65),
+        skills.GitHubTreeItem(
+            path="skills/weather/scripts/run.sh",
+            type="blob",
+            size=23,
+            mode="100755",
+        ),
+        skills.GitHubTreeItem(
+            path="skills/weather/assets/logo.bin",
+            type="blob",
+            size=2,
+        ),
+        skills.GitHubTreeItem(
+            path="skills/weather/references/guide.md",
+            type="blob",
+            size=8,
+        ),
+    ]
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+
+    skill_md, files, bundle_size = await skills.fetch_skill_bundle(
+        client=FakeGitHubClient(),  # type: ignore[arg-type]
+        repo=repo,
+        ref="main",
+        tree=tree,
+        skill_path="skills/weather/SKILL.md",
+    )
+
+    assert skill_md.startswith("---\nname: Weather")
+    assert files == [
+        {"path": "SKILL.md", "contents": skill_md},
+        {"path": "assets/logo.bin", "contents": "AP8=", "encoding": "base64"},
+        {"path": "references/guide.md", "contents": "# Guide\n"},
+        {
+            "path": "scripts/run.sh",
+            "contents": "#!/bin/sh\necho weather\n",
+            "executable": True,
+        },
+    ]
+    assert bundle_size == len(skill_md.encode()) + 2 + 8 + 23
+    assert skills.content_hash(files) != skills.content_hash(
+        [file for file in files if file["path"] != "scripts/run.sh"]
+    )
+
+
+def test_skill_bundle_tree_items_rejects_oversized_file_count() -> None:
+    tree = [skills.GitHubTreeItem(path="skill/SKILL.md", type="blob")]
+    tree.extend(
+        skills.GitHubTreeItem(path=f"skill/references/{index}.md", type="blob")
+        for index in range(skills.MAX_SKILL_BUNDLE_FILES)
+    )
+
+    with pytest.raises(skills.InvalidSkillBundleError, match="exceeds 256 files"):
+        skills.skill_bundle_tree_items(tree, skill_path="skill/SKILL.md")
+
+
+def test_checked_github_import_size_enforces_aggregate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(skills, "MAX_GITHUB_IMPORT_BYTES", 10)
+
+    assert skills.checked_github_import_size(4, 6) == 10
+    with pytest.raises(skills.SkillCliError, match="pass --subfolder"):
+        skills.checked_github_import_size(4, 7)
+
+
+async def test_fetch_skill_bundle_checks_actual_bundle_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGitHubClient:
+        async def raw_file(self, *args: object) -> str:
+            return "# root\n"
+
+        async def raw_file_bytes(self, *args: object) -> bytes:
+            return b"123456789"
+
+    monkeypatch.setattr(skills, "MAX_SKILL_BUNDLE_BYTES", 15)
+    tree = [
+        skills.GitHubTreeItem(path="skill/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skill/reference.txt", type="blob"),
+    ]
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+
+    with pytest.raises(skills.InvalidSkillBundleError, match="exceeds 15 bytes"):
+        await skills.fetch_skill_bundle(
+            client=FakeGitHubClient(),  # type: ignore[arg-type]
+            repo=repo,
+            ref="main",
+            tree=tree,
+            skill_path="skill/SKILL.md",
+        )
+
+
+def test_skill_bundle_tree_items_rejects_unsafe_paths() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="skill/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skill/../escape.txt", type="blob"),
+    ]
+
+    with pytest.raises(skills.InvalidSkillBundleError, match="normalized relative POSIX"):
+        skills.skill_bundle_tree_items(tree, skill_path="skill/SKILL.md")
 
 
 def test_skill_slug_root_is_relative_to_import_subfolder() -> None:
@@ -282,14 +525,29 @@ async def test_import_github_logs_progress(
                 owner_avatar_url="https://avatars.example/acme.png",
             )
 
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            assert ref == "main"
+            return RESOLVED_COMMIT_SHA
+
         async def recursive_tree(
             self,
             repo: skills.GitHubRepository,
             ref: str,
         ) -> list[skills.GitHubTreeItem]:
             assert repo.source == "acme/agent-skills"
-            assert ref == "main"
-            return [skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob")]
+            assert ref == RESOLVED_COMMIT_SHA
+            return [
+                skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob"),
+                skills.GitHubTreeItem(
+                    path="skills/weather/scripts/weather.sh",
+                    type="blob",
+                    mode="100755",
+                ),
+            ]
 
         async def raw_file(
             self,
@@ -298,9 +556,19 @@ async def test_import_github_logs_progress(
             path: str,
         ) -> str:
             assert repo.source == "acme/agent-skills"
-            assert ref == "main"
+            assert ref == RESOLVED_COMMIT_SHA
             assert path == "skills/weather/SKILL.md"
             return "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n"
+
+        async def raw_file_bytes(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> bytes:
+            assert ref == RESOLVED_COMMIT_SHA
+            assert path == "skills/weather/scripts/weather.sh"
+            return b"#!/bin/sh\necho weather\n"
 
     class FakeSessionContext:
         async def __aenter__(self) -> "FakeSessionContext":
@@ -315,6 +583,14 @@ async def test_import_github_logs_progress(
     async def fake_add_skill(session: object, payload: skills.SkillAddInput):
         assert payload.source == "acme/agent-skills"
         assert payload.repository_subfolder == "skills/weather"
+        assert payload.files == [
+            {"path": "SKILL.md", "contents": payload.skill_md},
+            {
+                "path": "scripts/weather.sh",
+                "contents": "#!/bin/sh\necho weather\n",
+                "executable": True,
+            },
+        ]
         return (
             SimpleNamespace(source=payload.source, slug=payload.slug),
             SimpleNamespace(content_hash="sha256:abc123"),
@@ -358,6 +634,7 @@ async def test_import_github_logs_progress(
     discovered_record = records[3]
     assert discovered_record.skill_count == 1
     assert discovered_record.skill_paths == ["skills/weather/SKILL.md"]
+    assert records[4].skill_file_count == 2
     saved_record = records[5]
     assert saved_record.skill_id == "acme/agent-skills/weather-skill"
     assert saved_record.source_path == "skills/weather/SKILL.md"
@@ -391,11 +668,19 @@ async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
                 owner_avatar_url="https://avatars.example/acme.png",
             )
 
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            return RESOLVED_COMMIT_SHA
+
         async def recursive_tree(
             self,
             repo: skills.GitHubRepository,
             ref: str,
         ) -> list[skills.GitHubTreeItem]:
+            assert ref == RESOLVED_COMMIT_SHA
             return [
                 skills.GitHubTreeItem(path="skills/binary/SKILL.md", type="blob"),
                 skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob"),
@@ -508,6 +793,13 @@ async def test_import_github_fails_when_all_discovered_skills_are_invalid(
         ) -> skills.GitHubRepositoryMetadata:
             return skills.GitHubRepositoryMetadata(default_branch="main", owner_avatar_url="")
 
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            return RESOLVED_COMMIT_SHA
+
         async def recursive_tree(
             self,
             repo: skills.GitHubRepository,
@@ -588,6 +880,13 @@ async def test_import_github_does_not_skip_targeted_or_non_text_errors(
             repo: skills.GitHubRepository,
         ) -> skills.GitHubRepositoryMetadata:
             return skills.GitHubRepositoryMetadata(default_branch="main", owner_avatar_url="")
+
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            return RESOLVED_COMMIT_SHA
 
         async def recursive_tree(
             self,

@@ -93,8 +93,12 @@ async def get_skill_catalog_audit(
 async def get_skill_catalog_detail(
     skill_id: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    include_bundle: Annotated[
+        bool,
+        Query(description="Include scripts, references, assets, and other stored skill files."),
+    ] = False,
 ) -> SkillDetailResponse:
     try:
-        return await get_skill_detail(session, skill_id)
+        return await get_skill_detail(session, skill_id, include_bundle=include_bundle)
     except SkillNotFoundError as exc:
         raise not_found(exc, detail="skill not found") from exc

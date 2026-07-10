@@ -157,8 +157,24 @@ uv run python -m app.manage skills import-github \
 Omit `--subfolder` to import every `SKILL.md` discovered in the repository. The
 subfolder can point at one skill folder or a parent folder containing many
 skills. The importer reads `name` and `description` from `SKILL.md` frontmatter
-when available, stores text supporting files from the skill folder, and honors
-`GITHUB_TOKEN` when set. Use `--ref` for a branch, tag, or commit SHA.
+when available, stores regular supporting files from the skill folder, and
+honors `GITHUB_TOKEN` when set. UTF-8 files are stored as text; binary files are
+stored as base64 with encoding metadata. Nested skill folders own their own
+files. Dependency/build directories, symlinks, and gitlinks are excluded. A
+bundle may contain up to 256 files, 8 MiB per file, and 16 MiB total. Use
+`--ref` for a branch, tag, or commit SHA. One import command is capped at 256
+MiB across all discovered bundles; narrow large repositories with
+`--subfolder`. Only public GitHub repositories are accepted because imported
+skills are published through the public Hub API.
+
+Skill detail responses return only the root `SKILL.md` by default. Pass
+`include_bundle=true` to retrieve its stored scripts, references, and assets:
+
+```sh
+curl --get \
+  --data-urlencode 'include_bundle=true' \
+  http://localhost:8000/api/v1/skills/acme/agent-skills/weather
+```
 
 Import every skill under a repository subfolder:
 

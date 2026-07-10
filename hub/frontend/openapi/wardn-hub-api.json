@@ -5679,6 +5679,20 @@
             "title": "Contents",
             "type": "string"
           },
+          "encoding": {
+            "default": "utf-8",
+            "enum": [
+              "utf-8",
+              "base64"
+            ],
+            "title": "Encoding",
+            "type": "string"
+          },
+          "executable": {
+            "default": false,
+            "title": "Executable",
+            "type": "boolean"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -7106,7 +7120,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.93"
+    "version": "0.2.94"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -11882,6 +11896,18 @@
             "schema": {
               "title": "Skill Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Include scripts, references, assets, and other stored skill files.",
+            "in": "query",
+            "name": "include_bundle",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include scripts, references, assets, and other stored skill files.",
+              "title": "Include Bundle",
+              "type": "boolean"
             }
           }
         ],

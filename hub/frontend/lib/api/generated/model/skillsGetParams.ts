@@ -5,11 +5,9 @@
  * OpenAPI spec version: 0.2.94
  */
 
-export type EventsDeliveriesListParams = {
+export type SkillsGetParams = {
 /**
- * @minimum 1
- * @maximum 200
+ * Include scripts, references, assets, and other stored skill files.
  */
-limit?: number;
-rule_id?: string | null;
+include_bundle?: boolean;
 };

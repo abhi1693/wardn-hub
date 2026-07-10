@@ -325,6 +325,8 @@ fetch_skill() {
       and (.files | type == "array" and length == 1)
       and (.files[0].path == "SKILL.md")
       and (.files[0].contents | type == "string")
+      and ((.files[0] | has("encoding") | not) or .files[0].encoding == "utf-8")
+      and ((.files[0] | has("executable") | not) or (.files[0].executable | type == "boolean"))
       and (.files[0].contents | length > 0 and length <= 65536)
       and (.files[0].contents | test("\\r(?!\\n)") | not)
       and (.files[0].contents | explode | all(

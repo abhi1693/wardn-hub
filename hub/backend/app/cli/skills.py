@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import hashlib
 import json
 import logging
 import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from urllib.parse import urlparse
+from pathlib import Path, PurePosixPath
+from typing import Literal, NotRequired, TypedDict
+from urllib.parse import quote, urlparse
 
 import httpx
 from sqlalchemy import select, update
@@ -26,6 +28,11 @@ GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 DEFAULT_USER_AGENT = "WardnHubSkillsImporter/0.1"
 DEFAULT_IMPORT_TIMEOUT_SECONDS = 20.0
 MAX_LOGGED_SKILL_PATHS = 20
+MAX_SKILL_BUNDLE_FILES = 256
+MAX_SKILL_FILE_BYTES = 8 * 1024 * 1024
+MAX_SKILL_BUNDLE_BYTES = 16 * 1024 * 1024
+MAX_BUNDLE_FETCH_CONCURRENCY = 8
+MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
 SKIPPED_PATH_PARTS = {
     ".git",
     ".hg",
@@ -37,32 +44,6 @@ SKIPPED_PATH_PARTS = {
     "node_modules",
     "vendor",
 }
-TEXT_FILE_NAMES = {
-    "AGENTS.md",
-    "LICENSE",
-    "README.md",
-    "SKILL.md",
-}
-TEXT_FILE_SUFFIXES = {
-    ".css",
-    ".csv",
-    ".html",
-    ".js",
-    ".json",
-    ".jsx",
-    ".md",
-    ".mjs",
-    ".py",
-    ".sh",
-    ".toml",
-    ".ts",
-    ".tsx",
-    ".txt",
-    ".yaml",
-    ".yml",
-}
-
-
 class SkillCliError(Exception):
     pass
 
@@ -72,6 +53,23 @@ class InvalidSkillTextError(SkillCliError):
         self.path = path
         self.reason = reason
         super().__init__(f"{reason}: {path}")
+
+
+class InvalidSkillBundleError(SkillCliError):
+    def __init__(self, path: str, reason: str) -> None:
+        self.path = path
+        self.reason = reason
+        super().__init__(f"{reason}: {path}")
+
+
+SkillFileEncoding = Literal["utf-8", "base64"]
+
+
+class SkillSnapshotFile(TypedDict):
+    path: str
+    contents: str
+    encoding: NotRequired[SkillFileEncoding]
+    executable: NotRequired[bool]
 
 
 @dataclass(frozen=True)
@@ -86,7 +84,7 @@ class SkillAddInput:
     name: str
     description: str
     skill_md: str
-    files: list[dict[str, str]]
+    files: list[SkillSnapshotFile]
     source_type: str = "github"
     install_url: str = ""
     website_url: str = ""
@@ -113,6 +111,7 @@ class GitHubTreeItem:
     path: str
     type: str
     size: int = 0
+    mode: str = "100644"
 
 
 @dataclass(frozen=True)
@@ -125,6 +124,25 @@ class GitHubRepositoryMetadata:
 class ImportedSkill:
     payload: SkillAddInput
     source_path: str
+    bundle_size: int
+
+
+def unsupported_text_control(contents: str) -> tuple[int, str] | None:
+    for offset, character in enumerate(contents):
+        codepoint = ord(character)
+        if (codepoint < 32 and character not in "\t\n\r") or 127 <= codepoint <= 159:
+            return offset, character
+    return None
+
+
+def checked_github_import_size(current_size: int, bundle_size: int) -> int:
+    total_size = current_size + bundle_size
+    if total_size > MAX_GITHUB_IMPORT_BYTES:
+        raise SkillCliError(
+            f"GitHub import exceeds {MAX_GITHUB_IMPORT_BYTES} bytes; "
+            "pass --subfolder to import fewer skills"
+        )
+    return total_size
 
 
 def parse_frontmatter(contents: str) -> dict[str, str]:
@@ -254,11 +272,11 @@ def read_skill_add_input(args: argparse.Namespace) -> SkillAddInput:
     )
 
 
-def snapshot_files(contents: str) -> list[dict[str, str]]:
+def snapshot_files(contents: str) -> list[SkillSnapshotFile]:
     return [{"path": "SKILL.md", "contents": contents}]
 
 
-def content_hash(files: list[dict[str, str]]) -> str:
+def content_hash(files: list[SkillSnapshotFile]) -> str:
     payload = json.dumps(files, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -459,6 +477,18 @@ class GitHubClient:
         if response.status_code >= 400:
             raise SkillCliError(f"GitHub repository lookup failed: {response.text}")
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise SkillCliError(f"GitHub returned invalid repository metadata: {repo.source}")
+        is_private = payload.get("private")
+        visibility = payload.get("visibility")
+        if not isinstance(is_private, bool):
+            raise SkillCliError(
+                f"GitHub repository visibility is unavailable: {repo.source}"
+            )
+        if is_private or (isinstance(visibility, str) and visibility != "public"):
+            raise SkillCliError(
+                f"GitHub skills import only supports public repositories: {repo.source}"
+            )
         default_branch = payload.get("default_branch")
         if not isinstance(default_branch, str) or not default_branch.strip():
             raise SkillCliError(f"GitHub repository has no default branch: {repo.source}")
@@ -470,6 +500,23 @@ class GitHubClient:
             default_branch=default_branch.strip(),
             owner_avatar_url=owner_avatar_url,
         )
+
+    async def resolve_commit_sha(self, repo: GitHubRepository, ref: str) -> str:
+        response = await self._client.get(
+            f"https://api.github.com/repos/{repo.owner}/{repo.repo}/commits",
+            params={"sha": ref, "per_page": "1"},
+        )
+        if response.status_code == 404:
+            raise SkillCliError(f"GitHub ref not found for {repo.source}: {ref}")
+        if response.status_code >= 400:
+            raise SkillCliError(f"GitHub ref lookup failed: {response.text}")
+        payload = response.json()
+        if not isinstance(payload, list) or not payload:
+            raise SkillCliError(f"GitHub ref has no commits for {repo.source}: {ref}")
+        commit_sha = payload[0].get("sha") if isinstance(payload[0], dict) else None
+        if not isinstance(commit_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", commit_sha):
+            raise SkillCliError(f"GitHub returned an invalid commit SHA for {repo.source}: {ref}")
+        return commit_sha.lower()
 
     async def recursive_tree(self, repo: GitHubRepository, ref: str) -> list[GitHubTreeItem]:
         response = await self._client.get(
@@ -488,20 +535,34 @@ class GitHubClient:
                 path=str(item.get("path") or ""),
                 type=str(item.get("type") or ""),
                 size=int(item.get("size") or 0),
+                mode=str(item.get("mode") or ""),
             )
             for item in payload.get("tree", [])
             if isinstance(item, dict) and item.get("path")
         ]
 
-    async def raw_file(self, repo: GitHubRepository, ref: str, path: str) -> str:
+    async def raw_file_bytes(
+        self,
+        repo: GitHubRepository,
+        ref: str,
+        path: str,
+    ) -> bytes:
+        encoded_ref = "/".join(quote(part, safe="") for part in ref.split("/"))
+        encoded_path = "/".join(quote(part, safe="") for part in path.split("/"))
         response = await self._client.get(
-            f"https://raw.githubusercontent.com/{repo.owner}/{repo.repo}/{ref}/{path}"
+            f"https://raw.githubusercontent.com/{repo.owner}/{repo.repo}/"
+            f"{encoded_ref}/{encoded_path}"
         )
+        if 300 <= response.status_code < 400:
+            raise SkillCliError(f"GitHub raw file redirected unexpectedly: {path}")
         if response.status_code == 404:
             raise SkillCliError(f"GitHub file not found: {path}")
         if response.status_code >= 400:
             raise SkillCliError(f"GitHub raw file fetch failed for {path}: {response.text}")
-        content = response.content
+        return response.content
+
+    async def raw_file(self, repo: GitHubRepository, ref: str, path: str) -> str:
+        content = await self.raw_file_bytes(repo, ref, path)
         nul_offset = content.find(b"\x00")
         if nul_offset >= 0:
             line_number = content.count(b"\n", 0, nul_offset) + 1
@@ -511,35 +572,222 @@ class GitHubClient:
                 f"(line {line_number})",
             )
         try:
-            return content.decode("utf-8")
+            decoded = content.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise InvalidSkillTextError(path, "GitHub file is not UTF-8 text") from exc
+        control = unsupported_text_control(decoded)
+        if control is not None:
+            offset, character = control
+            raise InvalidSkillTextError(
+                path,
+                "GitHub file contains unsupported control character "
+                f"U+{ord(character):04X} at character offset {offset}",
+            )
+        return decoded
 
 
 def tree_blob_paths(tree: list[GitHubTreeItem]) -> set[str]:
     return {item.path for item in tree if item.type == "blob"}
 
 
-def is_probable_text_file(path: str) -> bool:
-    file_path = Path(path)
-    if file_path.name in TEXT_FILE_NAMES:
-        return True
-    return file_path.suffix.lower() in TEXT_FILE_SUFFIXES
-
-
 def should_skip_tree_path(path: str) -> bool:
-    return any(part in SKIPPED_PATH_PARTS for part in Path(path).parts)
+    return any(part in SKIPPED_PATH_PARTS for part in PurePosixPath(path).parts)
 
 
 def skill_root_from_skill_path(path: str) -> str:
-    parent = str(Path(path).parent)
+    parent = str(PurePosixPath(path).parent)
     return "" if parent == "." else parent
 
 
 def relative_skill_file_path(root: str, path: str) -> str:
     if not root:
         return path
-    return str(Path(path).relative_to(root))
+    return str(PurePosixPath(path).relative_to(root))
+
+
+def validate_skill_file_path(path: str) -> str:
+    if (
+        not path
+        or path.startswith("/")
+        or "\\" in path
+        or any(ord(character) < 32 or ord(character) == 127 for character in path)
+    ):
+        raise ValueError("skill file path must be a safe relative POSIX path")
+
+    normalized = PurePosixPath(path).as_posix()
+    if normalized != path or any(part in {"", ".", ".."} for part in path.split("/")):
+        raise ValueError("skill file path must be a normalized relative POSIX path")
+    return normalized
+
+
+def path_is_within_skill_root(path: str, root: str) -> bool:
+    return not root or path.startswith(f"{root}/")
+
+
+def skill_bundle_tree_items(
+    tree: list[GitHubTreeItem],
+    *,
+    skill_path: str,
+) -> list[GitHubTreeItem]:
+    root = skill_root_from_skill_path(skill_path)
+    skill_roots = {
+        skill_root_from_skill_path(item.path)
+        for item in tree
+        if item.type == "blob"
+        and item.mode != "120000"
+        and PurePosixPath(item.path).name == "SKILL.md"
+        and not should_skip_tree_path(item.path)
+    }
+
+    owned_items: list[GitHubTreeItem] = []
+    relative_paths: set[str] = set()
+    for item in tree:
+        if (
+            item.type != "blob"
+            or item.mode == "120000"
+            or should_skip_tree_path(item.path)
+            or not path_is_within_skill_root(item.path, root)
+        ):
+            continue
+
+        owning_roots = [
+            candidate
+            for candidate in skill_roots
+            if path_is_within_skill_root(item.path, candidate)
+        ]
+        if not owning_roots:
+            continue
+        owner = max(owning_roots, key=lambda value: len(PurePosixPath(value).parts))
+        if owner != root:
+            continue
+
+        relative_path = relative_skill_file_path(root, item.path)
+        try:
+            relative_path = validate_skill_file_path(relative_path)
+        except ValueError as exc:
+            raise InvalidSkillBundleError(item.path, str(exc)) from exc
+        if relative_path in relative_paths:
+            raise InvalidSkillBundleError(item.path, "duplicate skill file path")
+        relative_paths.add(relative_path)
+        owned_items.append(item)
+
+    if "SKILL.md" not in relative_paths:
+        raise InvalidSkillBundleError(skill_path, "skill root is not a regular file")
+    if len(owned_items) > MAX_SKILL_BUNDLE_FILES:
+        raise InvalidSkillBundleError(
+            skill_path,
+            f"skill bundle exceeds {MAX_SKILL_BUNDLE_FILES} files",
+        )
+
+    advertised_size = 0
+    for item in owned_items:
+        if item.size < 0:
+            raise InvalidSkillBundleError(item.path, "GitHub tree reported a negative file size")
+        if item.size > MAX_SKILL_FILE_BYTES:
+            raise InvalidSkillBundleError(
+                item.path,
+                f"skill file exceeds {MAX_SKILL_FILE_BYTES} bytes",
+            )
+        advertised_size += item.size
+    if advertised_size > MAX_SKILL_BUNDLE_BYTES:
+        raise InvalidSkillBundleError(
+            skill_path,
+            f"skill bundle exceeds {MAX_SKILL_BUNDLE_BYTES} bytes",
+        )
+
+    return sorted(
+        owned_items,
+        key=lambda item: (
+            relative_skill_file_path(root, item.path) != "SKILL.md",
+            relative_skill_file_path(root, item.path),
+        ),
+    )
+
+
+def snapshot_file_from_bytes(
+    *,
+    path: str,
+    contents: bytes,
+    executable: bool,
+) -> SkillSnapshotFile:
+    encoding: SkillFileEncoding = "utf-8"
+    try:
+        rendered_contents = contents.decode("utf-8")
+    except UnicodeDecodeError:
+        encoding = "base64"
+        rendered_contents = base64.b64encode(contents).decode("ascii")
+    else:
+        if unsupported_text_control(rendered_contents) is not None:
+            encoding = "base64"
+            rendered_contents = base64.b64encode(contents).decode("ascii")
+
+    file: SkillSnapshotFile = {"path": path, "contents": rendered_contents}
+    if encoding == "base64":
+        file["encoding"] = encoding
+    if executable:
+        file["executable"] = True
+    return file
+
+
+async def fetch_skill_bundle(
+    *,
+    client: GitHubClient,
+    repo: GitHubRepository,
+    ref: str,
+    tree: list[GitHubTreeItem],
+    skill_path: str,
+) -> tuple[str, list[SkillSnapshotFile], int]:
+    root = skill_root_from_skill_path(skill_path)
+    items = skill_bundle_tree_items(tree, skill_path=skill_path)
+    skill_item = next(item for item in items if item.path == skill_path)
+    skill_md = await client.raw_file(repo, ref, skill_path)
+    if not skill_md.strip():
+        raise InvalidSkillTextError(skill_path, "GitHub SKILL.md is empty")
+
+    skill_contents = skill_md.encode("utf-8")
+    if len(skill_contents) > MAX_SKILL_FILE_BYTES:
+        raise InvalidSkillBundleError(
+            skill_path,
+            f"skill file exceeds {MAX_SKILL_FILE_BYTES} bytes",
+        )
+    skill_file: SkillSnapshotFile = {"path": "SKILL.md", "contents": skill_md}
+    if skill_item.mode == "100755":
+        skill_file["executable"] = True
+    files = [skill_file]
+
+    semaphore = asyncio.Semaphore(MAX_BUNDLE_FETCH_CONCURRENCY)
+
+    async def fetch_supporting_file(
+        item: GitHubTreeItem,
+    ) -> tuple[SkillSnapshotFile, int]:
+        async with semaphore:
+            contents = await client.raw_file_bytes(repo, ref, item.path)
+        if len(contents) > MAX_SKILL_FILE_BYTES:
+            raise InvalidSkillBundleError(
+                item.path,
+                f"skill file exceeds {MAX_SKILL_FILE_BYTES} bytes",
+            )
+        relative_path = validate_skill_file_path(relative_skill_file_path(root, item.path))
+        return (
+            snapshot_file_from_bytes(
+                path=relative_path,
+                contents=contents,
+                executable=item.mode == "100755",
+            ),
+            len(contents),
+        )
+
+    fetched = await asyncio.gather(
+        *(fetch_supporting_file(item) for item in items if item.path != skill_path)
+    )
+    files.extend(file for file, _size in fetched)
+    bundle_size = len(skill_contents) + sum(size for _file, size in fetched)
+    if bundle_size > MAX_SKILL_BUNDLE_BYTES:
+        raise InvalidSkillBundleError(
+            skill_path,
+            f"skill bundle exceeds {MAX_SKILL_BUNDLE_BYTES} bytes",
+        )
+    return skill_md, files, bundle_size
 
 
 def discover_skill_paths(
@@ -585,14 +833,20 @@ async def import_skill_from_github_path(
     ref: str,
     tree: list[GitHubTreeItem],
     skill_path: str,
+    fetch_ref: str,
     owner_avatar_url: str,
     import_subfolder: str,
     is_multi_skill_import: bool,
     args: argparse.Namespace,
 ) -> ImportedSkill:
     root = skill_root_from_skill_path(skill_path)
-    skill_md = await client.raw_file(repo, ref, skill_path)
-    files = [{"path": "SKILL.md", "contents": skill_md}]
+    skill_md, files, bundle_size = await fetch_skill_bundle(
+        client=client,
+        repo=repo,
+        ref=fetch_ref,
+        tree=tree,
+        skill_path=skill_path,
+    )
     frontmatter = parse_frontmatter(skill_md)
     name = (args.name or frontmatter.get("name") or Path(root).name or repo.repo).strip()
     slug = validate_skill_slug(args.slug or slug_from_name(name))
@@ -601,19 +855,22 @@ async def import_skill_from_github_path(
             slug_from_skill_root(skill_slug_root(root, import_subfolder), name)
         )
     description = (args.description or frontmatter.get("description") or "").strip()
-    repository_url = repo.url
+    repository_url = f"{repo.url}/tree/{fetch_ref}"
     if root:
-        repository_url = f"{repo.url}/tree/{ref}/{root}"
+        repository_url = f"{repository_url}/{root}"
     logger.info(
         "github skill import fetched skill file",
         extra={
             "source": repo.source,
             "ref": ref,
+            "resolved_ref": fetch_ref,
             "source_path": skill_path,
             "skill_slug": slug,
             "skill_name": name,
             "skill_root": root,
             "skill_md_bytes": len(skill_md.encode("utf-8")),
+            "skill_file_count": len(files),
+            "skill_bundle_bytes": bundle_size,
         },
     )
     payload = SkillAddInput(
@@ -635,7 +892,11 @@ async def import_skill_from_github_path(
         repository_subfolder=root,
         repository_ref=ref,
     )
-    return ImportedSkill(payload=payload, source_path=skill_path)
+    return ImportedSkill(
+        payload=payload,
+        source_path=skill_path,
+        bundle_size=bundle_size,
+    )
 
 
 async def import_github_from_args(args: argparse.Namespace) -> int:
@@ -656,19 +917,26 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
         async with GitHubClient(token=token, timeout_seconds=args.timeout_seconds) as client:
             metadata = await client.repository_metadata(repo)
             ref = args.ref or repo.ref or metadata.default_branch
+            resolved_ref = await client.resolve_commit_sha(repo, ref)
             logger.info(
                 "github skills import repository resolved",
                 extra={
                     **log_context,
                     "ref": ref,
+                    "resolved_ref": resolved_ref,
                     "default_branch": metadata.default_branch,
                     "owner_avatar_url_configured": bool(metadata.owner_avatar_url),
                 },
             )
-            tree = await client.recursive_tree(repo, ref)
+            tree = await client.recursive_tree(repo, resolved_ref)
             logger.info(
                 "github skills import tree fetched",
-                extra={**log_context, "ref": ref, "tree_item_count": len(tree)},
+                extra={
+                    **log_context,
+                    "ref": ref,
+                    "resolved_ref": resolved_ref,
+                    "tree_item_count": len(tree),
+                },
             )
             skill_paths = discover_skill_paths(tree, subfolder=subfolder)
             logger.info(
@@ -686,7 +954,8 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     "--slug, --name, and --description can only be used when importing one skill; "
                     "pass --subfolder to target a single skill"
                 )
-            imported = []
+            imported: list[ImportedSkill] = []
+            imported_bytes = 0
             for skill_path in skill_paths:
                 try:
                     imported_skill = await import_skill_from_github_path(
@@ -695,12 +964,13 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         ref=ref,
                         tree=tree,
                         skill_path=skill_path,
+                        fetch_ref=resolved_ref,
                         owner_avatar_url=metadata.owner_avatar_url,
                         import_subfolder=subfolder,
                         is_multi_skill_import=len(skill_paths) > 1,
                         args=args,
                     )
-                except InvalidSkillTextError as exc:
+                except (InvalidSkillTextError, InvalidSkillBundleError) as exc:
                     if len(skill_paths) == 1:
                         raise
                     skipped.append((skill_path, str(exc)))
@@ -714,6 +984,10 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         },
                     )
                     continue
+                imported_bytes = checked_github_import_size(
+                    imported_bytes,
+                    imported_skill.bundle_size,
+                )
                 imported.append(imported_skill)
 
             if not imported:
@@ -745,6 +1019,7 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     "skill_count": len(results),
                     "skipped_skill_count": len(skipped),
                     "discovered_skill_count": len(skill_paths),
+                    "skill_bundle_bytes": imported_bytes,
                 },
             )
     except Exception:
