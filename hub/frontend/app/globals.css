@@ -801,22 +801,17 @@ button:disabled,
   box-shadow: var(--shadow-card);
 }
 
-.registry-results-heading {
+.registry-results-toolbar {
   display: flex;
-  align-items: end;
+  min-height: 66px;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   border-bottom: 1px solid var(--border);
   background: var(--card);
-  padding: 16px 18px;
+  padding: 12px 18px;
 }
 
-.registry-results-heading div {
-  display: grid;
-  gap: 4px;
-}
-
-.registry-results-heading span,
 .registry-definition-panel > span,
 .registry-faq-panel > span,
 .category-section-header > span {
@@ -828,20 +823,22 @@ button:disabled,
   text-transform: uppercase;
 }
 
-.registry-results-heading h2 {
+.registry-results-toolbar h2 {
+  min-width: 0;
   margin: 0;
   color: #0f172a;
-  font-size: 26px;
-  font-weight: 850;
-  line-height: 32px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 26px;
+  overflow-wrap: anywhere;
 }
 
-.registry-results-heading p {
-  max-width: 720px;
-  margin: 0;
-  color: #64748b;
-  font-size: 14px;
-  line-height: 22px;
+.registry-results-count {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
 }
 
 .registry-support-section {
@@ -910,15 +907,30 @@ button:disabled,
 }
 
 .registry-faq-panel summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   color: #0f172a;
   font-size: 14px;
   font-weight: 850;
   line-height: 20px;
+  list-style: none;
 }
 
-.registry-faq-panel summary::marker {
+.registry-faq-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.registry-faq-panel summary::before {
+  content: "▸";
+  flex: 0 0 auto;
   color: #006d77;
+}
+
+.registry-faq-panel details[open] summary::before {
+  transform: rotate(90deg);
 }
 
 .registry-faq-panel details p {
@@ -5496,7 +5508,7 @@ button:disabled,
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 10px 12px;
-    padding: 12px 14px;
+    padding: 8px 14px;
   }
 
   .site-brand {
@@ -5511,7 +5523,7 @@ button:disabled,
     grid-column: 1 / -1;
     width: 100%;
     justify-content: flex-start;
-    gap: 6px;
+    gap: 4px;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -5531,8 +5543,10 @@ button:disabled,
 
   .site-nav-item {
     flex: 0 0 auto;
-    min-height: 34px;
+    min-height: 44px;
     justify-content: center;
+    padding: 0 7px;
+    font-size: 12px;
   }
 
   .server-detail-tabs {
@@ -5568,7 +5582,7 @@ button:disabled,
   }
 
   .registry-hero-section {
-    padding: 18px 14px 0;
+    padding: 12px 14px 0;
   }
 
   .registry-hero-inner {
@@ -5576,19 +5590,20 @@ button:disabled,
     justify-items: center;
     gap: 14px;
     text-align: center;
-    padding: 22px 16px;
+    padding: 16px;
   }
 
   .registry-hero-copy {
     width: 100%;
+    gap: 10px;
     justify-items: center;
     text-align: center;
   }
 
   .registry-hero-inner h1 {
     max-width: 360px;
-    font-size: 28px;
-    line-height: 36px;
+    font-size: 26px;
+    line-height: 32px;
   }
 
   .registry-hero-inner p {
@@ -5598,12 +5613,31 @@ button:disabled,
 
   .registry-quick-links {
     justify-content: center;
-    gap: 7px;
+    gap: 6px;
   }
 
-  .registry-results-heading {
-    display: grid;
-    gap: 8px;
+  .registry-quick-links a {
+    min-height: 36px;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--card);
+    font-size: 12px;
+    padding: 0 10px;
+  }
+
+  .registry-quick-links a:not(:last-child)::after {
+    content: none;
+  }
+
+  .registry-results-toolbar {
+    min-height: 60px;
+    padding: 10px 14px;
+  }
+
+  .registry-results-toolbar h2 {
+    font-size: 18px;
+    line-height: 24px;
   }
 
   .skills-view-tabs {
@@ -5881,5 +5915,81 @@ button:disabled,
 
   .partner-member-status strong {
     font-weight: 400;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 980px) {
+  .registry-home .server-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .registry-home {
+    gap: 18px;
+    padding-top: 14px;
+  }
+
+  .registry-results-toolbar {
+    gap: 10px;
+  }
+
+  .registry-results-shell > .server-grid {
+    padding: 10px;
+  }
+
+  .registry-home .server-grid {
+    gap: 8px;
+  }
+
+  .registry-home .server-card {
+    min-height: 0;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .registry-home .server-card-head {
+    gap: 10px;
+  }
+
+  .registry-home .server-card-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .registry-home .server-card-icon-image {
+    background-size: 23px 23px;
+  }
+
+  .registry-home .server-card strong {
+    font-size: 14px;
+    line-height: 19px;
+  }
+
+  .registry-home .server-card small {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .registry-home .server-card-description {
+    min-height: 40px;
+    font-size: 13px;
+    line-height: 20px;
+    -webkit-line-clamp: 2;
+  }
+
+  .registry-home .server-card-score-meter {
+    gap: 5px;
+  }
+
+  .registry-support-section {
+    gap: 10px;
+    padding-top: 18px;
+  }
+
+  .registry-definition-panel,
+  .registry-faq-panel {
+    gap: 10px;
+    padding: 14px;
   }
 }

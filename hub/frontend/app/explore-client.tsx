@@ -80,9 +80,11 @@ export function ExploreHomeClient({
 }) {
   const searchInputId = useId();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const didMountRef = useRef(false);
   const latestRequestId = useRef(0);
   const initialSearchQuery = initialQuery.trim();
   const hasInitialSearchQuery = initialSearchQuery.length > 0;
+  const hasBaseServersRef = useRef(!hasInitialSearchQuery);
   const [query, setQuery] = useState(initialSearchQuery);
   const [baseServers, setBaseServers] = useState(hasInitialSearchQuery ? [] : initialServers);
   const [baseNextCursor, setBaseNextCursor] = useState(
@@ -101,15 +103,31 @@ export function ExploreHomeClient({
   const servers = hasSearchQuery ? searchServers : baseServers;
   const nextCursor = hasSearchQuery ? searchNextCursor : baseNextCursor;
   const lastUpdatedText = formatFactDate(registryFacts.lastRegistryUpdate);
+  const listedServerCount = hasSearchQuery
+    ? servers.length
+    : (registryFacts.publishedServerCount ?? servers.length);
+  const resultLabel = `${listedServerCount.toLocaleString("en-US")}${
+    hasSearchQuery && nextCursor ? "+" : ""
+  } ${
+    hasSearchQuery
+      ? listedServerCount === 1 && !nextCursor
+        ? "result"
+        : "results"
+      : listedServerCount === 1
+        ? "server"
+        : "servers"
+  }`;
 
   const updateQuery = useCallback((nextQuery: string) => {
+    latestRequestId.current += 1;
     setQuery(nextQuery);
-    if (!nextQuery.trim()) {
-      latestRequestId.current += 1;
-      setError(initialError);
+    setError("");
+    if (!nextQuery.trim() && hasBaseServersRef.current) {
       setLoading(false);
+      return;
     }
-  }, [initialError]);
+    setLoading(true);
+  }, []);
 
   useEffect(() => {
     function focusSearch(event: KeyboardEvent) {
@@ -124,19 +142,25 @@ export function ExploreHomeClient({
   }, []);
 
   useEffect(() => {
-    const input = searchInputRef.current;
-    if (!input) return undefined;
-
-    function handleInput(event: Event) {
-      updateQuery((event.currentTarget as HTMLInputElement).value);
+    const url = new URL(window.location.href);
+    if (hasSearchQuery) {
+      url.searchParams.set("q", trimmedQuery);
+    } else {
+      url.searchParams.delete("q");
     }
-
-    input.addEventListener("input", handleInput);
-    return () => input.removeEventListener("input", handleInput);
-  }, [updateQuery]);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [hasSearchQuery, trimmedQuery]);
 
   useEffect(() => {
-    if (initialError || !hasSearchQuery) return undefined;
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return undefined;
+    }
+    if (initialError || (!hasSearchQuery && hasBaseServersRef.current)) return undefined;
 
     const requestId = latestRequestId.current + 1;
     latestRequestId.current = requestId;
@@ -150,16 +174,27 @@ export function ExploreHomeClient({
           const response = await listPublishedServers({
             fields: PUBLIC_CARD_FIELDS,
             limit: EXPLORE_PAGE_SIZE,
-            search: trimmedQuery,
+            search: hasSearchQuery ? trimmedQuery : undefined,
           });
           if (latestRequestId.current !== requestId) return;
-          setSearchServers(response.servers);
-          setSearchNextCursor(response.metadata.nextCursor ?? "");
+          if (hasSearchQuery) {
+            setSearchServers(response.servers);
+            setSearchNextCursor(response.metadata.nextCursor ?? "");
+          } else {
+            setBaseServers(response.servers);
+            setBaseNextCursor(response.metadata.nextCursor ?? "");
+            hasBaseServersRef.current = true;
+          }
         } catch (caught) {
           if (latestRequestId.current !== requestId) return;
           setError(caught instanceof Error ? caught.message : "Unable to search servers.");
-          setSearchServers([]);
-          setSearchNextCursor("");
+          if (hasSearchQuery) {
+            setSearchServers([]);
+            setSearchNextCursor("");
+          } else {
+            setBaseServers([]);
+            setBaseNextCursor("");
+          }
         } finally {
           if (latestRequestId.current === requestId) setLoading(false);
         }
@@ -203,8 +238,8 @@ export function ExploreHomeClient({
             <span className="registry-hero-eyebrow">Model Context Protocol registry</span>
             <h1 id="registry-hero-title">Find MCP servers you can evaluate quickly</h1>
             <p>
-              Search published MCP server listings with install targets, remote endpoints,
-              environment variables, namespace evidence, and Wardn review signals in one place.
+              Compare install targets, remote endpoints, environment variables, namespace
+              evidence, and Wardn review signals in one place.
             </p>
             <form action="/" className="registry-hero-search-form" method="get">
               <label className="registry-hero-search" htmlFor={searchInputId}>
@@ -237,40 +272,48 @@ export function ExploreHomeClient({
         <div className="home-view registry-home">
           <p className="sr-only">
             As of {formatFactDate(registryFacts.generatedAt)}, Wardn Hub lists{" "}
-            {registryFacts.publishedServerCount ?? "an unavailable number of"} published MCP
-            servers across {registryFacts.categoryCount ?? "an unavailable number of"} categories.
+            {registryFacts.publishedServerCount ?? "an unavailable number of"} MCP servers across{" "}
+            {registryFacts.categoryCount ?? "an unavailable number of"} categories.
             Last registry update observed {formatFactDate(registryFacts.lastRegistryUpdate)}.
           </p>
 
-          <section className="registry-results-shell" aria-label="Server listings">
-            <div className="registry-results-heading">
-              <div>
-                <span>{hasSearchQuery ? "Search results" : "Registry"}</span>
-                <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Trusted MCP server listings"}</h2>
-                <p>
-                  {hasSearchQuery
-                    ? "Filtered by server name, title, description, package, and namespace metadata."
-                    : "Scan published listings with their category, summary, and Wardn Score."}
-                </p>
-              </div>
+          <section
+            aria-busy={loading}
+            aria-label="Server listings"
+            className="registry-results-shell"
+          >
+            <div className="registry-results-toolbar">
+              <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "MCP servers"}</h2>
+              <span className="registry-results-count" aria-live="polite">
+                {loading ? "Updating…" : resultLabel}
+              </span>
             </div>
-            {error ? <EmptyState detail={error} title="Registry unavailable" /> : null}
-            {!error && loading ? <EmptyState detail="Searching published servers." title="Searching" /> : null}
+            {error && servers.length === 0 ? (
+              <EmptyState detail={error} title="Registry unavailable" />
+            ) : null}
+            {!error && loading && servers.length === 0 ? (
+              <EmptyState detail="Searching MCP servers." title="Searching" />
+            ) : null}
             {!error && !loading && servers.length === 0 ? (
               <EmptyServerCard
                 detail={
                   hasSearchQuery
                     ? "Try a different server name, title, or description keyword."
-                    : "Once community listings are published, this page will show one card per MCP server."
+                    : "New community listings will appear here."
                 }
-                title={hasSearchQuery ? "No matching MCP servers" : "No MCP servers published yet"}
+                title={hasSearchQuery ? "No matching MCP servers" : "No MCP servers yet"}
               />
             ) : null}
             {servers.length > 0 ? (
               <>
                 <div className="server-grid">
                   {servers.map((server) => (
-                    <ServerCard key={server.id} server={server} showQualityScore />
+                    <ServerCard
+                      hideGenericCategory
+                      key={server.id}
+                      server={server}
+                      showQualityScore
+                    />
                   ))}
                 </div>
                 {nextCursor || error ? (

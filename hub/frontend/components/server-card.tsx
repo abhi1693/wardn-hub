@@ -49,13 +49,17 @@ function QualityScoreMeter({ score }: { score?: number | null }) {
 }
 
 export function ServerCard({
+  hideGenericCategory = false,
   server,
   showQualityScore = false,
 }: {
+  hideGenericCategory?: boolean;
   server: RegistryServerRead;
   showQualityScore?: boolean;
 }) {
-  const categoryName = displayCategoryName(server.categories?.[0]?.name);
+  const listedCategoryName = displayCategoryName(server.categories?.[0]?.name);
+  const categoryName =
+    hideGenericCategory && listedCategoryName === "MCP Registry" ? "" : listedCategoryName;
 
   return (
     <Link className="server-card" href={serverDetailHref(server.name)}>
