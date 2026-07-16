@@ -10,6 +10,7 @@ import type { SkillFileRead } from "@/lib/api/generated/model";
 import {
   displaySkillName,
   getPublicSkill,
+  getPublicSkillAudit,
   isSkillsNotFoundError,
   listPublicSkills,
   publishedSkillFiles,
@@ -21,6 +22,8 @@ import {
 import {
   OfficialBadge,
   RelatedSkills,
+  SkillAuditBadge,
+  SkillAuditPanel,
   SkillFiles,
   SkillFilesDisclosure,
   SkillsBreadcrumbs,
@@ -95,12 +98,13 @@ export async function SkillDetailView({
 }: SkillDetailViewProps) {
   const source = `${owner}/${repo}`;
   const id = `${source}/${skillSlug}`;
-  const [skill, sourceSkills] = await Promise.all([
+  const [skill, sourceSkills, audit] = await Promise.all([
     getPublicSkill(id, { includeBundle: true }).catch((error) => {
       if (isSkillsNotFoundError(error)) notFound();
       throw error;
     }),
     listPublicSkills({ limit: 100, source }).catch(() => []),
+    getPublicSkillAudit(id),
   ]);
   const files = publishedSkillFiles(skill);
   const selectedFile =
@@ -148,6 +152,7 @@ export async function SkillDetailView({
               <h1 id="skill-detail-title">
                 {title}
                 {listing?.isOfficial ? <OfficialBadge /> : null}
+                <SkillAuditBadge audit={audit} />
               </h1>
             </div>
           </div>
@@ -174,6 +179,7 @@ export async function SkillDetailView({
 
         <aside className="skill-side-panel">
           <SourceRepositoryLink source={source} sourceUrl={skill.sourceUrl ?? listing?.sourceUrl} />
+          <SkillAuditPanel audit={audit} />
           <SkillFiles activePath={selectedFile.path} files={files} skillId={id} />
           <RelatedSkills currentId={id} skills={sourceSkills} />
         </aside>

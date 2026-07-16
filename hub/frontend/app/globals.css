@@ -2972,6 +2972,194 @@ button:disabled,
   box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15);
 }
 
+.skill-audit-badge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 16px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.skill-audit-badge.pass,
+.skill-audit-check-status.pass {
+  border-color: color-mix(in srgb, var(--success) 24%, transparent);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.skill-audit-badge.warn,
+.skill-audit-check-status.warn {
+  border-color: color-mix(in srgb, var(--pending) 24%, transparent);
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
+.skill-audit-badge.fail,
+.skill-audit-check-status.fail {
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.skill-audit-badge.pending,
+.skill-audit-check-status.pending {
+  background: var(--neutral-bg);
+  color: var(--muted-foreground);
+}
+
+.skill-audit-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-lowest);
+}
+
+.skill-audit-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+}
+
+.skill-audit-panel > header > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.skill-audit-panel > header small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.skill-audit-panel-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--neutral-bg);
+  color: var(--muted-foreground);
+}
+
+.skill-audit-panel.pass .skill-audit-panel-icon {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.skill-audit-panel.warn .skill-audit-panel-icon {
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
+.skill-audit-panel.fail .skill-audit-panel-icon {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.skill-audit-checks {
+  display: grid;
+  border-top: 1px solid var(--border);
+}
+
+.skill-audit-check {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+}
+
+.skill-audit-check + .skill-audit-check {
+  border-top: 1px solid var(--border);
+}
+
+.skill-audit-check-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skill-audit-check-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.skill-audit-check-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 15px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+}
+
+.skill-audit-check p,
+.skill-audit-pending-copy {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.skill-audit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.skill-audit-tags span {
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  color: var(--on-surface-variant);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 15px;
+  padding: 2px 6px;
+}
+
+.skill-audit-check time {
+  color: var(--muted-foreground);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.skill-audit-snapshot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  line-height: 15px;
+  padding: 8px 11px;
+}
+
+.skill-audit-snapshot code {
+  color: var(--on-surface-variant);
+  font-size: 10px;
+}
+
+.skill-audit-pending-copy {
+  border-top: 1px solid var(--border);
+  padding: 11px;
+}
+
 .skills-view-tabs {
   display: flex;
   flex-wrap: wrap;

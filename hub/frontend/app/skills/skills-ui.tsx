@@ -1,15 +1,24 @@
 import {
   ChevronDown,
+  Clock3,
   ExternalLink,
   FileArchive,
   FileCode2,
   FileText,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import type { SkillFileRead, SkillRead } from "@/lib/api/generated/model";
+import type {
+  SkillAuditRead,
+  SkillAuditResponse,
+  SkillFileRead,
+  SkillRead,
+} from "@/lib/api/generated/model";
 import {
   groupSkillsBySource,
   skillDetailPath,
@@ -81,6 +90,121 @@ export function SkillsPageHeader({
 
 export function OfficialBadge() {
   return <span className="skills-official-badge">Official</span>;
+}
+
+type SkillAuditStatus = "fail" | "pending" | "pass" | "warn";
+
+const skillAuditStatusWeight: Record<SkillAuditStatus, number> = {
+  pending: -1,
+  pass: 0,
+  warn: 1,
+  fail: 2,
+};
+
+function currentSkillAudits(audit: SkillAuditResponse | null) {
+  if (!audit) return [];
+  const seen = new Set<string>();
+  return audit.audits.filter((entry) => {
+    if (seen.has(entry.slug)) return false;
+    seen.add(entry.slug);
+    return true;
+  });
+}
+
+function skillAuditStatus(entries: SkillAuditRead[]): SkillAuditStatus {
+  return entries.reduce<SkillAuditStatus>((worst, entry) => {
+    const status = entry.status.toLowerCase();
+    if (status !== "pass" && status !== "warn" && status !== "fail") return worst;
+    return skillAuditStatusWeight[status] > skillAuditStatusWeight[worst] ? status : worst;
+  }, "pending");
+}
+
+function skillAuditLabel(status: SkillAuditStatus) {
+  if (status === "pass") return "Audit passed";
+  if (status === "warn") return "Review advised";
+  if (status === "fail") return "Audit failed";
+  return "Audit pending";
+}
+
+function SkillAuditStatusIcon({ status, size = 14 }: { status: SkillAuditStatus; size?: number }) {
+  if (status === "pass") return <ShieldCheck aria-hidden="true" size={size} />;
+  if (status === "warn") return <ShieldAlert aria-hidden="true" size={size} />;
+  if (status === "fail") return <ShieldX aria-hidden="true" size={size} />;
+  return <Clock3 aria-hidden="true" size={size} />;
+}
+
+export function SkillAuditBadge({ audit }: { audit: SkillAuditResponse | null }) {
+  const status = skillAuditStatus(currentSkillAudits(audit));
+  return (
+    <span className={`skill-audit-badge ${status}`}>
+      <SkillAuditStatusIcon status={status} />
+      {skillAuditLabel(status)}
+    </span>
+  );
+}
+
+function formatSkillAuditDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+
+export function SkillAuditPanel({ audit }: { audit: SkillAuditResponse | null }) {
+  const entries = currentSkillAudits(audit);
+  const status = skillAuditStatus(entries);
+
+  return (
+    <section className={`skill-audit-panel ${status}`} aria-labelledby="skill-audit-heading">
+      <header>
+        <span className="skill-audit-panel-icon">
+          <SkillAuditStatusIcon size={18} status={status} />
+        </span>
+        <span>
+          <h2 id="skill-audit-heading">Security audit</h2>
+          <small>{skillAuditLabel(status)}</small>
+        </span>
+      </header>
+      {entries.length ? (
+        <>
+          <div className="skill-audit-checks">
+            {entries.map((entry) => {
+              const entryStatus = skillAuditStatus([entry]);
+              return (
+                <article className="skill-audit-check" key={entry.slug}>
+                  <div className="skill-audit-check-heading">
+                    <strong>{entry.provider}</strong>
+                    <span className={`skill-audit-check-status ${entryStatus}`}>
+                      {entryStatus}
+                    </span>
+                  </div>
+                  <p>{entry.summary}</p>
+                  {entry.riskLevel || entry.categories?.length ? (
+                    <div className="skill-audit-tags">
+                      {entry.riskLevel ? <span>{entry.riskLevel} risk</span> : null}
+                      {entry.categories?.map((category) => (
+                        <span key={category}>{category}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <time dateTime={entry.auditedAt}>{formatSkillAuditDate(entry.auditedAt)} UTC</time>
+                </article>
+              );
+            })}
+          </div>
+          <div className="skill-audit-snapshot">
+            <span>Snapshot</span>
+            <code title={audit?.contentHash}>{audit?.contentHash.slice(0, 12)}</code>
+          </div>
+        </>
+      ) : (
+        <p className="skill-audit-pending-copy">
+          This snapshot has not completed its bundle and Codex security checks yet.
+        </p>
+      )}
+    </section>
+  );
 }
 
 export function SkillLeaderboard({
