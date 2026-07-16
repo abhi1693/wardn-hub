@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import Select, and_, exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
@@ -119,6 +121,60 @@ async def official_owner_keys(session: AsyncSession, skills: list[Skill]) -> set
         )
     )
     return {(source_type, source_owner) for source_type, source_owner in result.all()}
+
+
+async def current_skill_audit_statuses(
+    session: AsyncSession,
+    skills: list[Skill],
+) -> dict[uuid.UUID, str]:
+    snapshot_keys = [
+        (skill.id, skill.current_snapshot_id)
+        for skill in skills
+        if skill.current_snapshot_id is not None
+    ]
+    if not snapshot_keys:
+        return {}
+
+    ranked_audits = (
+        select(SkillAudit.skill_id, SkillAudit.slug, SkillAudit.status)
+        .add_columns(
+            func.row_number()
+            .over(
+                partition_by=(SkillAudit.skill_id, SkillAudit.slug),
+                order_by=(SkillAudit.audited_at.desc(), SkillAudit.id.desc()),
+            )
+            .label("audit_rank")
+        )
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == SkillAudit.snapshot_id,
+                SkillSnapshot.skill_id == SkillAudit.skill_id,
+                SkillSnapshot.content_hash == SkillAudit.content_hash,
+            ),
+        )
+        .where(
+            tuple_(SkillAudit.skill_id, SkillAudit.snapshot_id).in_(snapshot_keys),
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+        )
+        .subquery()
+    )
+    result = await session.execute(
+        select(ranked_audits.c.skill_id, ranked_audits.c.status).where(
+            ranked_audits.c.audit_rank == 1
+        )
+    )
+
+    status_weight = {"pass": 0, "warn": 1, "fail": 2}
+    statuses: dict[uuid.UUID, str] = {}
+    for skill_id, status in result.all():
+        if status not in status_weight:
+            continue
+        current = statuses.get(skill_id)
+        if current is None or status_weight[status] > status_weight[current]:
+            statuses[skill_id] = status
+    return statuses
 
 
 async def get_skill(session: AsyncSession, source: str, slug: str) -> Skill | None:

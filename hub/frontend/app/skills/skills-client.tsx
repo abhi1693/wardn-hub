@@ -197,7 +197,7 @@ export function SkillsClient({
               <p>
                 {hasSearchQuery
                   ? "Filtered by skill name, description, source owner, and repository metadata."
-                  : "Scan imported skills as cards with their source, summary, and official status."}
+                  : "Scan imported skills as cards with their source, summary, and security-audit status."}
               </p>
             </div>
           </div>

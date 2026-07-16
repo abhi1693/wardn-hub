@@ -133,10 +133,20 @@ function SkillAuditStatusIcon({ status, size = 14 }: { status: SkillAuditStatus;
   return <Clock3 aria-hidden="true" size={size} />;
 }
 
-export function SkillAuditBadge({ audit }: { audit: SkillAuditResponse | null }) {
-  const status = skillAuditStatus(currentSkillAudits(audit));
+export function SkillAuditBadge({
+  audit,
+  status: listedStatus,
+}: {
+  audit?: SkillAuditResponse | null;
+  status?: SkillRead["auditStatus"];
+}) {
+  const status = listedStatus ?? skillAuditStatus(currentSkillAudits(audit ?? null));
   return (
-    <span className={`skill-audit-badge ${status}`}>
+    <span
+      aria-label={`Security ${skillAuditLabel(status).toLowerCase()}`}
+      className={`skill-audit-badge ${status}`}
+      title={skillAuditLabel(status)}
+    >
       <SkillAuditStatusIcon status={status} />
       {skillAuditLabel(status)}
     </span>
@@ -236,6 +246,7 @@ export function SkillLeaderboard({
             <strong>
               {skill.name}
               {skill.isOfficial ? <OfficialBadge /> : null}
+              <SkillAuditBadge status={skill.auditStatus} />
             </strong>
             <small>{skill.description || skill.slug}</small>
           </span>
@@ -285,6 +296,9 @@ export function SkillCardGrid({
             </span>
           </span>
           <span className="skill-card-description">{skill.description || skill.slug}</span>
+          <span className="skill-card-audit">
+            <SkillAuditBadge status={skill.auditStatus} />
+          </span>
           <span className="skill-card-footer">
             <span>{skill.sourceOwner || skill.source}</span>
             <span>{skill.slug}</span>

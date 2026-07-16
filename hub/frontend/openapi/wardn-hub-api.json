@@ -5793,6 +5793,22 @@
       },
       "SkillRead": {
         "properties": {
+          "auditStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pass",
+                  "warn",
+                  "fail"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auditstatus"
+          },
           "description": {
             "default": "",
             "title": "Description",
@@ -7126,7 +7142,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.100"
+    "version": "0.2.101"
   },
   "openapi": "3.1.0",
   "paths": {

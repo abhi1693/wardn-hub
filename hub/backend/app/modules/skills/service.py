@@ -1,3 +1,4 @@
+import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from time import perf_counter
@@ -55,6 +56,7 @@ def official_owner_key(skill: Skill) -> tuple[str, str]:
 def skill_read(
     skill: Skill,
     *,
+    audit_statuses: dict[uuid.UUID, str] | None = None,
     official_owner_keys: set[tuple[str, str]] | None = None,
 ) -> SkillRead:
     return SkillRead(
@@ -73,6 +75,7 @@ def skill_read(
         description=skill.description,
         isOfficial=official_owner_key(skill) in (official_owner_keys or set()),
         isDuplicate=True if skill.is_duplicate else None,
+        auditStatus=(audit_statuses or {}).get(skill.id),
     )
 
 
@@ -102,8 +105,16 @@ async def list_skills(
         official=official,
     )
     official_keys = await repository.official_owner_keys(session, skills)
+    audit_statuses = await repository.current_skill_audit_statuses(session, skills)
     return SkillListResponse(
-        data=[skill_read(skill, official_owner_keys=official_keys) for skill in skills],
+        data=[
+            skill_read(
+                skill,
+                audit_statuses=audit_statuses,
+                official_owner_keys=official_keys,
+            )
+            for skill in skills
+        ],
         pagination=SkillPagination(
             page=page,
             perPage=per_page,
@@ -131,8 +142,16 @@ async def search_skills(
         owner=owner,
     )
     official_keys = await repository.official_owner_keys(session, skills)
+    audit_statuses = await repository.current_skill_audit_statuses(session, skills)
     return SkillSearchResponse(
-        data=[skill_read(skill, official_owner_keys=official_keys) for skill in skills],
+        data=[
+            skill_read(
+                skill,
+                audit_statuses=audit_statuses,
+                official_owner_keys=official_keys,
+            )
+            for skill in skills
+        ],
         query=search_query,
         searchType="semantic" if " " in search_query else "fuzzy",
         count=len(skills),
@@ -225,6 +244,7 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
         official=True,
     )
     official_keys = await repository.official_owner_keys(session, skills)
+    audit_statuses = await repository.current_skill_audit_statuses(session, skills)
     groups: dict[str, list[Skill]] = defaultdict(list)
     for skill in skills:
         groups[owner_from_skill(skill)].append(skill)
@@ -240,7 +260,11 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
                 featuredRepo=name_from_skill(featured),
                 featuredSkill=featured.name,
                 skills=[
-                    skill_read(skill, official_owner_keys=official_keys)
+                    skill_read(
+                        skill,
+                        audit_statuses=audit_statuses,
+                        official_owner_keys=official_keys,
+                    )
                     for skill in owner_skills
                 ],
             )

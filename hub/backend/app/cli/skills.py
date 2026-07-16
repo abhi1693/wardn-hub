@@ -40,6 +40,10 @@ GITHUB_CREATED_AT_FLOOR = datetime(1970, 1, 1, tzinfo=UTC)
 GITHUB_RATE_LIMIT_WAIT_BUFFER_SECONDS = 1.0
 GITHUB_SECONDARY_RATE_LIMIT_WAIT_SECONDS = 60.0
 GITHUB_SECONDARY_RATE_LIMIT_MAX_WAIT_SECONDS = 15 * 60.0
+GITHUB_TRANSIENT_RETRY_BASE_SECONDS = 1.0
+GITHUB_TRANSIENT_RETRY_MAX_SECONDS = 8.0
+GITHUB_TRANSIENT_MAX_RETRIES = 3
+GITHUB_ERROR_BODY_MAX_CHARS = 1000
 DEFAULT_USER_AGENT = "WardnHubSkillsImporter/0.1"
 DEFAULT_IMPORT_TIMEOUT_SECONDS = 20.0
 MAX_LOGGED_SKILL_PATHS = 20
@@ -70,6 +74,10 @@ class GitHubSystemicError(SkillCliError):
 
 
 class SkillNotFoundError(SkillCliError):
+    pass
+
+
+class GitHubTreeTruncatedError(SkillCliError):
     pass
 
 
@@ -286,6 +294,19 @@ def github_http_error(status_code: int, message: str) -> SkillCliError:
     return SkillCliError(message)
 
 
+def github_response_error_message(response: object, operation: str) -> str:
+    status_code = getattr(response, "status_code", "unknown")
+    request_id = github_response_header(response, "x-github-request-id")
+    details = f"HTTP {status_code}"
+    if request_id:
+        details = f"{details}, request ID {request_id}"
+
+    body = str(getattr(response, "text", "") or "").strip()
+    if len(body) > GITHUB_ERROR_BODY_MAX_CHARS:
+        body = f"{body[:GITHUB_ERROR_BODY_MAX_CHARS]}..."
+    return f"{operation} ({details}): {body or 'empty response body'}"
+
+
 def github_response_header(response: object, name: str) -> str:
     headers = getattr(response, "headers", {})
     if not hasattr(headers, "get"):
@@ -365,6 +386,13 @@ def github_rate_limit_wait(
     return GitHubRateLimitWait(
         seconds=min(exponential_wait, GITHUB_SECONDARY_RATE_LIMIT_MAX_WAIT_SECONDS),
         reason="secondary",
+    )
+
+
+def github_transient_retry_wait(retry_attempt: int) -> float:
+    return min(
+        GITHUB_TRANSIENT_RETRY_BASE_SECONDS * (2**retry_attempt),
+        GITHUB_TRANSIENT_RETRY_MAX_SECONDS,
     )
 
 
@@ -1115,42 +1143,90 @@ class GitHubClient:
         params: dict[str, str] | None = None,
         follow_redirects: bool | None = None,
     ) -> httpx.Response:
-        retry_attempt = 0
+        rate_limit_retry_attempt = 0
+        transient_retry_attempt = 0
         while True:
             request_kwargs: dict[str, object] = {}
             if params is not None:
                 request_kwargs["params"] = params
             if follow_redirects is not None:
                 request_kwargs["follow_redirects"] = follow_redirects
-            response = await self._client.get(url, **request_kwargs)  # type: ignore[arg-type]
+            try:
+                response = await self._client.get(  # type: ignore[arg-type]
+                    url,
+                    **request_kwargs,
+                )
+            except httpx.TransportError as exc:
+                if transient_retry_attempt >= GITHUB_TRANSIENT_MAX_RETRIES:
+                    detail = str(exc).strip() or "empty error message"
+                    raise GitHubSystemicError(
+                        "GitHub request failed after "
+                        f"{transient_retry_attempt + 1} attempts: "
+                        f"{type(exc).__name__}: {detail}"
+                    ) from exc
+                retry_wait = github_transient_retry_wait(transient_retry_attempt)
+                transient_retry_attempt += 1
+                logger.warning(
+                    "github request transient failure; waiting before retry",
+                    extra={
+                        "request_host": urlparse(url).hostname,
+                        "request_path": urlparse(url).path,
+                        "failure_type": type(exc).__name__,
+                        "retry_attempt": transient_retry_attempt,
+                        "retry_wait_seconds": retry_wait,
+                    },
+                )
+                await asyncio.sleep(retry_wait)
+                continue
             wait = github_rate_limit_wait(
                 response,
-                retry_attempt=retry_attempt,
+                retry_attempt=rate_limit_retry_attempt,
                 now_epoch_seconds=time.time(),
             )
-            if wait is None:
+            if wait is not None:
+                rate_limit_retry_attempt += 1
+                logger.warning(
+                    "github request rate limited; waiting before retry",
+                    extra={
+                        "request_host": urlparse(url).hostname,
+                        "request_path": urlparse(url).path,
+                        "rate_limit_reason": wait.reason,
+                        "rate_limit_resource": github_response_header(
+                            response, "x-ratelimit-resource"
+                        ),
+                        "rate_limit_remaining": github_response_header(
+                            response, "x-ratelimit-remaining"
+                        ),
+                        "rate_limit_reset": github_response_header(
+                            response, "x-ratelimit-reset"
+                        ),
+                        "retry_attempt": rate_limit_retry_attempt,
+                        "retry_wait_seconds": wait.seconds,
+                    },
+                )
+                await asyncio.sleep(wait.seconds)
+                continue
+            if response.status_code < 500:
                 return response
-            retry_attempt += 1
+            if transient_retry_attempt >= GITHUB_TRANSIENT_MAX_RETRIES:
+                return response
+            retry_wait = github_transient_retry_wait(transient_retry_attempt)
+            transient_retry_attempt += 1
             logger.warning(
-                "github request rate limited; waiting before retry",
+                "github request transient failure; waiting before retry",
                 extra={
                     "request_host": urlparse(url).hostname,
                     "request_path": urlparse(url).path,
-                    "rate_limit_reason": wait.reason,
-                    "rate_limit_resource": github_response_header(
-                        response, "x-ratelimit-resource"
+                    "failure_type": "http_status",
+                    "http_status_code": response.status_code,
+                    "github_request_id": github_response_header(
+                        response, "x-github-request-id"
                     ),
-                    "rate_limit_remaining": github_response_header(
-                        response, "x-ratelimit-remaining"
-                    ),
-                    "rate_limit_reset": github_response_header(
-                        response, "x-ratelimit-reset"
-                    ),
-                    "retry_attempt": retry_attempt,
-                    "retry_wait_seconds": wait.seconds,
+                    "retry_attempt": transient_retry_attempt,
+                    "retry_wait_seconds": retry_wait,
                 },
             )
-            await asyncio.sleep(wait.seconds)
+            await asyncio.sleep(retry_wait)
 
     async def owner(self, owner: str) -> GitHubOwner:
         response = await self._get(
@@ -1161,7 +1237,7 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub owner lookup failed: {response.text}",
+                github_response_error_message(response, "GitHub owner lookup failed"),
             )
         payload = github_json(response, "owner metadata")
         if not isinstance(payload, dict):
@@ -1201,7 +1277,10 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub organization lookup failed: {response.text}",
+                github_response_error_message(
+                    response,
+                    "GitHub organization lookup failed",
+                ),
             )
         payload = github_json(response, "organization metadata")
         if not isinstance(payload, dict) or not isinstance(payload.get("is_verified"), bool):
@@ -1232,7 +1311,10 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub repository search failed: {response.text}",
+                github_response_error_message(
+                    response,
+                    "GitHub repository search failed",
+                ),
             )
         payload = github_json(response, "repository search")
         if not isinstance(payload, dict):
@@ -1447,7 +1529,10 @@ class GitHubClient:
             if response.status_code >= 400:
                 raise github_http_error(
                     response.status_code,
-                    f"GitHub repository listing failed: {response.text}",
+                    github_response_error_message(
+                        response,
+                        "GitHub repository listing failed",
+                    ),
                 )
             payload = github_json(response, "repository listing")
             if not isinstance(payload, list):
@@ -1532,7 +1617,10 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub repository lookup failed: {response.text}",
+                github_response_error_message(
+                    response,
+                    "GitHub repository lookup failed",
+                ),
             )
         payload = github_json(response, "repository metadata")
         if not isinstance(payload, dict):
@@ -1587,7 +1675,7 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub ref lookup failed: {response.text}",
+                github_response_error_message(response, "GitHub ref lookup failed"),
             )
         payload = github_json(response, "commit listing")
         if not isinstance(payload, list) or not payload:
@@ -1607,7 +1695,7 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub tree lookup failed: {response.text}",
+                github_response_error_message(response, "GitHub tree lookup failed"),
             )
         payload = github_json(response, "repository tree")
         if not isinstance(payload, dict):
@@ -1617,7 +1705,9 @@ class GitHubClient:
         if not isinstance(truncated, bool) or not isinstance(tree_payload, list):
             raise GitHubSystemicError("GitHub returned an invalid repository tree")
         if truncated:
-            raise SkillCliError("GitHub tree is truncated; pass --subfolder to import one skill")
+            raise GitHubTreeTruncatedError(
+                "GitHub tree is truncated; repository scan skipped"
+            )
         tree: list[GitHubTreeItem] = []
         for item in tree_payload:
             if not isinstance(item, dict):
@@ -1667,7 +1757,10 @@ class GitHubClient:
         if response.status_code >= 400:
             raise github_http_error(
                 response.status_code,
-                f"GitHub raw file fetch failed for {path}: {response.text}",
+                github_response_error_message(
+                    response,
+                    f"GitHub raw file fetch failed for {path}",
+                ),
             )
         return response.content
 
@@ -2411,7 +2504,7 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     },
                 )
                 return finish_import()
-            except SkillNotFoundError as exc:
+            except (GitHubTreeTruncatedError, SkillNotFoundError) as exc:
                 skipped_repository_count += 1
                 logger.info(
                     "github skills import repository skipped",

@@ -35,6 +35,7 @@ def skill_read(slug: str = "find-skills") -> SkillRead:
         url=f"https://skills.sh/vercel-labs/skills/{slug}",
         description="Find reusable agent skills.",
         isOfficial=True,
+        auditStatus="warn",
     )
 
 
@@ -107,6 +108,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
                 "description": "Find reusable agent skills.",
                 "isOfficial": True,
                 "isDuplicate": None,
+                "auditStatus": "warn",
             }
         ],
         "pagination": {"page": 0, "perPage": 10, "total": 1, "hasMore": False},

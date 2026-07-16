@@ -2510,7 +2510,7 @@ button:disabled,
 .skill-card {
   display: grid;
   min-height: 180px;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr auto auto;
   gap: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -2581,6 +2581,11 @@ button:disabled,
   line-height: 19px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.skill-card-audit {
+  display: flex;
+  align-items: center;
 }
 
 .skill-card-footer {

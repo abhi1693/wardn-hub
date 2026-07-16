@@ -47,6 +47,38 @@ async def test_list_skill_audits_requires_current_snapshot_hash_and_is_bounded()
     assert "LIMIT" in session.statement
 
 
+async def test_current_skill_audit_statuses_uses_latest_check_results() -> None:
+    class FakeSession:
+        statement = ""
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statement = str(statement)
+            return SimpleNamespace(
+                all=lambda: [
+                    ("skill-one", "warn"),
+                    ("skill-one", "pass"),
+                    ("skill-two", "fail"),
+                ]
+            )
+
+    session = FakeSession()
+    skills = [
+        SimpleNamespace(id="skill-one", current_snapshot_id="snapshot-one"),
+        SimpleNamespace(id="skill-two", current_snapshot_id="snapshot-two"),
+    ]
+
+    statuses = await repository.current_skill_audit_statuses(  # type: ignore[arg-type]
+        session,
+        skills,
+    )
+
+    assert statuses == {"skill-one": "warn", "skill-two": "fail"}
+    assert "JOIN skill_snapshots" in session.statement
+    assert "skill_snapshots.content_hash = skill_audits.content_hash" in session.statement
+    assert "skill_snapshots.is_latest" in session.statement
+    assert "row_number() OVER" in session.statement
+
+
 async def test_get_skill_detail_only_expands_bundle_when_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

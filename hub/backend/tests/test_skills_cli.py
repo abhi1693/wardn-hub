@@ -3,6 +3,7 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app import manage
@@ -342,15 +343,25 @@ async def test_github_raw_file_rejects_invalid_text(
 async def test_github_raw_file_http_error_is_not_invalid_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    calls = 0
+    sleeps: list[float] = []
+
     async def fake_get(url: str, *, follow_redirects: bool) -> SimpleNamespace:
+        nonlocal calls
+        calls += 1
         assert follow_redirects is False
         return SimpleNamespace(
             status_code=500,
             content=b"",
+            headers={"x-github-request-id": "REQUEST-500"},
             text="upstream failure",
         )
 
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
     repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    monkeypatch.setattr(skills.asyncio, "sleep", fake_sleep)
     async with skills.GitHubClient() as client:
         monkeypatch.setattr(client._client, "get", fake_get)
         with pytest.raises(skills.SkillCliError) as exc_info:
@@ -358,8 +369,11 @@ async def test_github_raw_file_http_error_is_not_invalid_text(
 
     assert not isinstance(exc_info.value, skills.InvalidSkillTextError)
     assert str(exc_info.value) == (
-        "GitHub raw file fetch failed for skills/weather/SKILL.md: upstream failure"
+        "GitHub raw file fetch failed for skills/weather/SKILL.md "
+        "(HTTP 500, request ID REQUEST-500): upstream failure"
     )
+    assert calls == 4
+    assert sleeps == [1, 2, 4]
 
 
 async def test_github_raw_file_encodes_ref_and_path_segments(
@@ -731,6 +745,18 @@ def github_response(
     )
 
 
+def test_github_response_error_message_includes_http_diagnostics() -> None:
+    response = github_response(
+        502,
+        headers={"x-github-request-id": "REQUEST-502"},
+    )
+
+    assert skills.github_response_error_message(response, "GitHub tree lookup failed") == (
+        "GitHub tree lookup failed (HTTP 502, request ID REQUEST-502): "
+        "empty response body"
+    )
+
+
 def test_github_rate_limit_wait_ignores_ordinary_forbidden_response() -> None:
     response = github_response(403, message="Resource not accessible by personal access token")
 
@@ -827,6 +853,66 @@ async def test_github_client_waits_and_retries_same_request_after_rate_limits(
     assert sleeps == [10, 4]
 
 
+async def test_github_client_retries_transient_http_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter(
+        [
+            github_response(502, headers={"x-github-request-id": "REQUEST-ONE"}),
+            github_response(503, headers={"x-github-request-id": "REQUEST-TWO"}),
+            github_response(200),
+        ]
+    )
+    calls = 0
+    sleeps: list[float] = []
+
+    async def fake_get(url: str, **kwargs: object) -> SimpleNamespace:
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(skills.asyncio, "sleep", fake_sleep)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        response = await client._get("https://api.github.com/repos/acme/skills")
+
+    assert response.status_code == 200
+    assert calls == 3
+    assert sleeps == [1, 2]
+
+
+async def test_github_client_retries_transport_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    async def fake_get(url: str, **kwargs: object) -> SimpleNamespace:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise httpx.ReadTimeout(
+                "upstream timed out",
+                request=httpx.Request("GET", url),
+            )
+        return github_response(200)
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(skills.asyncio, "sleep", fake_sleep)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        response = await client._get("https://api.github.com/repos/acme/skills")
+
+    assert response.status_code == 200
+    assert calls == 3
+    assert sleeps == [1, 2]
+
+
 async def test_github_owner_malformed_json_is_systemic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -891,6 +977,26 @@ async def test_github_recursive_tree_rejects_wrong_shape(
     async with skills.GitHubClient() as client:
         monkeypatch.setattr(client._client, "get", fake_get)
         with pytest.raises(skills.GitHubSystemicError, match="invalid item"):
+            await client.recursive_tree(repo, RESOLVED_COMMIT_SHA)
+
+
+async def test_github_recursive_tree_classifies_truncated_response_as_skippable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(url: str, *, params: dict[str, str]) -> SimpleNamespace:
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {"truncated": True, "tree": []},
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/large-repository")
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        with pytest.raises(
+            skills.GitHubTreeTruncatedError,
+            match="repository scan skipped",
+        ):
             await client.recursive_tree(repo, RESOLVED_COMMIT_SHA)
 
 
@@ -2334,6 +2440,100 @@ async def test_import_github_continues_after_repository_specific_failure(
     assert result == 1
     assert calls == ["broken", "working"]
     assert saved_sources == ["acme/working"]
+
+
+async def test_import_github_skips_truncated_tree_without_failing_successful_imports(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree_calls: list[str] = []
+
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def list_active_repositories(
+            self,
+            owner: str,
+        ) -> skills.GitHubRepositoryListing:
+            return repository_listing(
+                import_repository("large-repository"),
+                import_repository("working"),
+            )
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            return skills.GitHubRepositoryMetadata(default_branch="main", owner_avatar_url="")
+
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            return RESOLVED_COMMIT_SHA
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            tree_calls.append(repo.repo)
+            if repo.repo == "large-repository":
+                raise skills.GitHubTreeTruncatedError(
+                    "GitHub tree is truncated; repository scan skipped"
+                )
+            return [skills.GitHubTreeItem(path="skills/working/SKILL.md", type="blob")]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            return "---\nname: Working\n---\n"
+
+    async def fake_save(
+        imported: list[skills.ImportedSkill],
+    ) -> list[tuple[SimpleNamespace, SimpleNamespace, str]]:
+        item = imported[0]
+        return [
+            (
+                SimpleNamespace(source=item.payload.source, slug=item.payload.slug),
+                SimpleNamespace(content_hash="hash-working"),
+                item.source_path,
+            )
+        ]
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "save_imported_repository", fake_save)
+    caplog.set_level(logging.INFO, logger=skills.logger.name)
+
+    result = await skills.import_github_from_args(github_import_args())
+
+    assert result == 0
+    assert tree_calls == ["large-repository", "working"]
+    assert capsys.readouterr().out.strip() == (
+        "imported 1 skill(s) from 1 of 2 active GitHub repositories for acme: "
+        "1 repositories skipped, 0 failed, 0 skills failed"
+    )
+    skipped_record = next(
+        record
+        for record in caplog.records
+        if record.message == "github skills import repository skipped"
+    )
+    assert skipped_record.source == "acme/large-repository"
+    assert skipped_record.skip_reason == (
+        "GitHub tree is truncated; repository scan skipped"
+    )
 
 
 async def test_import_github_aborts_remaining_repositories_on_systemic_failure(
