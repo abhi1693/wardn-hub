@@ -90,9 +90,12 @@ class SkillAuditRead(BaseModel):
 
 
 class SkillAuditResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     source: str
     slug: str
+    content_hash: str = Field(alias="contentHash", pattern=r"^[a-f0-9]{64}$")
     audits: list[SkillAuditRead]
 
 

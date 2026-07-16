@@ -260,6 +260,7 @@ def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:
             id="vercel-labs/skills/find-skills",
             source="vercel-labs/skills",
             slug="find-skills",
+            contentHash="a" * 64,
             audits=[
                 SkillAuditRead(
                     provider="Wardn",
@@ -278,6 +279,7 @@ def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:
     response = TestClient(create_app()).get("/api/v1/skills/audit/vercel-labs/skills/find-skills")
 
     assert response.status_code == 200
+    assert response.json()["contentHash"] == "a" * 64
     assert response.json()["audits"][0]["provider"] == "Wardn"
     assert response.json()["audits"][0]["riskLevel"] == "LOW"
 

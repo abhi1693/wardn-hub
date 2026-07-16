@@ -1,6 +1,8 @@
 import argparse
 import asyncio
 
+from app.cli.audit_skills import add_audit_arguments, audit_skills_from_args
+from app.cli.review_pending_submissions import UserFacingError
 from app.cli.skills import (
     DEFAULT_IMPORT_TIMEOUT_SECONDS,
     GITHUB_TOKEN_ENV,
@@ -77,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_IMPORT_TIMEOUT_SECONDS,
         help="GitHub request timeout in seconds.",
     )
+    skills_audit = skills_subparsers.add_parser(
+        "audit",
+        help="Audit every unaudited current public skill snapshot.",
+    )
+    add_audit_arguments(skills_audit)
     skills_official = skills_subparsers.add_parser(
         "mark-official",
         help="Mark a source owner as official.",
@@ -116,6 +123,12 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "skills" and args.skills_command == "refresh":
         configure_logging()
         return asyncio.run(refresh_github_from_args(args))
+    elif args.command == "skills" and args.skills_command == "audit":
+        try:
+            configure_logging()
+            return audit_skills_from_args(args)
+        except UserFacingError as exc:
+            parser.error(str(exc))
     elif args.command == "skills" and args.skills_command == "mark-official":
         return asyncio.run(mark_official_from_args(args))
     else:

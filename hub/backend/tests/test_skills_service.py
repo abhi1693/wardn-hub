@@ -28,6 +28,25 @@ async def test_get_skill_snapshot_can_defer_bundle_files() -> None:
     assert "skill_snapshots.files" not in selected_columns
 
 
+async def test_list_skill_audits_requires_current_snapshot_hash_and_is_bounded() -> None:
+    class FakeSession:
+        statement = ""
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statement = str(statement)
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=list))
+
+    session = FakeSession()
+    skill = SimpleNamespace(id="skill-id", current_snapshot_id="snapshot-id")
+
+    await repository.list_skill_audits(session, skill)  # type: ignore[arg-type]
+
+    assert "skill_audits.snapshot_id" in session.statement
+    assert "skill_audits.content_hash" in session.statement
+    assert "skill_snapshots.content_hash" in session.statement
+    assert "LIMIT" in session.statement
+
+
 async def test_get_skill_detail_only_expands_bundle_when_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

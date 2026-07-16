@@ -5560,6 +5560,11 @@
             "title": "Audits",
             "type": "array"
           },
+          "contentHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Contenthash",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -5577,6 +5582,7 @@
           "id",
           "source",
           "slug",
+          "contentHash",
           "audits"
         ],
         "title": "SkillAuditResponse",

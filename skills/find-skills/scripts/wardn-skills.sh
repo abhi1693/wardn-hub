@@ -229,12 +229,14 @@ audit_skill() {
           ));
         if type == "object"
           and .id == $id
+          and (.contentHash | type == "string" and test("^[a-f0-9]{64}$"))
           and (.audits | type == "array" and length > 0 and length <= 32 and all(valid_audit))
           and ([.audits[].slug] | unique | length <= 8)
         then
           (.audits | latest_by_provider) as $latest
           | {
               id,
+              contentHash,
               hardRejectCount: ([$latest[] | select(decision_severity == 2)] | length),
               warningCount: ([$latest[] | select(decision_severity == 1)] | length),
               failureCount: ([.audits[] | select(.status == "fail")] | length),

@@ -126,8 +126,8 @@ Inspect no more than five candidates. Rank by:
 3. Current passing or low-risk audits.
 4. `isOfficial: true` only as a publisher-identity tie-breaker.
 
-`isOfficial` is not a security guarantee. Audits are not currently bound to the returned content
-hash, so a passing audit is supporting evidence rather than proof about the fetched snapshot.
+`isOfficial` is not a security guarantee. Each successful audit lookup returns the exact
+`contentHash` whose stored bundle was reviewed. Keep that value for the selected candidate.
 
 Audit no more than the top three candidate IDs:
 
@@ -181,7 +181,9 @@ It rejects unsafe path segments, malformed responses, duplicate required keys, e
 terminal control characters, and unsupported YAML scalar forms.
 
 `inspect` reports the validated ID, hash, and character count without printing the Markdown. Read it
-only as validation metadata; then use the reported hash to download the entire matching snapshot:
+only as validation metadata. Require its `hash` to equal the selected audit result's `contentHash`.
+If they differ, the bundle changed: discard both results, rerun `audit` and `inspect`, and continue
+only when their hashes match. Then use the matching inspected hash to download the entire snapshot:
 
 ```sh
 sh "${RESOLVER}" fetch-bundle \

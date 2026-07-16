@@ -211,6 +211,7 @@ async def get_skill_audit(session: AsyncSession, skill_id: str) -> SkillAuditRes
         id=f"{skill.source}/{skill.slug}",
         source=skill.source,
         slug=skill.slug,
+        contentHash=audits[0].content_hash,
         audits=[audit_read(audit) for audit in audits],
     )
 

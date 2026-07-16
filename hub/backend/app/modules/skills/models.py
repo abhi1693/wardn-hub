@@ -2,7 +2,17 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -98,6 +108,15 @@ class SkillSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class SkillAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "skill_audits"
+    __table_args__ = (
+        Index(
+            "ix_skill_audits_completion",
+            "skill_id",
+            "snapshot_id",
+            "slug",
+            "status",
+        ),
+    )
 
     skill_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -105,6 +124,13 @@ class SkillAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skill_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(120), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

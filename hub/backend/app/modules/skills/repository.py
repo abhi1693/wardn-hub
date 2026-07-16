@@ -154,7 +154,15 @@ async def get_skill_snapshot(
 async def list_skill_audits(session: AsyncSession, skill: Skill) -> list[SkillAudit]:
     result = await session.execute(
         select(SkillAudit)
-        .where(SkillAudit.skill_id == skill.id)
+        .where(
+            SkillAudit.skill_id == skill.id,
+            SkillAudit.snapshot_id == skill.current_snapshot_id,
+            SkillAudit.content_hash
+            == select(SkillSnapshot.content_hash)
+            .where(SkillSnapshot.id == skill.current_snapshot_id)
+            .scalar_subquery(),
+        )
         .order_by(SkillAudit.audited_at.desc(), SkillAudit.provider.asc())
+        .limit(32)
     )
     return list(result.scalars().all())

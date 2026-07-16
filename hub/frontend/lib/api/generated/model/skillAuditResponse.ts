@@ -8,6 +8,8 @@ import type { SkillAuditRead } from './skillAuditRead';
 
 export interface SkillAuditResponse {
   audits: SkillAuditRead[];
+  /** @pattern ^[a-f0-9]{64}$ */
+  contentHash: string;
   id: string;
   slug: string;
   source: string;

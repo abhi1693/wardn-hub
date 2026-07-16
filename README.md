@@ -260,6 +260,36 @@ when present. Rate-limit responses sleep and retry the same refresh request;
 authentication, non-rate-limit GitHub server, and transport failures stop the
 remaining refresh requests.
 
+Audit every current public skill snapshot that does not yet have a completed
+audit:
+
+```sh
+cd hub/backend
+uv run python -m app.manage skills audit
+```
+
+The command streams one skill bundle from PostgreSQL at a time. It first applies
+deterministic bundle-safety and resolver-compatibility checks, then sends bounded
+UTF-8 bundle evidence to the configured Codex app-server for a structured
+security review. Opaque executables and malformed or resolver-incompatible
+bundles fail without model execution. Oversized text that cannot fit in the
+bounded review prompt produces a warning rather than an unsafe pass.
+
+Each result is bound to the exact current snapshot ID and content hash, and each
+skill commits independently. A later import or refresh that changes the bundle
+invalidates its audits. Restarting the command skips completed current snapshots
+and retries skills whose review failed, so a long catalog audit is resumable
+without loading the catalog into memory. Codex rate-limit responses keep the
+current skill in place, sleep with bounded exponential backoff (honoring a
+reported retry-after delay), and retry until the limit clears or the operator
+interrupts the process.
+
+Use `--skill-id owner/repository/slug` for one skill, `--max-skills` to bound a
+run, `--reaudit` to append fresh results for already audited current snapshots,
+and `--dry-run` for deterministic checks without Codex or database writes. Set
+`WARDN_HUB_CODEX_APP_SERVER_URL` and, when required,
+`WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN` for live audits.
+
 For example, import every skill under `skills` across an organization's active
 repositories:
 
