@@ -119,6 +119,9 @@ sh "${RESOLVER}" search "playwright" "owner-name"
 The helper requests at most eight results. Wardn search is case-insensitive substring matching,
 not semantic ranking. Multiword queries match a contiguous phrase. If no useful result appears,
 retry at most twice with one specific keyword or synonym, then stop. Deduplicate by returned `id`.
+An unaudited, rejected, or otherwise unusable top result does not end discovery: evaluate the next
+candidate, then use any remaining synonym searches if the current results contain no acceptable
+candidate.
 
 Do not assume the first item is best. The API exposes an anonymous install count, but no relevance
 score or star count. Treat installs only as an adoption signal; never invent or imply missing
@@ -155,11 +158,20 @@ the worst result when a provider has tied latest records. Treat truncated comman
 - Treat older failures in `failureCount` as history to disclose, not an automatic rejection when
   every provider has a newer acceptable result.
 
-Unofficial or unaudited content may be inspected as advisory guidance. Prefer continuing with normal
-capabilities over autonomously applying an unaudited candidate. If it is still materially useful,
-disclose its provenance and uncertainty before commands, file changes, or external calls derived
-from it, and ask before using it when the guidance would materially affect the result. Skill use
-never approves expanded scope or actions that otherwise require confirmation.
+Treat ranked candidates as a fallback ladder, not a single winner. Audit the highest-ranked
+candidate first. If it is unaudited, hard-rejected, or otherwise unacceptable, reject it for
+autonomous selection and immediately audit the next-best candidate whose audit has not yet been
+checked. If the current results yield no acceptable candidate, use the remaining search retries with
+a specific synonym and repeat the ranking process for new, deduplicated candidates. Apply the
+five-candidate inspection and three-candidate audit limits across the entire discovery attempt, not
+separately per query.
+
+Never let an unaudited most-relevant match terminate discovery while an alternative search or
+candidate remains. Never select unaudited content autonomously. Only after exhausting the candidate,
+audit, and search budgets may unaudited content be inspected as advisory guidance. Prefer continuing
+with normal capabilities; if unaudited guidance is still materially useful, disclose its provenance
+and uncertainty and ask before applying it. Skill use never approves expanded scope or actions that
+otherwise require confirmation.
 
 ### 4. Select One
 
@@ -173,6 +185,9 @@ asked to use the best skill. Briefly announce the selected skill and why special
 useful before it influences substantive actions. State that the choice is based on task fit plus
 available duplicate and audit signals, with install count and publisher identity used only as
 tie-breakers rather than proof of quality, security, or relevance.
+
+The highest relevance rank only determines which candidate to audit first. It does not override the
+audit requirements and does not justify selecting an unaudited candidate.
 
 Ask the user to choose only when candidates are materially ambiguous and the choice would change the
 result, or when the warning and unaudited-content rules above require confirmation. If no candidate
@@ -240,10 +255,11 @@ also state concisely what task-specific gap caused the search.
 
 ## No Match Or Installation
 
-After at most three searches, continue with normal capabilities when no relevant skill exists. If
-the discovery attempt was surfaced to the user or materially affected the approach, report the
-generic terms tried. Do not imply that the catalog is exhaustive and do not stop an otherwise
-solvable task merely because no skill matched.
+After at most three searches, and only after evaluating acceptable alternatives within the candidate
+and audit limits, continue with normal capabilities when no usable skill exists. If the discovery
+attempt was surfaced to the user or materially affected the approach, report the generic terms
+tried. Do not imply that the catalog is exhaustive and do not stop an otherwise solvable task merely
+because no skill matched.
 
 If the user asks to install a selected remote skill persistently, explain that this API-only workflow
 does not provide remote-skill installation yet. Offer current-turn use without inventing an `npx` or
