@@ -16,12 +16,20 @@ async def get_user_by_id(session: AsyncSession, user_id: uuid.UUID) -> User | No
     return await session.get(User, user_id)
 
 
-async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
-    result = await session.execute(
+async def get_user_by_email(
+    session: AsyncSession,
+    email: str,
+    *,
+    for_update: bool = False,
+) -> User | None:
+    statement = (
         select(User)
         .options(selectinload(User.local_credentials))
         .where(func.lower(User.email) == email.casefold())
     )
+    if for_update:
+        statement = statement.with_for_update()
+    result = await session.execute(statement)
     return result.scalar_one_or_none()
 
 
@@ -37,6 +45,22 @@ async def get_external_identity(
             UserExternalIdentity.provider == provider,
             UserExternalIdentity.subject == subject,
         )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_user_external_identity_for_provider(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    provider: str,
+) -> UserExternalIdentity | None:
+    result = await session.execute(
+        select(UserExternalIdentity)
+        .where(
+            UserExternalIdentity.user_id == user_id,
+            UserExternalIdentity.provider == provider,
+        )
+        .limit(1)
     )
     return result.scalar_one_or_none()
 

@@ -406,20 +406,6 @@ button:disabled,
   color: var(--foreground);
 }
 
-.site-auth-status {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--muted);
-  color: var(--muted-foreground);
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 .site-auth-placeholder {
   display: inline-flex;
   min-height: 36px;

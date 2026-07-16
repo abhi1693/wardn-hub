@@ -13,17 +13,18 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.users import repository
-from app.modules.users.auth_providers import ExternalIdentityClaims, enabled_auth_providers
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
     DuplicateUserError,
     InvalidAPITokenScopeError,
     InvalidLoginError,
     InvalidUserRoleUpdateError,
+    OIDCAuthenticationError,
     UserAPITokenNotFoundError,
     UserNotFoundError,
 )
 from app.modules.users.models import LocalAuthCredential, User, UserAPIToken, UserExternalIdentity
+from app.modules.users.oidc import OIDCIdentity, oidc_configured, oidc_identity_provider_key
 from app.modules.users.schemas import (
     ALL_API_TOKEN_SCOPES,
     APITokenScope,
@@ -48,10 +49,19 @@ BASE_API_TOKEN_SCOPES: set[APITokenScope] = {
 MODERATOR_API_TOKEN_SCOPES: set[APITokenScope] = {"submissions:moderate"}
 PARTNER_MANAGER_API_TOKEN_SCOPES: set[APITokenScope] = {"partners:write"}
 SUPERUSER_API_TOKEN_SCOPES: set[APITokenScope] = set(ALL_API_TOKEN_SCOPES)
+OIDC_PUBLIC_PROVIDER_KEY = "oidc"
 
 
 def normalize_email(email: str) -> str:
     return email.strip().casefold()
+
+
+def enabled_auth_providers() -> list[str]:
+    return get_settings().auth_providers
+
+
+def is_auth_provider_enabled(provider: str) -> bool:
+    return provider in enabled_auth_providers()
 
 
 def unique_uuid_strings(values: list[uuid.UUID]) -> list[str]:
@@ -83,14 +93,14 @@ def validate_api_token_scopes(user: User, scopes: list[APITokenScope]) -> None:
 
 
 def auth_provider_label(provider: str) -> str:
-    if provider == "clerk":
-        return "Clerk"
+    if provider == OIDC_PUBLIC_PROVIDER_KEY:
+        return get_settings().oidc_provider_name.strip() or "OpenID Connect"
     return "Email and password"
 
 
-def apply_external_profile_claims(user: User, claims: ExternalIdentityClaims) -> None:
-    first_name = claims.first_name.strip()
-    last_name = claims.last_name.strip()
+def apply_oidc_profile(user: User, identity: OIDCIdentity) -> None:
+    first_name = identity.first_name.strip()
+    last_name = identity.last_name.strip()
     if first_name:
         user.first_name = first_name
     if last_name:
@@ -100,14 +110,18 @@ def apply_external_profile_claims(user: User, claims: ExternalIdentityClaims) ->
 def list_auth_providers() -> AuthProviderListResponse:
     settings = get_settings()
     providers = enabled_auth_providers()
+    is_oidc_configured = oidc_configured(settings)
     return AuthProviderListResponse(
         defaultProvider=settings.auth_default_provider,
         providers=[
             AuthProviderRead(
                 provider=provider,
                 label=auth_provider_label(provider),
-                signInEnabled=True,
-                signUpEnabled=True,
+                signInEnabled=provider == "local" or is_oidc_configured,
+                signUpEnabled=(
+                    provider == "local"
+                    or (is_oidc_configured and settings.oidc_auto_create_users)
+                ),
             )
             for provider in providers
         ],
@@ -140,42 +154,78 @@ async def create_user(
     return user
 
 
-async def get_or_create_external_user(
+async def authenticate_oidc_identity(
     session: AsyncSession,
-    claims: ExternalIdentityClaims,
+    oidc_identity: OIDCIdentity,
+    *,
+    auto_create_users: bool,
+    superuser_emails: list[str],
 ) -> User:
-    identity = await repository.get_external_identity(session, claims.provider, claims.subject)
+    email = normalize_email(oidc_identity.email)
+    promote_to_superuser = email in {
+        normalize_email(superuser_email) for superuser_email in superuser_emails
+    }
+    identity_provider = oidc_identity_provider_key(oidc_identity.issuer)
+    identity = await repository.get_external_identity(
+        session,
+        identity_provider,
+        oidc_identity.subject,
+    )
     if identity is not None:
         user = identity.user
         if not user.is_active:
-            raise InvalidLoginError("inactive external user")
-        identity.email = normalize_email(claims.email)
-        apply_external_profile_claims(user, claims)
+            raise OIDCAuthenticationError("user is inactive")
+        if normalize_email(user.email) != email:
+            conflicting_user = await repository.get_user_by_email(session, email)
+            if conflicting_user is not None and conflicting_user.id != user.id:
+                raise OIDCAuthenticationError(
+                    "OIDC email address is already linked to another user"
+                )
+            user.email = email
+        identity.email = email
+        apply_oidc_profile(user, oidc_identity)
+        if promote_to_superuser:
+            user.is_superuser = True
         user.last_login_at = datetime.now(UTC)
         await session.flush()
         return user
 
-    email = normalize_email(claims.email)
-    user = await repository.get_user_by_email(session, email)
+    user = await repository.get_user_by_email(session, email, for_update=True)
     if user is None:
+        if not auto_create_users:
+            raise OIDCAuthenticationError("OIDC user auto-creation is disabled")
         user = User(
             email=email,
-            first_name=claims.first_name.strip(),
-            last_name=claims.last_name.strip(),
+            first_name=oidc_identity.first_name.strip(),
+            last_name=oidc_identity.last_name.strip(),
             is_active=True,
-            is_superuser=False,
+            is_superuser=promote_to_superuser,
         )
         session.add(user)
         await session.flush()
     elif not user.is_active:
-        raise InvalidLoginError("inactive external user")
+        raise OIDCAuthenticationError("user is inactive")
     else:
-        apply_external_profile_claims(user, claims)
+        existing_provider_identity = await repository.get_user_external_identity_for_provider(
+            session,
+            user.id,
+            identity_provider,
+        )
+        if (
+            existing_provider_identity is not None
+            and existing_provider_identity.subject != oidc_identity.subject
+        ):
+            raise OIDCAuthenticationError(
+                "OIDC email address is already linked to another identity"
+            )
+        apply_oidc_profile(user, oidc_identity)
+        if promote_to_superuser:
+            user.is_superuser = True
 
     identity = UserExternalIdentity(
         user_id=user.id,
-        provider=claims.provider,
-        subject=claims.subject,
+        provider=identity_provider,
+        subject=oidc_identity.subject,
         email=email,
     )
     session.add(identity)

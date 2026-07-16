@@ -1,7 +1,9 @@
+import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -16,9 +18,7 @@ from app.core.router import (
 from app.core.schemas import ErrorResponse
 from app.core.security import create_session_token
 from app.db.session import get_db_session
-from app.modules.users.auth_providers import is_auth_provider_enabled
 from app.modules.users.dependencies import (
-    CLERK_SESSION_COOKIE_NAME,
     get_current_user,
     require_api_token_scopes,
 )
@@ -26,9 +26,23 @@ from app.modules.users.exceptions import (
     DuplicateUserError,
     InvalidAPITokenScopeError,
     InvalidLoginError,
+    OIDCAuthenticationError,
+    OIDCConfigurationError,
     UserAPITokenNotFoundError,
 )
 from app.modules.users.models import User
+from app.modules.users.oidc import (
+    OIDC_STATE_TTL_SECONDS,
+    authorization_url,
+    create_oidc_state,
+    exchange_oidc_code,
+    fetch_oidc_metadata,
+    frontend_redirect_url,
+    oidc_enabled,
+    oidc_state_cookie_name,
+    verify_oidc_identity,
+    verify_oidc_state,
+)
 from app.modules.users.schemas import (
     AuthProviderListResponse,
     LoginRequest,
@@ -42,9 +56,11 @@ from app.modules.users.schemas import (
 )
 from app.modules.users.service import (
     authenticate_local_user,
+    authenticate_oidc_identity,
     create_user,
     create_user_api_token,
     delete_user_api_token,
+    is_auth_provider_enabled,
     list_auth_providers,
     list_user_api_tokens,
     rotate_user_api_token,
@@ -52,6 +68,7 @@ from app.modules.users.service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def set_session_cookie(response: Response, user_id: UUID) -> None:
@@ -63,6 +80,51 @@ def set_session_cookie(response: Response, user_id: UUID) -> None:
         secure=settings.environment != "local",
         samesite="lax",
         max_age=settings.session_ttl_seconds,
+        path="/",
+    )
+
+
+def clear_oidc_state_cookie(response: Response, state: str | None = None) -> None:
+    settings = get_settings()
+    cookie_names = [settings.oidc_state_cookie_name]
+    keyed_name = oidc_state_cookie_name(settings, state)
+    if keyed_name not in cookie_names:
+        cookie_names.append(keyed_name)
+
+    for cookie_name in cookie_names:
+        response.delete_cookie(
+            key=cookie_name,
+            httponly=True,
+            secure=settings.environment != "local",
+            samesite="lax",
+            path="/",
+        )
+
+
+def get_oidc_state_cookie(request: Request, state: str) -> str | None:
+    settings = get_settings()
+    keyed_cookie = request.cookies.get(oidc_state_cookie_name(settings, state))
+    if keyed_cookie:
+        return keyed_cookie
+    return request.cookies.get(settings.oidc_state_cookie_name)
+
+
+def set_oidc_state_cookie(response: Response, state: str, state_cookie: str) -> None:
+    settings = get_settings()
+    response.delete_cookie(
+        key=settings.oidc_state_cookie_name,
+        httponly=True,
+        secure=settings.environment != "local",
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        key=oidc_state_cookie_name(settings, state),
+        value=state_cookie,
+        httponly=True,
+        secure=settings.environment != "local",
+        samesite="lax",
+        max_age=OIDC_STATE_TTL_SECONDS,
         path="/",
     )
 
@@ -121,18 +183,140 @@ async def register(
     return UserRead.model_validate(await commit_and_refresh(session, user))
 
 
+@router.get(
+    "/oidc/login",
+    status_code=status.HTTP_302_FOUND,
+    response_class=RedirectResponse,
+    operation_id="auth_oidc_login",
+    responses={
+        status.HTTP_302_FOUND: {"description": "Redirect to the configured OIDC provider."},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "OIDC authentication is not configured.",
+        },
+    },
+)
+async def oidc_login(
+    redirect_to: Annotated[str | None, Query(alias="redirectTo")] = None,
+) -> RedirectResponse:
+    settings = get_settings()
+    if not oidc_enabled(settings):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OIDC auth is not enabled",
+        )
+    try:
+        oidc_state, state_cookie = create_oidc_state(settings, redirect_to=redirect_to)
+        metadata = await fetch_oidc_metadata(settings)
+        location = authorization_url(settings, metadata, oidc_state)
+    except OIDCConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    response = RedirectResponse(location, status_code=status.HTTP_302_FOUND)
+    set_oidc_state_cookie(response, oidc_state.state, state_cookie)
+    return response
+
+
+@router.get(
+    "/oidc/callback",
+    status_code=status.HTTP_302_FOUND,
+    response_class=RedirectResponse,
+    operation_id="auth_oidc_callback",
+    responses={
+        status.HTTP_302_FOUND: {"description": "Redirect to the Wardn Hub frontend."},
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorResponse,
+            "description": "OIDC authentication failed.",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "OIDC authentication is not configured.",
+        },
+    },
+)
+async def oidc_callback(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    settings = get_settings()
+    if not oidc_enabled(settings):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="OIDC auth is not enabled",
+        )
+    if error:
+        response = RedirectResponse(
+            frontend_redirect_url(settings, "/login?error=oidc"),
+            status_code=status.HTTP_302_FOUND,
+        )
+        logger.warning("OIDC callback returned provider error")
+        clear_oidc_state_cookie(response, state)
+        return response
+    if not code or not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing OIDC callback code or state",
+        )
+
+    state_cookie = get_oidc_state_cookie(request, state)
+    if not state_cookie:
+        logger.warning("OIDC callback failed: missing state cookie")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing OIDC state",
+        )
+
+    try:
+        verified_state = verify_oidc_state(settings, state_cookie, state)
+        metadata = await fetch_oidc_metadata(settings)
+        token_response = await exchange_oidc_code(settings, metadata, code=code)
+        oidc_identity = await verify_oidc_identity(
+            settings,
+            metadata,
+            token_response,
+            nonce=verified_state.nonce,
+        )
+        user = await authenticate_oidc_identity(
+            session,
+            oidc_identity,
+            auto_create_users=settings.oidc_auto_create_users,
+            superuser_emails=settings.oidc_superuser_emails,
+        )
+    except OIDCConfigurationError as exc:
+        logger.warning("OIDC callback failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except OIDCAuthenticationError as exc:
+        logger.warning("OIDC callback failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+    response = RedirectResponse(
+        frontend_redirect_url(settings, verified_state.redirect_to),
+        status_code=status.HTTP_302_FOUND,
+    )
+    set_session_cookie(response, user.id)
+    clear_oidc_state_cookie(response, verified_state.state)
+    await commit_session(session)
+    return response
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, operation_id="auth_logout")
 async def logout(response: Response) -> None:
     settings = get_settings()
     response.delete_cookie(
         key=settings.session_cookie_name,
         httponly=True,
-        secure=settings.environment != "local",
-        samesite="lax",
-        path="/",
-    )
-    response.delete_cookie(
-        key=CLERK_SESSION_COOKIE_NAME,
         secure=settings.environment != "local",
         samesite="lax",
         path="/",

@@ -1,6 +1,7 @@
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from typing import ClassVar
+from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,6 +10,22 @@ APP_NAME = "Wardn Hub API"
 APP_PACKAGE_NAME = "wardn-hub-api"
 LOCAL_ENVIRONMENTS = {"local", "test"}
 INSECURE_SECRET_VALUES = {"change-me", "changeme", "secret", "password"}
+
+
+def is_absolute_http_url(
+    value: str,
+    *,
+    require_https: bool,
+    allow_query: bool = True,
+) -> bool:
+    parsed = urlparse(value.strip())
+    allowed_schemes = {"https"} if require_https else {"http", "https"}
+    return (
+        parsed.scheme in allowed_schemes
+        and bool(parsed.netloc and parsed.hostname)
+        and not parsed.fragment
+        and (allow_query or not parsed.query)
+    )
 
 
 def package_version() -> str:
@@ -39,10 +56,17 @@ class Settings(BaseSettings):
     api_token_prefix: str
     auth_providers: list[str] = ["local"]
     auth_default_provider: str = "local"
-    clerk_issuer: str = ""
-    clerk_jwks_url: str = ""
-    clerk_audience: str = ""
-    clerk_secret_key: str = ""
+    oidc_provider_name: str = "OpenID Connect"
+    oidc_issuer_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_state_cookie_name: str = "wardn_hub_oidc_state"
+    oidc_allow_unverified_email: bool = False
+    oidc_auto_create_users: bool = True
+    oidc_allowed_email_domains: list[str] = []
+    oidc_superuser_emails: list[str] = []
     session_cookie_name: str
     session_secret: str
     session_ttl_seconds: int
@@ -104,6 +128,32 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_auth_default_provider(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("oidc_allowed_email_domains", mode="before")
+    @classmethod
+    def parse_oidc_allowed_email_domains(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            return [
+                domain.strip().casefold().removeprefix("@")
+                for domain in value.split(",")
+                if domain.strip()
+            ]
+        return [domain.strip().casefold().removeprefix("@") for domain in value]
+
+    @field_validator("oidc_superuser_emails", mode="before")
+    @classmethod
+    def parse_oidc_superuser_emails(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            return [email.strip().casefold() for email in value.split(",") if email.strip()]
+        return [email.strip().casefold() for email in value]
+
+    @field_validator("session_cookie_name", "oidc_state_cookie_name")
+    @classmethod
+    def validate_cookie_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("cookie names must not be empty")
+        return normalized
 
     @field_validator("session_ttl_seconds")
     @classmethod
@@ -178,7 +228,7 @@ class Settings(BaseSettings):
             )
 
     def validate_auth_provider_settings(self) -> None:
-        supported_providers = {"local", "clerk"}
+        supported_providers = {"local", "oidc"}
         unknown_providers = sorted(set(self.auth_providers) - supported_providers)
         if unknown_providers:
             raise ValueError(f"unsupported auth provider: {', '.join(unknown_providers)}")
@@ -186,9 +236,51 @@ class Settings(BaseSettings):
             raise ValueError("auth_providers must include at least one provider")
         if self.auth_default_provider not in self.auth_providers:
             raise ValueError("auth_default_provider must be enabled in auth_providers")
-        if "clerk" in self.auth_providers and self.environment not in LOCAL_ENVIRONMENTS:
-            if not self.clerk_issuer:
-                raise ValueError("clerk_issuer is required when Clerk auth is enabled")
+        if (
+            "oidc" in self.auth_providers
+            and self.session_cookie_name == self.oidc_state_cookie_name
+        ):
+            raise ValueError("session_cookie_name and oidc_state_cookie_name must be different")
+        if "oidc" in self.auth_providers and self.environment not in LOCAL_ENVIRONMENTS:
+            missing_fields = [
+                field_name
+                for field_name in ("oidc_issuer_url", "oidc_client_id", "oidc_client_secret")
+                if not getattr(self, field_name).strip()
+            ]
+            if missing_fields:
+                raise ValueError(
+                    f"{', '.join(missing_fields)} required when OIDC auth is enabled"
+                )
+        if "oidc" in self.auth_providers and self.oidc_issuer_url:
+            if not is_absolute_http_url(
+                self.oidc_issuer_url,
+                require_https=self.environment not in LOCAL_ENVIRONMENTS,
+                allow_query=False,
+            ):
+                requirement = (
+                    "an absolute HTTP(S) URL"
+                    if self.environment in LOCAL_ENVIRONMENTS
+                    else "an absolute HTTPS URL in production"
+                )
+                raise ValueError(f"oidc_issuer_url must be {requirement}")
+        if "oidc" in self.auth_providers:
+            callback_urls = [
+                ("registry_public_base_url", self.registry_public_base_url, False)
+            ]
+            if self.oidc_redirect_uri:
+                callback_urls.append(("oidc_redirect_uri", self.oidc_redirect_uri, True))
+            for field_name, value, allow_query in callback_urls:
+                if not is_absolute_http_url(
+                    value,
+                    require_https=self.environment not in LOCAL_ENVIRONMENTS,
+                    allow_query=allow_query,
+                ):
+                    requirement = (
+                        "an absolute HTTP(S) URL"
+                        if self.environment in LOCAL_ENVIRONMENTS
+                        else "an absolute HTTPS URL in production"
+                    )
+                    raise ValueError(f"{field_name} must be {requirement}")
 
 
 @lru_cache

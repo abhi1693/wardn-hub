@@ -10,5 +10,5 @@ export type AuthProviderReadProvider = typeof AuthProviderReadProvider[keyof typ
 
 export const AuthProviderReadProvider = {
   local: 'local',
-  clerk: 'clerk',
+  oidc: 'oidc',
 } as const;

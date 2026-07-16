@@ -15,6 +15,8 @@ export * from './auditEventListResponse';
 export * from './auditEventRead';
 export * from './auditEventReadMetadata';
 export * from './auditEventsListParams';
+export * from './authOidcCallbackParams';
+export * from './authOidcLoginParams';
 export * from './authProviderListResponse';
 export * from './authProviderListResponseDefaultProvider';
 export * from './authProviderRead';

@@ -25,7 +25,7 @@ execution plane.
   metadata, `server.json`, `mcp.json`, and README content where available.
 - Track draft, submitted, approved, rejected, withdrawn, and published submission
   states.
-- Support local email/password authentication, optional Clerk authentication,
+- Support local email/password authentication, optional generic OpenID Connect (OIDC),
   HTTP session cookies, and scoped user API tokens.
 - Manage organizations, memberships, roles, partner organizations, partner support
   records, categories, users, and audit events with role-based access controls.
@@ -88,7 +88,7 @@ Important route groups:
 | Area | Routes |
 | --- | --- |
 | Health | `GET /api/v1/health/live`, `GET /api/v1/health/ready` |
-| Auth | `/api/v1/auth/providers`, `/api/v1/auth/login`, `/api/v1/auth/register`, `/api/v1/auth/logout`, `/api/v1/auth/me`, `/api/v1/auth/api-tokens` |
+| Auth | `/api/v1/auth/providers`, `/api/v1/auth/login`, `/api/v1/auth/register`, `/api/v1/auth/oidc/login`, `/api/v1/auth/oidc/callback`, `/api/v1/auth/logout`, `/api/v1/auth/me`, `/api/v1/auth/api-tokens` |
 | Users | `/api/v1/users`, `/api/v1/users/bootstrap`, `/api/v1/users/{user_id}` |
 | Organizations | `/api/v1/organizations`, roles, and memberships |
 | Registry | `/api/v1/mcp/servers`, `/api/v1/mcp/catalog`, `/api/v1/mcp/categories` |
@@ -430,15 +430,22 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_SYSTEM_REVIEW_SECRET` | Optional shared secret for internal system review endpoints. Must be high entropy when set in production. |
 | `WARDN_HUB_CODEX_APP_SERVER_URL` | Experimental Codex app-server WebSocket URL used by the submission review worker. |
 | `WARDN_HUB_API_TOKEN_PREFIX` | Prefix used when issuing user API tokens. |
-| `WARDN_HUB_SESSION_COOKIE_NAME` | Cookie name for local session auth. |
+| `WARDN_HUB_SESSION_COOKIE_NAME` | Cookie name for the signed application session. |
 | `WARDN_HUB_SESSION_TTL_SECONDS` | Session lifetime in seconds. |
-| `WARDN_HUB_REGISTRY_PUBLIC_BASE_URL` | Public frontend base URL used in registry links. |
-| `WARDN_HUB_AUTH_PROVIDERS` | Comma-separated auth providers. Supported values are `local` and `clerk`. |
+| `WARDN_HUB_REGISTRY_PUBLIC_BASE_URL` | Public frontend base URL used in registry links and to derive the default OIDC callback. |
+| `WARDN_HUB_AUTH_PROVIDERS` | Comma-separated auth providers. Supported values are `local` and `oidc`. |
 | `WARDN_HUB_AUTH_DEFAULT_PROVIDER` | Default auth provider. Must be enabled in `WARDN_HUB_AUTH_PROVIDERS`. |
-| `WARDN_HUB_CLERK_ISSUER` | Required outside local/test when Clerk auth is enabled. |
-| `WARDN_HUB_CLERK_JWKS_URL` | Optional Clerk JWKS override. |
-| `WARDN_HUB_CLERK_AUDIENCE` | Optional Clerk JWT audience. |
-| `WARDN_HUB_CLERK_SECRET_KEY` | Optional backend Clerk secret for fetching profile data not present in JWTs. |
+| `WARDN_HUB_OIDC_PROVIDER_NAME` | Provider label shown on the sign-in screen. |
+| `WARDN_HUB_OIDC_ISSUER_URL` | OIDC issuer used for discovery and ID-token validation. |
+| `WARDN_HUB_OIDC_CLIENT_ID` | OIDC client identifier. |
+| `WARDN_HUB_OIDC_CLIENT_SECRET` | OIDC client secret. Keep it on the backend only. |
+| `WARDN_HUB_OIDC_REDIRECT_URI` | Optional callback override. Defaults to `{WARDN_HUB_REGISTRY_PUBLIC_BASE_URL}/api/auth/oidc/callback`. |
+| `WARDN_HUB_OIDC_SCOPES` | Requested scopes. Include `openid`; the default also requests `email` and `profile`. |
+| `WARDN_HUB_OIDC_STATE_COOKIE_NAME` | Cookie name prefix for short-lived OIDC state and nonce data. |
+| `WARDN_HUB_OIDC_ALLOW_UNVERIFIED_EMAIL` | Allows an identity whose email is explicitly unverified. Defaults to `false`. |
+| `WARDN_HUB_OIDC_AUTO_CREATE_USERS` | Creates a Hub user on the first permitted OIDC sign-in. |
+| `WARDN_HUB_OIDC_ALLOWED_EMAIL_DOMAINS` | Optional comma-separated email-domain allowlist. Empty allows every domain. |
+| `WARDN_HUB_OIDC_SUPERUSER_EMAILS` | Optional comma-separated emails promoted to Hub superusers after OIDC sign-in. |
 | `WARDN_HUB_OTEL_ENABLED` | Enables OpenTelemetry tracing for the backend. Defaults to `false`. |
 | `WARDN_HUB_OTEL_SERVICE_NAME` | Service name reported to the collector. Defaults to `wardn-hub-api`. |
 | `WARDN_HUB_OTEL_SERVICE_NAMESPACE` | Service namespace reported as a resource attribute. Defaults to `wardn-hub`. |
@@ -459,14 +466,48 @@ Frontend settings:
 | `NEXT_PUBLIC_SITE_URL` | Public frontend base URL used for canonical metadata, robots.txt, sitemap URLs, and llms.txt. Defaults to `https://hub.wardnai.dev` in production and `http://localhost:3000` locally. |
 | `NEXT_PUBLIC_REGISTRY_PUBLIC_BASE_URL` | Browser-visible public registry URL used for generated README badge Markdown. Defaults to `https://hub.wardnai.dev`. |
 | `NEXT_PUBLIC_API_BASE_URL` | Optional browser-visible backend URL. If unset, the browser uses same-origin `/api/v1`. |
-| `NEXT_PUBLIC_AUTH_PROVIDERS` | Auth providers exposed to the frontend. Defaults to `local`. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Enables Clerk UI integration when Clerk is listed in `NEXT_PUBLIC_AUTH_PROVIDERS`. |
-| `NEXT_PUBLIC_CLERK_JWT_TEMPLATE` | Optional Clerk JWT template requested by the frontend. |
-| `CLERK_SECRET_KEY` | Server-side Clerk secret used by the Next.js integration. Do not expose it with a `NEXT_PUBLIC_` prefix. |
 | `GOOGLE_ANALYTICS_ID` | Optional production Google Analytics measurement ID. A default ID is used in production if unset. |
 
 Production settings reject placeholder secrets, secrets shorter than 32
 characters, and wildcard CORS origins.
+
+### OIDC Setup
+
+Enable `oidc` in `WARDN_HUB_AUTH_PROVIDERS` and select it with
+`WARDN_HUB_AUTH_DEFAULT_PROVIDER` when it should be reported as the default provider.
+Configure the issuer URL, client ID, and client secret, then register this callback
+with the identity provider:
+
+```text
+{WARDN_HUB_REGISTRY_PUBLIC_BASE_URL}/api/auth/oidc/callback
+```
+
+The callback is served by the frontend relay, which forwards the authorization
+response to `/api/v1/auth/oidc/callback` and returns the Hub session cookie to the
+browser. Override it with `WARDN_HUB_OIDC_REDIRECT_URI` only when the registered
+public callback differs. The browser starts the flow through the frontend's
+`/api/auth/oidc/login` relay; the backend route is `/api/v1/auth/oidc/login`.
+`GET /api/v1/auth/providers` reports the enabled and default providers to the UI.
+Use the normal same-origin `/api/v1` browser path for OIDC deployments so the
+frontend-origin session cookie is sent on subsequent API requests.
+
+`WARDN_HUB_OIDC_CLIENT_SECRET` and `WARDN_HUB_SESSION_SECRET` are server-side
+secrets and must never be exposed through frontend environment variables. OIDC
+provider tokens are exchanged by the backend; the browser receives only the
+signed Hub session cookie.
+
+OIDC sign-in requires an email claim marked with `email_verified=true`. Missing,
+false, or malformed verification is rejected by default; enable
+`WARDN_HUB_OIDC_ALLOW_UNVERIFIED_EMAIL` only when the provider cannot supply that
+attestation. Use `WARDN_HUB_OIDC_ALLOWED_EMAIL_DOMAINS` when access must be
+restricted to known domains. On first OIDC sign-in, a verified normalized email
+links to an existing Hub user or creates one when auto-creation is enabled. The
+stored external identity is scoped by both issuer and subject, so later sign-ins
+retain the same user ID, roles, submissions, and API tokens. Treat
+`WARDN_HUB_OIDC_SUPERUSER_EMAILS` as a privileged allowlist.
+
+Hub logout clears the Hub session cookie only; it does not end the identity
+provider's SSO session.
 
 ## Common Commands
 
@@ -636,10 +677,14 @@ GitHub Actions currently includes:
   when generated README badge Markdown should point at a non-default domain.
 - Set `WARDN_HUB_API_INTERNAL_BASE_URL` for frontend deployments where the
   backend is not reachable at `http://localhost:8000` from the Next.js server.
-- Enable only the intended auth providers with `WARDN_HUB_AUTH_PROVIDERS` and
-  `NEXT_PUBLIC_AUTH_PROVIDERS`.
-- If Clerk is enabled in production, configure `WARDN_HUB_CLERK_ISSUER` and the
-  matching frontend Clerk environment variables.
+- Enable only the intended `local` and/or `oidc` providers with
+  `WARDN_HUB_AUTH_PROVIDERS`, and select one of them with
+  `WARDN_HUB_AUTH_DEFAULT_PROVIDER`.
+- When OIDC is enabled, configure its issuer, client ID, and backend-only client
+  secret; register the HTTPS frontend relay callback derived from
+  `WARDN_HUB_REGISTRY_PUBLIC_BASE_URL`.
+- Review the verified-email, allowed-domain, auto-creation, and superuser-email
+  policies before accepting production sign-ins.
 - Bootstrap the first superuser, then use role-based access controls for
   moderators, partner managers, and superusers.
 

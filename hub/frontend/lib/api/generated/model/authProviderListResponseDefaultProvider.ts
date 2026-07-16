@@ -10,5 +10,5 @@ export type AuthProviderListResponseDefaultProvider = typeof AuthProviderListRes
 
 export const AuthProviderListResponseDefaultProvider = {
   local: 'local',
-  clerk: 'clerk',
+  oidc: 'oidc',
 } as const;

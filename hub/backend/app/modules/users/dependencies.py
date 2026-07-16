@@ -8,14 +8,11 @@ from app.core.config import get_settings
 from app.core.security import verify_session_token
 from app.db.session import get_db_session
 from app.modules.users import repository
-from app.modules.users.auth_providers import verify_external_bearer_token
-from app.modules.users.exceptions import InvalidLoginError
 from app.modules.users.models import User, UserAPIToken
 from app.modules.users.schemas import APITokenScope
-from app.modules.users.service import authenticate_api_token, get_or_create_external_user
+from app.modules.users.service import authenticate_api_token
 
 API_TOKEN_STATE_KEY = "wardn_hub_api_token"
-CLERK_SESSION_COOKIE_NAME = "__session"
 tracer = trace.get_tracer(__name__)
 
 
@@ -69,10 +66,7 @@ async def get_current_user(
 
         plaintext_token = ""
         if user_id is None and authorization and authorization.lower().startswith("bearer "):
-            plaintext_token = authorization.removeprefix("Bearer ").removeprefix("bearer ").strip()
-        if user_id is None and not plaintext_token:
-            plaintext_token = request.cookies.get(CLERK_SESSION_COOKIE_NAME, "").strip()
-            span.set_attribute("auth.has_clerk_cookie", bool(plaintext_token))
+            plaintext_token = authorization.split(" ", 1)[1].strip()
 
         if user_id is None and plaintext_token:
             span.set_attribute("auth.path", "bearer")
@@ -83,34 +77,6 @@ async def get_current_user(
                 user, _api_token = authenticated
                 setattr(request.state, API_TOKEN_STATE_KEY, _api_token)
                 span.set_attribute("auth.result", "api_token")
-                set_user_id_attribute(span, user)
-                return user
-
-            with tracer.start_as_current_span("auth.external_token_lookup") as external_span:
-                external_claims = await verify_external_bearer_token(plaintext_token)
-                external_span.set_attribute(
-                    "auth.external.matched",
-                    external_claims is not None,
-                )
-                if external_claims is not None:
-                    external_span.set_attribute("auth.external.provider", external_claims.provider)
-            if external_claims is not None:
-                with tracer.start_as_current_span("auth.external_user_lookup") as user_span:
-                    user_span.set_attribute("auth.external.provider", external_claims.provider)
-                    try:
-                        user = await get_or_create_external_user(session, external_claims)
-                    except InvalidLoginError:
-                        user = None
-                    user_span.set_attribute("auth.user.found", user is not None)
-                if user is None:
-                    span.set_attribute("auth.result", "unauthorized")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="authentication required",
-                    )
-                await session.commit()
-                await session.refresh(user)
-                span.set_attribute("auth.result", "external")
                 set_user_id_attribute(span, user)
                 return user
 

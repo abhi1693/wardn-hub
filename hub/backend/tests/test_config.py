@@ -54,15 +54,15 @@ def test_auth_providers_parse_comma_separated_env(monkeypatch) -> None:
     set_required_settings(
         monkeypatch,
         {
-            "WARDN_HUB_AUTH_PROVIDERS": "local, clerk",
-            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "clerk",
+            "WARDN_HUB_AUTH_PROVIDERS": "local, oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
         },
     )
 
     settings = Settings(_env_file=None)
 
-    assert settings.auth_providers == ["local", "clerk"]
-    assert settings.auth_default_provider == "clerk"
+    assert settings.auth_providers == ["local", "oidc"]
+    assert settings.auth_default_provider == "oidc"
 
 
 def test_auth_default_provider_must_be_enabled(monkeypatch) -> None:
@@ -70,7 +70,7 @@ def test_auth_default_provider_must_be_enabled(monkeypatch) -> None:
         monkeypatch,
         {
             "WARDN_HUB_AUTH_PROVIDERS": "local",
-            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "clerk",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
         },
     )
 
@@ -78,19 +78,164 @@ def test_auth_default_provider_must_be_enabled(monkeypatch) -> None:
         Settings(_env_file=None)
 
 
-def test_production_clerk_auth_requires_issuer(monkeypatch) -> None:
+def test_production_oidc_auth_requires_provider_credentials(monkeypatch) -> None:
     set_required_settings(
         monkeypatch,
         {
             "WARDN_HUB_ENVIRONMENT": "production",
             "WARDN_HUB_SESSION_SECRET": "s" * 32,
             "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
-            "WARDN_HUB_AUTH_PROVIDERS": "clerk",
-            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "clerk",
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
         },
     )
 
-    with pytest.raises(ValidationError, match="clerk_issuer"):
+    with pytest.raises(ValidationError, match="oidc_issuer_url"):
+        Settings(_env_file=None)
+
+
+def test_production_oidc_auth_accepts_provider_credentials(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
+            "WARDN_HUB_OIDC_ISSUER_URL": "https://identity.example.com",
+            "WARDN_HUB_OIDC_CLIENT_ID": "wardn-hub",
+            "WARDN_HUB_OIDC_CLIENT_SECRET": "oidc-secret",
+            "WARDN_HUB_REGISTRY_PUBLIC_BASE_URL": "https://hub.example.com",
+        },
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.auth_providers == ["oidc"]
+    assert settings.oidc_issuer_url == "https://identity.example.com"
+
+
+def test_production_oidc_rejects_plaintext_provider_urls(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
+            "WARDN_HUB_OIDC_ISSUER_URL": "http://identity.example.com",
+            "WARDN_HUB_OIDC_CLIENT_ID": "wardn-hub",
+            "WARDN_HUB_OIDC_CLIENT_SECRET": "oidc-secret",
+            "WARDN_HUB_REGISTRY_PUBLIC_BASE_URL": "https://hub.example.com",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="oidc_issuer_url.*HTTPS"):
+        Settings(_env_file=None)
+
+
+def test_production_oidc_rejects_plaintext_frontend_with_explicit_https_callback(
+    monkeypatch,
+) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_ENVIRONMENT": "production",
+            "WARDN_HUB_SESSION_SECRET": "s" * 32,
+            "WARDN_HUB_API_TOKEN_SECRET": "t" * 32,
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
+            "WARDN_HUB_OIDC_ISSUER_URL": "https://identity.example.com",
+            "WARDN_HUB_OIDC_CLIENT_ID": "wardn-hub",
+            "WARDN_HUB_OIDC_CLIENT_SECRET": "oidc-secret",
+            "WARDN_HUB_OIDC_REDIRECT_URI": "https://hub.example.com/api/auth/oidc/callback",
+            "WARDN_HUB_REGISTRY_PUBLIC_BASE_URL": "http://hub.example.com",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="registry_public_base_url.*HTTPS"):
+        Settings(_env_file=None)
+
+
+def test_local_oidc_still_requires_absolute_http_url(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
+            "WARDN_HUB_OIDC_ISSUER_URL": "identity.local",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="oidc_issuer_url.*absolute HTTP"):
+        Settings(_env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {
+                "WARDN_HUB_OIDC_ISSUER_URL": "http://identity.local?tenant=wardn",
+            },
+            "oidc_issuer_url",
+        ),
+        (
+            {
+                "WARDN_HUB_OIDC_ISSUER_URL": "http://identity.local",
+                "WARDN_HUB_REGISTRY_PUBLIC_BASE_URL": "http://localhost:3000?tenant=wardn",
+            },
+            "registry_public_base_url",
+        ),
+    ],
+)
+def test_oidc_issuer_and_frontend_base_reject_query_strings(
+    monkeypatch,
+    overrides: dict[str, str],
+    message: str,
+) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
+            **overrides,
+        },
+    )
+
+    with pytest.raises(ValidationError, match=message):
+        Settings(_env_file=None)
+
+
+def test_oidc_email_lists_parse_and_normalize(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_OIDC_ALLOWED_EMAIL_DOMAINS": "@Example.COM, staff.example.com",
+            "WARDN_HUB_OIDC_SUPERUSER_EMAILS": "ADMIN@Example.COM, root@example.com",
+        },
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.oidc_allowed_email_domains == ["example.com", "staff.example.com"]
+    assert settings.oidc_superuser_emails == ["admin@example.com", "root@example.com"]
+
+
+def test_oidc_state_cookie_must_not_replace_session_cookie(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_AUTH_PROVIDERS": "oidc",
+            "WARDN_HUB_AUTH_DEFAULT_PROVIDER": "oidc",
+            "WARDN_HUB_SESSION_COOKIE_NAME": "same-cookie",
+            "WARDN_HUB_OIDC_STATE_COOKIE_NAME": "same-cookie",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="cookie_name.*must be different"):
         Settings(_env_file=None)
 
 

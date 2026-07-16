@@ -27,6 +27,8 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/auth/login",
         "/api/v1/auth/logout",
         "/api/v1/auth/me",
+        "/api/v1/auth/oidc/callback",
+        "/api/v1/auth/oidc/login",
         "/api/v1/auth/providers",
         "/api/v1/auth/register",
         "/api/v1/events/deliveries",
@@ -121,6 +123,31 @@ def test_submission_openapi_has_typed_import_examples() -> None:
     assert schemas["SubmissionCreate"]["examples"][0]["serverJson"]["packages"][0][
         "registryType"
     ] == "npm"
+
+
+def test_auth_openapi_exposes_oidc_contract() -> None:
+    schema = TestClient(create_app()).get("/api/v1/openapi.json").json()
+    schemas = schema["components"]["schemas"]
+    oidc_login = schema["paths"]["/api/v1/auth/oidc/login"]["get"]
+    oidc_callback = schema["paths"]["/api/v1/auth/oidc/callback"]["get"]
+
+    assert schemas["AuthProviderRead"]["properties"]["provider"]["enum"] == [
+        "local",
+        "oidc",
+    ]
+    assert schemas["AuthProviderListResponse"]["properties"]["defaultProvider"][
+        "enum"
+    ] == ["local", "oidc"]
+    assert oidc_login["operationId"] == "auth_oidc_login"
+    assert "200" not in oidc_login["responses"]
+    assert oidc_login["responses"]["302"]["description"] == (
+        "Redirect to the configured OIDC provider."
+    )
+    assert oidc_callback["operationId"] == "auth_oidc_callback"
+    assert "200" not in oidc_callback["responses"]
+    assert oidc_callback["responses"]["302"]["description"] == (
+        "Redirect to the Wardn Hub frontend."
+    )
 
 
 def test_export_openapi_writes_schema(tmp_path: Path) -> None:

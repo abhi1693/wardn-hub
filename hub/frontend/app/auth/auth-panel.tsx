@@ -3,12 +3,11 @@
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SignInButton, SignUpButton, useClerk } from "@clerk/nextjs";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { PageLoader } from "@/components/page-loader";
-import { Button } from "@/components/ui/button";
 import { PublicHeader } from "@/components/site-header";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -26,78 +25,20 @@ import {
   setApiToken,
 } from "@/lib/api/hub";
 import type { AuthProviderRead } from "@/lib/api/generated/model";
-import { isClerkEnabled } from "@/lib/auth/providers";
 
 type AuthMode = "login" | "register";
-
-const fallbackProviders: AuthProviderRead[] = [
-  {
-    provider: "local",
-    label: "Email and password",
-    signInEnabled: true,
-    signUpEnabled: true,
-  },
-];
-
-function ClerkRedirect({
-  isRegister,
-  nextPath,
-}: {
-  isRegister: boolean;
-  nextPath: string;
-}) {
-  const clerk = useClerk();
-
-  useEffect(() => {
-    setApiToken("");
-    if (isRegister) {
-      void clerk.redirectToSignUp({
-        redirectUrl: nextPath,
-      });
-      return;
-    }
-    void clerk.redirectToSignIn({
-      redirectUrl: nextPath,
-    });
-  }, [clerk, isRegister, nextPath]);
-
-  return null;
-}
-
-function ClerkAuthButton({
-  isRegister,
-  nextPath,
-  showLocalForm,
-}: {
-  isRegister: boolean;
-  nextPath: string;
-  showLocalForm: boolean;
-}) {
-  if (isRegister) {
-    return (
-      <SignUpButton fallbackRedirectUrl={nextPath} forceRedirectUrl={nextPath} mode="redirect">
-        <Button className="w-full" type="button" variant={showLocalForm ? "outline" : "default"}>
-          Continue with account
-        </Button>
-      </SignUpButton>
-    );
-  }
-
-  return (
-    <SignInButton fallbackRedirectUrl={nextPath} forceRedirectUrl={nextPath} mode="redirect">
-      <Button className="w-full" type="button" variant={showLocalForm ? "outline" : "default"}>
-        Continue with account
-      </Button>
-    </SignInButton>
-  );
-}
 
 function AuthPanelContent({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [error, setError] = useState("");
+  const oidcRedirectStarted = useRef(false);
+  const oidcReturnedError = searchParams.get("error") === "oidc";
+  const [error, setError] = useState(() =>
+    oidcReturnedError ? "External sign in could not be completed." : "",
+  );
+  const [isOidcRedirecting, setIsOidcRedirecting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [providers, setProviders] = useState<AuthProviderRead[]>(fallbackProviders);
+  const [providers, setProviders] = useState<AuthProviderRead[]>([]);
   const [providersLoaded, setProvidersLoaded] = useState(false);
 
   const isRegister = mode === "register";
@@ -112,22 +53,64 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
           : "/";
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
   const localProvider = providers.find((provider) => provider.provider === "local");
-  const clerkProvider = providers.find((provider) => provider.provider === "clerk");
+  const oidcProvider = providers.find((provider) => String(provider.provider) === "oidc");
+  const oidcLabel = oidcProvider?.label.trim() || "OpenID Connect";
   const showLocalForm = Boolean(
     localProvider && (isRegister ? localProvider.signUpEnabled : localProvider.signInEnabled),
   );
-  const showClerk = Boolean(
-    clerkProvider &&
-      isClerkEnabled() &&
-      (isRegister ? clerkProvider.signUpEnabled : clerkProvider.signInEnabled),
+  const showOidc = Boolean(
+    oidcProvider &&
+      (isRegister ? oidcProvider.signUpEnabled : oidcProvider.signInEnabled),
   );
+  const oidcLoginHref = `/api/auth/oidc/login?redirectTo=${encodeURIComponent(nextPath)}`;
 
   useEffect(() => {
+    let active = true;
+
     listAuthProviders()
-      .then((response) => setProviders(response.providers))
-      .catch(() => setProviders(fallbackProviders))
-      .finally(() => setProvidersLoaded(true));
+      .then((response) => {
+        if (active) setProviders(response.providers);
+      })
+      .catch(() => {
+        if (active) {
+          setProviders([]);
+          setError((current) => current || "Sign in is currently unavailable.");
+        }
+      })
+      .finally(() => {
+        if (active) setProvidersLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (
+      !providersLoaded ||
+      oidcReturnedError ||
+      !showOidc ||
+      showLocalForm ||
+      oidcRedirectStarted.current
+    ) {
+      return;
+    }
+
+    oidcRedirectStarted.current = true;
+    setApiToken("");
+    setIsOidcRedirecting(true);
+    window.location.assign(oidcLoginHref);
+  }, [oidcLoginHref, oidcReturnedError, providersLoaded, showLocalForm, showOidc]);
+
+  function handleOidcSignIn() {
+    if (oidcRedirectStarted.current) return;
+    oidcRedirectStarted.current = true;
+    setError("");
+    setApiToken("");
+    setIsOidcRedirecting(true);
+    window.location.assign(oidcLoginHref);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -177,13 +160,15 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
     router.refresh();
   }
 
-  if (providersLoaded && showClerk && !showLocalForm) {
+  if (!providersLoaded || (showOidc && !showLocalForm && !oidcReturnedError)) {
     return (
       <>
         <PublicHeader />
         <main className="flex min-h-[calc(100dvh-64px)] items-center justify-center bg-background p-5">
-          <ClerkRedirect isRegister={isRegister} nextPath={nextPath} />
-          <PageLoader compact label="Redirecting to account sign-in" />
+          <PageLoader
+            compact
+            label={providersLoaded ? `Redirecting to ${oidcLabel}` : "Checking sign-in options"}
+          />
         </main>
       </>
     );
@@ -212,20 +197,34 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
           </CardHeader>
           <CardContent>
             <div className="grid gap-4">
-              {showClerk ? (
-                <ClerkAuthButton
-                  isRegister={isRegister}
-                  nextPath={nextPath}
-                  showLocalForm={showLocalForm}
-                />
+              {showOidc ? (
+                <Button
+                  className="w-full"
+                  disabled={isOidcRedirecting || isSubmitting}
+                  onClick={handleOidcSignIn}
+                  type="button"
+                  variant={showLocalForm ? "outline" : "default"}
+                >
+                  {isOidcRedirecting ? "Redirecting" : `Continue with ${oidcLabel}`}
+                </Button>
               ) : null}
 
-              {!showLocalForm && providersLoaded && !showClerk ? (
-                <p className="text-sm text-destructive">No sign-in provider is currently available.</p>
+              {!showLocalForm && !showOidc ? (
+                <p className="text-sm text-destructive">
+                  {error || "No sign-in provider is currently available."}
+                </p>
+              ) : null}
+
+              {!showLocalForm && showOidc && error ? (
+                <p className="text-sm text-destructive">{error}</p>
               ) : null}
 
               {showLocalForm ? (
-                <form className="grid gap-4" method="post" onSubmit={(event) => void handleSubmit(event)}>
+                <form
+                  className="grid gap-4"
+                  method="post"
+                  onSubmit={(event) => void handleSubmit(event)}
+                >
                   {isRegister ? (
                     <div className="grid grid-cols-2 gap-3">
                       <div className="grid gap-2">
@@ -291,7 +290,11 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
 
                   {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-                  <Button className="w-full" disabled={isSubmitting} type="submit">
+                  <Button
+                    className="w-full"
+                    disabled={isOidcRedirecting || isSubmitting}
+                    type="submit"
+                  >
                     {isSubmitting
                       ? isRegister
                         ? "Creating account"
@@ -322,7 +325,9 @@ function AuthPanelContent({ mode }: { mode: AuthMode }) {
 
 export function AuthPanel({ mode }: { mode: AuthMode }) {
   return (
-    <Suspense fallback={<main className="flex min-h-dvh items-center justify-center bg-background p-5" />}>
+    <Suspense
+      fallback={<main className="flex min-h-dvh items-center justify-center bg-background p-5" />}
+    >
       <AuthPanelContent mode={mode} />
     </Suspense>
   );

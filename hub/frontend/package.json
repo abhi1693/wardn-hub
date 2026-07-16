@@ -4,12 +4,11 @@
   "scripts": {
     "api:generate": "orval --config ./orval.config.mjs",
     "dev": "next dev",
-  "build": "next build && node scripts/prepare-faro-sourcemaps.mjs",
+    "build": "next build && node scripts/prepare-faro-sourcemaps.mjs",
     "start": "next start",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.5.9",
     "@grafana/faro-web-sdk": "^2.8.1",
     "@grafana/faro-web-tracing": "^2.8.1",
     "@radix-ui/react-dialog": "^1.1.17",

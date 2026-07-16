@@ -28,3 +28,11 @@ class UserNotFoundError(UserError):
 
 class InvalidUserRoleUpdateError(UserError):
     pass
+
+
+class OIDCConfigurationError(UserError):
+    pass
+
+
+class OIDCAuthenticationError(UserError):
+    pass

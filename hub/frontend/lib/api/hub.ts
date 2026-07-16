@@ -143,23 +143,6 @@ export type RegistryUserRead = UserDirectoryRead;
 const API_PREFIX = "/api/v1";
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
 
-type ClerkWindow = Window & {
-  Clerk?: {
-    session?: {
-      getToken: (options?: ClerkTokenOptions) => Promise<string | null>;
-    } | null;
-    signOut?: (options?: ClerkSignOutOptions) => Promise<void>;
-  };
-};
-
-type ClerkTokenOptions = {
-  template?: string;
-};
-
-type ClerkSignOutOptions = {
-  redirectUrl?: string;
-};
-
 export class HubApiError extends Error {
   status: number;
 
@@ -250,28 +233,13 @@ function optionalQueryString(value?: string) {
   return value === "" ? undefined : value;
 }
 
-async function clerkSessionToken() {
-  if (typeof window === "undefined") return "";
-  const clerk = (window as ClerkWindow).Clerk;
-  if (!clerk?.session?.getToken) return "";
-  return (await clerk.session.getToken(clerkTokenOptions())) ?? "";
-}
-
 async function authBearerToken() {
   if (typeof window === "undefined") return "";
-  const clerkToken = await clerkSessionToken();
-  if (clerkToken) return clerkToken;
-  const localToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
-  return localToken;
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
 }
 
 function pathValue(value: string) {
   return value.split("/").map(encodeURIComponent).join("/");
-}
-
-export function clerkTokenOptions(): ClerkTokenOptions | undefined {
-  const template = process.env.NEXT_PUBLIC_CLERK_JWT_TEMPLATE?.trim();
-  return template ? { template } : undefined;
 }
 
 export function listServers(params: {
@@ -615,12 +583,6 @@ export function currentUser() {
   return generatedRequest<UserRead>(getAuthMeUrl());
 }
 
-export function currentUserWithToken(token: string) {
-  return generatedRequest<UserRead>(getAuthMeUrl(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-}
-
 export function bootstrap(payload: BootstrapUserCreate) {
   return generatedRequest<UserRead>(getUsersBootstrapUrl(), {
     method: "POST",
@@ -642,11 +604,6 @@ export function updateUserAdminFlags(userId: string, payload: UserAdminUpdate) {
 
 export function logout() {
   return generatedRequest<void>(getAuthLogoutUrl(), { method: "POST" });
-}
-
-export async function signOutExternalAuth(options?: ClerkSignOutOptions) {
-  if (typeof window === "undefined") return;
-  await (window as ClerkWindow).Clerk?.signOut?.(options);
 }
 
 export function listApiTokens() {

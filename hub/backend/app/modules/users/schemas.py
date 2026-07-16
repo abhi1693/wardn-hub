@@ -40,7 +40,7 @@ ALL_API_TOKEN_SCOPES: tuple[APITokenScope, ...] = (
     "users:read",
     "users:write",
 )
-AuthProviderKey = Literal["local", "clerk"]
+AuthProviderKey = Literal["local", "oidc"]
 
 DEFAULT_API_TOKEN_SCOPES: list[APITokenScope] = [
     "catalog:read",

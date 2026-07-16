@@ -1,6 +1,5 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -17,16 +16,8 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import {
-  clerkTokenOptions,
-  currentUser,
-  currentUserWithToken,
-  logout,
-  setApiToken,
-  signOutExternalAuth,
-} from "@/lib/api/hub";
+import { currentUser, logout, setApiToken } from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
-import { isClerkEnabled } from "@/lib/auth/providers";
 
 type HeaderItem = {
   active?: boolean;
@@ -292,12 +283,10 @@ export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: Si
 }
 
 function PublicHeaderContent({
-  externalSignedIn = false,
   loaded,
   onLogout,
   user,
 }: {
-  externalSignedIn?: boolean;
   loaded: boolean;
   onLogout: () => Promise<void>;
   user: UserRead | null;
@@ -310,14 +299,6 @@ function PublicHeaderContent({
       actions={
         isAuthenticated ? (
           <HeaderUserMenu onLogout={onLogout} user={user} />
-        ) : externalSignedIn && loaded ? (
-          <>
-            <span className="site-auth-status">Signed in</span>
-            <button className="site-action-link" onClick={() => void onLogout()} type="button">
-              <LogOut size={16} />
-              Sign out
-            </button>
-          </>
         ) : !loaded ? (
           <span className="site-auth-placeholder" aria-hidden="true" />
         ) : loaded ? (
@@ -331,7 +312,7 @@ function PublicHeaderContent({
   );
 }
 
-function LocalPublicHeader() {
+export function PublicHeader() {
   const router = useRouter();
   const [user, setUser] = useState<UserRead | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -360,83 +341,10 @@ function LocalPublicHeader() {
     } catch {
       // Keep the client state authoritative even if the session is already gone server-side.
     }
-    await signOutExternalAuth();
     setApiToken("");
     setUser(null);
     router.refresh();
   }
 
   return <PublicHeaderContent loaded={loaded} onLogout={handleLogout} user={user} />;
-}
-
-function ClerkPublicHeader() {
-  const router = useRouter();
-  const { getToken, isLoaded, isSignedIn, signOut } = useAuth();
-  const [user, setUser] = useState<UserRead | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-
-    if (!isLoaded || !isSignedIn) {
-      return () => {
-        active = false;
-      };
-    }
-
-    getToken(clerkTokenOptions())
-      .then((token) => {
-        if (!token) throw new Error("missing Clerk session token");
-        return currentUserWithToken(token);
-      })
-      .then((response) => {
-        if (active) setUser(response);
-      })
-      .catch(() => {
-        if (active) setUser(null);
-      })
-      .finally(() => {
-        if (active) setLoaded(true);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [getToken, isLoaded, isSignedIn]);
-
-  async function handleLogout() {
-    setSigningOut(true);
-    setLoaded(false);
-    try {
-      await logout();
-    } catch {
-      // Keep the client state authoritative even if the session is already gone server-side.
-    }
-    setApiToken("");
-    setUser(null);
-    if (isSignedIn) {
-      await signOut({ redirectUrl: "/" });
-      return;
-    }
-    await signOutExternalAuth({ redirectUrl: "/" });
-    router.refresh();
-  }
-
-  return (
-    <PublicHeaderContent
-      externalSignedIn={Boolean(isSignedIn && !signingOut)}
-      loaded={!signingOut && isLoaded && (!isSignedIn || loaded)}
-      onLogout={handleLogout}
-      user={isSignedIn && !signingOut ? user : null}
-    />
-  );
-}
-
-export function PublicHeader() {
-  if (isClerkEnabled()) {
-    return <ClerkPublicHeader />;
-  }
-
-  return <LocalPublicHeader />;
 }
