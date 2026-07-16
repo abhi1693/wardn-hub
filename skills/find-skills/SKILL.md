@@ -1,6 +1,6 @@
 ---
 name: find-skills
-description: Discover and apply agent skills from Wardn Hub through its public API. Use proactively when the agent identifies that a task needs unfamiliar or specialized domain knowledge, tool or API procedures, strict or security-sensitive workflows, or reusable instructions not covered by an installed skill, even when the user did not mention skills. Also use for explicit requests to find, discover, install, or use a skill. Skip routine work and tasks already covered by a suitable installed skill.
+description: Discover and apply one specialist agent skill from Wardn Hub's public API. Use proactively, without waiting for the user, whenever any task in any domain—including technical, creative, business, marketing, SEO, research, operational, or otherwise—would materially benefit from expertise, a proven workflow, specialized tools, standards, or reusable guidance not covered by an installed skill. Trigger especially for unfamiliar or niche work, consequential or strict procedures, low confidence, repeated failures, or when specialist guidance could improve quality, safety, or efficiency. Also use when asked to find, discover, install, or use a skill. Skip only clearly routine tasks, simple factual lookups, or tasks already covered by a suitable installed skill.
 ---
 
 # Find Skills
