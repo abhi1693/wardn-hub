@@ -3165,16 +3165,27 @@ button:disabled,
   padding: 11px;
 }
 
+.skills-results-toolbar {
+  display: flex;
+  min-height: 66px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  padding: 12px 18px;
+}
+
 .skills-view-tabs {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
 }
 
 .skills-view-tabs a {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 40px;
   align-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -3194,6 +3205,14 @@ button:disabled,
   outline: none;
   background: var(--primary);
   color: var(--primary-foreground);
+}
+
+.skills-results-count {
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
 }
 
 .skills-page-shell {
@@ -3392,6 +3411,21 @@ button:disabled,
   line-height: 20px;
 }
 
+.skills-table-slug {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 220px;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--surface-container-low);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+  padding: 2px 7px;
+}
+
 .skills-official-badge {
   display: inline-flex;
   min-height: 22px;
@@ -3426,6 +3460,7 @@ button:disabled,
 .skills-table-number {
   justify-self: end;
   color: var(--foreground);
+  font-variant-numeric: tabular-nums;
   font-weight: 750;
   white-space: nowrap;
 }
@@ -3774,13 +3809,11 @@ button:disabled,
 
   .skills-table-header,
   .skills-table-row {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr) 84px;
   }
 
   .skills-table-header > :nth-child(3),
-  .skills-table-header > :nth-child(4),
-  .skills-table-row .skills-table-source,
-  .skills-table-row .skills-table-number {
+  .skills-table-row .skills-table-source {
     display: none;
   }
 }
@@ -5571,6 +5604,40 @@ button:disabled,
   .registry-results-heading {
     display: grid;
     gap: 8px;
+  }
+
+  .skills-view-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .skills-view-tabs a {
+    min-height: 44px;
+    justify-content: center;
+    padding: 0 8px;
+  }
+
+  .skills-results-toolbar {
+    display: grid;
+    min-height: 0;
+    gap: 9px;
+    padding: 12px;
+  }
+
+  .skills-results-count {
+    justify-self: start;
+  }
+
+  .skills-table-header,
+  .skills-table-row {
+    grid-template-columns: 28px minmax(0, 1fr) 62px;
+    gap: 8px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .skills-table-slug {
+    max-width: 180px;
   }
 
   .registry-hero-search {

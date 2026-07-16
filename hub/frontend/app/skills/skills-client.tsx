@@ -64,6 +64,9 @@ export function SkillsClient({
   const skills = hasSearchQuery ? searchSkills : baseSkills;
   const pagination = hasSearchQuery ? searchPagination : basePagination;
   const hasMore = pagination.hasMore;
+  const resultLabel = `${pagination.total.toLocaleString("en-US")} ${
+    pagination.total === 1 ? "skill" : "skills"
+  }`;
 
   const updateQuery = useCallback((nextQuery: string) => {
     setQuery(nextQuery);
@@ -85,6 +88,20 @@ export function SkillsClient({
     document.addEventListener("keydown", focusSearch);
     return () => document.removeEventListener("keydown", focusSearch);
   }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (hasSearchQuery) {
+      url.searchParams.set("q", trimmedQuery);
+    } else {
+      url.searchParams.delete("q");
+    }
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [hasSearchQuery, trimmedQuery]);
 
   useEffect(() => {
     if (!didMountRef.current) {
@@ -196,50 +213,38 @@ export function SkillsClient({
 
       <section className="content-section" aria-label="Skills">
         <div className="registry-results-shell">
-          <nav className="skills-view-tabs" aria-label="Skill leaderboard view">
-            {(
-              [
-                ["all-time", "All time"],
-                ["trending", "Trending"],
-                ["hot", "Hot"],
-              ] as const
-            ).map(([value, label]) => (
-              <Link
-                aria-current={initialView === value ? "page" : undefined}
-                href={{
-                  pathname: "/skills",
-                  query: {
-                    ...(hasSearchQuery ? { q: trimmedQuery } : {}),
-                    ...(value === "all-time" ? {} : { view: value }),
-                  },
-                }}
-                key={value}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-          <div className="registry-results-heading">
-            <div>
-              <span>{hasSearchQuery ? "Search results" : "Skills"}</span>
-              <h2>
-                {hasSearchQuery
-                  ? `Results for "${trimmedQuery}"`
-                  : initialView === "trending"
-                    ? "Trending this week"
-                    : initialView === "hot"
-                      ? "Hot today"
-                      : "Most installed skills"}
-              </h2>
-              <p>
-                {hasSearchQuery
-                  ? "Filtered by skill name, description, source owner, and repository metadata."
-                  : "Scan imported skills as cards with their source, summary, and security-audit status."}
-              </p>
-            </div>
+          <div className="skills-results-toolbar">
+            <nav className="skills-view-tabs" aria-label="Skill leaderboard view">
+              {(
+                [
+                  ["all-time", "All time"],
+                  ["trending", "Trending · 7d"],
+                  ["hot", "Hot · 24h"],
+                ] as const
+              ).map(([value, label]) => (
+                <Link
+                  aria-current={initialView === value ? "page" : undefined}
+                  href={{
+                    pathname: "/skills",
+                    query: {
+                      ...(hasSearchQuery ? { q: trimmedQuery } : {}),
+                      ...(value === "all-time" ? {} : { view: value }),
+                    },
+                  }}
+                  key={value}
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+            <span className="skills-results-count" aria-live="polite">
+              {loading ? "Updating…" : resultLabel}
+            </span>
           </div>
           {error ? <EmptyState detail={error} title="Unable to load skills" /> : null}
-          {!error && loading ? <EmptyState title="Searching skills" /> : null}
+          {!error && loading && skills.length === 0 ? (
+            <EmptyState title="Searching skills" />
+          ) : null}
           {!error && !loading && skills.length === 0 ? (
             <EmptyState title={hasSearchQuery ? "No matching skills" : "No skills found"} />
           ) : null}
