@@ -4,6 +4,8 @@ import uuid
 from io import StringIO
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 from app import manage
 from app.cli import audit_skills as cli
@@ -92,6 +94,28 @@ class FakeClient:
     ) -> str:
         self.saved.append((target, audits, re_audit))
         return "saved"
+
+
+def test_completed_audit_condition_for_snapshot_only_queries_audits() -> None:
+    target = audit_target()
+    statement = select(
+        cli.completed_audit_condition(
+            skill_id=target.skill_id,
+            snapshot_id=target.snapshot_id,
+            content_hash=target.content_hash,
+        )
+    )
+
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "FROM skill_audits" in sql
+    assert "FROM skills" not in sql
+    assert "FROM skill_snapshots" not in sql
 
 
 def test_inspect_bundle_accepts_resolver_compatible_bundle() -> None:

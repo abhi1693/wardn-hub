@@ -166,13 +166,18 @@ class SkillAuditDatabaseClient(Protocol):
     ) -> Literal["saved", "stale", "already-audited"]: ...
 
 
-def completed_audit_condition() -> Any:
+def completed_audit_condition(
+    *,
+    skill_id: Any = Skill.id,
+    snapshot_id: Any = SkillSnapshot.id,
+    content_hash: Any = SkillSnapshot.content_hash,
+) -> Any:
     return exists(
         select(SkillAudit.id)
         .where(
-            SkillAudit.skill_id == Skill.id,
-            SkillAudit.snapshot_id == SkillSnapshot.id,
-            SkillAudit.content_hash == SkillSnapshot.content_hash,
+            SkillAudit.skill_id == skill_id,
+            SkillAudit.snapshot_id == snapshot_id,
+            SkillAudit.content_hash == content_hash,
             or_(
                 SkillAudit.slug == CODEX_PROVIDER_SLUG,
                 and_(
@@ -297,9 +302,12 @@ class WardnHubDatabaseSkillAuditClient:
                 return "stale"
             if not re_audit:
                 completed = await session.scalar(
-                    select(completed_audit_condition()).where(
-                        Skill.id == target.skill_id,
-                        SkillSnapshot.id == target.snapshot_id,
+                    select(
+                        completed_audit_condition(
+                            skill_id=target.skill_id,
+                            snapshot_id=target.snapshot_id,
+                            content_hash=target.content_hash,
+                        )
                     )
                 )
                 if completed:
