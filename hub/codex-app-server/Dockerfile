@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM buildpack-deps:noble-curl
 
 ARG APP_VERSION=0.0.0
 ARG CODEX_VERSION=0.144.0
@@ -14,6 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TMPDIR=/tmp/codex-tmp
 
 RUN install -d -m 1777 /tmp/codex-tmp && \
+    sed -i '/^URIs:/ s|http://|https://|' /etc/apt/sources.list.d/ubuntu.sources && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
