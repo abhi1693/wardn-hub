@@ -165,8 +165,13 @@ export default function ApiDocumentationPage() {
               discovery, cataloging, and publishing workflows.
             </p>
           </div>
-          <div className="category-table-wrap">
-            <table className="category-top-table">
+          <div
+            aria-label="Primary API endpoint groups"
+            className="category-table-wrap"
+            role="region"
+            tabIndex={0}
+          >
+            <table className="category-top-table api-endpoint-table">
               <thead>
                 <tr>
                   <th>Endpoint</th>
@@ -177,11 +182,11 @@ export default function ApiDocumentationPage() {
               <tbody>
                 {endpointGroups.map((group) => (
                   <tr key={group.endpoints}>
-                    <td>
+                    <td data-label="Endpoint">
                       <span>{group.endpoints}</span>
                     </td>
-                    <td>{group.purpose}</td>
-                    <td>{group.audience}</td>
+                    <td data-label="Use">{group.purpose}</td>
+                    <td data-label="Best for">{group.audience}</td>
                   </tr>
                 ))}
               </tbody>

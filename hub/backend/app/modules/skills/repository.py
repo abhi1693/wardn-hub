@@ -1,9 +1,9 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, exists, func, or_, select, tuple_, update
+from sqlalchemy import Select, and_, case, exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import aliased, load_only
 
 from app.modules.skills.models import (
     Skill,
@@ -45,6 +45,49 @@ def official_owner_condition():
     )
 
 
+def canonical_skill_condition():
+    """Keep one listing when old imports point at the same install location."""
+    duplicate = aliased(Skill)
+    duplicate_wins = or_(
+        duplicate.installs > Skill.installs,
+        and_(
+            duplicate.installs == Skill.installs,
+            func.length(duplicate.slug) < func.length(Skill.slug),
+        ),
+        and_(
+            duplicate.installs == Skill.installs,
+            func.length(duplicate.slug) == func.length(Skill.slug),
+            duplicate.slug < Skill.slug,
+        ),
+    )
+    return ~exists(
+        select(duplicate.id).where(
+            duplicate.id != Skill.id,
+            duplicate.source_type == Skill.source_type,
+            duplicate.source == Skill.source,
+            duplicate.install_url != "",
+            duplicate.install_url == Skill.install_url,
+            duplicate.status == "active",
+            duplicate.visibility == "public",
+            duplicate.current_snapshot_id.is_not(None),
+            duplicate_wins,
+        )
+    )
+
+
+def wardn_find_skills_order():
+    return case(
+        (
+            and_(
+                func.lower(Skill.source_name) == "wardn-hub",
+                func.lower(Skill.name) == "find-skills",
+            ),
+            0,
+        ),
+        else_=1,
+    )
+
+
 async def list_skills(
     session: AsyncSession,
     *,
@@ -58,6 +101,9 @@ async def list_skills(
 ) -> tuple[list[Skill], int]:
     statement = published_skill_query(Skill)
     total_statement = published_skill_query(func.count())
+    canonical_condition = canonical_skill_condition()
+    statement = statement.where(canonical_condition)
+    total_statement = total_statement.where(canonical_condition)
 
     if search:
         pattern = f"%{search.strip()}%"
@@ -96,6 +142,7 @@ async def list_skills(
 
     if view == "all-time":
         statement = statement.order_by(
+            wardn_find_skills_order(),
             Skill.installs.desc(),
             Skill.name.asc(),
             Skill.source.asc(),
@@ -115,13 +162,14 @@ async def list_skills(
             recent_installs,
             recent_installs.c.skill_id == Skill.id,
         ).order_by(
+            wardn_find_skills_order(),
             func.coalesce(recent_installs.c.recent_installs, 0).desc(),
             Skill.installs.desc(),
             Skill.name.asc(),
             Skill.source.asc(),
         )
     else:
-        statement = statement.order_by(Skill.name.asc())
+        statement = statement.order_by(wardn_find_skills_order(), Skill.name.asc())
 
     total = await session.scalar(total_statement)
     result = await session.execute(statement.offset(offset).limit(limit))

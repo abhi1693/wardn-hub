@@ -246,7 +246,7 @@ export function ExploreHomeClient({
               Compare install targets, remote endpoints, environment variables, namespace
               evidence, and Wardn review signals in one place.
             </p>
-            <form action="/" className="registry-hero-search-form" method="get">
+            <form action="/mcp-servers" className="registry-hero-search-form" method="get">
               <label className="registry-hero-search" htmlFor={searchInputId}>
                 <Search aria-hidden="true" size={22} />
                 <span className="sr-only">Search servers</span>

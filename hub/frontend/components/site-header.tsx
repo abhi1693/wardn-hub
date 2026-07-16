@@ -11,18 +11,21 @@ import {
   KeyRound,
   LogIn,
   LogOut,
+  Menu,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { currentUser, logout, setApiToken } from "@/lib/api/hub";
+import { currentSession, logout, setApiToken } from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
 
 type HeaderItem = {
   active?: boolean;
   href?: string;
   label: string;
+  mobileOnly?: boolean;
   onClick?: () => void;
 };
 
@@ -34,11 +37,11 @@ type SiteHeaderProps = {
 };
 
 const publicItems: HeaderItem[] = [
-  { href: "/", label: "Explore" },
+  { href: "/mcp-servers", label: "MCP Servers" },
   { href: "/skills", label: "Skills" },
   { href: "/categories", label: "Categories" },
   { href: "/docs/api", label: "API docs" },
-  { href: "/advertise", label: "Advertise" },
+  { href: "/submit", label: "Submit server", mobileOnly: true },
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -248,18 +251,56 @@ export function HeaderUserMenu({
 export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: SiteHeaderProps) {
   const pathname = usePathname();
   const navItems = items ?? publicItems;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const headerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    function closeMenu(event: KeyboardEvent | PointerEvent) {
+      if (event instanceof KeyboardEvent && event.key === "Escape") {
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (
+        event instanceof PointerEvent &&
+        event.target instanceof Node &&
+        !headerRef.current?.contains(event.target)
+      ) {
+        setMobileMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", closeMenu);
+    document.addEventListener("pointerdown", closeMenu);
+    return () => {
+      document.removeEventListener("keydown", closeMenu);
+      document.removeEventListener("pointerdown", closeMenu);
+    };
+  }, [mobileMenuOpen]);
 
   return (
-    <header className="site-header">
+    <header className="site-header" ref={headerRef}>
       <HeaderBrand href={brandHref} onClick={brandOnClick} />
-      <nav className="site-nav" aria-label="Primary">
+      <nav
+        className={`site-nav ${mobileMenuOpen ? "mobile-open" : ""}`}
+        aria-label="Primary"
+        id="primary-navigation"
+      >
         {navItems.map((item) => {
           const active = item.active ?? (item.href ? isActivePath(pathname, item.href) : false);
-          const className = `site-nav-item ${active ? "active" : ""}`;
+          const className = `site-nav-item ${active ? "active" : ""} ${
+            item.mobileOnly ? "mobile-only" : ""
+          }`;
 
           if (item.href) {
             return (
-              <Link className={className} href={item.href} key={`${item.label}-${item.href}`}>
+              <Link
+                className={className}
+                href={item.href}
+                key={`${item.label}-${item.href}`}
+                onClick={() => setMobileMenuOpen(false)}
+              >
                 <span>{item.label}</span>
               </Link>
             );
@@ -269,7 +310,10 @@ export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: Si
             <button
               className={className}
               key={item.label}
-              onClick={item.onClick}
+              onClick={() => {
+                setMobileMenuOpen(false);
+                item.onClick?.();
+              }}
               type="button"
             >
               <span>{item.label}</span>
@@ -278,6 +322,16 @@ export function SiteHeader({ actions, brandHref = "/", brandOnClick, items }: Si
         })}
       </nav>
       {actions ? <div className="site-actions">{actions}</div> : null}
+      <button
+        aria-controls="primary-navigation"
+        aria-expanded={mobileMenuOpen}
+        aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+        className="site-menu-toggle"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+        type="button"
+      >
+        {mobileMenuOpen ? <X aria-hidden="true" size={19} /> : <Menu aria-hidden="true" size={19} />}
+      </button>
     </header>
   );
 }
@@ -297,16 +351,21 @@ function PublicHeaderContent({
     <SiteHeader
       items={publicItems}
       actions={
-        isAuthenticated ? (
-          <HeaderUserMenu onLogout={onLogout} user={user} />
-        ) : !loaded ? (
-          <span className="site-auth-placeholder" aria-hidden="true" />
-        ) : loaded ? (
-          <Link className="site-nav-cta" href="/login">
-            <LogIn size={15} />
-            Sign in
+        <>
+          <Link className="site-submit-link" href="/submit">
+            Submit server
           </Link>
-        ) : null
+          {isAuthenticated ? (
+            <HeaderUserMenu onLogout={onLogout} user={user} />
+          ) : !loaded ? (
+            <span className="site-auth-placeholder" aria-hidden="true" />
+          ) : loaded ? (
+            <Link className="site-nav-cta" href="/login">
+              <LogIn aria-hidden="true" size={15} />
+              Sign in
+            </Link>
+          ) : null}
+        </>
       }
     />
   );
@@ -319,7 +378,7 @@ export function PublicHeader() {
 
   useEffect(() => {
     let active = true;
-    currentUser()
+    currentSession()
       .then((response) => {
         if (active) setUser(response);
       })

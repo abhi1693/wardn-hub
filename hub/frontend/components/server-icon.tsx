@@ -21,7 +21,7 @@ function cssUrl(value: string) {
   return `url(${JSON.stringify(value)})`;
 }
 
-export function ServerIcon({ src, title }: { src: string; title: string }) {
+export function ServerIcon({ src }: { src: string; title: string }) {
   const [failedSrc, setFailedSrc] = useState("");
 
   useEffect(() => {
@@ -34,6 +34,7 @@ export function ServerIcon({ src, title }: { src: string; title: string }) {
   if (src && failedSrc !== src) {
     return (
       <span
+        aria-hidden="true"
         className="server-card-icon server-card-icon-image"
         style={{ backgroundImage: cssUrl(src) }}
       />
@@ -41,7 +42,7 @@ export function ServerIcon({ src, title }: { src: string; title: string }) {
   }
 
   return (
-    <span className="server-card-icon" aria-label={`${title} icon`}>
+    <span aria-hidden="true" className="server-card-icon">
       <Server size={22} />
     </span>
   );

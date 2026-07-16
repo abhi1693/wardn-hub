@@ -202,19 +202,25 @@ function registryFaqJsonLd(url: string) {
   };
 }
 
-export function registryIndexJsonLd(servers: RegistryServerRead[]) {
-  const url = absoluteUrl("/");
+export function registryIndexJsonLd(servers: RegistryServerRead[], path = "/mcp-servers") {
+  const url = absoluteUrl(path);
   const dateModified = newestDate(servers.map((server) => server.updatedAt));
   return {
     "@context": "https://schema.org",
     "@graph": [
-      breadcrumbJsonLd([{ name: siteConfig.name, url }], `${url}#breadcrumb`),
+      breadcrumbJsonLd(
+        [
+          { name: siteConfig.name, url: absoluteUrl("/") },
+          { name: "MCP Servers", url },
+        ],
+        `${url}#breadcrumb`,
+      ),
       {
         "@id": `${url}#collection`,
         "@type": "CollectionPage",
         dateModified,
         description: siteConfig.description,
-        isPartOf: { "@id": `${url}#website` },
+        isPartOf: { "@id": `${absoluteUrl("/")}#website` },
         mainEntity: {
           "@id": `${url}#item-list`,
           "@type": "ItemList",
@@ -232,7 +238,7 @@ export function registryIndexJsonLd(servers: RegistryServerRead[]) {
           name: "Published MCP servers",
           numberOfItems: servers.length,
         },
-        name: siteConfig.name,
+        name: "MCP Servers",
         url,
       },
       {
@@ -241,7 +247,7 @@ export function registryIndexJsonLd(servers: RegistryServerRead[]) {
         dateModified,
         description:
           "Wardn Hub public catalog dataset of published Model Context Protocol servers with install metadata, package targets, remote endpoints, transport metadata, environment variables, namespace verification, review status, and Wardn Score.",
-        includedInDataCatalog: { "@id": `${url}#website` },
+        includedInDataCatalog: { "@id": `${absoluteUrl("/")}#website` },
         keywords: [
           "Model Context Protocol",
           "trusted MCP server directory",

@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import { PageLoader } from "@/components/page-loader";
 import { PublicHeader } from "@/components/site-header";
 import { currentUser, deleteCategory, HubApiError, listCategories } from "@/lib/api/hub";
 import type { RegistryCategoryRead, UserRead } from "@/lib/api/generated/model";
 
-type LoadState = "loading" | "ready" | "error";
+type LoadState = "ready" | "error";
 
 function categoryHref(slug: string) {
   return `/categories/${encodeURIComponent(slug)}`;
@@ -32,12 +31,21 @@ export function CategoriesClient({
   const [categories, setCategories] = useState<RegistryCategoryRead[]>(initialCategories);
   const [user, setUser] = useState<UserRead | null>(null);
   const [deletingSlug, setDeletingSlug] = useState("");
+  const [query, setQuery] = useState("");
 
   const canManageCategories = Boolean(user?.is_superuser);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredCategories = useMemo(() => {
+    if (!normalizedQuery) return categories;
+    return categories.filter((category) =>
+      [category.name, category.description, category.slug]
+        .filter(Boolean)
+        .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)),
+    );
+  }, [categories, normalizedQuery]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setState("loading");
       setError("");
       currentUser()
         .then((currentAccount) => {
@@ -102,10 +110,37 @@ export function CategoriesClient({
           ) : null}
         </section>
 
+        {state === "ready" && categories.length > 0 ? (
+          <div className="category-directory-toolbar">
+            <label className="category-directory-search">
+              <Search aria-hidden="true" size={19} />
+              <span className="sr-only">Search categories</span>
+              <input
+                autoComplete="off"
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder="Search categories"
+                type="search"
+                value={query}
+              />
+              {query ? (
+                <button
+                  aria-label="Clear category search"
+                  onClick={() => setQuery("")}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={17} />
+                </button>
+              ) : null}
+            </label>
+            <span aria-live="polite" className="category-directory-count">
+              {filteredCategories.length.toLocaleString("en-US")} of{" "}
+              {categories.length.toLocaleString("en-US")}
+            </span>
+          </div>
+        ) : null}
+
         {notice ? <div className="notice">{notice}</div> : null}
         {state === "ready" && error ? <div className="error-banner">{error}</div> : null}
-
-        {state === "loading" ? <PageLoader label="Loading categories" /> : null}
 
         {state === "error" ? (
           <div className="empty-state">
@@ -121,9 +156,9 @@ export function CategoriesClient({
           </div>
         ) : null}
 
-        {state === "ready" && categories.length > 0 ? (
+        {state === "ready" && filteredCategories.length > 0 ? (
           <div className="category-grid">
-            {categories.map((category) => (
+            {filteredCategories.map((category) => (
               <article className="category-card" key={category.id}>
                 <Link className="category-card-main" href={categoryHref(category.slug)}>
                   <strong>{category.name}</strong>
@@ -153,6 +188,13 @@ export function CategoriesClient({
                 ) : null}
               </article>
             ))}
+          </div>
+        ) : null}
+
+        {state === "ready" && categories.length > 0 && filteredCategories.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-title">No matching categories</div>
+            <div className="empty-detail">Try a broader name or capability.</div>
           </div>
         ) : null}
       </main>

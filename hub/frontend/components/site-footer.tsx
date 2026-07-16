@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { siteConfig } from "@/lib/site";
@@ -5,13 +6,25 @@ import { siteConfig } from "@/lib/site";
 const footerSections = [
   {
     links: [
-      { href: "/", label: "Explore" },
+      { href: "/mcp-servers", label: "MCP Servers" },
+      { href: "/skills", label: "Skills" },
       { href: "/categories", label: "Categories" },
+    ],
+    title: "Registry",
+  },
+  {
+    links: [
       { href: "/docs/api", label: "API docs" },
       { href: "/methodology/quality-score", label: "Score method" },
+    ],
+    title: "Resources",
+  },
+  {
+    links: [
+      { href: "/submit", label: "Submit server" },
       { href: "/advertise", label: "Advertise" },
     ],
-    title: "Discover",
+    title: "Contribute",
   },
 ];
 
@@ -61,8 +74,16 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div className="site-footer-brand">
-          <span className="site-footer-kicker">Trusted MCP directory</span>
-          <strong>{siteConfig.name}</strong>
+          <Link className="site-footer-brand-link" href="/">
+            <Image
+              alt=""
+              aria-hidden="true"
+              height={28}
+              src="/icon-192x192.png"
+              width={28}
+            />
+            <strong>{siteConfig.name}</strong>
+          </Link>
           <span>{siteConfig.tagline}</span>
           <div className="site-footer-social" aria-label="Social links">
             {socialLinks.map((link) => {

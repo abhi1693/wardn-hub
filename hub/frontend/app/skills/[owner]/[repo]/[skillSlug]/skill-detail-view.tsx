@@ -72,6 +72,9 @@ function SkillFileContents({ file }: { file: SkillFileRead }) {
     return (
       <div className="skill-file-markdown">
         <ReactMarkdown
+          components={{
+            pre: ({ children }) => <pre tabIndex={0}>{children}</pre>,
+          }}
           rehypePlugins={[rehypeRaw, rehypeSanitize]}
           remarkPlugins={[remarkGfm]}
         >

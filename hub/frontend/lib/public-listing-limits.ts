@@ -1,2 +1,2 @@
-export const EXPLORE_PAGE_SIZE = 12;
-export const SKILLS_PAGE_SIZE = 24;
+export const EXPLORE_PAGE_SIZE = 8;
+export const SKILLS_PAGE_SIZE = 16;

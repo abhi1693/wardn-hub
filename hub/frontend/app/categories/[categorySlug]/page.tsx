@@ -75,7 +75,12 @@ function CategoryTopServersTable({ servers }: { servers: RegistryServerRead[] })
           quick comparison.
         </p>
       </div>
-      <div className="category-table-wrap">
+      <div
+        aria-label="Top category servers comparison"
+        className="category-table-wrap"
+        role="region"
+        tabIndex={0}
+      >
         <table className="category-top-table">
           <thead>
             <tr>

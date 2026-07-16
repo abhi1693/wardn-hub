@@ -583,6 +583,26 @@ export function currentUser() {
   return generatedRequest<UserRead>(getAuthMeUrl());
 }
 
+export async function currentSession() {
+  const headers = new Headers({ Accept: "application/json" });
+  const token = await authBearerToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch("/api/auth/session", {
+    credentials: "include",
+    headers,
+  });
+  const body = await response.text();
+  const data = body ? (JSON.parse(body) as UserRead | { detail?: string } | null) : null;
+
+  if (!response.ok) {
+    const detail = data && "detail" in data ? data.detail : "";
+    throw new HubApiError(response.status, detail || "Unable to load the current session.");
+  }
+
+  return data as UserRead | null;
+}
+
 export function bootstrap(payload: BootstrapUserCreate) {
   return generatedRequest<UserRead>(getUsersBootstrapUrl(), {
     method: "POST",

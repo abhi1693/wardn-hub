@@ -33,6 +33,12 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
         view="all-time",
     )
     assert "skills.installs DESC" in all_time_session.statements[-1]
+    assert "CASE WHEN" in all_time_session.statements[-1]
+    assert "lower(skills.source_name)" in all_time_session.statements[-1]
+    assert "lower(skills.name)" in all_time_session.statements[-1]
+    assert "skills_1.install_url = skills.install_url" in all_time_session.statements[-1]
+    assert "skills_1.installs > skills.installs" in all_time_session.statements[-1]
+    assert "ORDER BY CASE WHEN" in all_time_session.statements[-1]
 
     trending_session = FakeSession()
     await repository.list_skills(
@@ -44,6 +50,16 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "skill_install_events" in trending_session.statements[-1]
     assert "count(skill_install_events.id)" in trending_session.statements[-1]
     assert "recent_installs" in trending_session.statements[-1]
+    assert "ORDER BY CASE WHEN" in trending_session.statements[-1]
+
+
+def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:
+    expression = repository.wardn_find_skills_order().compile(
+        compile_kwargs={"literal_binds": True}
+    )
+
+    assert "wardn-hub" in str(expression)
+    assert "find-skills" in str(expression)
 
 
 async def test_record_install_event_increments_counter_atomically() -> None:

@@ -54,7 +54,12 @@ export default function QualityScoreMethodologyPage() {
               yet available.
             </p>
           </div>
-          <div className="category-table-wrap">
+          <div
+            aria-label="Wardn Score bands"
+            className="category-table-wrap"
+            role="region"
+            tabIndex={0}
+          >
             <table className="category-top-table">
               <thead>
                 <tr>

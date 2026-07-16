@@ -12,6 +12,11 @@ import { SkillLeaderboard } from "./skills-ui";
 
 const SEARCH_DEBOUNCE_MS = 250;
 type SkillView = "all-time" | "hot" | "trending";
+const SKILL_VIEW_PATHS: Record<SkillView, string> = {
+  "all-time": "/skills",
+  hot: "/skills/hot",
+  trending: "/skills/trending",
+};
 const EMPTY_SKILLS_PAGINATION: SkillPagination = {
   hasMore: false,
   page: 0,
@@ -235,10 +240,9 @@ export function SkillsClient({
                 <Link
                   aria-current={initialView === value ? "page" : undefined}
                   href={{
-                    pathname: "/skills",
+                    pathname: SKILL_VIEW_PATHS[value],
                     query: {
                       ...(hasSearchQuery ? { q: trimmedQuery } : {}),
-                      ...(value === "all-time" ? {} : { view: value }),
                     },
                   }}
                   key={value}

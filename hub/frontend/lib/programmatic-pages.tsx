@@ -414,7 +414,12 @@ function ProgrammaticOverviewTable({ config }: { config: ProgrammaticPageConfig 
           team workflow.
         </p>
       </div>
-      <div className="category-table-wrap">
+      <div
+        aria-label="Evaluation criteria"
+        className="category-table-wrap"
+        role="region"
+        tabIndex={0}
+      >
         <table className="category-top-table">
           <thead>
             <tr>
@@ -455,7 +460,12 @@ function ProgrammaticServerTable({
           details for the current page topic.
         </p>
       </div>
-      <div className="category-table-wrap">
+      <div
+        aria-label="Matching MCP servers"
+        className="category-table-wrap"
+        role="region"
+        tabIndex={0}
+      >
         <table className="category-top-table">
           <thead>
             <tr>
