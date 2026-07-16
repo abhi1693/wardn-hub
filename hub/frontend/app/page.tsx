@@ -3,13 +3,12 @@ import type { Metadata } from "next";
 import { ExploreHomeClient } from "@/app/explore-client";
 import { PublicHeader } from "@/components/site-header";
 import { listPublishedRegistryServerPage } from "@/lib/public-registry";
+import { EXPLORE_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { getRegistryFacts } from "@/lib/registry-facts";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, registryIndexJsonLd } from "@/lib/structured-data";
 
 export const revalidate = 3600;
-const EXPLORE_PAGE_SIZE = 60;
-
 type HomeProps = {
   searchParams?: Promise<{
     q?: string | string[];

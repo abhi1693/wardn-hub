@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 
 import { PublicHeader } from "@/components/site-header";
 import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
+import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { listPublicSkillsPage } from "@/lib/public-skills";
 import { SkillsClient } from "./skills-client";
 
 export const revalidate = 60;
-const SKILLS_PAGE_SIZE = 60;
-
 type SkillsPageProps = {
   searchParams?: Promise<{
     q?: string | string[];

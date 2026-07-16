@@ -4,14 +4,15 @@ import { Search, Server } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 import { ServerCard } from "@/components/server-card";
 import { listPublishedServers } from "@/lib/api/hub";
 import type { RegistryServerRead } from "@/lib/api/generated/model";
+import { EXPLORE_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
 import type { RegistryFacts } from "@/lib/registry-facts-shared";
 import { formatFactDate } from "@/lib/registry-facts-shared";
 
-const EXPLORE_PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 250;
 const homepageFaqs = [
   {
@@ -204,9 +205,11 @@ export function ExploreHomeClient({
     return () => window.clearTimeout(timeoutId);
   }, [hasSearchQuery, initialError, trimmedQuery]);
 
-  async function loadMore() {
+  const loadMore = useCallback(async () => {
     if (!nextCursor || loading) return;
 
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
     setLoading(true);
     setError("");
     try {
@@ -216,6 +219,7 @@ export function ExploreHomeClient({
         limit: EXPLORE_PAGE_SIZE,
         search: hasSearchQuery ? trimmedQuery : undefined,
       });
+      if (latestRequestId.current !== requestId) return;
       if (hasSearchQuery) {
         setSearchServers((current) => [...current, ...response.servers]);
         setSearchNextCursor(response.metadata.nextCursor ?? "");
@@ -224,11 +228,12 @@ export function ExploreHomeClient({
         setBaseNextCursor(response.metadata.nextCursor ?? "");
       }
     } catch (caught) {
+      if (latestRequestId.current !== requestId) return;
       setError(caught instanceof Error ? caught.message : "Unable to load more servers.");
     } finally {
-      setLoading(false);
+      if (latestRequestId.current === requestId) setLoading(false);
     }
-  }
+  }, [hasSearchQuery, loading, nextCursor, trimmedQuery]);
 
   return (
     <>
@@ -316,20 +321,12 @@ export function ExploreHomeClient({
                     />
                   ))}
                 </div>
-                {nextCursor || error ? (
-                  <div className="server-grid-more">
-                    {error ? <p>{error}</p> : null}
-                    {nextCursor ? (
-                      <button
-                        className="server-grid-load-more"
-                        disabled={loading}
-                        onClick={() => void loadMore()}
-                      >
-                        {loading ? "Loading..." : "Load more"}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                <InfiniteScrollTrigger
+                  error={error}
+                  hasMore={Boolean(nextCursor)}
+                  loading={loading}
+                  onLoadMore={loadMore}
+                />
               </>
             ) : null}
           </section>

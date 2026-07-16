@@ -4,11 +4,12 @@ import { Search } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
+import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { listPublicSkillsPage } from "@/lib/public-skills";
 import { SkillLeaderboard } from "./skills-ui";
 
-const SKILLS_PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 250;
 type SkillView = "all-time" | "hot" | "trending";
 const EMPTY_SKILLS_PAGINATION: SkillPagination = {
@@ -46,6 +47,7 @@ export function SkillsClient({
   const latestRequestId = useRef(0);
   const initialSearchQuery = initialQuery.trim();
   const hasInitialSearchQuery = initialSearchQuery.length > 0;
+  const hasBaseSkillsRef = useRef(!hasInitialSearchQuery);
   const [query, setQuery] = useState(initialSearchQuery);
   const [baseSkills, setBaseSkills] = useState(hasInitialSearchQuery ? [] : initialSkills);
   const [basePagination, setBasePagination] = useState<SkillPagination>(
@@ -69,12 +71,14 @@ export function SkillsClient({
   }`;
 
   const updateQuery = useCallback((nextQuery: string) => {
+    latestRequestId.current += 1;
     setQuery(nextQuery);
-    if (!nextQuery.trim()) {
-      latestRequestId.current += 1;
-      setError("");
+    setError("");
+    if (!nextQuery.trim() && hasBaseSkillsRef.current) {
       setLoading(false);
+      return;
     }
+    setLoading(true);
   }, []);
 
   useEffect(() => {
@@ -108,6 +112,7 @@ export function SkillsClient({
       didMountRef.current = true;
       return undefined;
     }
+    if (!hasSearchQuery && hasBaseSkillsRef.current) return undefined;
 
     const requestId = latestRequestId.current + 1;
     latestRequestId.current = requestId;
@@ -130,6 +135,7 @@ export function SkillsClient({
           } else {
             setBaseSkills(response.skills);
             setBasePagination(response.pagination);
+            hasBaseSkillsRef.current = true;
           }
         } catch (caught) {
           if (latestRequestId.current !== requestId) return;
@@ -150,9 +156,11 @@ export function SkillsClient({
     return () => window.clearTimeout(timeoutId);
   }, [hasSearchQuery, initialView, trimmedQuery]);
 
-  async function loadMore() {
+  const loadMore = useCallback(async () => {
     if (!hasMore || loading) return;
 
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
     setLoading(true);
     setError("");
     try {
@@ -162,6 +170,7 @@ export function SkillsClient({
         query: hasSearchQuery ? trimmedQuery : undefined,
         view: initialView,
       });
+      if (latestRequestId.current !== requestId) return;
       if (hasSearchQuery) {
         setSearchSkills((current) => [...current, ...response.skills]);
         setSearchPagination(response.pagination);
@@ -170,11 +179,12 @@ export function SkillsClient({
         setBasePagination(response.pagination);
       }
     } catch (caught) {
+      if (latestRequestId.current !== requestId) return;
       setError(caught instanceof Error ? caught.message : "Unable to load more skills.");
     } finally {
-      setLoading(false);
+      if (latestRequestId.current === requestId) setLoading(false);
     }
-  }
+  }, [hasMore, hasSearchQuery, initialView, loading, pagination.page, trimmedQuery]);
 
   return (
     <>
@@ -241,7 +251,9 @@ export function SkillsClient({
               {loading ? "Updating…" : resultLabel}
             </span>
           </div>
-          {error ? <EmptyState detail={error} title="Unable to load skills" /> : null}
+          {error && skills.length === 0 ? (
+            <EmptyState detail={error} title="Unable to load skills" />
+          ) : null}
           {!error && loading && skills.length === 0 ? (
             <EmptyState title="Searching skills" />
           ) : null}
@@ -251,20 +263,12 @@ export function SkillsClient({
           {skills.length > 0 ? (
             <>
               <SkillLeaderboard skills={skills} />
-              {hasMore || error ? (
-                <div className="server-grid-more">
-                  {error ? <p>{error}</p> : null}
-                  {hasMore ? (
-                    <button
-                      className="server-grid-load-more"
-                      disabled={loading}
-                      onClick={() => void loadMore()}
-                    >
-                      {loading ? "Loading..." : "Load more"}
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+              <InfiniteScrollTrigger
+                error={error}
+                hasMore={hasMore}
+                loading={loading}
+                onLoadMore={loadMore}
+              />
             </>
           ) : null}
         </div>
