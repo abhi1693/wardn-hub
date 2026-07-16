@@ -4,10 +4,10 @@ import asyncio
 from app.cli.skills import (
     DEFAULT_IMPORT_TIMEOUT_SECONDS,
     GITHUB_TOKEN_ENV,
+    SkillCliError,
+    add_import_github_arguments,
     add_skill_from_args,
-    github_owner_argument,
     import_github_from_args,
-    import_subfolder_argument,
     mark_official_from_args,
     refresh_github_from_args,
 )
@@ -56,33 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     skills_add.add_argument("--repository-url", default="", help="Repository URL.")
     skills_import = skills_subparsers.add_parser(
         "import-github",
-        help="Import skills from active repositories owned by a GitHub user or organization.",
+        help="Search and stream matching GitHub repositories into the skills catalog.",
     )
-    skills_import.add_argument(
-        "owner",
-        type=github_owner_argument,
-        help="Bare GitHub user or organization login.",
-    )
-    skills_import.add_argument(
-        "--subfolder",
-        required=True,
-        type=import_subfolder_argument,
-        help=(
-            "Repository subfolder containing one SKILL.md or nested skill folders. "
-            "The same path is scanned in every active repository."
-        ),
-    )
-    skills_import.add_argument(
-        "--github-token",
-        default="",
-        help=f"GitHub token. Defaults to ${GITHUB_TOKEN_ENV} when set.",
-    )
-    skills_import.add_argument(
-        "--timeout-seconds",
-        type=float,
-        default=DEFAULT_IMPORT_TIMEOUT_SECONDS,
-        help="GitHub request timeout in seconds.",
-    )
+    add_import_github_arguments(skills_import)
     skills_refresh = skills_subparsers.add_parser(
         "refresh",
         help=(
@@ -132,8 +108,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "skills" and args.skills_command == "add":
         return asyncio.run(add_skill_from_args(args))
     elif args.command == "skills" and args.skills_command == "import-github":
-        configure_logging()
-        return asyncio.run(import_github_from_args(args))
+        try:
+            configure_logging()
+            return asyncio.run(import_github_from_args(args))
+        except SkillCliError as exc:
+            parser.error(str(exc))
     elif args.command == "skills" and args.skills_command == "refresh":
         configure_logging()
         return asyncio.run(refresh_github_from_args(args))

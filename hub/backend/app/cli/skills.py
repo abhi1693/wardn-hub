@@ -8,7 +8,11 @@ import json
 import logging
 import os
 import re
+import time
+from collections import OrderedDict
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Literal, NotRequired, TypedDict
 from urllib.parse import quote, urlparse
@@ -30,6 +34,12 @@ GITHUB_OWNER_PATTERN = re.compile(
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GITHUB_API_ROOT = "https://api.github.com"
 GITHUB_REPOSITORIES_PER_PAGE = 100
+GITHUB_SEARCH_RESULT_LIMIT = 1000
+GITHUB_VERIFIED_ORG_CACHE_SIZE = 1024
+GITHUB_CREATED_AT_FLOOR = datetime(1970, 1, 1, tzinfo=UTC)
+GITHUB_RATE_LIMIT_WAIT_BUFFER_SECONDS = 1.0
+GITHUB_SECONDARY_RATE_LIMIT_WAIT_SECONDS = 60.0
+GITHUB_SECONDARY_RATE_LIMIT_MAX_WAIT_SECONDS = 15 * 60.0
 DEFAULT_USER_AGENT = "WardnHubSkillsImporter/0.1"
 DEFAULT_IMPORT_TIMEOUT_SECONDS = 20.0
 MAX_LOGGED_SKILL_PATHS = 20
@@ -149,6 +159,7 @@ class GitHubOwner:
 class GitHubImportRepository:
     repo: GitHubRepository
     default_branch: str
+    owner_avatar_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -156,6 +167,77 @@ class GitHubRepositoryListing:
     owner: GitHubOwner
     repositories: list[GitHubImportRepository]
     listed_count: int
+
+
+@dataclass(frozen=True)
+class GitHubRepositoryFilters:
+    legacy_owners: tuple[str, ...] = ()
+    organizations: tuple[str, ...] = ()
+    users: tuple[str, ...] = ()
+    repositories: tuple[str, ...] = ()
+    all_github: bool = False
+    min_stars: int | None = None
+    max_stars: int | None = None
+    pushed_after: str = ""
+    pushed_before: str = ""
+    created_after: str = ""
+    created_before: str = ""
+    language: str = ""
+    topics: tuple[str, ...] = ()
+    verified_orgs_only: bool = False
+    max_repositories: int | None = None
+
+    @property
+    def scope_label(self) -> str:
+        if self.all_github:
+            return "all GitHub"
+        targets = [
+            *self.legacy_owners,
+            *(f"org:{owner}" for owner in self.organizations),
+            *(f"user:{owner}" for owner in self.users),
+            *(f"repo:{repository}" for repository in self.repositories),
+        ]
+        return ", ".join(targets)
+
+
+@dataclass
+class GitHubDiscoveryStats:
+    scope_label: str
+    search_query_count: int = 0
+    listed_repository_count: int = 0
+    active_repository_count: int = 0
+    filtered_repository_count: int = 0
+    known_repository_count: int | None = None
+
+
+@dataclass(frozen=True)
+class GitHubRepositorySearchPage:
+    total_count: int
+    incomplete_results: bool
+    items: list[dict[str, object]]
+
+
+@dataclass(frozen=True)
+class GitHubSearchTarget:
+    qualifier: str
+    value: str
+    avatar_url: str = ""
+
+
+@dataclass
+class GitHubSearchBudget:
+    remaining: int | None
+    exhausted: bool = False
+
+    def consume(self) -> bool:
+        if self.remaining is None:
+            return True
+        if self.remaining <= 0:
+            self.exhausted = True
+            return False
+        self.remaining -= 1
+        self.exhausted = self.remaining == 0
+        return True
 
 
 @dataclass(frozen=True)
@@ -192,10 +274,98 @@ class SkillRefreshIssue:
     reason: str
 
 
+@dataclass(frozen=True)
+class GitHubRateLimitWait:
+    seconds: float
+    reason: Literal["primary", "secondary"]
+
+
 def github_http_error(status_code: int, message: str) -> SkillCliError:
     if status_code in {401, 403, 429} or status_code >= 500:
         return GitHubSystemicError(message)
     return SkillCliError(message)
+
+
+def github_response_header(response: object, name: str) -> str:
+    headers = getattr(response, "headers", {})
+    if not hasattr(headers, "get"):
+        return ""
+    value = headers.get(name, "")
+    return str(value).strip()
+
+
+def github_rate_limit_response_text(response: object) -> str:
+    text = str(getattr(response, "text", "") or "")
+    try:
+        payload = response.json()  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        return text.casefold()
+    if isinstance(payload, dict):
+        message = payload.get("message")
+        documentation_url = payload.get("documentation_url")
+        values = [text]
+        if isinstance(message, str):
+            values.append(message)
+        if isinstance(documentation_url, str):
+            values.append(documentation_url)
+        return " ".join(values).casefold()
+    return text.casefold()
+
+
+def github_rate_limit_wait(
+    response: object,
+    *,
+    retry_attempt: int,
+    now_epoch_seconds: float,
+) -> GitHubRateLimitWait | None:
+    status_code = getattr(response, "status_code", None)
+    if status_code not in {403, 429}:
+        return None
+
+    retry_after = github_response_header(response, "retry-after")
+    if retry_after:
+        try:
+            retry_after_seconds = float(retry_after)
+        except ValueError:
+            retry_after_seconds = -1
+        if retry_after_seconds >= 0:
+            return GitHubRateLimitWait(
+                seconds=retry_after_seconds + GITHUB_RATE_LIMIT_WAIT_BUFFER_SECONDS,
+                reason="secondary",
+            )
+
+    remaining = github_response_header(response, "x-ratelimit-remaining")
+    reset = github_response_header(response, "x-ratelimit-reset")
+    if remaining == "0":
+        try:
+            reset_epoch_seconds = float(reset)
+        except ValueError:
+            reset_epoch_seconds = now_epoch_seconds + GITHUB_SECONDARY_RATE_LIMIT_WAIT_SECONDS
+        return GitHubRateLimitWait(
+            seconds=max(0.0, reset_epoch_seconds - now_epoch_seconds)
+            + GITHUB_RATE_LIMIT_WAIT_BUFFER_SECONDS,
+            reason="primary",
+        )
+
+    response_text = github_rate_limit_response_text(response)
+    is_secondary = status_code == 429 or any(
+        marker in response_text
+        for marker in (
+            "secondary rate limit",
+            "abuse detection",
+            "rate limit exceeded",
+            "rate-limits-for-the-rest-api",
+        )
+    )
+    if not is_secondary:
+        return None
+    exponential_wait = GITHUB_SECONDARY_RATE_LIMIT_WAIT_SECONDS * (
+        2 ** min(retry_attempt, 4)
+    )
+    return GitHubRateLimitWait(
+        seconds=min(exponential_wait, GITHUB_SECONDARY_RATE_LIMIT_MAX_WAIT_SECONDS),
+        reason="secondary",
+    )
 
 
 def github_json(response: object, description: str) -> object:
@@ -321,11 +491,167 @@ def github_owner_argument(value: str) -> str:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
+def github_repository_argument(value: str) -> str:
+    normalized = value.strip().strip("/")
+    parts = normalized.split("/")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(
+            "repository must look like owner/repo, for example anthropics/skills"
+        )
+    try:
+        owner = validate_github_owner(parts[0])
+    except SkillCliError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    repository = parts[1].removesuffix(".git")
+    if (
+        not repository
+        or len(repository) > 100
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+", repository)
+    ):
+        raise argparse.ArgumentTypeError(
+            "repository name may contain letters, numbers, dots, hyphens, and underscores"
+        )
+    return f"{owner}/{repository}"
+
+
+def github_timestamp_argument(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise argparse.ArgumentTypeError("timestamp must not be empty")
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "timestamp must be an ISO-8601 date or datetime, for example 2026-01-31"
+        ) from exc
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+        return normalized
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def github_language_argument(value: str) -> str:
+    normalized = value.strip()
+    if not normalized or len(normalized) > 100 or '"' in normalized:
+        raise argparse.ArgumentTypeError("language must be a nonempty GitHub language name")
+    return normalized
+
+
+def github_topic_argument(value: str) -> str:
+    normalized = value.strip().lower()
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", normalized) or len(normalized) > 50:
+        raise argparse.ArgumentTypeError(
+            "topic must contain lowercase letters, numbers, and single hyphens"
+        )
+    return normalized
+
+
+def nonnegative_int_argument(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be zero or greater")
+    return parsed
+
+
+def positive_int_argument(value: str) -> int:
+    parsed = nonnegative_int_argument(value)
+    if parsed == 0:
+        raise argparse.ArgumentTypeError("value must be greater than zero")
+    return parsed
+
+
 def import_subfolder_argument(value: str) -> str:
     try:
         return validate_import_subfolder(value)
     except SkillCliError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def unique_casefolded(values: list[str]) -> tuple[str, ...]:
+    unique: dict[str, str] = {}
+    for value in values:
+        unique.setdefault(value.casefold(), value)
+    return tuple(unique.values())
+
+
+def github_repository_filters_from_args(args: argparse.Namespace) -> GitHubRepositoryFilters:
+    positional_owner = str(getattr(args, "owner", "") or "").strip()
+    generic_owners = list(getattr(args, "owners", []) or [])
+    legacy_owners = unique_casefolded(
+        [
+            *(validate_github_owner(owner) for owner in generic_owners),
+            *([validate_github_owner(positional_owner)] if positional_owner else []),
+        ]
+    )
+    organizations = unique_casefolded(
+        [validate_github_owner(owner) for owner in (getattr(args, "organizations", []) or [])]
+    )
+    users = unique_casefolded(
+        [validate_github_owner(owner) for owner in (getattr(args, "users", []) or [])]
+    )
+    raw_repositories = list(getattr(args, "repositories", []) or [])
+    repositories = unique_casefolded(
+        [github_repository_argument(repository) for repository in raw_repositories]
+    )
+    all_github = bool(getattr(args, "all_github", False))
+    if all_github and (legacy_owners or organizations or users or repositories):
+        raise SkillCliError(
+            "--all-github cannot be combined with owner, org, user, or repo targets"
+        )
+    if not all_github and not (legacy_owners or organizations or users or repositories):
+        raise SkillCliError(
+            "choose a GitHub target: OWNER, --owner, --org, --user, --repo, or --all-github"
+        )
+
+    min_stars = getattr(args, "min_stars", None)
+    max_stars = getattr(args, "max_stars", None)
+    if min_stars is not None and max_stars is not None and min_stars > max_stars:
+        raise SkillCliError("--min-stars cannot be greater than --max-stars")
+
+    created_after = str(getattr(args, "created_after", "") or "")
+    created_before = str(getattr(args, "created_before", "") or "")
+    if created_after and created_before:
+        after = parse_github_datetime(created_after, upper_bound=False)
+        before = parse_github_datetime(created_before, upper_bound=True)
+        if after > before:
+            raise SkillCliError("--created-after cannot be later than --created-before")
+
+    pushed_after = str(getattr(args, "pushed_after", "") or "")
+    active_within_days = getattr(args, "active_within_days", None)
+    if pushed_after and active_within_days is not None:
+        raise SkillCliError("--active-within-days cannot be combined with --pushed-after")
+    if active_within_days is not None:
+        pushed_after = (
+            datetime.now(tz=UTC) - timedelta(days=active_within_days)
+        ).date().isoformat()
+    pushed_before = str(getattr(args, "pushed_before", "") or "")
+    if pushed_after and pushed_before:
+        after = parse_github_datetime(pushed_after, upper_bound=False)
+        before = parse_github_datetime(pushed_before, upper_bound=True)
+        if after > before:
+            raise SkillCliError("--pushed-after cannot be later than --pushed-before")
+
+    return GitHubRepositoryFilters(
+        legacy_owners=legacy_owners,
+        organizations=organizations,
+        users=users,
+        repositories=repositories,
+        all_github=all_github,
+        min_stars=min_stars,
+        max_stars=max_stars,
+        pushed_after=pushed_after,
+        pushed_before=pushed_before,
+        created_after=created_after,
+        created_before=created_before,
+        language=str(getattr(args, "language", "") or "").strip(),
+        topics=unique_casefolded(list(getattr(args, "topics", []) or [])),
+        verified_orgs_only=bool(getattr(args, "verified_orgs_only", False)),
+        max_repositories=getattr(args, "max_repositories", None),
+    )
 
 
 def validate_skill_slug(slug: str) -> str:
@@ -636,6 +962,123 @@ def parse_github_repository_url(repository_url: str) -> GitHubRepository:
     )
 
 
+def parse_github_datetime(value: str, *, upper_bound: bool) -> datetime:
+    normalized = value.strip()
+    is_date = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized))
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise SkillCliError(f"invalid GitHub timestamp: {value}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    else:
+        parsed = parsed.astimezone(UTC)
+    if upper_bound and is_date:
+        parsed += timedelta(days=1, seconds=-1)
+    return parsed.replace(microsecond=0)
+
+
+def github_search_timestamp(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def github_created_window(filters: GitHubRepositoryFilters) -> tuple[datetime, datetime]:
+    start = (
+        parse_github_datetime(filters.created_after, upper_bound=False)
+        if filters.created_after
+        else GITHUB_CREATED_AT_FLOOR
+    )
+    end = (
+        parse_github_datetime(filters.created_before, upper_bound=True)
+        if filters.created_before
+        else datetime.now(tz=UTC) + timedelta(days=1)
+    )
+    return start, end
+
+
+def github_repository_search_query(
+    filters: GitHubRepositoryFilters,
+    target: GitHubSearchTarget,
+    *,
+    created_start: datetime,
+    created_end: datetime,
+) -> str:
+    qualifiers = ["is:public", "archived:false"]
+    if target.qualifier:
+        qualifiers.append(f"{target.qualifier}:{target.value}")
+    if filters.min_stars is not None:
+        qualifiers.append(f"stars:>={filters.min_stars}")
+    if filters.max_stars is not None:
+        qualifiers.append(f"stars:<={filters.max_stars}")
+    if filters.pushed_after:
+        qualifiers.append(f"pushed:>={filters.pushed_after}")
+    if filters.pushed_before:
+        qualifiers.append(f"pushed:<={filters.pushed_before}")
+    if filters.language:
+        qualifiers.append(f'language:"{filters.language}"')
+    qualifiers.extend(f"topic:{topic}" for topic in filters.topics)
+    qualifiers.append(
+        "created:"
+        f"{github_search_timestamp(created_start)}..{github_search_timestamp(created_end)}"
+    )
+    return " ".join(qualifiers)
+
+
+def github_repository_from_search_item(
+    item: dict[str, object],
+) -> tuple[GitHubImportRepository | None, str]:
+    if (
+        item.get("private") is not False
+        or item.get("fork") is not False
+        or item.get("archived") is not False
+        or item.get("disabled") is not False
+    ):
+        return None, "repository is private, forked, archived, or disabled"
+    visibility = item.get("visibility")
+    if visibility not in {None, "public"}:
+        return None, "repository is not public"
+
+    name_value = item.get("name")
+    full_name_value = item.get("full_name")
+    owner_value = item.get("owner")
+    if not isinstance(name_value, str) or not name_value.strip():
+        raise GitHubSystemicError("GitHub repository search result has no repository name")
+    if not isinstance(full_name_value, str) or not isinstance(owner_value, dict):
+        raise GitHubSystemicError("GitHub repository search result has invalid ownership")
+    owner_login_value = owner_value.get("login")
+    owner_type = owner_value.get("type")
+    if not isinstance(owner_login_value, str) or owner_type not in {"User", "Organization"}:
+        raise GitHubSystemicError("GitHub repository search result has invalid owner metadata")
+    try:
+        owner_login = validate_github_owner(owner_login_value)
+    except SkillCliError as exc:
+        raise GitHubSystemicError(
+            "GitHub repository search result has an invalid owner login"
+        ) from exc
+    name = name_value.strip()
+    expected_source = f"{owner_login}/{name}"
+    if full_name_value.casefold() != expected_source.casefold():
+        raise GitHubSystemicError("GitHub repository search result has inconsistent ownership")
+    default_branch_value = item.get("default_branch")
+    default_branch = (
+        default_branch_value.strip() if isinstance(default_branch_value, str) else ""
+    )
+    avatar_value = owner_value.get("avatar_url")
+    avatar_url = avatar_value.strip() if isinstance(avatar_value, str) else ""
+    return (
+        GitHubImportRepository(
+            repo=GitHubRepository(
+                owner=owner_login,
+                repo=name,
+                url=f"https://github.com/{owner_login}/{name}",
+            ),
+            default_branch=default_branch,
+            owner_avatar_url=avatar_url,
+        ),
+        str(owner_type),
+    )
+
+
 class GitHubClient:
     def __init__(
         self,
@@ -657,6 +1100,7 @@ class GitHubClient:
             follow_redirects=True,
             event_hooks={"request": [validate_github_request]},
         )
+        self._verified_org_cache: OrderedDict[str, bool] = OrderedDict()
 
     async def __aenter__(self) -> GitHubClient:
         return self
@@ -664,8 +1108,52 @@ class GitHubClient:
     async def __aexit__(self, *args: object) -> None:
         await self._client.aclose()
 
+    async def _get(
+        self,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        follow_redirects: bool | None = None,
+    ) -> httpx.Response:
+        retry_attempt = 0
+        while True:
+            request_kwargs: dict[str, object] = {}
+            if params is not None:
+                request_kwargs["params"] = params
+            if follow_redirects is not None:
+                request_kwargs["follow_redirects"] = follow_redirects
+            response = await self._client.get(url, **request_kwargs)  # type: ignore[arg-type]
+            wait = github_rate_limit_wait(
+                response,
+                retry_attempt=retry_attempt,
+                now_epoch_seconds=time.time(),
+            )
+            if wait is None:
+                return response
+            retry_attempt += 1
+            logger.warning(
+                "github request rate limited; waiting before retry",
+                extra={
+                    "request_host": urlparse(url).hostname,
+                    "request_path": urlparse(url).path,
+                    "rate_limit_reason": wait.reason,
+                    "rate_limit_resource": github_response_header(
+                        response, "x-ratelimit-resource"
+                    ),
+                    "rate_limit_remaining": github_response_header(
+                        response, "x-ratelimit-remaining"
+                    ),
+                    "rate_limit_reset": github_response_header(
+                        response, "x-ratelimit-reset"
+                    ),
+                    "retry_attempt": retry_attempt,
+                    "retry_wait_seconds": wait.seconds,
+                },
+            )
+            await asyncio.sleep(wait.seconds)
+
     async def owner(self, owner: str) -> GitHubOwner:
-        response = await self._client.get(
+        response = await self._get(
             f"{GITHUB_API_ROOT}/users/{quote(owner, safe='')}"
         )
         if response.status_code == 404:
@@ -699,6 +1187,232 @@ class GitHubClient:
             avatar_url=avatar_url,
         )
 
+    async def organization_is_verified(self, owner: str) -> bool:
+        cache_key = owner.casefold()
+        cached = self._verified_org_cache.get(cache_key)
+        if cached is not None:
+            self._verified_org_cache.move_to_end(cache_key)
+            return cached
+        response = await self._get(
+            f"{GITHUB_API_ROOT}/orgs/{quote(owner, safe='')}"
+        )
+        if response.status_code == 404:
+            return False
+        if response.status_code >= 400:
+            raise github_http_error(
+                response.status_code,
+                f"GitHub organization lookup failed: {response.text}",
+            )
+        payload = github_json(response, "organization metadata")
+        if not isinstance(payload, dict) or not isinstance(payload.get("is_verified"), bool):
+            raise GitHubSystemicError("GitHub organization metadata has no verified status")
+        verified = payload["is_verified"]
+        self._verified_org_cache[cache_key] = verified
+        self._verified_org_cache.move_to_end(cache_key)
+        if len(self._verified_org_cache) > GITHUB_VERIFIED_ORG_CACHE_SIZE:
+            self._verified_org_cache.popitem(last=False)
+        return verified
+
+    async def search_repository_page(
+        self,
+        query: str,
+        *,
+        page: int,
+    ) -> GitHubRepositorySearchPage:
+        response = await self._get(
+            f"{GITHUB_API_ROOT}/search/repositories",
+            params={
+                "q": query,
+                "sort": "updated",
+                "order": "desc",
+                "page": str(page),
+                "per_page": str(GITHUB_REPOSITORIES_PER_PAGE),
+            },
+        )
+        if response.status_code >= 400:
+            raise github_http_error(
+                response.status_code,
+                f"GitHub repository search failed: {response.text}",
+            )
+        payload = github_json(response, "repository search")
+        if not isinstance(payload, dict):
+            raise GitHubSystemicError("GitHub returned an invalid repository search response")
+        total_count = payload.get("total_count")
+        incomplete_results = payload.get("incomplete_results")
+        items = payload.get("items")
+        if (
+            not isinstance(total_count, int)
+            or total_count < 0
+            or not isinstance(incomplete_results, bool)
+            or not isinstance(items, list)
+            or any(not isinstance(item, dict) for item in items)
+        ):
+            raise GitHubSystemicError("GitHub returned an invalid repository search response")
+        if incomplete_results:
+            raise GitHubSystemicError("GitHub repository search returned incomplete results")
+        return GitHubRepositorySearchPage(
+            total_count=total_count,
+            incomplete_results=incomplete_results,
+            items=items,
+        )
+
+    async def _search_repository_window(
+        self,
+        filters: GitHubRepositoryFilters,
+        target: GitHubSearchTarget,
+        *,
+        created_start: datetime,
+        created_end: datetime,
+        stats: GitHubDiscoveryStats,
+        budget: GitHubSearchBudget,
+    ) -> AsyncIterator[GitHubImportRepository]:
+        if budget.exhausted:
+            return
+        query = github_repository_search_query(
+            filters,
+            target,
+            created_start=created_start,
+            created_end=created_end,
+        )
+        first_page = await self.search_repository_page(query, page=1)
+        stats.search_query_count += 1
+        remaining_budget = budget.remaining
+        must_split = (
+            first_page.total_count > GITHUB_SEARCH_RESULT_LIMIT
+            and (remaining_budget is None or remaining_budget > GITHUB_SEARCH_RESULT_LIMIT)
+        )
+        if must_split:
+            if created_start >= created_end:
+                raise SkillCliError(
+                    "GitHub search has more than 1,000 repositories with the same creation "
+                    "timestamp; add a narrower target or repository filter"
+                )
+            midpoint = created_start + (created_end - created_start) / 2
+            midpoint = midpoint.replace(microsecond=0)
+            if midpoint < created_start:
+                midpoint = created_start
+            right_start = midpoint + timedelta(seconds=1)
+            if right_start > created_end:
+                raise SkillCliError(
+                    "GitHub search cannot split a result window below one second; "
+                    "add a narrower target or repository filter"
+                )
+            async for repository in self._search_repository_window(
+                filters,
+                target,
+                created_start=created_start,
+                created_end=midpoint,
+                stats=stats,
+                budget=budget,
+            ):
+                yield repository
+            async for repository in self._search_repository_window(
+                filters,
+                target,
+                created_start=right_start,
+                created_end=created_end,
+                stats=stats,
+                budget=budget,
+            ):
+                yield repository
+            return
+
+        maximum_results = min(first_page.total_count, GITHUB_SEARCH_RESULT_LIMIT)
+        page_count = (maximum_results + GITHUB_REPOSITORIES_PER_PAGE - 1) // (
+            GITHUB_REPOSITORIES_PER_PAGE
+        )
+        for page_number in range(1, page_count + 1):
+            if budget.exhausted:
+                return
+            page = (
+                first_page
+                if page_number == 1
+                else await self.search_repository_page(query, page=page_number)
+            )
+            if page_number > 1:
+                stats.search_query_count += 1
+            stats.listed_repository_count += len(page.items)
+            for raw_item in page.items:
+                candidate, owner_type = github_repository_from_search_item(raw_item)
+                if candidate is None:
+                    stats.filtered_repository_count += 1
+                    continue
+                if filters.verified_orgs_only:
+                    if owner_type != "Organization" or not await self.organization_is_verified(
+                        candidate.repo.owner
+                    ):
+                        stats.filtered_repository_count += 1
+                        continue
+                if not budget.consume():
+                    return
+                stats.active_repository_count += 1
+                yield candidate
+
+    async def iter_repositories(
+        self,
+        filters: GitHubRepositoryFilters,
+        stats: GitHubDiscoveryStats,
+    ) -> AsyncIterator[GitHubImportRepository]:
+        targets: list[GitHubSearchTarget] = []
+        for requested_owner in filters.legacy_owners:
+            owner = await self.owner(requested_owner)
+            qualifier = "org" if owner.account_type == "Organization" else "user"
+            targets.append(
+                GitHubSearchTarget(
+                    qualifier=qualifier,
+                    value=owner.login,
+                    avatar_url=owner.avatar_url,
+                )
+            )
+        targets.extend(
+            GitHubSearchTarget(qualifier="org", value=owner)
+            for owner in filters.organizations
+        )
+        targets.extend(
+            GitHubSearchTarget(qualifier="user", value=owner) for owner in filters.users
+        )
+        targets.extend(
+            GitHubSearchTarget(qualifier="repo", value=repository)
+            for repository in filters.repositories
+            if repository.split("/", 1)[0].casefold()
+            not in {
+                *(owner.casefold() for owner in filters.legacy_owners),
+                *(owner.casefold() for owner in filters.organizations),
+                *(owner.casefold() for owner in filters.users),
+            }
+        )
+        if filters.all_github:
+            targets.append(GitHubSearchTarget(qualifier="", value=""))
+
+        unique_targets: dict[tuple[str, str], GitHubSearchTarget] = {}
+        for target in targets:
+            unique_targets.setdefault(
+                (target.qualifier, target.value.casefold()),
+                target,
+            )
+        start, end = github_created_window(filters)
+        budget = GitHubSearchBudget(remaining=filters.max_repositories)
+        for target in unique_targets.values():
+            if budget.exhausted:
+                break
+            if filters.verified_orgs_only and target.qualifier == "user":
+                continue
+            if (
+                filters.verified_orgs_only
+                and target.qualifier == "org"
+                and not await self.organization_is_verified(target.value)
+            ):
+                continue
+            async for repository in self._search_repository_window(
+                filters,
+                target,
+                created_start=start,
+                created_end=end,
+                stats=stats,
+                budget=budget,
+            ):
+                yield repository
+
     async def list_active_repositories(self, owner: str) -> GitHubRepositoryListing:
         owner_metadata = await self.owner(owner)
         encoded_owner = quote(owner_metadata.login, safe="")
@@ -723,9 +1437,9 @@ class GitHubClient:
                 raise GitHubSystemicError("GitHub repository pagination repeated a page")
             seen_pages.add(page_url)
             if params is None:
-                response = await self._client.get(page_url)
+                response = await self._get(page_url)
             else:
-                response = await self._client.get(page_url, params=params)
+                response = await self._get(page_url, params=params)
             if response.status_code == 404:
                 raise SkillCliError(
                     f"GitHub repositories not found for owner: {owner_metadata.login}"
@@ -810,7 +1524,7 @@ class GitHubClient:
         )
 
     async def repository_metadata(self, repo: GitHubRepository) -> GitHubRepositoryMetadata:
-        response = await self._client.get(
+        response = await self._get(
             f"https://api.github.com/repos/{repo.owner}/{repo.repo}"
         )
         if response.status_code == 404:
@@ -862,7 +1576,7 @@ class GitHubClient:
         )
 
     async def resolve_commit_sha(self, repo: GitHubRepository, ref: str) -> str:
-        response = await self._client.get(
+        response = await self._get(
             f"https://api.github.com/repos/{repo.owner}/{repo.repo}/commits",
             params={"sha": ref, "per_page": "1"},
         )
@@ -884,7 +1598,7 @@ class GitHubClient:
         return commit_sha.lower()
 
     async def recursive_tree(self, repo: GitHubRepository, ref: str) -> list[GitHubTreeItem]:
-        response = await self._client.get(
+        response = await self._get(
             f"https://api.github.com/repos/{repo.owner}/{repo.repo}/git/trees/{ref}",
             params={"recursive": "1"},
         )
@@ -941,7 +1655,7 @@ class GitHubClient:
     ) -> bytes:
         encoded_ref = "/".join(quote(part, safe="") for part in ref.split("/"))
         encoded_path = "/".join(quote(part, safe="") for part in path.split("/"))
-        response = await self._client.get(
+        response = await self._get(
             f"https://raw.githubusercontent.com/{repo.owner}/{repo.repo}/"
             f"{encoded_ref}/{encoded_path}",
             follow_redirects=False,
@@ -1501,10 +2215,12 @@ async def save_imported_repository(
 
 
 async def import_github_from_args(args: argparse.Namespace) -> int:
-    requested_owner = validate_github_owner(args.owner)
-    subfolder = validate_import_subfolder(args.subfolder)
+    filters = github_repository_filters_from_args(args)
+    requested_owner = filters.legacy_owners[0] if len(filters.legacy_owners) == 1 else ""
+    raw_subfolder = str(getattr(args, "subfolder", "") or "")
+    subfolder = validate_import_subfolder(raw_subfolder) if raw_subfolder else ""
     token = github_token_from_args(args)
-    canonical_owner = requested_owner
+    scope_label = filters.scope_label
     listed_repository_count = 0
     active_repository_count = 0
     matched_repository_count = 0
@@ -1515,14 +2231,36 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
     imported_skill_count = 0
     imported_bytes = 0
     owner_discovery_failed = False
+    discovery_stats = GitHubDiscoveryStats(scope_label=scope_label)
     log_context: dict[str, object] = {
-        "requested_owner": requested_owner,
+        "requested_owner": requested_owner or None,
+        "scope": scope_label,
         "subfolder": subfolder,
+        "repository_filters": {
+            "min_stars": filters.min_stars,
+            "max_stars": filters.max_stars,
+            "pushed_after": filters.pushed_after,
+            "pushed_before": filters.pushed_before,
+            "created_after": filters.created_after,
+            "created_before": filters.created_before,
+            "language": filters.language,
+            "topics": filters.topics,
+            "verified_orgs_only": filters.verified_orgs_only,
+            "max_repositories": filters.max_repositories,
+        },
         "github_token_configured": bool(token),
     }
     logger.info("github skills import started", extra=log_context)
 
     def finish_import() -> int:
+        effective_listed_count = max(
+            listed_repository_count,
+            discovery_stats.listed_repository_count,
+        )
+        effective_active_count = max(
+            active_repository_count,
+            discovery_stats.active_repository_count,
+        )
         failed = (
             owner_discovery_failed
             or failed_repository_count > 0
@@ -1533,9 +2271,9 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
             "github skills import completed",
             extra={
                 **log_context,
-                "owner": canonical_owner,
-                "listed_repository_count": listed_repository_count,
-                "active_repository_count": active_repository_count,
+                "scope": scope_label,
+                "listed_repository_count": effective_listed_count,
+                "active_repository_count": effective_active_count,
                 "matched_repository_count": matched_repository_count,
                 "imported_repository_count": imported_repository_count,
                 "skipped_repository_count": skipped_repository_count,
@@ -1544,12 +2282,13 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                 "owner_discovery_failed": owner_discovery_failed,
                 "skill_count": imported_skill_count,
                 "skill_bundle_bytes": imported_bytes,
+                "search_request_count": discovery_stats.search_query_count,
             },
         )
         summary = (
             f"imported {imported_skill_count} skill(s) from "
-            f"{imported_repository_count} of {active_repository_count} active GitHub "
-            f"repositories for {canonical_owner}: {skipped_repository_count} repositories "
+            f"{imported_repository_count} of {effective_active_count} active GitHub "
+            f"repositories for {scope_label}: {skipped_repository_count} repositories "
             f"skipped, {failed_repository_count} failed, {failed_skill_count} skills failed"
         )
         if owner_discovery_failed:
@@ -1558,38 +2297,78 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
         return 1 if failed or no_skills else 0
 
     async with GitHubClient(token=token, timeout_seconds=args.timeout_seconds) as client:
-        try:
-            listing = await client.list_active_repositories(requested_owner)
-        except (SkillCliError, httpx.RequestError) as exc:
-            owner_discovery_failed = True
-            logger.error(
-                "github skills import owner discovery failed",
+        iter_repositories = getattr(client, "iter_repositories", None)
+        streaming_discovery = callable(iter_repositories)
+        if streaming_discovery:
+            repository_iterator = iter_repositories(filters, discovery_stats).__aiter__()
+            logger.info("github skills import repository streaming started", extra=log_context)
+        else:
+            if len(filters.legacy_owners) != 1 or any(
+                (
+                    filters.organizations,
+                    filters.users,
+                    filters.repositories,
+                    filters.all_github,
+                )
+            ):
+                raise SkillCliError("GitHub client does not support filtered repository discovery")
+            try:
+                listing = await client.list_active_repositories(requested_owner)
+            except (SkillCliError, httpx.RequestError) as exc:
+                owner_discovery_failed = True
+                logger.error(
+                    "github skills import owner discovery failed",
+                    extra={
+                        **log_context,
+                        "failure_reason": str(exc) or type(exc).__name__,
+                    },
+                )
+                return finish_import()
+            scope_label = listing.owner.login
+            discovery_stats.scope_label = scope_label
+            listed_repository_count = listing.listed_count
+            active_repository_count = len(listing.repositories)
+            discovery_stats.known_repository_count = active_repository_count
+            logger.info(
+                "github skills import repositories listed",
                 extra={
                     **log_context,
-                    "failure_reason": str(exc) or type(exc).__name__,
+                    "owner_type": listing.owner.account_type,
+                    "owner_avatar_url_configured": bool(listing.owner.avatar_url),
+                    "listed_repository_count": listed_repository_count,
+                    "active_repository_count": active_repository_count,
+                    "filtered_repository_count": listed_repository_count
+                    - active_repository_count,
                 },
             )
-            return finish_import()
 
-        canonical_owner = listing.owner.login
-        listed_repository_count = listing.listed_count
-        repositories = listing.repositories
-        active_repository_count = len(repositories)
-        log_context["owner"] = canonical_owner
-        logger.info(
-            "github skills import repositories listed",
-            extra={
-                **log_context,
-                "owner_type": listing.owner.account_type,
-                "owner_avatar_url_configured": bool(listing.owner.avatar_url),
-                "listed_repository_count": listed_repository_count,
-                "active_repository_count": active_repository_count,
-                "filtered_repository_count": listed_repository_count
-                - active_repository_count,
-            },
-        )
+            async def listed_repositories() -> AsyncIterator[GitHubImportRepository]:
+                for repository in listing.repositories:
+                    yield repository
 
-        for repository_index, candidate in enumerate(repositories):
+            repository_iterator = listed_repositories().__aiter__()
+
+        repository_index = 0
+        while True:
+            try:
+                candidate = await anext(repository_iterator)
+            except StopAsyncIteration:
+                break
+            except (SkillCliError, httpx.RequestError) as exc:
+                owner_discovery_failed = True
+                logger.error(
+                    "github skills import repository discovery failed",
+                    extra={
+                        **log_context,
+                        "failure_reason": str(exc) or type(exc).__name__,
+                    },
+                )
+                return finish_import()
+            if streaming_discovery:
+                listed_repository_count = discovery_stats.listed_repository_count
+                active_repository_count = discovery_stats.active_repository_count
+            current_repository_index = repository_index
+            repository_index += 1
             repo = candidate.repo
             repo_context = {
                 **log_context,
@@ -1618,7 +2397,11 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                 )
                 tree = await client.recursive_tree(repo, resolved_ref)
             except (GitHubSystemicError, httpx.RequestError) as exc:
-                failed_repository_count += active_repository_count - repository_index
+                failed_repository_count += (
+                    active_repository_count - current_repository_index
+                    if discovery_stats.known_repository_count is not None
+                    else 1
+                )
                 logger.error(
                     "github skills import aborted",
                     extra={
@@ -1749,7 +2532,8 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         tree=tree,
                         skill_path=skill_path,
                         fetch_ref=resolved_ref,
-                        owner_avatar_url=listing.owner.avatar_url,
+                        owner_avatar_url=metadata.owner_avatar_url
+                        or candidate.owner_avatar_url,
                         import_subfolder=subfolder,
                         bundle_items=bundle_items_by_path[skill_path],
                     )
@@ -1770,7 +2554,11 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     )
                     continue
                 except (GitHubSystemicError, httpx.RequestError) as exc:
-                    failed_repository_count += active_repository_count - repository_index
+                    failed_repository_count += (
+                        active_repository_count - current_repository_index
+                        if discovery_stats.known_repository_count is not None
+                        else 1
+                    )
                     logger.error(
                         "github skills import aborted",
                         extra={
@@ -1837,6 +2625,20 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         "snapshot_hash": snapshot.content_hash,
                     },
                 )
+
+        if streaming_discovery:
+            listed_repository_count = discovery_stats.listed_repository_count
+            active_repository_count = discovery_stats.active_repository_count
+            logger.info(
+                "github skills import repositories streamed",
+                extra={
+                    **log_context,
+                    "listed_repository_count": listed_repository_count,
+                    "active_repository_count": active_repository_count,
+                    "filtered_repository_count": discovery_stats.filtered_repository_count,
+                    "search_request_count": discovery_stats.search_query_count,
+                },
+            )
 
     return finish_import()
 
@@ -2096,6 +2898,135 @@ async def mark_official_from_args(args: argparse.Namespace) -> int:
     return 0
 
 
+def add_import_github_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "owner",
+        nargs="?",
+        type=github_owner_argument,
+        help="Optional legacy GitHub user or organization login.",
+    )
+    parser.add_argument(
+        "--owner",
+        dest="owners",
+        action="append",
+        default=[],
+        type=github_owner_argument,
+        help="Auto-detected GitHub user or organization. Repeat to target several owners.",
+    )
+    parser.add_argument(
+        "--org",
+        dest="organizations",
+        action="append",
+        default=[],
+        type=github_owner_argument,
+        help="GitHub organization to search. Repeat to target several organizations.",
+    )
+    parser.add_argument(
+        "--user",
+        dest="users",
+        action="append",
+        default=[],
+        type=github_owner_argument,
+        help="GitHub user to search. Repeat to target several users.",
+    )
+    parser.add_argument(
+        "--repo",
+        dest="repositories",
+        action="append",
+        default=[],
+        type=github_repository_argument,
+        help="GitHub repository in owner/repo form. Repeat to target several repositories.",
+    )
+    parser.add_argument(
+        "--all-github",
+        action="store_true",
+        help="Search all public GitHub repositories matching the supplied filters.",
+    )
+    parser.add_argument(
+        "--subfolder",
+        default=None,
+        type=import_subfolder_argument,
+        help=(
+            "Repository subfolder containing one SKILL.md or nested skill folders. "
+            "When omitted, scan the whole repository tree."
+        ),
+    )
+    parser.add_argument(
+        "--min-stars",
+        type=nonnegative_int_argument,
+        help="Only repositories with at least this many stars.",
+    )
+    parser.add_argument(
+        "--max-stars",
+        type=nonnegative_int_argument,
+        help="Only repositories with at most this many stars.",
+    )
+    parser.add_argument(
+        "--active-within-days",
+        type=positive_int_argument,
+        help="Only repositories pushed to within this many days.",
+    )
+    parser.add_argument(
+        "--pushed-after",
+        type=github_timestamp_argument,
+        default=None,
+        help="Only repositories pushed on or after this ISO-8601 date or datetime.",
+    )
+    parser.add_argument(
+        "--pushed-before",
+        type=github_timestamp_argument,
+        default=None,
+        help="Only repositories pushed on or before this ISO-8601 date or datetime.",
+    )
+    parser.add_argument(
+        "--created-after",
+        type=github_timestamp_argument,
+        default=None,
+        help="Only repositories created on or after this ISO-8601 date or datetime.",
+    )
+    parser.add_argument(
+        "--created-before",
+        type=github_timestamp_argument,
+        default=None,
+        help="Only repositories created on or before this ISO-8601 date or datetime.",
+    )
+    parser.add_argument(
+        "--language",
+        type=github_language_argument,
+        default=None,
+        help="Only repositories whose primary language matches this value.",
+    )
+    parser.add_argument(
+        "--topic",
+        dest="topics",
+        action="append",
+        default=[],
+        type=github_topic_argument,
+        help="Required GitHub repository topic. Repeat to require several topics.",
+    )
+    parser.add_argument(
+        "--verified-orgs-only",
+        action="store_true",
+        help="Only import repositories owned by GitHub-verified organizations.",
+    )
+    parser.add_argument(
+        "--max-repositories",
+        type=positive_int_argument,
+        help="Stop after this many matching active repositories.",
+    )
+    parser.add_argument(
+        "--github-token",
+        default="",
+        help=f"GitHub token. Defaults to ${GITHUB_TOKEN_ENV} when set.",
+    )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=DEFAULT_IMPORT_TIMEOUT_SECONDS,
+        help="GitHub request timeout in seconds.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli.skills")
     subparsers = parser.add_subparsers(dest="command")
@@ -2125,33 +3056,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--repository-url", default="", help="Repository URL.")
     import_parser = subparsers.add_parser(
         "import-github",
-        help="Import skills from active repositories owned by a GitHub user or organization.",
+        help="Search and stream matching GitHub repositories into the skills catalog.",
     )
-    import_parser.add_argument(
-        "owner",
-        type=github_owner_argument,
-        help="Bare GitHub user or organization login.",
-    )
-    import_parser.add_argument(
-        "--subfolder",
-        required=True,
-        type=import_subfolder_argument,
-        help=(
-            "Repository subfolder containing one SKILL.md or nested skill folders. "
-            "The same path is scanned in every active repository."
-        ),
-    )
-    import_parser.add_argument(
-        "--github-token",
-        default="",
-        help=f"GitHub token. Defaults to ${GITHUB_TOKEN_ENV} when set.",
-    )
-    import_parser.add_argument(
-        "--timeout-seconds",
-        type=float,
-        default=DEFAULT_IMPORT_TIMEOUT_SECONDS,
-        help="GitHub request timeout in seconds.",
-    )
+    add_import_github_arguments(import_parser)
     refresh_parser = subparsers.add_parser(
         "refresh",
         help=(

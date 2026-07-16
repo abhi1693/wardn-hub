@@ -586,6 +586,247 @@ async def test_github_lists_user_owned_repositories(
     assert listing.listed_count == 0
 
 
+def github_search_repository(name: str, *, owner: str = "acme") -> dict[str, object]:
+    return {
+        "name": name,
+        "full_name": f"{owner}/{name}",
+        "private": False,
+        "fork": False,
+        "archived": False,
+        "disabled": False,
+        "visibility": "public",
+        "default_branch": "main",
+        "owner": {
+            "login": owner,
+            "type": "Organization",
+            "avatar_url": f"https://avatars.example/{owner}.png",
+        },
+    }
+
+
+async def test_github_repository_search_streams_pages_and_stops_at_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    async def fake_search_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubRepositorySearchPage:
+        calls.append((query, page))
+        item = github_search_repository("one" if page == 1 else "two")
+        return skills.GitHubRepositorySearchPage(
+            total_count=101,
+            incomplete_results=False,
+            items=[item],
+        )
+
+    filters = skills.GitHubRepositoryFilters(
+        organizations=("acme",),
+        min_stars=25,
+        pushed_after="2026-01-01",
+        max_repositories=1,
+    )
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_repository_page", fake_search_page)
+        iterator = client.iter_repositories(filters, stats).__aiter__()
+        first = await anext(iterator)
+        with pytest.raises(StopAsyncIteration):
+            await anext(iterator)
+
+    assert first.repo.source == "acme/one"
+    assert first.owner_avatar_url == "https://avatars.example/acme.png"
+    assert len(calls) == 1
+    assert calls[0][1] == 1
+    assert "org:acme" in calls[0][0]
+    assert "stars:>=25" in calls[0][0]
+    assert "pushed:>=2026-01-01" in calls[0][0]
+    assert stats.listed_repository_count == 1
+    assert stats.active_repository_count == 1
+
+
+async def test_github_repository_search_shards_more_than_one_thousand_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    async def fake_search_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubRepositorySearchPage:
+        calls.append((query, page))
+        if len(calls) == 1:
+            return skills.GitHubRepositorySearchPage(
+                total_count=1001,
+                incomplete_results=False,
+                items=[],
+            )
+        return skills.GitHubRepositorySearchPage(
+            total_count=1,
+            incomplete_results=False,
+            items=[github_search_repository(f"repo-{len(calls)}")],
+        )
+
+    filters = skills.GitHubRepositoryFilters(all_github=True)
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    budget = skills.GitHubSearchBudget(remaining=None)
+    start = skills.parse_github_datetime("2026-01-01T00:00:00Z", upper_bound=False)
+    end = skills.parse_github_datetime("2026-01-01T00:00:02Z", upper_bound=True)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_repository_page", fake_search_page)
+        repositories = [
+            repository
+            async for repository in client._search_repository_window(
+                filters,
+                skills.GitHubSearchTarget(qualifier="", value=""),
+                created_start=start,
+                created_end=end,
+                stats=stats,
+                budget=budget,
+            )
+        ]
+
+    assert [repository.repo.repo for repository in repositories] == ["repo-2", "repo-3"]
+    assert len(calls) == 3
+    assert "created:2026-01-01T00:00:00Z..2026-01-01T00:00:01Z" in calls[1][0]
+    assert "created:2026-01-01T00:00:02Z..2026-01-01T00:00:02Z" in calls[2][0]
+    assert stats.listed_repository_count == 2
+
+
+async def test_github_verified_organization_lookup_is_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def fake_get(url: str) -> SimpleNamespace:
+        calls.append(url)
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {"is_verified": True},
+        )
+
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        assert await client.organization_is_verified("Acme") is True
+        assert await client.organization_is_verified("acme") is True
+
+    assert calls == ["https://api.github.com/orgs/Acme"]
+
+
+def github_response(
+    status_code: int,
+    *,
+    headers: dict[str, str] | None = None,
+    message: str = "",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        status_code=status_code,
+        headers=headers or {},
+        text=message,
+        json=lambda: {"message": message},
+    )
+
+
+def test_github_rate_limit_wait_ignores_ordinary_forbidden_response() -> None:
+    response = github_response(403, message="Resource not accessible by personal access token")
+
+    assert (
+        skills.github_rate_limit_wait(
+            response,
+            retry_attempt=0,
+            now_epoch_seconds=1_000,
+        )
+        is None
+    )
+
+
+def test_github_secondary_rate_limit_uses_exponential_fallback() -> None:
+    response = github_response(403, message="You have exceeded a secondary rate limit")
+
+    first = skills.github_rate_limit_wait(
+        response,
+        retry_attempt=0,
+        now_epoch_seconds=1_000,
+    )
+    second = skills.github_rate_limit_wait(
+        response,
+        retry_attempt=1,
+        now_epoch_seconds=1_000,
+    )
+    capped = skills.github_rate_limit_wait(
+        response,
+        retry_attempt=20,
+        now_epoch_seconds=1_000,
+    )
+
+    assert first == skills.GitHubRateLimitWait(seconds=60, reason="secondary")
+    assert second == skills.GitHubRateLimitWait(seconds=120, reason="secondary")
+    assert capped == skills.GitHubRateLimitWait(seconds=900, reason="secondary")
+
+
+async def test_github_client_waits_and_retries_same_request_after_rate_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter(
+        [
+            github_response(
+                403,
+                headers={
+                    "x-ratelimit-remaining": "0",
+                    "x-ratelimit-reset": "1009",
+                    "x-ratelimit-resource": "search",
+                },
+                message="API rate limit exceeded",
+            ),
+            github_response(
+                429,
+                headers={"retry-after": "3"},
+                message="You have exceeded a secondary rate limit",
+            ),
+            github_response(200),
+        ]
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+    sleeps: list[float] = []
+
+    async def fake_get(url: str, **kwargs: object) -> SimpleNamespace:
+        calls.append((url, kwargs))
+        return next(responses)
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(skills.time, "time", lambda: 1_000)
+    monkeypatch.setattr(skills.asyncio, "sleep", fake_sleep)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        response = await client._get(
+            "https://api.github.com/search/repositories",
+            params={"q": "is:public"},
+        )
+
+    assert response.status_code == 200
+    assert calls == [
+        (
+            "https://api.github.com/search/repositories",
+            {"params": {"q": "is:public"}},
+        ),
+        (
+            "https://api.github.com/search/repositories",
+            {"params": {"q": "is:public"}},
+        ),
+        (
+            "https://api.github.com/search/repositories",
+            {"params": {"q": "is:public"}},
+        ),
+    ]
+    assert sleeps == [10, 4]
+
+
 async def test_github_owner_malformed_json_is_systemic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -909,6 +1150,73 @@ def test_manage_dispatches_skills_import_github(monkeypatch: pytest.MonkeyPatch)
     }
 
 
+def test_manage_parses_filtered_multi_target_github_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: dict[str, object] = {}
+
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        called.update(vars(args))
+        return 0
+
+    monkeypatch.setattr(manage, "import_github_from_args", fake_import_github_from_args)
+
+    result = manage.main(
+        [
+            "skills",
+            "import-github",
+            "--org",
+            "anthropics",
+            "--org",
+            "openai",
+            "--repo",
+            "github/awesome-copilot",
+            "--min-stars",
+            "100",
+            "--active-within-days",
+            "90",
+            "--language",
+            "Python",
+            "--topic",
+            "agents",
+            "--verified-orgs-only",
+            "--max-repositories",
+            "500",
+        ]
+    )
+
+    assert result == 0
+    assert called["owner"] is None
+    assert called["organizations"] == ["anthropics", "openai"]
+    assert called["repositories"] == ["github/awesome-copilot"]
+    assert called["min_stars"] == 100
+    assert called["active_within_days"] == 90
+    assert called["language"] == "Python"
+    assert called["topics"] == ["agents"]
+    assert called["verified_orgs_only"] is True
+    assert called["max_repositories"] == 500
+
+
+def test_github_import_filters_require_target_and_validate_ranges() -> None:
+    with pytest.raises(skills.SkillCliError, match="choose a GitHub target"):
+        skills.github_repository_filters_from_args(Namespace())
+
+    args = github_import_args()
+    args.min_stars = 20
+    args.max_stars = 10
+    with pytest.raises(skills.SkillCliError, match="min-stars"):
+        skills.github_repository_filters_from_args(args)
+
+
+def test_manage_import_github_rejects_missing_or_conflicting_targets() -> None:
+    with pytest.raises(SystemExit):
+        manage.main(["skills", "import-github"])
+    with pytest.raises(SystemExit):
+        manage.main(
+            ["skills", "import-github", "--all-github", "--org", "anthropics"]
+        )
+
+
 @pytest.mark.parametrize(
     "owner",
     ["https://github.com/acme", "acme/agent-skills", "-acme", "acme--labs"],
@@ -926,9 +1234,20 @@ def test_manage_import_github_rejects_non_owner_input(owner: str) -> None:
         )
 
 
-def test_manage_import_github_requires_subfolder() -> None:
-    with pytest.raises(SystemExit):
-        manage.main(["skills", "import-github", "acme"])
+def test_manage_import_github_scans_whole_repository_when_subfolder_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: dict[str, object] = {}
+
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        called["owner"] = args.owner
+        called["subfolder"] = args.subfolder
+        return 0
+
+    monkeypatch.setattr(manage, "import_github_from_args", fake_import_github_from_args)
+
+    assert manage.main(["skills", "import-github", "acme"]) == 0
+    assert called == {"owner": "acme", "subfolder": None}
 
 
 @pytest.mark.parametrize("subfolder", ["/skills", "skills/", "../skills", "skills//nested"])
@@ -1259,7 +1578,7 @@ async def test_refresh_github_aborts_on_systemic_github_failure(
         ) -> skills.GitHubRepositoryMetadata:
             nonlocal metadata_calls
             metadata_calls += 1
-            raise skills.GitHubSystemicError("GitHub rate limit exceeded")
+            raise skills.GitHubSystemicError("GitHub server unavailable")
 
     async def fake_load_targets():
         return targets, []
@@ -2055,7 +2374,7 @@ async def test_import_github_aborts_remaining_repositories_on_systemic_failure(
             ref: str,
         ) -> str:
             resolve_calls.append(repo.repo)
-            raise skills.GitHubSystemicError("GitHub rate limit exceeded")
+            raise skills.GitHubSystemicError("GitHub server unavailable")
 
     def fail_if_database_opens() -> None:
         raise AssertionError("database should not open after a systemic GitHub failure")

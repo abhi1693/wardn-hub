@@ -145,8 +145,8 @@ curl -X POST http://localhost:8000/api/v1/users/bootstrap \
 The bootstrap endpoint succeeds only while no user exists. Later calls return a
 conflict response.
 
-Import skills from every active public repository owned by a GitHub user or
-organization:
+Import skills from active public GitHub repositories. The original positional
+owner form remains available:
 
 ```sh
 cd hub/backend
@@ -156,16 +156,68 @@ uv run python -m app.manage skills import-github \
 ```
 
 The positional value must be a bare GitHub account login, not a repository URL.
-The importer resolves whether it is a user or organization, paginates all of
-its public repositories, and excludes private, forked, archived, and disabled
-repositories. It scans the required `--subfolder` on each remaining repository's
-default branch. Repositories without that subfolder or a `SKILL.md` beneath it
-are skipped normally; matching repositories commit independently. The command
-returns a nonzero status when no skills were imported, any repository failed,
-or any discovered skill was invalid, even though successful repository commits
-are retained. Authentication, rate-limit, GitHub server, and transport failures
-stop the remaining repository requests. When imported content changes, prior
-skill audit results are cleared so the new snapshot must be audited again.
+For a filtered multi-target search, repeat `--owner`, `--org`, `--user`, and
+`--repo` as needed:
+
+```sh
+uv run python -m app.manage skills import-github \
+  --org anthropics \
+  --org openai \
+  --repo github/awesome-copilot \
+  --min-stars 100 \
+  --active-within-days 180 \
+  --language Python \
+  --topic agents \
+  --subfolder skills
+```
+
+Use `--all-github` instead of target selectors to search globally. Broad scans
+should normally include selective filters and a repository budget:
+
+```sh
+uv run python -m app.manage skills import-github \
+  --all-github \
+  --min-stars 50 \
+  --active-within-days 365 \
+  --verified-orgs-only \
+  --max-repositories 5000
+```
+
+Supported repository filters are `--min-stars`, `--max-stars`,
+`--active-within-days`, `--pushed-after`, `--pushed-before`, `--created-after`,
+`--created-before`, `--language`, repeatable `--topic`, and
+`--verified-orgs-only`. Date values accept ISO-8601 dates or datetimes.
+`--max-repositories` stops discovery after that many matching active
+repositories. `--all-github` cannot be combined with an owner, organization,
+user, or repository target.
+
+Discovery uses GitHub repository search and streams at most one 100-result page
+at a time. GitHub exposes only the first 1,000 repositories for one search, so
+unbounded scans automatically split the query into non-overlapping repository
+creation-time windows instead of silently truncating results. The importer then
+holds only the current repository tree and that repository's bounded skill
+bundles in memory. A token is strongly recommended for broad scans because
+GitHub applies separate search and API rate limits.
+
+When GitHub returns a primary or secondary rate-limit response, the process
+logs the affected resource and retry delay, sleeps, then retries the same HTTP
+request without advancing the repository stream. Primary limits honor
+`x-ratelimit-reset`; secondary limits honor `retry-after`, then
+`x-ratelimit-reset`, and otherwise use an exponential delay starting at one
+minute and capped at fifteen minutes. Repeated rate-limit responses continue to
+wait and retry, so an operator can leave a long import running or terminate it
+normally with an interrupt.
+
+Private, forked, archived, and disabled repositories are excluded. If
+`--subfolder` is supplied, the same path is scanned on every repository's
+default branch. When it is omitted, the whole repository tree is scanned for
+`SKILL.md`. Repositories without a matching skill are skipped normally;
+matching repositories commit independently. The command returns a nonzero
+status when no skills were imported, any repository failed, or any discovered
+skill was invalid, even though successful repository commits are retained.
+Authentication, non-rate-limit GitHub server, and transport failures stop the
+remaining repository requests. When imported content changes, prior skill audit
+results are cleared so the new snapshot must be audited again.
 
 The subfolder can point at one skill folder or a parent folder containing many
 skills. The importer reads `name` and `description` from `SKILL.md` frontmatter,
@@ -204,8 +256,9 @@ skill cannot be refreshed. Failed records keep their last snapshot and
 publication state so transient GitHub failures cannot silently unpublish catalog
 entries; review the structured failure logs. Changed snapshot hashes clear prior
 skill audit results and must be audited again. The command uses `GITHUB_TOKEN`
-when present. Authentication, rate-limit, GitHub server, and transport failures
-stop the remaining refresh requests to avoid a request storm.
+when present. Rate-limit responses sleep and retry the same refresh request;
+authentication, non-rate-limit GitHub server, and transport failures stop the
+remaining refresh requests.
 
 For example, import every skill under `skills` across an organization's active
 repositories:
