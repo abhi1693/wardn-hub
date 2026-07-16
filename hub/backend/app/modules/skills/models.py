@@ -144,3 +144,33 @@ class SkillAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+class SkillInstallEvent(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "skill_install_events"
+    __table_args__ = (
+        Index("ix_skill_install_events_skill_created", "skill_id", "created_at"),
+        Index("ix_skill_install_events_created_skill", "created_at", "skill_id"),
+    )
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skill_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="find-skills", nullable=False)
+    resolver_version: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
+    )

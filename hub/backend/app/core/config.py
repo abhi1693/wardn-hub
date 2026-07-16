@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     public_rate_limit_valkey_password: str = ""
     public_rate_limit_valkey_sentinel_password: str = ""
     public_rate_limit_valkey_socket_timeout_seconds: float = 5.0
+    skill_telemetry_rate_limit_requests: int = 20
+    skill_telemetry_rate_limit_window_seconds: int = 60
+    skill_telemetry_rate_limit_key_prefix: str = "wardn-hub:skill-telemetry-rate-limit"
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -162,7 +165,12 @@ class Settings(BaseSettings):
             raise ValueError("session_ttl_seconds must be positive")
         return value
 
-    @field_validator("public_rate_limit_requests", "public_rate_limit_window_seconds")
+    @field_validator(
+        "public_rate_limit_requests",
+        "public_rate_limit_window_seconds",
+        "skill_telemetry_rate_limit_requests",
+        "skill_telemetry_rate_limit_window_seconds",
+    )
     @classmethod
     def validate_positive_public_rate_limit_int(cls, value: int) -> int:
         if value <= 0:

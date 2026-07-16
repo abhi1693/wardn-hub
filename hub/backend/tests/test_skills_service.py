@@ -3,6 +3,91 @@ from types import SimpleNamespace
 import pytest
 
 from app.modules.skills import repository, service
+from app.modules.skills.models import SkillInstallEvent
+
+
+async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
+    class FakeSession:
+        statements: list[str]
+
+        def __init__(self) -> None:
+            self.statements = []
+
+        async def scalar(self, statement: object) -> int:
+            self.statements.append(str(statement))
+            return 0
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statements.append(str(statement))
+            return SimpleNamespace(
+                scalars=lambda: SimpleNamespace(
+                    unique=lambda: SimpleNamespace(all=list),
+                )
+            )
+
+    all_time_session = FakeSession()
+    await repository.list_skills(
+        all_time_session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        view="all-time",
+    )
+    assert "skills.installs DESC" in all_time_session.statements[-1]
+
+    trending_session = FakeSession()
+    await repository.list_skills(
+        trending_session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        view="trending",
+    )
+    assert "skill_install_events" in trending_session.statements[-1]
+    assert "count(skill_install_events.id)" in trending_session.statements[-1]
+    assert "recent_installs" in trending_session.statements[-1]
+
+
+async def test_record_install_event_increments_counter_atomically() -> None:
+    class FakeSession:
+        added: list[object]
+        statement: str
+        committed: bool
+
+        def __init__(self) -> None:
+            self.added = []
+            self.statement = ""
+            self.committed = False
+
+        def add(self, value: object) -> None:
+            self.added.append(value)
+
+        async def execute(self, statement: object) -> None:
+            self.statement = str(statement)
+
+        async def commit(self) -> None:
+            self.committed = True
+
+    session = FakeSession()
+    skill = SimpleNamespace(id="00000000-0000-0000-0000-000000000001")
+    snapshot = SimpleNamespace(
+        id="00000000-0000-0000-0000-000000000002",
+        content_hash="a" * 64,
+    )
+
+    await repository.record_install_event(
+        session,  # type: ignore[arg-type]
+        skill=skill,  # type: ignore[arg-type]
+        snapshot=snapshot,  # type: ignore[arg-type]
+        resolver_version="1",
+    )
+
+    assert len(session.added) == 1
+    event = session.added[0]
+    assert isinstance(event, SkillInstallEvent)
+    assert event.content_hash == "a" * 64
+    assert event.source == "find-skills"
+    assert event.resolver_version == "1"
+    assert "installs=(skills.installs +" in session.statement
+    assert session.committed is True
 
 
 async def test_get_skill_snapshot_can_defer_bundle_files() -> None:
@@ -140,3 +225,44 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     assert (bundle_detail.files or [])[0].encoding == "utf-8"
     assert (bundle_detail.files or [])[2].encoding == "base64"
     assert (bundle_detail.files or [])[3].executable is True
+
+
+async def test_record_skill_install_requires_current_snapshot_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill = SimpleNamespace(id="skill-id", current_snapshot_id="snapshot-id")
+    snapshot = SimpleNamespace(id="snapshot-id", content_hash="a" * 64)
+
+    async def get_skill(*args: object) -> SimpleNamespace:
+        return skill
+
+    async def get_skill_snapshot(*args: object, **kwargs: object) -> SimpleNamespace:
+        return snapshot
+
+    recorded: list[dict[str, object]] = []
+
+    async def record_install_event(*args: object, **kwargs: object) -> None:
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(service.repository, "get_skill", get_skill)
+    monkeypatch.setattr(service.repository, "get_skill_snapshot", get_skill_snapshot)
+    monkeypatch.setattr(service.repository, "record_install_event", record_install_event)
+
+    await service.record_skill_install(
+        object(),
+        "acme/skills/weather",
+        content_hash="a" * 64,
+        resolver_version="1",
+    )
+
+    assert recorded == [
+        {"skill": skill, "snapshot": snapshot, "resolver_version": "1"}
+    ]
+
+    with pytest.raises(service.SkillNotFoundError, match="snapshot"):
+        await service.record_skill_install(
+            object(),
+            "acme/skills/weather",
+            content_hash="b" * 64,
+            resolver_version="1",
+        )

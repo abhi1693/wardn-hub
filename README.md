@@ -487,7 +487,10 @@ trap - 0
 
 The resolver requires `curl`, `jq`, and `mktemp` and uses the pinned public API at
 `https://hub.wardnai.dev/api/v1`. Discovery and reload behavior are determined
-by the host agent.
+by the host agent. After a complete bundle is validated and materialized, the
+resolver sends one anonymous install event containing only the public skill ID,
+content hash, and resolver version. Set `WARDN_HUB_DISABLE_TELEMETRY=1` or
+`DO_NOT_TRACK=1` to opt out. Telemetry failures never fail bundle loading.
 
 ### Frontend
 
@@ -542,6 +545,10 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_OTEL_EXPORTER_OTLP_TRACES_HEADERS` | Optional comma-separated OTLP exporter headers. Leave empty for the in-cluster collector. |
 | `WARDN_HUB_OTEL_TRACES_SAMPLE_RATIO` | Trace sampling ratio from `0.0` to `1.0`. Defaults to `1.0`. |
 | `WARDN_HUB_OTEL_EXCLUDED_URLS` | Optional comma-separated URL patterns excluded from FastAPI tracing. |
+| `WARDN_HUB_PUBLIC_RATE_LIMIT_ENABLED` | Enables Valkey-backed public API and skill telemetry rate limiting. |
+| `WARDN_HUB_SKILL_TELEMETRY_RATE_LIMIT_REQUESTS` | Maximum anonymous skill install events per client and telemetry window. Defaults to `20`. |
+| `WARDN_HUB_SKILL_TELEMETRY_RATE_LIMIT_WINDOW_SECONDS` | Anonymous skill telemetry rate-limit window. Defaults to `60`. |
+| `WARDN_HUB_SKILL_TELEMETRY_RATE_LIMIT_KEY_PREFIX` | Valkey key prefix for anonymous skill telemetry rate limits. |
 
 GitHub source imports also honor `GITHUB_TOKEN` when present, which avoids
 unauthenticated GitHub API rate limits while reading repository metadata.

@@ -1,14 +1,16 @@
 "use client";
 
 import { Search } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
 import { listPublicSkillsPage } from "@/lib/public-skills";
-import { SkillCardGrid } from "./skills-ui";
+import { SkillLeaderboard } from "./skills-ui";
 
 const SKILLS_PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 250;
+type SkillView = "all-time" | "hot" | "trending";
 const EMPTY_SKILLS_PAGINATION: SkillPagination = {
   hasMore: false,
   page: 0,
@@ -30,11 +32,13 @@ export function SkillsClient({
   initialPagination,
   initialQuery,
   initialSkills,
+  initialView,
 }: {
   initialError: string;
   initialPagination: SkillPagination;
   initialQuery: string;
   initialSkills: SkillRead[];
+  initialView: SkillView;
 }) {
   const searchInputId = useId();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -100,6 +104,7 @@ export function SkillsClient({
           const response = await listPublicSkillsPage({
             limit: SKILLS_PAGE_SIZE,
             query: hasSearchQuery ? trimmedQuery : undefined,
+            view: initialView,
           });
           if (latestRequestId.current !== requestId) return;
           if (hasSearchQuery) {
@@ -126,7 +131,7 @@ export function SkillsClient({
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [hasSearchQuery, trimmedQuery]);
+  }, [hasSearchQuery, initialView, trimmedQuery]);
 
   async function loadMore() {
     if (!hasMore || loading) return;
@@ -138,6 +143,7 @@ export function SkillsClient({
         limit: SKILLS_PAGE_SIZE,
         page: pagination.page + 1,
         query: hasSearchQuery ? trimmedQuery : undefined,
+        view: initialView,
       });
       if (hasSearchQuery) {
         setSearchSkills((current) => [...current, ...response.skills]);
@@ -190,10 +196,41 @@ export function SkillsClient({
 
       <section className="content-section" aria-label="Skills">
         <div className="registry-results-shell">
+          <nav className="skills-view-tabs" aria-label="Skill leaderboard view">
+            {(
+              [
+                ["all-time", "All time"],
+                ["trending", "Trending"],
+                ["hot", "Hot"],
+              ] as const
+            ).map(([value, label]) => (
+              <Link
+                aria-current={initialView === value ? "page" : undefined}
+                href={{
+                  pathname: "/skills",
+                  query: {
+                    ...(hasSearchQuery ? { q: trimmedQuery } : {}),
+                    ...(value === "all-time" ? {} : { view: value }),
+                  },
+                }}
+                key={value}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
           <div className="registry-results-heading">
             <div>
               <span>{hasSearchQuery ? "Search results" : "Skills"}</span>
-              <h2>{hasSearchQuery ? `Results for "${trimmedQuery}"` : "Reusable agent skills"}</h2>
+              <h2>
+                {hasSearchQuery
+                  ? `Results for "${trimmedQuery}"`
+                  : initialView === "trending"
+                    ? "Trending this week"
+                    : initialView === "hot"
+                      ? "Hot today"
+                      : "Most installed skills"}
+              </h2>
               <p>
                 {hasSearchQuery
                   ? "Filtered by skill name, description, source owner, and repository metadata."
@@ -208,7 +245,7 @@ export function SkillsClient({
           ) : null}
           {skills.length > 0 ? (
             <>
-              <SkillCardGrid skills={skills} />
+              <SkillLeaderboard skills={skills} />
               {hasMore || error ? (
                 <div className="server-grid-more">
                   {error ? <p>{error}</p> : null}

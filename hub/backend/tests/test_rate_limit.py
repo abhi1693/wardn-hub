@@ -9,8 +9,10 @@ from app.core.config import Settings
 from app.core.rate_limit import (
     FixedWindowValkeyRateLimiter,
     PublicAPIRateLimitMiddleware,
+    SkillTelemetryRateLimitMiddleware,
     client_identifier,
     is_public_rate_limited_request,
+    is_skill_telemetry_rate_limited_request,
     normalize_valkey_url,
     parse_sentinels,
 )
@@ -60,6 +62,16 @@ def test_public_rate_limit_path_scoping() -> None:
     )
     assert not is_public_rate_limited_request("POST", "/v0.1/servers", api_prefix="/api/v1")
     assert not is_public_rate_limited_request("GET", "/api/v1/health/ready", api_prefix="/api/v1")
+    assert is_skill_telemetry_rate_limited_request(
+        "POST",
+        "/api/v1/skills/telemetry/acme/skills/weather",
+        api_prefix="/api/v1",
+    )
+    assert not is_skill_telemetry_rate_limited_request(
+        "GET",
+        "/api/v1/skills/telemetry/acme/skills/weather",
+        api_prefix="/api/v1",
+    )
 
 
 def test_normalize_valkey_url_accepts_valkey_scheme() -> None:
@@ -177,6 +189,36 @@ def test_middleware_fails_open_when_valkey_check_fails() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_skill_telemetry_middleware_fails_closed_when_valkey_check_fails() -> None:
+    app = FastAPI()
+    settings = Settings(
+        environment="local",
+        api_prefix="/api/v1",
+        log_level="INFO",
+        api_token_secret="test-token-secret",
+        api_token_prefix="wardn_hub",
+        session_cookie_name="wardn_hub_session",
+        session_secret="test-session-secret",
+        session_ttl_seconds=43200,
+        registry_public_base_url="http://localhost:3000",
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/wardn_hub",
+    )
+    app.add_middleware(
+        SkillTelemetryRateLimitMiddleware,
+        settings=settings,
+        limiter=FailingLimiter(),  # type: ignore[arg-type]
+    )
+
+    @app.post("/api/v1/skills/telemetry/acme/skills/weather")
+    async def telemetry() -> dict[str, bool]:
+        return {"ok": True}
+
+    response = TestClient(app).post("/api/v1/skills/telemetry/acme/skills/weather")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "telemetry temporarily unavailable"}
 
 
 async def test_client_identifier_uses_forwarded_for_when_trusted() -> None:

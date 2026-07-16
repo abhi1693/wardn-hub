@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.router import bad_request, not_found
@@ -19,6 +19,7 @@ from app.modules.skills.service import (
     get_skill_detail,
     list_official_skills,
     list_skills,
+    record_skill_install,
     search_skills,
 )
 
@@ -82,6 +83,33 @@ async def get_skill_catalog_audit(
         return await get_skill_audit(session, skill_id)
     except (SkillNotFoundError, SkillAuditNotFoundError) as exc:
         raise not_found(exc, detail=str(exc)) from exc
+
+
+@router.post(
+    "/telemetry/{skill_id:path}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="skills_install_telemetry",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def record_skill_install_telemetry(
+    skill_id: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    content_hash: Annotated[str, Query(pattern=r"^[a-f0-9]{64}$")],
+    resolver_version: Annotated[
+        str,
+        Query(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9._-]+$"),
+    ] = "unknown",
+) -> Response:
+    try:
+        await record_skill_install(
+            session,
+            skill_id,
+            content_hash=content_hash,
+            resolver_version=resolver_version,
+        )
+    except SkillNotFoundError as exc:
+        raise not_found(exc, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

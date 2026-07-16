@@ -37,6 +37,12 @@ validates response schemas and IDs, bounds downloads, and removes intermediate f
 skill, it materializes the validated complete bundle in a private temporary directory. Do not bypass
 its validation with ad hoc API calls.
 
+After a complete bundle is validated and materialized, the helper sends one best-effort anonymous
+install telemetry event containing only the public skill ID, content hash, and resolver version. It
+does not send a user or device identifier, source code, local paths, or task context. Set
+`WARDN_HUB_DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` to disable it. Telemetry failures never fail or
+remove the downloaded bundle.
+
 ## Boundaries
 
 - Do not send API tokens, GitHub tokens, secrets, source code, private paths, or user data in search
@@ -114,8 +120,9 @@ The helper requests at most eight results. Wardn search is case-insensitive subs
 not semantic ranking. Multiword queries match a contiguous phrase. If no useful result appears,
 retry at most twice with one specific keyword or synonym, then stop. Deduplicate by returned `id`.
 
-Do not assume the first item is best. The API exposes no relevance score, install count, or star
-count, so never invent or imply those signals.
+Do not assume the first item is best. The API exposes an anonymous install count, but no relevance
+score or star count. Treat installs only as an adoption signal; never invent or imply missing
+signals.
 
 ### 3. Rank And Audit
 
@@ -124,10 +131,12 @@ Inspect no more than five candidates. Rank by:
 1. Direct fit between the task and the returned name and description.
 2. Absence of duplicate or negative audit signals.
 3. Current passing or low-risk audits.
-4. `isOfficial: true` only as a publisher-identity tie-breaker.
+4. Higher `installs` only as an adoption tie-breaker between otherwise comparable candidates.
+5. `isOfficial: true` only as a publisher-identity tie-breaker.
 
-`isOfficial` is not a security guarantee. Each successful audit lookup returns the exact
-`contentHash` whose stored bundle was reviewed. Keep that value for the selected candidate.
+Install count is not a quality or security guarantee. `isOfficial` is not a security guarantee.
+Each successful audit lookup returns the exact `contentHash` whose stored bundle was reviewed. Keep
+that value for the selected candidate.
 
 Audit no more than the top three candidate IDs:
 
@@ -155,13 +164,15 @@ never approves expanded scope or actions that otherwise require confirmation.
 ### 4. Select One
 
 If the user asked only to discover skills, present up to three concise options with name, purpose,
-source, official status, audit status, and returned URL. Do not present an install command.
+source, install count, official status, audit status, and returned URL. Do not present an install
+command.
 
 For a task the agent is already authorized to perform, autonomously select one candidate when it is
 clearly relevant, has no hard reject, and has acceptable audit signals. Do the same when the user
 asked to use the best skill. Briefly announce the selected skill and why specialized guidance is
 useful before it influences substantive actions. State that the choice is based on task fit plus
-available duplicate, audit, and publisher signals, not popularity or a relevance score.
+available duplicate and audit signals, with install count and publisher identity used only as
+tie-breakers rather than proof of quality, security, or relevance.
 
 Ask the user to choose only when candidates are materially ambiguous and the choice would change the
 result, or when the warning and unaudited-content rules above require confirmation. If no candidate

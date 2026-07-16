@@ -3329,7 +3329,7 @@ button:disabled,
 .skills-table-header,
 .skills-table-row {
   display: grid;
-  grid-template-columns: 48px minmax(220px, 1fr) minmax(180px, 280px);
+  grid-template-columns: 48px minmax(220px, 1fr) minmax(180px, 280px) 100px;
   align-items: center;
   gap: 12px;
 }
@@ -3775,6 +3775,13 @@ button:disabled,
   .skills-table-header,
   .skills-table-row {
     grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .skills-table-header > :nth-child(3),
+  .skills-table-header > :nth-child(4),
+  .skills-table-row .skills-table-source,
+  .skills-table-row .skills-table-number {
+    display: none;
   }
 }
 

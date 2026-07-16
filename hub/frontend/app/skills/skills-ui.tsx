@@ -238,6 +238,7 @@ export function SkillLeaderboard({
         <span>#</span>
         <span>Skill</span>
         <span>Source</span>
+        <span className="skills-table-number">Installs</span>
       </div>
       {skills.map((skill, index) => (
         <Link className="skills-table-row" href={skillDetailPath(skill.id)} key={skill.id}>
@@ -251,6 +252,7 @@ export function SkillLeaderboard({
             <small>{skill.description || skill.slug}</small>
           </span>
           <span className="skills-table-source">{skill.source}</span>
+          <span className="skills-table-number">{skill.installs.toLocaleString("en-US")}</span>
         </Link>
       ))}
     </div>
@@ -301,7 +303,7 @@ export function SkillCardGrid({
           </span>
           <span className="skill-card-footer">
             <span>{skill.sourceOwner || skill.source}</span>
-            <span>{skill.slug}</span>
+            <span>{skill.installs.toLocaleString("en-US")} installs</span>
           </span>
         </Link>
       ))}

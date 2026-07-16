@@ -1,10 +1,17 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, exists, func, or_, select, tuple_
+from sqlalchemy import Select, and_, exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
-from app.modules.skills.models import Skill, SkillAudit, SkillSnapshot, SkillSourceOwner
+from app.modules.skills.models import (
+    Skill,
+    SkillAudit,
+    SkillInstallEvent,
+    SkillSnapshot,
+    SkillSourceOwner,
+)
 
 
 def published_skill_query(*entities) -> Select:
@@ -88,11 +95,31 @@ async def list_skills(
         total_statement = total_statement.where(condition)
 
     if view == "all-time":
-        statement = statement.order_by(Skill.name.asc(), Skill.source.asc())
-    elif view == "trending":
-        statement = statement.order_by(Skill.updated_at.desc(), Skill.name.asc())
-    elif view == "hot":
-        statement = statement.order_by(Skill.updated_at.desc(), Skill.name.asc())
+        statement = statement.order_by(
+            Skill.installs.desc(),
+            Skill.name.asc(),
+            Skill.source.asc(),
+        )
+    elif view in {"trending", "hot"}:
+        window = timedelta(days=7) if view == "trending" else timedelta(hours=24)
+        recent_installs = (
+            select(
+                SkillInstallEvent.skill_id,
+                func.count(SkillInstallEvent.id).label("recent_installs"),
+            )
+            .where(SkillInstallEvent.created_at >= datetime.now(UTC) - window)
+            .group_by(SkillInstallEvent.skill_id)
+            .subquery()
+        )
+        statement = statement.outerjoin(
+            recent_installs,
+            recent_installs.c.skill_id == Skill.id,
+        ).order_by(
+            func.coalesce(recent_installs.c.recent_installs, 0).desc(),
+            Skill.installs.desc(),
+            Skill.name.asc(),
+            Skill.source.asc(),
+        )
     else:
         statement = statement.order_by(Skill.name.asc())
 
@@ -205,6 +232,30 @@ async def get_skill_snapshot(
         )
     result = await session.execute(query)
     return result.scalar_one_or_none()
+
+
+async def record_install_event(
+    session: AsyncSession,
+    *,
+    skill: Skill,
+    snapshot: SkillSnapshot,
+    resolver_version: str,
+) -> None:
+    session.add(
+        SkillInstallEvent(
+            skill_id=skill.id,
+            snapshot_id=snapshot.id,
+            content_hash=snapshot.content_hash or "",
+            source="find-skills",
+            resolver_version=resolver_version,
+        )
+    )
+    await session.execute(
+        update(Skill)
+        .where(Skill.id == skill.id)
+        .values(installs=Skill.installs + 1)
+    )
+    await session.commit()
 
 
 async def list_skill_audits(session: AsyncSession, skill: Skill) -> list[SkillAudit]:

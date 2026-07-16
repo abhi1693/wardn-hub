@@ -34,6 +34,7 @@ def skill_read(slug: str = "find-skills") -> SkillRead:
         installUrl="https://github.com/vercel-labs/skills",
         url=f"https://skills.sh/vercel-labs/skills/{slug}",
         description="Find reusable agent skills.",
+        installs=42,
         isOfficial=True,
         auditStatus="warn",
     )
@@ -48,11 +49,16 @@ def test_skills_openapi_exposes_public_paths() -> None:
         "/api/v1/skills/official",
         "/api/v1/skills/{skill_id}",
         "/api/v1/skills/audit/{skill_id}",
+        "/api/v1/skills/telemetry/{skill_id}",
     }.issubset(set(schema["paths"]))
     assert schema["paths"]["/api/v1/skills"]["get"]["operationId"] == "skills_list"
     assert schema["paths"]["/api/v1/skills/search"]["get"]["operationId"] == "skills_search"
     assert schema["paths"]["/api/v1/skills/official"]["get"]["operationId"] == "skills_official"
     assert schema["paths"]["/api/v1/skills/{skill_id}"]["get"]["operationId"] == "skills_get"
+    assert (
+        schema["paths"]["/api/v1/skills/telemetry/{skill_id}"]["post"]["operationId"]
+        == "skills_install_telemetry"
+    )
     detail_parameters = schema["paths"]["/api/v1/skills/{skill_id}"]["get"]["parameters"]
     assert any(parameter["name"] == "include_bundle" for parameter in detail_parameters)
     assert (
@@ -106,6 +112,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
                 "installUrl": "https://github.com/vercel-labs/skills",
                 "url": "https://skills.sh/vercel-labs/skills/find-skills",
                 "description": "Find reusable agent skills.",
+                "installs": 42,
                 "isOfficial": True,
                 "isDuplicate": None,
                 "auditStatus": "warn",
@@ -251,6 +258,38 @@ def test_get_skill_detail_returns_404(monkeypatch) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "skill not found"
+
+
+def test_record_skill_install_telemetry_accepts_valid_snapshot(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    async def record_skill_install(*args, **kwargs):
+        calls.append((args[1], kwargs))
+
+    monkeypatch.setattr(router, "record_skill_install", record_skill_install)
+
+    response = TestClient(create_app()).post(
+        "/api/v1/skills/telemetry/vercel-labs/skills/find-skills"
+        f"?content_hash={'a' * 64}&resolver_version=1"
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert calls == [
+        (
+            "vercel-labs/skills/find-skills",
+            {"content_hash": "a" * 64, "resolver_version": "1"},
+        )
+    ]
+
+
+def test_record_skill_install_telemetry_rejects_invalid_hash() -> None:
+    response = TestClient(create_app()).post(
+        "/api/v1/skills/telemetry/vercel-labs/skills/find-skills"
+        "?content_hash=invalid&resolver_version=1"
+    )
+
+    assert response.status_code == 422
 
 
 def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:

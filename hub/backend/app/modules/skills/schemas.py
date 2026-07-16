@@ -26,6 +26,7 @@ class SkillRead(BaseModel):
     install_url: str | None = Field(default=None, alias="installUrl")
     url: str
     description: str = ""
+    installs: int = Field(ge=0)
     is_official: bool = Field(default=False, alias="isOfficial")
     is_duplicate: bool | None = Field(default=None, alias="isDuplicate")
     audit_status: SkillAuditStatus | None = Field(default=None, alias="auditStatus")

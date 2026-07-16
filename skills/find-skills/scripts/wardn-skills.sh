@@ -3,6 +3,7 @@
 set -eu
 
 API="https://hub.wardnai.dev/api/v1"
+RESOLVER_VERSION="1"
 
 die() {
   echo "$*" >&2
@@ -58,6 +59,23 @@ encode_skill_id() {
       else error("invalid Wardn skill ID")
       end
   '
+}
+
+record_install_telemetry() {
+  encoded_id="$1"
+  content_hash="$2"
+
+  if [ -n "${WARDN_HUB_DISABLE_TELEMETRY:-}" ] || [ -n "${DO_NOT_TRACK:-}" ]; then
+    return 0
+  fi
+
+  if ! curl -q --proto '=https' --silent --fail \
+    --max-time 5 --max-filesize 4096 \
+    --output /dev/null --request POST \
+    "${API}/skills/telemetry/${encoded_id}?content_hash=${content_hash}&resolver_version=${RESOLVER_VERSION}" \
+    >/dev/null 2>&1; then
+    :
+  fi
 }
 
 search_skills() {
@@ -117,6 +135,7 @@ search_skills() {
         and (.description | type == "string")
         and (.isOfficial | type == "boolean")
         and (.isDuplicate | . == null or type == "boolean")
+        and (.installs | type == "number" and . >= 0 and . == floor)
         and (.url | type == "string" and length <= 2048 and test("^https://[^ \\t\\r\\n]+$"))
         and (.sourceUrl | . == null or (type == "string" and length <= 2048));
       if type == "object"
@@ -136,6 +155,7 @@ search_skills() {
           source,
           isOfficial,
           isDuplicate,
+          installs,
           url,
           sourceUrl
         }]
@@ -736,6 +756,7 @@ fetch_bundle() {
   bundle_file=""
   records_file=""
   bundle_complete="true"
+  record_install_telemetry "${encoded_id}" "${expected_hash}"
   trap - 0
 }
 

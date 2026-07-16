@@ -73,6 +73,7 @@ def skill_read(
         installUrl=skill.install_url or None,
         url=skill_url(skill),
         description=skill.description,
+        installs=skill.installs,
         isOfficial=official_owner_key(skill) in (official_owner_keys or set()),
         isDuplicate=True if skill.is_duplicate else None,
         auditStatus=(audit_statuses or {}).get(skill.id),
@@ -203,6 +204,28 @@ async def get_skill_detail(
         sourceUrl=skill.source_url or None,
         hash=snapshot.content_hash,
         files=[SkillFileRead.model_validate(file) for file in snapshot_files],
+    )
+
+
+async def record_skill_install(
+    session: AsyncSession,
+    skill_id: str,
+    *,
+    content_hash: str,
+    resolver_version: str,
+) -> None:
+    source, slug = split_skill_id(skill_id)
+    skill = await repository.get_skill(session, source, slug)
+    if skill is None:
+        raise SkillNotFoundError("skill not found")
+    snapshot = await repository.get_skill_snapshot(session, skill, include_files=False)
+    if snapshot is None or snapshot.content_hash != content_hash:
+        raise SkillNotFoundError("skill snapshot not found")
+    await repository.record_install_event(
+        session,
+        skill=skill,
+        snapshot=snapshot,
+        resolver_version=resolver_version,
     )
 
 

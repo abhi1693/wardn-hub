@@ -366,6 +366,8 @@ def test_public_rate_limit_defaults_to_disabled(monkeypatch) -> None:
     assert settings.public_rate_limit_requests == 120
     assert settings.public_rate_limit_window_seconds == 60
     assert settings.public_rate_limit_valkey_db == 5
+    assert settings.skill_telemetry_rate_limit_requests == 20
+    assert settings.skill_telemetry_rate_limit_window_seconds == 60
 
 
 def test_public_rate_limit_requires_valkey_when_enabled(monkeypatch) -> None:

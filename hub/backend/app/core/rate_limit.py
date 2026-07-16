@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -24,6 +25,8 @@ DEFAULT_PUBLIC_RATE_LIMIT_PREFIXES = (
     "/mcp/badges",
 )
 ROOT_PUBLIC_RATE_LIMIT_PREFIXES = ("/v0.1/servers",)
+SKILL_TELEMETRY_RATE_LIMIT_METHODS = {"POST"}
+SKILL_TELEMETRY_RATE_LIMIT_PREFIX = "/skills/telemetry"
 
 
 class ValkeyClient(Protocol):
@@ -86,6 +89,18 @@ def is_public_rate_limited_request(method: str, path: str, *, api_prefix: str) -
     )
 
 
+def is_skill_telemetry_rate_limited_request(
+    method: str,
+    path: str,
+    *,
+    api_prefix: str,
+) -> bool:
+    if method.upper() not in SKILL_TELEMETRY_RATE_LIMIT_METHODS:
+        return False
+    prefix = f"{api_prefix.rstrip('/')}{SKILL_TELEMETRY_RATE_LIMIT_PREFIX}"
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
 def client_identifier(request: Request, *, trust_forwarded_for: bool) -> str:
     if trust_forwarded_for:
         forwarded_for = request.headers.get("x-forwarded-for", "")
@@ -124,7 +139,14 @@ class FixedWindowValkeyRateLimiter:
         self.key_prefix = key_prefix.rstrip(":")
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> FixedWindowValkeyRateLimiter | None:
+    def from_settings(
+        cls,
+        settings: Settings,
+        *,
+        limit: int | None = None,
+        window_seconds: int | None = None,
+        key_prefix: str | None = None,
+    ) -> FixedWindowValkeyRateLimiter | None:
         if not settings.public_rate_limit_enabled:
             return None
 
@@ -164,9 +186,15 @@ class FixedWindowValkeyRateLimiter:
 
         return cls(
             client=client,
-            limit=settings.public_rate_limit_requests,
-            window_seconds=settings.public_rate_limit_window_seconds,
-            key_prefix=settings.public_rate_limit_key_prefix,
+            limit=limit if limit is not None else settings.public_rate_limit_requests,
+            window_seconds=(
+                window_seconds
+                if window_seconds is not None
+                else settings.public_rate_limit_window_seconds
+            ),
+            key_prefix=(
+                key_prefix if key_prefix is not None else settings.public_rate_limit_key_prefix
+            ),
         )
 
     async def check(self, identifier: str, *, now: float | None = None) -> RateLimitDecision:
@@ -197,28 +225,28 @@ class FixedWindowValkeyRateLimiter:
         return f"{self.key_prefix}:{window_start}:{identifier_hash}"
 
 
-class PublicAPIRateLimitMiddleware(BaseHTTPMiddleware):
+class RequestRateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: object,
         *,
         settings: Settings,
         limiter: FixedWindowValkeyRateLimiter,
+        request_matcher: Callable[[str, str], bool],
+        fail_open: bool,
     ) -> None:
         super().__init__(app)
         self.settings = settings
         self.limiter = limiter
+        self.request_matcher = request_matcher
+        self.fail_open = fail_open
 
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        if not is_public_rate_limited_request(
-            request.method,
-            request.url.path,
-            api_prefix=self.settings.api_prefix,
-        ):
+        if not self.request_matcher(request.method, request.url.path):
             return await call_next(request)
 
         identifier = client_identifier(
@@ -228,8 +256,13 @@ class PublicAPIRateLimitMiddleware(BaseHTTPMiddleware):
         try:
             decision = await self.limiter.check(identifier)
         except Exception:
-            logger.warning("public API rate limit check failed", exc_info=True)
-            return await call_next(request)
+            logger.warning("request rate limit check failed", exc_info=True)
+            if self.fail_open:
+                return await call_next(request)
+            return JSONResponse(
+                {"detail": "telemetry temporarily unavailable"},
+                status_code=503,
+            )
 
         headers = rate_limit_headers(decision)
         if not decision.allowed:
@@ -244,3 +277,45 @@ class PublicAPIRateLimitMiddleware(BaseHTTPMiddleware):
         for name, value in headers.items():
             response.headers.setdefault(name, value)
         return response
+
+
+class PublicAPIRateLimitMiddleware(RequestRateLimitMiddleware):
+    def __init__(
+        self,
+        app: object,
+        *,
+        settings: Settings,
+        limiter: FixedWindowValkeyRateLimiter,
+    ) -> None:
+        super().__init__(
+            app,
+            settings=settings,
+            limiter=limiter,
+            request_matcher=lambda method, path: is_public_rate_limited_request(
+                method,
+                path,
+                api_prefix=settings.api_prefix,
+            ),
+            fail_open=True,
+        )
+
+
+class SkillTelemetryRateLimitMiddleware(RequestRateLimitMiddleware):
+    def __init__(
+        self,
+        app: object,
+        *,
+        settings: Settings,
+        limiter: FixedWindowValkeyRateLimiter,
+    ) -> None:
+        super().__init__(
+            app,
+            settings=settings,
+            limiter=limiter,
+            request_matcher=lambda method, path: is_skill_telemetry_rate_limited_request(
+                method,
+                path,
+                api_prefix=settings.api_prefix,
+            ),
+            fail_open=False,
+        )

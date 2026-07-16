@@ -11,8 +11,11 @@ const SKILLS_PAGE_SIZE = 60;
 type SkillsPageProps = {
   searchParams?: Promise<{
     q?: string | string[];
+    view?: string | string[];
   }>;
 };
+
+type SkillView = "all-time" | "hot" | "trending";
 
 export const metadata: Metadata = {
   alternates: {
@@ -31,14 +34,22 @@ function firstSearchParam(value: string | string[] | undefined) {
   return value?.trim() ?? "";
 }
 
+function skillView(value: string | string[] | undefined): SkillView {
+  const candidate = firstSearchParam(value);
+  if (candidate === "hot" || candidate === "trending") return candidate;
+  return "all-time";
+}
+
 export default async function SkillsPage({ searchParams }: SkillsPageProps) {
   const resolvedSearchParams = await searchParams;
   const searchQuery = firstSearchParam(resolvedSearchParams?.q);
+  const view = skillView(resolvedSearchParams?.view);
   const state = await (async () => {
     try {
       const response = await listPublicSkillsPage({
         limit: SKILLS_PAGE_SIZE,
         query: searchQuery,
+        view,
       });
       return { error: "", pagination: response.pagination, skills: response.skills };
     } catch (caught) {
@@ -58,6 +69,7 @@ export default async function SkillsPage({ searchParams }: SkillsPageProps) {
         initialPagination={state.pagination}
         initialQuery={searchQuery}
         initialSkills={state.skills}
+        initialView={view}
       />
     </main>
   );

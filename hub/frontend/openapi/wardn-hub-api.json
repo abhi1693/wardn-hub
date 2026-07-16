@@ -5829,6 +5829,11 @@
             ],
             "title": "Installurl"
           },
+          "installs": {
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "isDuplicate": {
             "anyOf": [
               {
@@ -5915,7 +5920,8 @@
           "name",
           "source",
           "sourceType",
-          "url"
+          "url",
+          "installs"
         ],
         "title": "SkillRead",
         "type": "object"
@@ -7142,7 +7148,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.101"
+    "version": "0.2.102"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12048,6 +12054,74 @@
           }
         },
         "summary": "Search Skill Catalog",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/telemetry/{skill_id}": {
+      "post": {
+        "operationId": "skills_install_telemetry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_hash",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Content Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resolver_version",
+            "required": false,
+            "schema": {
+              "default": "unknown",
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "title": "Resolver Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Skill Install Telemetry",
         "tags": [
           "skills"
         ]
