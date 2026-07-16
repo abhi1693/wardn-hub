@@ -17,15 +17,28 @@ Usage:
   wardn-skills.sh inspect SKILL_ID
   wardn-skills.sh fetch SKILL_ID
   wardn-skills.sh fetch-chunk SKILL_ID EXPECTED_HASH OFFSET LENGTH
+  wardn-skills.sh fetch-bundle SKILL_ID EXPECTED_HASH
 EOF
   exit 2
 }
 
 require_commands() {
-  for command_name in curl jq mktemp; do
+  for command_name in awk base64 chmod curl jq mkdir mktemp rm wc; do
     command -v "${command_name}" >/dev/null 2>&1 ||
       die "Missing required command: ${command_name}"
   done
+}
+
+detect_base64_decoder() {
+  if printf '' | base64 --decode >/dev/null 2>&1; then
+    BASE64_DECODE_FLAG="--decode"
+  elif printf '' | base64 -d >/dev/null 2>&1; then
+    BASE64_DECODE_FLAG="-d"
+  elif printf '' | base64 -D >/dev/null 2>&1; then
+    BASE64_DECODE_FLAG="-D"
+  else
+    die "The installed base64 command does not provide a supported decode flag"
+  fi
 }
 
 encode_skill_id() {
@@ -527,6 +540,203 @@ fetch_skill() {
   esac
 }
 
+fetch_bundle() {
+  id="$1"
+  expected_hash="$2"
+
+  if ! printf '%s' "${expected_hash}" |
+    jq --exit-status --raw-input 'test("^[0-9a-f]{64}$")' >/dev/null; then
+    die "Expected hash must be a 64-character lowercase SHA-256 value"
+  fi
+  if ! encoded_id="$(encode_skill_id "${id}")"; then
+    die "Wardn skill ID failed validation"
+  fi
+
+  detect_base64_decoder
+  umask 077
+  bundle_file=""
+  records_file=""
+  bundle_dir=""
+  bundle_complete="false"
+  cleanup_bundle() {
+    [ -z "${bundle_file}" ] || rm -f "${bundle_file}"
+    [ -z "${records_file}" ] || rm -f "${records_file}"
+    if [ "${bundle_complete}" != "true" ] && [ -n "${bundle_dir}" ]; then
+      rm -rf "${bundle_dir}"
+    fi
+  }
+  trap cleanup_bundle 0
+
+  bundle_file="$(mktemp)" || die "Could not create a temporary Wardn bundle file"
+  records_file="$(mktemp)" || die "Could not create a temporary Wardn bundle records file"
+
+  if ! http_status="$(curl -q --proto '=https' --silent --show-error \
+    --max-time 60 --max-filesize 50331648 \
+    --output "${bundle_file}" --write-out '%{http_code}' \
+    --get "${API}/skills/${encoded_id}" \
+    --data-urlencode 'include_bundle=true')"; then
+    die "Wardn skill bundle request failed"
+  fi
+
+  [ "${http_status}" = "200" ] ||
+    die "Wardn skill bundle returned HTTP ${http_status}"
+
+  if ! jq --exit-status --arg id "${id}" --arg hash "${expected_hash}" '
+      def safe_codepoint:
+        . == 9
+        or . == 10
+        or . == 13
+        or (
+          . >= 32
+          and (. < 127 or . > 159)
+          and . != 1564
+          and (. < 8206 or . > 8207)
+          and (. < 8234 or . > 8238)
+          and (. < 8294 or . > 8297)
+        );
+      def valid_path:
+        type == "string"
+        and length > 0
+        and length <= 1024
+        and (startswith("/") | not)
+        and (contains("\\") | not)
+        and (explode | all(
+          . >= 32
+          and (. < 127 or . > 159)
+          and . != 1564
+          and (. < 8206 or . > 8207)
+          and (. < 8234 or . > 8238)
+          and (. < 8294 or . > 8297)
+        ))
+        and (
+          split("/")
+          | length <= 64
+          and all(length > 0 and length <= 255 and . != "." and . != "..")
+        );
+      def valid_text:
+        type == "string"
+        and length <= 8388608
+        and (explode | all(safe_codepoint));
+      def valid_base64:
+        type == "string"
+        and length <= 11184812
+        and (length % 4 == 0)
+        and test("^[A-Za-z0-9+/]*={0,2}$");
+      def valid_file:
+        type == "object"
+        and (.path | valid_path)
+        and (.contents | type == "string")
+        and ((.encoding // "utf-8") == "utf-8" or .encoding == "base64")
+        and ((.executable // false) | type == "boolean")
+        and (
+          if (.encoding // "utf-8") == "utf-8"
+          then (.contents | valid_text)
+          else (.contents | valid_base64)
+          end
+        );
+      (.id == $id)
+      and (.hash == $hash)
+      and (.files | type == "array" and length > 0 and length <= 256)
+      and (.files | all(valid_file))
+      and (([.files[].path] | unique | length) == (.files | length))
+      and ([.files[] | select(.path == "SKILL.md")] | length == 1)
+      and (
+        .files[]
+        | select(.path == "SKILL.md")
+        | (.encoding // "utf-8") == "utf-8"
+          and (.contents | length > 0 and length <= 65536)
+          and (.contents | test("\\r(?!\\n)") | not)
+      )
+    ' "${bundle_file}" >/dev/null; then
+    die "Wardn skill bundle failed validation or changed since inspection"
+  fi
+
+  if ! jq --compact-output --exit-status '.files[]' \
+    "${bundle_file}" >"${records_file}"; then
+    die "Wardn skill bundle records could not be extracted"
+  fi
+
+  temp_root="${TMPDIR:-/tmp}"
+  case "${temp_root}" in
+    /*) ;;
+    *) temp_root="/tmp" ;;
+  esac
+  bundle_dir="$(mktemp -d "${temp_root%/}/wardn-skill.XXXXXX")" ||
+    die "Could not create a private Wardn bundle directory"
+  chmod 700 "${bundle_dir}" || die "Could not secure the Wardn bundle directory"
+
+  total_bytes=0
+  while IFS= read -r record; do
+    path="$(printf '%s' "${record}" | jq --exit-status --raw-output '.path')" ||
+      die "Wardn skill bundle path extraction failed"
+    encoding="$(printf '%s' "${record}" |
+      jq --exit-status --raw-output '.encoding // "utf-8"')" ||
+      die "Wardn skill bundle encoding extraction failed"
+    executable="$(printf '%s' "${record}" |
+      jq --exit-status --raw-output '
+        (.executable // false) | if . then "true" else "false" end
+      ')" ||
+      die "Wardn skill bundle mode extraction failed"
+
+    case "${path}" in
+      */*)
+        parent="${path%/*}"
+        mkdir -p "${bundle_dir}/${parent}" ||
+          die "Could not create a Wardn skill bundle subdirectory"
+        ;;
+    esac
+    output_file="${bundle_dir}/${path}"
+    if [ "${encoding}" = "utf-8" ]; then
+      if ! printf '%s' "${record}" |
+        jq --exit-status --join-output --raw-output '.contents' >"${output_file}"; then
+        die "Could not write a Wardn UTF-8 bundle file"
+      fi
+    elif ! printf '%s' "${record}" |
+      jq --exit-status --raw-output '.contents' |
+      base64 "${BASE64_DECODE_FLAG}" >"${output_file}"; then
+      die "Could not decode a Wardn base64 bundle file"
+    fi
+
+    file_bytes="$(wc -c <"${output_file}" | awk '{print $1}')"
+    [ "${file_bytes}" -le 8388608 ] ||
+      die "Wardn skill bundle file exceeds 8388608 bytes"
+    total_bytes=$((total_bytes + file_bytes))
+    [ "${total_bytes}" -le 16777216 ] ||
+      die "Wardn skill bundle exceeds 16777216 decoded bytes"
+
+    if [ "${executable}" = "true" ]; then
+      chmod 700 "${output_file}" || die "Could not set Wardn bundle file permissions"
+    else
+      chmod 600 "${output_file}" || die "Could not set Wardn bundle file permissions"
+    fi
+  done <"${records_file}"
+
+  if ! jq --ascii-output --compact-output --exit-status \
+    --arg directory "${bundle_dir}" \
+    --argjson bytes "${total_bytes}" '
+      {
+        id,
+        hash,
+        directory: $directory,
+        fileCount: (.files | length),
+        decodedBytes: $bytes,
+        files: [.files[] | {
+          path,
+          encoding: (.encoding // "utf-8"),
+          executable: (.executable // false)
+        }]
+      }
+    ' "${bundle_file}"; then
+    die "Could not summarize the Wardn skill bundle"
+  fi
+
+  rm -f "${bundle_file}" "${records_file}"
+  bundle_file=""
+  records_file=""
+  bundle_complete="true"
+  trap - 0
+}
+
 require_commands
 
 case "${1-}" in
@@ -551,6 +761,10 @@ case "${1-}" in
   fetch-chunk)
     [ "$#" -eq 5 ] || usage
     fetch_skill "$2" chunk "$3" "$4" "$5"
+    ;;
+  fetch-bundle)
+    [ "$#" -eq 3 ] || usage
+    fetch_bundle "$2" "$3"
     ;;
   *)
     usage

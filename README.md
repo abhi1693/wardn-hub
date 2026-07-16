@@ -283,8 +283,13 @@ Use `--unset` to remove official status from that source owner.
 
 Wardn Hub includes one agent-agnostic, API-native bootstrap skill at
 `skills/find-skills`. An Agent Skills-compatible host with a POSIX shell,
-`curl`, `jq`, and `mktemp` can use it to search the public Hub API and load one
-selected `SKILL.md` for the current task without downloading the catalog.
+`curl`, `jq`, `mktemp`, and `base64` can use it to search the public Hub API and
+download one selected, hash-pinned complete skill bundle for the current task
+without downloading the catalog. The agent loads the root instructions and any
+required bundled scripts, references, templates, and assets from a bounded
+private temporary directory. The skill supports both explicit user requests and
+proactive agent discovery when a task needs specialized instructions that are
+not already installed.
 
 The skill source is:
 
