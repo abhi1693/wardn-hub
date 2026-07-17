@@ -1,0 +1,192 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, test } from 'node:test';
+
+import { runCli } from '../dist/cli.js';
+
+let apiBaseUrl;
+let currentHash = 'a'.repeat(64);
+let telemetryRequests = 0;
+let server;
+let target;
+
+function payload() {
+  return {
+    id: 'acme/skills/weather',
+    hash: currentHash,
+    files: [
+      {
+        path: 'SKILL.md',
+        contents: `---\nname: weather\ndescription: Check weather.\n---\n\n# ${currentHash[0]}\n`,
+      },
+    ],
+  };
+}
+
+before(async () => {
+  target = await mkdtemp(join(tmpdir(), 'wardn-cli-integration.'));
+  server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url?.startsWith('/api/v1/skills/search?')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          query: 'weather',
+          searchType: 'fuzzy',
+          count: 1,
+          durationMs: 1,
+          data: [
+            {
+              id: 'acme/skills/weather',
+              slug: 'weather',
+              source: 'acme/skills',
+              name: 'Weather',
+              description: 'Check weather.',
+              isOfficial: false,
+              isDuplicate: null,
+              installs: 3,
+              url: 'https://hub.wardnai.dev/skills/acme/skills/weather',
+              sourceUrl: 'https://github.com/acme/skills',
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/api/v1/skills/audit/acme/skills/weather') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          id: 'acme/skills/weather',
+          contentHash: currentHash,
+          audits: [
+            {
+              provider: 'Wardn Policy',
+              slug: 'policy',
+              status: 'pass',
+              summary: 'No policy findings.',
+              auditedAt: '2026-07-17T10:00:00Z',
+              riskLevel: 'low',
+              categories: [],
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    if (request.method === 'GET' && request.url?.startsWith('/api/v1/skills/')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(payload()));
+      return;
+    }
+    if (request.method === 'POST' && request.url?.startsWith('/api/v1/skills/telemetry/')) {
+      const url = new URL(request.url, 'http://localhost');
+      assert.equal(url.searchParams.get('client'), 'wardn-cli');
+      telemetryRequests += 1;
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    response.writeHead(404);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  apiBaseUrl = `http://127.0.0.1:${address.port}/api/v1`;
+});
+
+after(async () => {
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  await rm(target, { recursive: true, force: true });
+});
+
+test('CLI installs, updates, and removes a Wardn-managed skill', async () => {
+  const runtime = {
+    version: '0.1.0',
+    environment: { WARDN_HUB_API_BASE_URL: apiBaseUrl },
+  };
+  assert.equal(
+    await runCli(['install', 'acme/skills/weather', '--target', target, '--json'], runtime),
+    0,
+  );
+  assert.equal(telemetryRequests, 1);
+  assert.match(await readFile(join(target, 'weather/SKILL.md'), 'utf8'), /# a/);
+
+  currentHash = 'b'.repeat(64);
+  assert.equal(
+    await runCli(['update', 'weather', '--target', target, '--json'], runtime),
+    0,
+  );
+  assert.equal(telemetryRequests, 1);
+  assert.match(await readFile(join(target, 'weather/SKILL.md'), 'utf8'), /# b/);
+
+  assert.equal(
+    await runCli(['remove', 'weather', '--target', target, '--yes', '--json'], runtime),
+    0,
+  );
+  await assert.rejects(() => readFile(join(target, 'weather/SKILL.md')), /ENOENT/);
+});
+
+test('CLI exposes the complete script-free resolver workflow', async () => {
+  const runtime = {
+    version: '0.1.0',
+    environment: { WARDN_HUB_API_BASE_URL: apiBaseUrl },
+  };
+  const output = [];
+  const originalLog = console.log;
+  console.log = (...values) => output.push(values.join(' '));
+  let bundleDirectory;
+  try {
+    assert.equal(await runCli(['search', 'weather', '--json'], runtime), 0);
+    assert.equal(JSON.parse(output.pop()).data[0].id, 'acme/skills/weather');
+
+    assert.equal(await runCli(['audit', 'acme/skills/weather', '--json'], runtime), 0);
+    assert.equal(JSON.parse(output.pop()).hardRejectCount, 0);
+
+    assert.equal(await runCli(['inspect', 'acme/skills/weather', '--json'], runtime), 0);
+    assert.equal(JSON.parse(output.pop()).hash, currentHash);
+
+    assert.equal(
+      await runCli(
+        [
+          'fetch-chunk',
+          'acme/skills/weather',
+          '--hash',
+          currentHash,
+          '--offset',
+          '0',
+          '--length',
+          '20',
+          '--json',
+        ],
+        runtime,
+      ),
+      0,
+    );
+    const chunk = JSON.parse(output.pop());
+    assert.equal(chunk.offset, 0);
+    assert.equal(chunk.end, 20);
+
+    assert.equal(
+      await runCli(
+        ['fetch-bundle', 'acme/skills/weather', '--hash', currentHash, '--json'],
+        runtime,
+      ),
+      0,
+    );
+    const manifest = JSON.parse(output.pop());
+    bundleDirectory = manifest.directory;
+    assert.equal(manifest.fileCount, 1);
+    assert.match(await readFile(join(bundleDirectory, 'SKILL.md'), 'utf8'), /name: weather/);
+    assert.equal(telemetryRequests, 2);
+  } finally {
+    console.log = originalLog;
+    if (bundleDirectory !== undefined) {
+      await rm(bundleDirectory, { recursive: true, force: true });
+    }
+  }
+});

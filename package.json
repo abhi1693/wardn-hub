@@ -1,8 +1,10 @@
 {
   "name": "wardn-hub",
   "private": true,
+  "license": "Apache-2.0",
   "workspaces": [
-    "hub/frontend"
+    "hub/frontend",
+    "hub/cli"
   ],
   "scripts": {
     "api:openapi": "cd hub/backend && uv run --extra dev python -m app.openapi --output ../frontend/openapi/wardn-hub-api.json",
@@ -10,6 +12,9 @@
     "web:dev": "npm --workspace hub/frontend run dev",
     "web:build": "npm --workspace hub/frontend run build",
     "web:lint": "npm --workspace hub/frontend run lint",
+    "cli:build": "npm --workspace hub/cli run build",
+    "cli:test": "npm --workspace hub/cli test",
+    "cli:check": "npm --workspace hub/cli run check",
     "backend:test": "cd hub/backend && uv run --extra dev pytest",
     "backend:lint": "cd hub/backend && uv run --extra dev ruff check ."
   },

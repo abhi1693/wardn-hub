@@ -213,6 +213,7 @@ async def record_skill_install(
     *,
     content_hash: str,
     resolver_version: str,
+    client: str = "find-skills",
 ) -> None:
     source, slug = split_skill_id(skill_id)
     skill = await repository.get_skill(session, source, slug)
@@ -225,6 +226,7 @@ async def record_skill_install(
         session,
         skill=skill,
         snapshot=snapshot,
+        source=client,
         resolver_version=resolver_version,
     )
 

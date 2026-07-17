@@ -287,6 +287,7 @@ async def record_install_event(
     *,
     skill: Skill,
     snapshot: SkillSnapshot,
+    source: str,
     resolver_version: str,
 ) -> None:
     session.add(
@@ -294,7 +295,7 @@ async def record_install_event(
             skill_id=skill.id,
             snapshot_id=snapshot.id,
             content_hash=snapshot.content_hash or "",
-            source="find-skills",
+            source=source,
             resolver_version=resolver_version,
         )
     )

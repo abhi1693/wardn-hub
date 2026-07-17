@@ -99,6 +99,10 @@ async def record_skill_install_telemetry(
         str,
         Query(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9._-]+$"),
     ] = "unknown",
+    client: Annotated[
+        str,
+        Query(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9._-]+$"),
+    ] = "find-skills",
 ) -> Response:
     try:
         await record_skill_install(
@@ -106,6 +110,7 @@ async def record_skill_install_telemetry(
             skill_id,
             content_hash=content_hash,
             resolver_version=resolver_version,
+            client=client,
         )
     except SkillNotFoundError as exc:
         raise not_found(exc, detail=str(exc)) from exc

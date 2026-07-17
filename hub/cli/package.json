@@ -1,0 +1,54 @@
+{
+  "name": "@wardn/skills",
+  "version": "0.1.0",
+  "description": "Search, audit, fetch, install, update, and remove agent skills from Wardn Hub",
+  "type": "module",
+  "bin": {
+    "wardn-skills": "bin/wardn-skills.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run typecheck && npm test && npm pack --dry-run",
+    "prepublishOnly": "npm run check"
+  },
+  "keywords": [
+    "agent-skills",
+    "ai-agents",
+    "audit",
+    "cli",
+    "codex",
+    "skill-search",
+    "wardn"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhi1693/wardn-hub.git",
+    "directory": "hub/cli"
+  },
+  "homepage": "https://hub.wardnai.dev",
+  "bugs": {
+    "url": "https://github.com/abhi1693/wardn-hub/issues"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "dependencies": {
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.3"
+  }
+}

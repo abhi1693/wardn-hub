@@ -39,6 +39,7 @@ This repository follows the Wardn AI monorepo layout:
 ```text
 hub/
   backend/    FastAPI API, SQLAlchemy models, Alembic migrations, tests
+  cli/        Publishable npm CLI for Wardn skill lifecycle management
   frontend/   Next.js web app, generated OpenAPI client, UI components
 ```
 
@@ -309,88 +310,59 @@ uv run python -m app.manage skills mark-official vercel-labs
 
 Use `--unset` to remove official status from that source owner.
 
-### Discover skills without syncing the catalog
+### Manage agent skills with the npm CLI
 
-Wardn Hub includes one agent-agnostic, API-native bootstrap skill at
-`skills/find-skills`. An Agent Skills-compatible host with a POSIX shell,
-`curl`, `jq`, `mktemp`, and `base64` can use it to search the public Hub API and
-download one selected, hash-pinned complete skill bundle for the current task
-without downloading the catalog. The agent loads the root instructions and any
-required bundled scripts, references, templates, and assets from a bounded
-private temporary directory. The skill supports both explicit user requests and
-proactive agent discovery when a task needs specialized instructions that are
-not already installed.
-
-The skill source is:
-
-```text
-https://github.com/abhi1693/wardn-hub/tree/master/skills/find-skills
-```
-
-For a POSIX manual installation or update, set `AGENT_SKILLS_DIR` to the host
-agent's absolute user-level skills directory. From a Wardn Hub checkout, run:
+The publishable `@wardn/skills` workspace replaces the POSIX-only
+`find-skills` support scripts. It now owns the full resolver workflow—search,
+audit normalization, root inspection, hash-pinned temporary bundle fetches—and
+marker-safe installation, update, and removal:
 
 ```sh
-AGENT_SKILLS_DIR="/absolute/path/to/the/agent/skills" \
-  sh skills/find-skills/scripts/install-find-skills.sh
+npx -y @wardn/skills search "code audit" --limit 8 --json
+npx -y @wardn/skills audit owner/repository/skill-slug --json
+npx -y @wardn/skills inspect owner/repository/skill-slug --json
+npx -y @wardn/skills fetch-bundle owner/repository/skill-slug \
+  --hash expected-64-character-sha256 \
+  --json
+npx @wardn/skills install owner/repository/skill-slug -g -a codex
+npx @wardn/skills update skill-slug -g -a codex
+npx @wardn/skills remove skill-slug -g -a codex -y
 ```
 
-To bootstrap without a checkout, first download the installer at an immutable
-revision, inspect it, and then run it:
+The repository's `find-skills` skill is declarative: it invokes an exact version
+of this npm package and contains no bundled resolver or self-installer scripts.
+Install or update that bootstrap skill through the same lifecycle command:
 
 ```sh
-(
-set -eu
-BOOTSTRAP_DIR="$(mktemp -d)"
-cleanup() {
-  rm -rf "${BOOTSTRAP_DIR}"
-}
-trap cleanup 0
-trap 'exit 1' HUP INT TERM
-curl -q --proto '=https' --silent --show-error --fail \
-  --max-time 30 --max-filesize 262144 \
-  --output "${BOOTSTRAP_DIR}/commit.json" \
-  https://api.github.com/repos/abhi1693/wardn-hub/commits/master
-SKILL_REF="$(jq --exit-status --raw-output \
-  '.sha | strings | select(test("^[0-9a-f]{40}$"))' \
-  "${BOOTSTRAP_DIR}/commit.json")"
-curl -q --proto '=https' --silent --show-error --fail \
-  --max-time 30 --max-filesize 131072 \
-  --output "${BOOTSTRAP_DIR}/install-find-skills.sh" \
-  "https://raw.githubusercontent.com/abhi1693/wardn-hub/${SKILL_REF}/skills/find-skills/scripts/install-find-skills.sh"
-sh -n "${BOOTSTRAP_DIR}/install-find-skills.sh"
-WARDN_FIND_SKILLS_REVISION="${SKILL_REF}" \
-  AGENT_SKILLS_DIR="/absolute/path/to/the/agent/skills" \
-  sh "${BOOTSTRAP_DIR}/install-find-skills.sh"
-trap - HUP INT TERM
-trap - 0
-cleanup
-)
+npx -y @wardn/skills install abhi1693/wardn-hub/find-skills -g -a codex
 ```
 
-The same command installs, updates, or reports an unchanged current revision.
-It stages downloads on the target filesystem, pins them to an immutable Wardn
-Hub commit, keeps the previous managed installation until replacement succeeds,
-and refuses to overwrite unrelated directories. It can also upgrade the exact
-legacy layout created by the earlier README installer.
+Project installs are the default. Use `--global` for a user-level install,
+repeat `--agent` for multiple hosts, or pass an explicit absolute skills
+directory with `--target`. The initial built-in agent targets are Codex, Claude
+Code, Cursor, OpenCode, Gemini CLI, GitHub Copilot, and the universal Agent
+Skills directory.
 
-For an explicitly requested permanent install of a selected, audited Wardn
-skill, the resolver supports:
+The CLI preserves the resolver's security boundaries: it validates Wardn IDs,
+snapshot hashes, root metadata, encodings, paths, file counts, and decoded byte
+limits; refuses symlink and unmanaged-directory collisions; stages replacements
+on the target filesystem; and retains the previous managed installation until
+an update succeeds. `--hash` pins an install to an exact audited or otherwise
+selected snapshot.
 
-```sh
-sh "/absolute/path/to/find-skills/scripts/wardn-skills.sh" install \
-  "owner/repository/skill-slug" \
-  "expected-64-character-audited-hash" \
-  "/absolute/path/to/the/agent/skills"
-```
+After a complete temporary bundle is materialized or a new installation succeeds,
+the CLI sends one best-effort anonymous event with only the public skill ID,
+content hash, CLI identifier, and CLI version. Set
+`WARDN_HUB_DISABLE_TELEMETRY=1`, `DISABLE_TELEMETRY=1`, `DO_NOT_TRACK=1`, or use
+`--no-telemetry` to opt out. Telemetry never includes local paths, source code,
+task context, user identifiers, or device identifiers, and a telemetry failure
+never fails or removes an installed bundle.
 
-The resolver requires `curl`, `jq`, `mktemp`, and `base64` and uses the pinned
-public API at `https://hub.wardnai.dev/api/v1`. Discovery and reload behavior are
-determined by the host agent. After a complete bundle is validated and
-materialized, the resolver sends one anonymous install event containing only the
-public skill ID, content hash, and resolver version. Set
-`WARDN_HUB_DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` to opt out. Telemetry failures
-never fail bundle loading or installation.
+Publish `@wardn/skills` independently from the Hub application version. Bump
+`hub/cli/package.json` and the exact package pin in `skills/find-skills/SKILL.md`,
+then push `skills-v<version>` (for example, `skills-v0.1.0`). The npm workflow can
+also be dispatched manually from `master`; it validates the version and pin,
+refuses an existing npm version, and publishes with provenance using `NPM_TOKEN`.
 
 ### Frontend
 
@@ -513,6 +485,7 @@ npm run api:openapi       # Export backend OpenAPI JSON
 npm run web:api:generate  # Regenerate the frontend API client
 npm run web:lint          # Lint the frontend
 npm run web:build         # Build the frontend
+npm run cli:check         # Type-check, test, and dry-pack the npm CLI
 npm run backend:lint      # Run ruff against the backend
 npm run backend:test      # Run backend tests
 ```
@@ -653,8 +626,9 @@ Release tags include the semantic release version and `latest`.
 
 GitHub Actions currently includes:
 
-- `Tests`: backend dependency install with uv, ruff linting, pytest, frontend npm
-  install, frontend linting, and frontend production build.
+- `Tests`: backend dependency install with uv, ruff linting, pytest, CLI package
+  verification, frontend npm install, frontend linting, and frontend production
+  build.
 - `Security Checks`: gitleaks secret scanning, `npm audit` for production
   frontend dependencies, and `pip-audit` for backend dependencies.
 - `Container Image`: release-triggered backend and frontend container image
@@ -695,4 +669,4 @@ out of scope for this repository:
 
 ## License
 
-No license file is currently included in this repository.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).

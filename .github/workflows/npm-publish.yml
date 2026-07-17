@@ -1,0 +1,107 @@
+name: Publish Wardn Skills to npm
+
+on:
+  push:
+    tags:
+      - "skills-v*"
+  workflow_dispatch:
+    inputs:
+      npm_tag:
+        description: npm distribution tag
+        required: true
+        default: latest
+        type: choice
+        options:
+          - latest
+          - next
+          - beta
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish-wardn-skills-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish @wardn/skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js and npm registry
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          scope: "@wardn"
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Validate package release metadata
+        id: package
+        shell: bash
+        env:
+          MANUAL_NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          package_name="$(node -p "require('./hub/cli/package.json').name")"
+          package_version="$(node -p "require('./hub/cli/package.json').version")"
+
+          if [[ "${package_name}" != "@wardn/skills" ]]; then
+            echo "Unexpected npm package name: ${package_name}" >&2
+            exit 1
+          fi
+
+          if ! grep -Fq "@wardn/skills@${package_version}" skills/find-skills/SKILL.md; then
+            echo "find-skills must pin @wardn/skills@${package_version} before publishing." >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${GITHUB_REF}" != "refs/heads/master" ]]; then
+            echo "Manual npm publishing is restricted to master." >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            expected_tag="skills-v${package_version}"
+            if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+              echo "Tag ${GITHUB_REF_NAME} does not match package version ${expected_tag}." >&2
+              exit 1
+            fi
+          fi
+
+          npm_tag="${MANUAL_NPM_TAG:-}"
+          if [[ -z "${npm_tag}" ]]; then
+            if [[ "${package_version}" == *-* ]]; then
+              npm_tag="next"
+            else
+              npm_tag="latest"
+            fi
+          fi
+
+          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
+          echo "version=${package_version}" >> "${GITHUB_OUTPUT}"
+          echo "npm_tag=${npm_tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Refuse an existing npm version
+        shell: bash
+        run: |
+          if npm view "${{ steps.package.outputs.name }}@${{ steps.package.outputs.version }}" version --silent >/dev/null 2>&1; then
+            echo "${{ steps.package.outputs.name }}@${{ steps.package.outputs.version }} is already published." >&2
+            exit 1
+          fi
+
+      - name: Verify npm authentication
+        run: test "$(npm whoami)" = "abhi1693"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish package
+        run: npm publish --workspace @wardn/skills --access public --provenance --tag "${{ steps.package.outputs.npm_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

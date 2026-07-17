@@ -7148,7 +7148,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.104"
+    "version": "0.2.105"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12092,6 +12092,19 @@
               "minLength": 1,
               "pattern": "^[A-Za-z0-9._-]+$",
               "title": "Resolver Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client",
+            "required": false,
+            "schema": {
+              "default": "find-skills",
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "title": "Client",
               "type": "string"
             }
           }

@@ -270,7 +270,7 @@ def test_record_skill_install_telemetry_accepts_valid_snapshot(monkeypatch) -> N
 
     response = TestClient(create_app()).post(
         "/api/v1/skills/telemetry/vercel-labs/skills/find-skills"
-        f"?content_hash={'a' * 64}&resolver_version=1"
+        f"?content_hash={'a' * 64}&resolver_version=0.1.0&client=wardn-cli"
     )
 
     assert response.status_code == 204
@@ -278,7 +278,11 @@ def test_record_skill_install_telemetry_accepts_valid_snapshot(monkeypatch) -> N
     assert calls == [
         (
             "vercel-labs/skills/find-skills",
-            {"content_hash": "a" * 64, "resolver_version": "1"},
+            {
+                "content_hash": "a" * 64,
+                "resolver_version": "0.1.0",
+                "client": "wardn-cli",
+            },
         )
     ]
 
@@ -290,6 +294,29 @@ def test_record_skill_install_telemetry_rejects_invalid_hash() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_record_skill_install_telemetry_defaults_legacy_client(monkeypatch) -> None:
+    calls: list[dict[str, str]] = []
+
+    async def record_skill_install(*args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(router, "record_skill_install", record_skill_install)
+
+    response = TestClient(create_app()).post(
+        "/api/v1/skills/telemetry/vercel-labs/skills/find-skills"
+        f"?content_hash={'a' * 64}&resolver_version=2"
+    )
+
+    assert response.status_code == 204
+    assert calls == [
+        {
+            "content_hash": "a" * 64,
+            "resolver_version": "2",
+            "client": "find-skills",
+        }
+    ]
 
 
 def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:

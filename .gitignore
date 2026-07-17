@@ -13,6 +13,7 @@ __pycache__/
 # Node
 node_modules/
 .next/
+hub/cli/dist/
 
 # IDE
 .idea/

@@ -93,6 +93,7 @@ async def test_record_install_event_increments_counter_atomically() -> None:
         session,  # type: ignore[arg-type]
         skill=skill,  # type: ignore[arg-type]
         snapshot=snapshot,  # type: ignore[arg-type]
+        source="wardn-cli",
         resolver_version="1",
     )
 
@@ -100,7 +101,7 @@ async def test_record_install_event_increments_counter_atomically() -> None:
     event = session.added[0]
     assert isinstance(event, SkillInstallEvent)
     assert event.content_hash == "a" * 64
-    assert event.source == "find-skills"
+    assert event.source == "wardn-cli"
     assert event.resolver_version == "1"
     assert "installs=(skills.installs +" in session.statement
     assert session.committed is True
@@ -269,10 +270,16 @@ async def test_record_skill_install_requires_current_snapshot_hash(
         "acme/skills/weather",
         content_hash="a" * 64,
         resolver_version="1",
+        client="wardn-cli",
     )
 
     assert recorded == [
-        {"skill": skill, "snapshot": snapshot, "resolver_version": "1"}
+        {
+            "skill": skill,
+            "snapshot": snapshot,
+            "source": "wardn-cli",
+            "resolver_version": "1",
+        }
     ]
 
     with pytest.raises(service.SkillNotFoundError, match="snapshot"):
