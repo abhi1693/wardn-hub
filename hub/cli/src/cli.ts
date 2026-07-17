@@ -14,7 +14,14 @@ import {
   materializeTemporaryBundle,
   removeManagedInstallation,
 } from './installation.js';
-import type { InstallResult, InstallScope, ManagedInstallation } from './types.js';
+import type {
+  InstallResult,
+  InstallScope,
+  ManagedInstallation,
+  SkillAuditResult,
+  SkillSearchResult,
+  TemporaryBundleManifest,
+} from './types.js';
 import { skillSlug, validateHash, validateSkillId } from './validation.js';
 
 interface ParsedOptions {
@@ -170,7 +177,7 @@ Usage:
   wardn-skills remove <skill-id-or-slug ...> [options]
 
 Commands:
-  search, find                Search Wardn Hub (JSON output)
+  search, find                Search Wardn Hub
   audit                       Read and normalize current audit decisions
   inspect                     Validate root SKILL.md and print snapshot metadata
   fetch                       Fetch a validated root SKILL.md
@@ -253,6 +260,75 @@ function rootMetadata(id: string, hash: string, characters: number): string {
   return `Wardn skill id=${id} hash=${hash} characters=${characters}`;
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return count === 1 ? singular : plural;
+}
+
+function printSearchResult(result: SkillSearchResult, json: boolean): void {
+  if (json) {
+    printJson(result);
+    return;
+  }
+  if (result.count === 0) {
+    console.log(`No skills found for "${result.query}".`);
+    return;
+  }
+  console.log(
+    `Found ${result.count} ${pluralize(result.count, 'skill')} for "${result.query}":`,
+  );
+  result.data.forEach((skill, index) => {
+    const installs = `${skill.installs} ${pluralize(skill.installs, 'install')}`;
+    const labels = [skill.isOfficial ? 'official' : 'community', installs];
+    if (skill.isDuplicate === true) labels.push('duplicate');
+    console.log(`\n${index + 1}. ${skill.name}`);
+    console.log(`   ${skill.description}`);
+    console.log(`   ID: ${skill.id}`);
+    console.log(`   Source: ${skill.source} · ${labels.join(' · ')}`);
+    console.log(`   ${skill.url}`);
+  });
+}
+
+function printAuditResult(result: SkillAuditResult, json: boolean): void {
+  if (json) {
+    printJson(result);
+    return;
+  }
+  if ('auditStatus' in result) {
+    console.log(`No audits are available for ${result.id}.`);
+    return;
+  }
+  console.log(`Audit for ${result.id}`);
+  console.log(`Content hash: ${result.contentHash}`);
+  console.log(
+    `Hard rejects: ${result.hardRejectCount} · Warnings: ${result.warningCount} · Historical failures: ${result.failureCount}`,
+  );
+  if (result.latestAudits.length === 0) {
+    console.log('No current provider decisions.');
+    return;
+  }
+  result.latestAudits.forEach((audit) => {
+    const risk = audit.riskLevel === null ? '' : ` · ${audit.riskLevel} risk`;
+    console.log(`\n${audit.provider}: ${audit.status.toUpperCase()}${risk}`);
+    console.log(`  ${audit.summary}`);
+    console.log(`  Audited: ${audit.auditedAt}`);
+  });
+}
+
+function printBundleManifest(manifest: TemporaryBundleManifest, json: boolean): void {
+  if (json) {
+    printJson(manifest);
+    return;
+  }
+  console.log(`Materialized ${manifest.id} at ${manifest.directory}`);
+  console.log(`Hash: ${manifest.hash}`);
+  console.log(
+    `${manifest.fileCount} ${pluralize(manifest.fileCount, 'file')} · ${manifest.decodedBytes} decoded bytes`,
+  );
+  manifest.files.forEach((file) => {
+    console.log(`  ${file.path}${file.executable ? ' (executable)' : ''}`);
+  });
+}
+
 async function searchCommand(client: HubClient, options: ParsedOptions): Promise<void> {
   rejectManagementOptions(options, 'search');
   if (
@@ -273,7 +349,7 @@ async function searchCommand(client: HubClient, options: ParsedOptions): Promise
   if (query === undefined) throw new Error('search requires a query');
   const owner = options.owner ?? options.positionals[1];
   const result = await client.search(query, owner, options.limit ?? 8);
-  printJson(result);
+  printSearchResult(result, options.json);
 }
 
 async function auditCommand(client: HubClient, options: ParsedOptions): Promise<void> {
@@ -283,7 +359,7 @@ async function auditCommand(client: HubClient, options: ParsedOptions): Promise<
   }
   const id = options.positionals[0];
   if (id === undefined) throw new Error('audit requires a Wardn skill ID');
-  printJson(await client.audit(id));
+  printAuditResult(await client.audit(id), options.json);
 }
 
 async function inspectCommand(client: HubClient, options: ParsedOptions): Promise<void> {
@@ -343,14 +419,23 @@ async function fetchChunkCommand(client: HubClient, options: ParsedOptions): Pro
     throw new Error('chunk offset is beyond the Wardn skill content');
   }
   const end = Math.min(options.offset + options.length, root.characters);
-  printJson({
+  const chunk = {
     id: root.id,
     hash: root.hash,
     offset: options.offset,
     end,
     characters: root.characters,
     content: [...root.contents].slice(options.offset, end).join(''),
-  });
+  };
+  if (options.json) {
+    printJson(chunk);
+    return;
+  }
+  console.log(
+    `Wardn skill id=${chunk.id} hash=${chunk.hash} characters=${chunk.characters} range=${chunk.offset}-${chunk.end}`,
+  );
+  process.stdout.write(chunk.content);
+  if (!chunk.content.endsWith('\n')) process.stdout.write('\n');
 }
 
 async function fetchBundleCommand(
@@ -377,7 +462,7 @@ async function fetchBundleCommand(
   if (!options.noTelemetry && !telemetryDisabled(environment)) {
     await client.recordInstall(bundle.id, bundle.hash);
   }
-  printJson(manifest);
+  printBundleManifest(manifest, options.json);
 }
 
 async function selectInstallAgent(explicitAgentNames: string[]): Promise<string[]> {

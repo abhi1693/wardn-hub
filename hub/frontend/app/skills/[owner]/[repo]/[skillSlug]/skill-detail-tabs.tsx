@@ -24,7 +24,7 @@ type AgentTarget = {
   value: string;
 };
 
-const CLI_PACKAGE = "@wardn-ai/skills@0.1.1";
+const CLI_PACKAGE = "@wardn-ai/skills@0.1.2";
 
 const agentTargets: AgentTarget[] = [
   {

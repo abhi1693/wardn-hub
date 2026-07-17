@@ -190,3 +190,31 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
     }
   }
 });
+
+test('CLI search is human-readable by default and JSON only when requested', async () => {
+  const runtime = {
+    version: '0.1.0',
+    environment: { WARDN_HUB_API_BASE_URL: apiBaseUrl },
+  };
+  const output = [];
+  const originalLog = console.log;
+  console.log = (...values) => output.push(values.join(' '));
+  try {
+    assert.equal(await runCli(['search', 'weather'], runtime), 0);
+    const humanOutput = output.join('\n');
+    assert.match(humanOutput, /Found 1 skill for "weather":/);
+    assert.match(humanOutput, /1\. Weather/);
+    assert.match(humanOutput, /ID: acme\/skills\/weather/);
+    assert.match(humanOutput, /community · 3 installs/);
+    assert.match(humanOutput, /https:\/\/hub\.wardnai\.dev\/skills\/acme\/skills\/weather/);
+    assert.throws(() => JSON.parse(humanOutput), SyntaxError);
+
+    output.length = 0;
+    assert.equal(await runCli(['search', 'weather', '--json'], runtime), 0);
+    const jsonOutput = JSON.parse(output.join('\n'));
+    assert.equal(jsonOutput.count, 1);
+    assert.equal(jsonOutput.data[0].id, 'acme/skills/weather');
+  } finally {
+    console.log = originalLog;
+  }
+});
