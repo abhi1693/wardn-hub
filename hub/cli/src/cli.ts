@@ -170,8 +170,8 @@ Usage:
   wardn-skills audit <skill-id>
   wardn-skills inspect <skill-id>
   wardn-skills fetch <skill-id>
-  wardn-skills fetch-chunk <skill-id> --hash <sha256> --offset <n> --length <n>
-  wardn-skills fetch-bundle <skill-id> --hash <sha256>
+  wardn-skills fetch-chunk <skill-id> [--hash <sha256>] --offset <n> --length <n>
+  wardn-skills fetch-bundle <skill-id> [--hash <sha256>]
   wardn-skills install <skill-id> [options]
   wardn-skills update [skill-id-or-slug ...] [options]
   wardn-skills remove <skill-id-or-slug ...> [options]
@@ -181,8 +181,8 @@ Commands:
   audit                       Read and normalize current audit decisions
   inspect                     Validate root SKILL.md and print snapshot metadata
   fetch                       Fetch a validated root SKILL.md
-  fetch-chunk                 Fetch a hash-pinned root SKILL.md chunk
-  fetch-bundle                Materialize a hash-pinned bundle temporarily
+  fetch-chunk                 Fetch a root SKILL.md chunk, latest by default
+  fetch-bundle                Materialize a complete bundle, latest by default
   install, add, i             Install one skill from Wardn Hub
   update, upgrade             Update managed skills to their latest snapshots
   remove, delete, uninstall   Delete managed skills
@@ -192,7 +192,7 @@ Options:
   -g, --global                Use the agent's user-level skills directory
   -p, --project               Use the project skills directory (default)
       --target <directory>    Use an explicit absolute skills directory
-      --hash <sha256>         Require an exact snapshot when installing
+      --hash <sha256>         Require an exact snapshot; latest when omitted
       --owner <owner>         Restrict a search to one owner
       --limit <count>         Return 1-200 search results (default: 8)
       --offset <characters>   Root content offset for fetch-chunk
@@ -210,7 +210,7 @@ Agents:
 Examples:
   npx @wardn-ai/skills search "code audit" --json
   npx @wardn-ai/skills audit owner/repository/skill-slug --json
-  npx @wardn-ai/skills fetch-bundle owner/repository/skill-slug --hash <sha256> --json
+  npx @wardn-ai/skills fetch-bundle owner/repository/skill-slug --json
   npx @wardn-ai/skills install owner/repository/skill-slug -g -a codex
   npx @wardn-ai/skills update skill-slug -g -a codex
   npx @wardn-ai/skills remove skill-slug -g -a codex -y`);
@@ -402,8 +402,8 @@ async function fetchChunkCommand(client: HubClient, options: ParsedOptions): Pro
   if (options.positionals.length !== 1) {
     throw new Error('fetch-chunk requires exactly one Wardn skill ID');
   }
-  if (options.hash === undefined || options.offset === undefined || options.length === undefined) {
-    throw new Error('fetch-chunk requires --hash, --offset, and --length');
+  if (options.offset === undefined || options.length === undefined) {
+    throw new Error('fetch-chunk requires --offset and --length');
   }
   if (options.offset > 65_535) throw new Error('chunk offset must not exceed 65535');
   if (options.length < 1 || options.length > 8_000) {
@@ -412,7 +412,7 @@ async function fetchChunkCommand(client: HubClient, options: ParsedOptions): Pro
   const id = options.positionals[0];
   if (id === undefined) throw new Error('fetch-chunk requires a Wardn skill ID');
   const root = await client.fetchRoot(id);
-  if (root.hash !== options.hash) {
+  if (options.hash !== undefined && root.hash !== options.hash) {
     throw new Error('Wardn skill hash changed since inspection');
   }
   if (options.offset >= root.characters) {
@@ -452,8 +452,8 @@ async function fetchBundleCommand(
   ) {
     throw new Error('unsupported option for fetch-bundle');
   }
-  if (options.positionals.length !== 1 || options.hash === undefined) {
-    throw new Error('fetch-bundle requires one Wardn skill ID and --hash');
+  if (options.positionals.length !== 1) {
+    throw new Error('fetch-bundle requires exactly one Wardn skill ID');
   }
   const id = options.positionals[0];
   if (id === undefined) throw new Error('fetch-bundle requires a Wardn skill ID');

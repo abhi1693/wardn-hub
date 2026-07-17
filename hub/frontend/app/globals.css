@@ -46,37 +46,103 @@
 .skill-detail-hero-main .skill-detail-title-row {
   min-width: 0;
   align-items: center;
+  gap: 16px;
 }
 
 .skill-detail-hero-main .skill-detail-icon {
-  width: 50px;
-  height: 50px;
-  border-radius: 12px;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
 }
 
-.skill-detail-hero-main .skill-source-link {
+.skill-detail-heading {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.skill-detail-heading-line,
+.skill-detail-byline,
+.skill-detail-file-count {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.skill-detail-heading-line {
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.skill-detail-byline {
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.skill-detail-byline a {
+  color: var(--electric-blue);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.skill-detail-byline a:hover,
+.skill-detail-byline a:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.skill-detail-file-count {
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.skill-detail-repository-link {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
-  min-height: 38px;
-  padding: 0 13px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--muted-foreground);
+}
+
+.skill-detail-repository-link:hover,
+.skill-detail-repository-link:focus-visible {
+  outline: none;
+  background: var(--surface-container-low);
+  color: var(--foreground);
+}
+
+.skill-detail-repository-link:focus-visible {
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15);
+}
+
+.skill-detail-hero .skills-breadcrumbs {
+  color: color-mix(in srgb, var(--muted-foreground) 82%, transparent);
+  font-weight: 550;
 }
 
 .skill-detail-facts {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 8px;
+  column-gap: 22px;
+  row-gap: 8px;
   margin: 0;
 }
 
 .skill-detail-facts div {
   display: inline-flex;
-  min-height: 30px;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-container-low);
-  padding: 4px 10px;
+  gap: 6px;
 }
 
 .skill-detail-facts dt,
@@ -91,13 +157,12 @@
 
 .skill-detail-facts dt {
   color: var(--muted-foreground);
-  font-weight: 650;
+  font-weight: 550;
 }
 
 .skill-detail-facts dd {
   color: var(--foreground);
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-weight: 700;
+  font-weight: 650;
 }
 
 .skill-detail-tabs-shell {
@@ -171,7 +236,7 @@
 
 .skill-detail-tab-panel {
   width: 100%;
-  max-width: 1180px;
+  max-width: var(--content-max-width);
   margin: 0 auto;
   outline: none;
   padding: 30px var(--content-gutter) 64px;
@@ -189,31 +254,66 @@
   gap: 20px;
 }
 
-.skill-overview-summary {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-  padding: 24px 26px 24px 30px;
+.skill-tab-overview-layout {
+  align-items: start;
 }
 
-.skill-overview-summary::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 4px;
-  background: var(--electric-blue);
-  content: "";
+.skill-detail-overview-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
+  gap: 32px;
+}
+
+.skill-detail-overview-main {
+  min-width: 0;
+}
+
+.skill-overview-utilities {
+  position: sticky;
+  top: 138px;
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.skill-overview-install-cta {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--foreground);
+  border-radius: var(--radius-lg);
+  background: var(--foreground);
+  color: var(--card);
+  font-size: 14px;
+  font-weight: 750;
+  padding: 0 18px;
+}
+
+.skill-overview-install-cta:hover {
+  background: #303030;
+}
+
+.skill-overview-install-cta:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 0.2);
+  outline-offset: 2px;
+}
+
+.skill-tab-files-layout {
+  grid-template-columns: 280px minmax(0, 1fr);
+  align-items: start;
+}
+
+.skill-overview-summary {
+  display: grid;
+  gap: 12px;
+  padding: 2px 0 8px;
 }
 
 .skill-overview-summary h2,
-.skill-security-intro h2,
-.skill-install-intro h2 {
+.skill-security-intro h2 {
   margin: 0;
   color: var(--foreground);
   font-size: 23px;
@@ -221,9 +321,13 @@
   line-height: 30px;
 }
 
+.skill-overview-summary h2 {
+  font-size: 20px;
+  line-height: 28px;
+}
+
 .skill-overview-summary p,
-.skill-security-intro p,
-.skill-install-intro p {
+.skill-security-intro p {
   max-width: 860px;
   margin: 0;
   color: var(--on-surface-variant);
@@ -235,19 +339,6 @@
 .skill-tab-files-layout > .skill-file-panel {
   overflow: hidden;
   border-radius: var(--radius-lg);
-}
-
-.skill-document-label {
-  flex: 0 0 auto;
-  margin-left: auto;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-container-low);
-  color: var(--muted-foreground);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
-  padding: 1px 8px;
 }
 
 .skill-tab-overview-layout > .skills-side-section {
@@ -264,7 +355,7 @@
 }
 
 .skill-tab-overview-layout .skills-related-list {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .skill-tab-overview-layout .skills-related-list a {
@@ -272,7 +363,25 @@
   background: var(--surface-container-low);
 }
 
+.skill-overview-document .skill-file-markdown {
+  font-size: 15px;
+  line-height: 24px;
+  padding: 28px 32px;
+}
+
+.skill-files-desktop {
+  position: sticky;
+  top: 138px;
+  min-width: 0;
+}
+
+.skill-files-mobile {
+  display: none;
+}
+
 .skill-files-index {
+  max-height: calc(100vh - 158px);
+  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--card);
@@ -290,7 +399,7 @@
 }
 
 .skill-files-index .skill-file-list {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .skill-files-index .skill-file-list-item {
@@ -306,7 +415,6 @@
 
 .skill-tab-security-layout {
   max-width: 960px;
-  margin: 0 auto;
 }
 
 .skill-security-intro {
@@ -369,9 +477,8 @@
 
 .skill-installation-panel {
   display: grid;
-  max-width: 920px;
-  margin: 0 auto;
-  gap: 14px;
+  max-width: 1000px;
+  gap: 24px;
 }
 
 .skill-install-audience {
@@ -416,33 +523,16 @@
 
 .skill-install-mode-panel {
   display: grid;
-  gap: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-  padding: 26px;
+  gap: 22px;
+  padding: 2px 4px 0;
 }
 
-.skill-install-intro {
-  display: grid;
-  gap: 7px;
+.skill-install-mode-panel > h2 {
+  margin: 0;
+  font-size: 19px;
+  line-height: 27px;
 }
 
-.skill-install-kicker {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 6px;
-  color: var(--electric-blue);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  line-height: 18px;
-  text-transform: uppercase;
-}
-
-.skill-agent-prompt,
 .skill-install-command {
   min-width: 0;
   overflow: hidden;
@@ -452,7 +542,6 @@
   color: #f8fafc;
 }
 
-.skill-agent-prompt-head,
 .skill-install-command-head {
   display: flex;
   min-height: 44px;
@@ -467,8 +556,7 @@
   padding: 0 12px 0 15px;
 }
 
-.skill-install-command-head > span,
-.skill-install-directory > span {
+.skill-install-command-head > span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -498,7 +586,6 @@
   box-shadow: 0 0 0 2px rgb(147 197 253 / 0.5);
 }
 
-.skill-agent-prompt pre,
 .skill-install-command pre {
   max-width: 100%;
   overflow: auto;
@@ -517,72 +604,99 @@
   white-space: pre-wrap;
 }
 
-.skill-agent-prompt pre:focus-visible,
 .skill-install-command pre:focus-visible {
   outline: 2px solid #60a5fa;
   outline-offset: -2px;
 }
 
-.skill-install-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--success) 20%, var(--border));
-  border-radius: var(--radius-md);
-  background: var(--success-bg);
-  color: var(--success);
-  padding: 12px 14px;
-}
-
-.skill-install-note svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.skill-install-note p {
-  margin: 0;
-  color: var(--on-surface-variant);
-  font-size: 12px;
-  line-height: 19px;
-}
-
-.skill-install-controls {
+.skill-install-agent-picker {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
+  grid-auto-columns: minmax(132px, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  background: var(--surface-container);
+  padding: 4px;
+  scrollbar-width: thin;
 }
 
-.skill-install-controls label,
-.skill-install-controls fieldset {
-  display: grid;
-  min-width: 0;
+.skill-install-agent-picker button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
   gap: 7px;
-  margin: 0;
   border: 0;
-  padding: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
-.skill-install-controls label > span,
-.skill-install-controls legend {
+.skill-agent-brand-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.skill-install-agent-picker button[aria-pressed="true"] {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 4px rgb(17 24 39 / 0.12);
+}
+
+.skill-install-agent-picker button:hover,
+.skill-install-agent-picker button:focus-visible {
+  color: var(--foreground);
+  outline: none;
+}
+
+.skill-install-agent-picker button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+.skill-install-instructions {
+  display: grid;
+  counter-reset: install-step;
+  gap: 17px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-install-instructions li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  counter-increment: install-step;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.skill-install-instructions li::before {
+  color: var(--foreground);
+  content: counter(install-step) ".";
+  font-weight: 600;
+  text-align: right;
+}
+
+.skill-install-scope-row {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 360px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.skill-install-scope-row > span {
   color: var(--on-surface-variant);
   font-size: 12px;
   font-weight: 750;
-  line-height: 18px;
-}
-
-.skill-install-controls select {
-  width: 100%;
-  min-height: 42px;
-  border: 1px solid var(--input);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--foreground);
-  padding: 0 36px 0 12px;
-}
-
-.skill-install-controls select:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
 }
 
 .skill-install-scope-switch {
@@ -615,68 +729,98 @@
   outline: 2px solid var(--ring);
 }
 
-.skill-install-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding: 0;
+.skill-install-code-disclosure,
+.skill-install-directory-disclosure {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.skill-install-code-disclosure summary,
+.skill-install-directory-disclosure summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 0 14px;
   list-style: none;
 }
 
-.skill-install-steps li {
-  display: grid;
-  align-content: start;
-  gap: 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-container-low);
-  padding: 12px;
+.skill-install-code-disclosure summary::-webkit-details-marker,
+.skill-install-directory-disclosure summary::-webkit-details-marker {
+  display: none;
 }
 
-.skill-install-steps li > span {
+.skill-install-code-disclosure summary > span,
+.skill-install-directory-disclosure summary > span {
   display: inline-flex;
-  width: 25px;
-  height: 25px;
   align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--foreground);
-  color: var(--card);
-  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
-  font-weight: 800;
+  gap: 7px;
 }
 
-.skill-install-steps p {
+.skill-install-code-disclosure[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.skill-install-code-disclosure[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.skill-install-directory-disclosure[open] summary > svg {
+  transform: rotate(90deg);
+}
+
+.skill-install-code-disclosure pre {
+  max-width: 100%;
+  overflow: auto;
   margin: 0;
-  color: var(--on-surface-variant);
+  color: #169447;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
-  line-height: 19px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  padding: 18px;
+  white-space: pre-wrap;
 }
 
-.skill-install-directory {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px dashed var(--outline);
-  border-radius: var(--radius-md);
-  background: var(--surface-container-low);
-  color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 11px 13px;
+.skill-install-code-disclosure pre:focus-visible,
+.skill-install-directory-disclosure summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
-.skill-install-directory code {
-  min-width: 0;
+.skill-install-directory-disclosure code {
+  display: block;
+  border-top: 1px solid var(--border);
   color: var(--foreground);
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
   overflow-wrap: anywhere;
-  text-align: right;
+  padding: 14px;
+}
+
+.skill-copy-primary {
+  width: calc(100% - 16px);
+  min-height: 42px;
+  justify-content: center;
+  align-self: center;
+  border-color: var(--foreground);
+  border-radius: var(--radius-lg);
+  background: var(--foreground);
+  color: var(--card);
+  font-size: 13px;
+}
+
+.skill-copy-primary:hover,
+.skill-copy-primary:focus-visible {
+  background: #303030;
 }
 
 .skill-manage-disclosure {
@@ -704,6 +848,27 @@
 }
 
 @media (max-width: 900px) {
+  .skill-detail-overview-shell,
+  .skill-tab-files-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-overview-utilities {
+    position: static;
+  }
+
+  .skill-files-desktop {
+    display: none;
+  }
+
+  .skill-files-mobile {
+    display: block;
+  }
+
+  .skill-files-mobile .skill-file-disclosure {
+    display: block;
+  }
+
   .skill-detail-tab-security .skill-audit-checks {
     grid-template-columns: 1fr;
   }
@@ -716,14 +881,6 @@
     border-top: 1px solid var(--border);
   }
 
-  .skill-install-steps {
-    grid-template-columns: 1fr;
-  }
-
-  .skill-install-steps li {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-  }
 }
 
 @media (max-width: 640px) {
@@ -733,8 +890,7 @@
   }
 
   .skill-detail-hero-main {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: flex-start;
   }
 
   .skill-detail-hero-main .skill-detail-title-row {
@@ -742,8 +898,8 @@
   }
 
   .skill-detail-hero-main .skill-detail-icon {
-    width: 44px;
-    height: 44px;
+    width: 50px;
+    height: 50px;
   }
 
   .skill-detail-title-row h1 {
@@ -751,14 +907,13 @@
     line-height: 33px;
   }
 
-  .skill-detail-hero-main .skill-source-link {
-    width: fit-content;
+  .skill-detail-repository-link {
+    width: 36px;
+    height: 36px;
   }
 
   .skill-detail-facts {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 2px;
+    flex-wrap: wrap;
   }
 
   .skill-detail-facts div {
@@ -766,13 +921,18 @@
   }
 
   .skill-detail-tab-rail nav {
-    min-width: max-content;
-    padding: 0 6px;
+    width: 100%;
+    min-width: 0;
+    padding: 0 4px;
   }
 
   .skill-detail-tab-rail button {
+    flex: 1 1 0;
+    justify-content: center;
     min-height: 48px;
-    padding: 0 11px;
+    gap: 4px;
+    padding: 0 4px;
+    font-size: 12px;
   }
 
   .skill-detail-tab-panel {
@@ -784,21 +944,15 @@
   }
 
   .skill-overview-summary h2,
-  .skill-security-intro h2,
-  .skill-install-intro h2 {
+  .skill-security-intro h2 {
     font-size: 20px;
     line-height: 27px;
   }
 
   .skill-overview-summary p,
-  .skill-security-intro p,
-  .skill-install-intro p {
+  .skill-security-intro p {
     font-size: 14px;
     line-height: 22px;
-  }
-
-  .skill-document-label {
-    display: none;
   }
 
   .skill-tab-overview-layout > .skills-side-section,
@@ -811,33 +965,33 @@
     grid-template-columns: 1fr;
   }
 
-  .skill-install-mode-panel {
-    gap: 17px;
+  .skill-overview-document .skill-file-markdown {
+    font-size: 14px;
+    line-height: 22px;
     padding: 18px;
   }
 
-  .skill-install-controls {
-    grid-template-columns: 1fr;
+  .skill-install-mode-panel {
+    gap: 17px;
+    padding: 2px 0 0;
   }
 
-  .skill-agent-prompt-head,
+  .skill-install-scope-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
   .skill-install-command-head {
     min-height: 48px;
   }
 
-  .skill-agent-prompt pre,
-  .skill-install-command pre {
+  .skill-install-command pre,
+  .skill-install-code-disclosure pre {
     padding: 15px;
   }
 
-  .skill-install-directory {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .skill-install-directory code {
-    text-align: left;
+  .skill-copy-primary {
+    width: 100%;
   }
 }
 
@@ -4029,8 +4183,8 @@ button:disabled,
   display: grid;
   max-width: var(--content-max-width);
   margin: 0 auto;
-  gap: 14px;
-  padding: 26px var(--content-gutter);
+  gap: 20px;
+  padding: 26px var(--content-gutter) 24px;
 }
 
 .skill-back-link {
@@ -4058,9 +4212,9 @@ button:disabled,
   gap: 8px;
   margin: 0;
   color: var(--foreground);
-  font-size: 30px;
-  font-weight: 650;
-  line-height: 38px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 34px;
 }
 
 .skill-detail-meta {
@@ -4440,6 +4594,14 @@ button:disabled,
 .skill-audit-check-status.pending {
   background: var(--neutral-bg);
   color: var(--muted-foreground);
+}
+
+.skill-detail-heading .skill-detail-byline .skill-audit-badge {
+  min-height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .skill-audit-panel {

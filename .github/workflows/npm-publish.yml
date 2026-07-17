@@ -38,7 +38,7 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org/
-          scope: "@wardn"
+          scope: "@wardn-ai"
 
       - name: Install dependencies without lifecycle scripts
         run: npm ci --ignore-scripts
@@ -54,11 +54,6 @@ jobs:
 
           if [[ "${package_name}" != "@wardn-ai/skills" ]]; then
             echo "Unexpected npm package name: ${package_name}" >&2
-            exit 1
-          fi
-
-          if ! grep -Fq "@wardn-ai/skills@${package_version}" skills/find-skills/SKILL.md; then
-            echo "find-skills must pin @wardn-ai/skills@${package_version} before publishing." >&2
             exit 1
           fi
 

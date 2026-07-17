@@ -139,7 +139,7 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
   const output = [];
   const originalLog = console.log;
   console.log = (...values) => output.push(values.join(' '));
-  let bundleDirectory;
+  const bundleDirectories = [];
   try {
     assert.equal(await runCli(['search', 'weather', '--json'], runtime), 0);
     assert.equal(JSON.parse(output.pop()).data[0].id, 'acme/skills/weather');
@@ -173,19 +173,56 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
 
     assert.equal(
       await runCli(
+        [
+          'fetch-chunk',
+          'acme/skills/weather',
+          '--offset',
+          '0',
+          '--length',
+          '20',
+          '--json',
+        ],
+        runtime,
+      ),
+      0,
+    );
+    const latestChunk = JSON.parse(output.pop());
+    assert.equal(latestChunk.hash, currentHash);
+    assert.equal(latestChunk.offset, 0);
+    assert.equal(latestChunk.end, 20);
+
+    assert.equal(
+      await runCli(
         ['fetch-bundle', 'acme/skills/weather', '--hash', currentHash, '--json'],
         runtime,
       ),
       0,
     );
     const manifest = JSON.parse(output.pop());
-    bundleDirectory = manifest.directory;
+    bundleDirectories.push(manifest.directory);
     assert.equal(manifest.fileCount, 1);
-    assert.match(await readFile(join(bundleDirectory, 'SKILL.md'), 'utf8'), /name: weather/);
+    assert.match(await readFile(join(manifest.directory, 'SKILL.md'), 'utf8'), /name: weather/);
+    assert.equal(telemetryRequests, 2);
+
+    assert.equal(
+      await runCli(
+        ['fetch-bundle', 'acme/skills/weather', '--no-telemetry', '--json'],
+        runtime,
+      ),
+      0,
+    );
+    const latestManifest = JSON.parse(output.pop());
+    bundleDirectories.push(latestManifest.directory);
+    assert.equal(latestManifest.hash, currentHash);
+    assert.equal(latestManifest.fileCount, 1);
+    assert.match(
+      await readFile(join(latestManifest.directory, 'SKILL.md'), 'utf8'),
+      /name: weather/,
+    );
     assert.equal(telemetryRequests, 2);
   } finally {
     console.log = originalLog;
-    if (bundleDirectory !== undefined) {
+    for (const bundleDirectory of bundleDirectories) {
       await rm(bundleDirectory, { recursive: true, force: true });
     }
   }

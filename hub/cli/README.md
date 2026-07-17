@@ -11,17 +11,18 @@ The CLI includes the full resolver workflow used by Wardn's `find-skills` skill:
 npx -y @wardn-ai/skills search "code audit" --limit 8 --json
 npx -y @wardn-ai/skills audit owner/repository/skill-slug --json
 npx -y @wardn-ai/skills inspect owner/repository/skill-slug --json
-npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug \
-  --hash expected-64-character-sha256 \
-  --json
+npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug --json
 ```
+
+These examples use the latest published release. Append an exact version, for
+example `@wardn-ai/skills@0.1.4`, when you want to pin the CLI.
 
 `search` returns a bounded compact result set. `audit` normalizes the latest
 decision for each audit provider and reports hard rejects, warnings, historical
 failures, and the audited content hash. `inspect` validates the root `SKILL.md`
-without printing it. `fetch-bundle` requires that exact hash and writes the
-complete validated bundle to a private temporary directory described by its JSON
-manifest.
+without printing it. `fetch-bundle` fetches the latest snapshot by default and
+writes the complete validated bundle to a private temporary directory described
+by its JSON manifest. Pass `--hash <sha256>` to require an exact snapshot instead.
 
 Compatibility commands `fetch` and `fetch-chunk` can retrieve the root Markdown.
 They do not replace `fetch-bundle` when a skill has scripts, references, or assets.
@@ -45,7 +46,8 @@ host exposes a custom directory. Supported built-in targets are `codex`,
 `claude-code`, `cursor`, `opencode`, `gemini-cli`, `github-copilot`, and
 `universal`. Repeat `--agent` to install to multiple agents.
 
-Use `--hash <sha256>` to require a specific Wardn snapshot. The CLI refuses
+Omit `--hash` to use the latest Wardn snapshot, or pass `--hash <sha256>` to
+require a specific snapshot. The CLI refuses
 path traversal, symlink targets, malformed or oversized bundles, unmanaged
 directory collisions, and updates whose Wardn ownership marker names a
 different skill. Installs and updates are staged on the target filesystem and

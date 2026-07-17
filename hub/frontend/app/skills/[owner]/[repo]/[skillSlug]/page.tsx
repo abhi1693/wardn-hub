@@ -7,7 +7,16 @@ type SkillDetailPageProps = {
     repo: string;
     skillSlug: string;
   }>;
+  searchParams: Promise<{
+    tab?: string | string[];
+  }>;
 };
+
+function detailTab(value: string | string[] | undefined) {
+  return value === "files" || value === "install" || value === "security"
+    ? value
+    : "overview";
+}
 
 export async function generateMetadata({ params }: SkillDetailPageProps): Promise<Metadata> {
   const { owner, repo, skillSlug } = await params;
@@ -20,10 +29,11 @@ export async function generateMetadata({ params }: SkillDetailPageProps): Promis
   };
 }
 
-export default async function SkillDetailPage({ params }: SkillDetailPageProps) {
-  const { owner, repo, skillSlug } = await params;
+export default async function SkillDetailPage({ params, searchParams }: SkillDetailPageProps) {
+  const [{ owner, repo, skillSlug }, query] = await Promise.all([params, searchParams]);
   return (
     <SkillDetailView
+      initialTab={detailTab(query.tab)}
       owner={owner}
       repo={repo}
       selectedFilePath="SKILL.md"

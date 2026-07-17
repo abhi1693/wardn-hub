@@ -321,16 +321,16 @@ marker-safe installation, update, and removal:
 npx -y @wardn-ai/skills search "code audit" --limit 8 --json
 npx -y @wardn-ai/skills audit owner/repository/skill-slug --json
 npx -y @wardn-ai/skills inspect owner/repository/skill-slug --json
-npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug \
-  --hash expected-64-character-sha256 \
-  --json
+npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug --json
 npx @wardn-ai/skills install owner/repository/skill-slug -g -a codex
 npx @wardn-ai/skills update skill-slug -g -a codex
 npx @wardn-ai/skills remove skill-slug -g -a codex -y
 ```
 
-The repository's `find-skills` skill is declarative: it invokes an exact version
-of this npm package and contains no bundled resolver or self-installer scripts.
+The repository's `find-skills` skill is declarative: it invokes the latest release
+of this npm package by default and contains no bundled resolver or self-installer
+scripts. Append an exact version, such as `@wardn-ai/skills@0.1.4`, when a pinned
+release is preferred.
 Install or update that bootstrap skill through the same lifecycle command:
 
 ```sh
@@ -361,9 +361,9 @@ task context, user identifiers, or device identifiers, and a telemetry failure
 never fails or removes an installed bundle.
 
 Publish `@wardn-ai/skills` independently from the Hub application version. Bump
-`hub/cli/package.json` and the exact package pin in `skills/find-skills/SKILL.md`,
-then push `skills-v<version>` (for example, `skills-v0.1.0`). The npm workflow can
-also be dispatched manually from `master`; it validates the version and pin,
+`hub/cli/package.json`, then push `skills-v<version>` (for example,
+`skills-v0.1.0`). The npm workflow can
+also be dispatched manually from `master`; it validates the package metadata,
 refuses an existing npm version, and publishes with provenance through npm
 Trusted Publishing.
 
