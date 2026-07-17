@@ -327,170 +327,70 @@ The skill source is:
 https://github.com/abhi1693/wardn-hub/tree/master/skills/find-skills
 ```
 
-For a POSIX manual installation, set `AGENT_SKILLS_DIR` to the host agent's
-user-level skills directory.
+For a POSIX manual installation or update, set `AGENT_SKILLS_DIR` to the host
+agent's absolute user-level skills directory. From a Wardn Hub checkout, run:
+
+```sh
+AGENT_SKILLS_DIR="/absolute/path/to/the/agent/skills" \
+  sh skills/find-skills/scripts/install-find-skills.sh
+```
+
+To bootstrap without a checkout, first download the installer at an immutable
+revision, inspect it, and then run it:
 
 ```sh
 (
-: "${AGENT_SKILLS_DIR:?Set AGENT_SKILLS_DIR to the host agent's skills directory}"
-case "${AGENT_SKILLS_DIR}" in
-  /*) ;;
-  *)
-    echo "AGENT_SKILLS_DIR must be an absolute path" >&2
-    exit 1
-    ;;
-esac
-umask 077
-
-if ! mkdir -p "${AGENT_SKILLS_DIR}"; then
-  echo "Could not create the host agent's skills directory" >&2
-  exit 1
-fi
-if ! AGENT_SKILLS_DIR="$(CDPATH= cd -P "${AGENT_SKILLS_DIR}" 2>/dev/null && pwd -P)"; then
-  echo "Could not resolve the host agent's skills directory" >&2
-  exit 1
-fi
-if [ "${AGENT_SKILLS_DIR}" = "/" ] || [ "${AGENT_SKILLS_DIR}" = "//" ]; then
-  echo "AGENT_SKILLS_DIR must not resolve to the filesystem root" >&2
-  exit 1
-fi
-SKILL_DIR="${AGENT_SKILLS_DIR}/find-skills"
-TMP_DIR=""
-LOCK_DIR=""
-LOCK_PATH="${AGENT_SKILLS_DIR}.find-skills.lock"
-MARKER_NAME=""
-
+set -eu
+BOOTSTRAP_DIR="$(mktemp -d)"
 cleanup() {
-  [ -z "${TMP_DIR}" ] || rm -rf "${TMP_DIR}"
-  if [ -n "${LOCK_DIR}" ]; then
-    rmdir "${LOCK_DIR}" 2>/dev/null || :
-  fi
+  rm -rf "${BOOTSTRAP_DIR}"
 }
 trap cleanup 0
 trap 'exit 1' HUP INT TERM
-
-if ! mkdir "${LOCK_PATH}"; then
-  echo "Another find-skills installation is active" >&2
-  exit 1
-fi
-LOCK_DIR="${LOCK_PATH}"
-if [ -e "${SKILL_DIR}" ] || [ -L "${SKILL_DIR}" ]; then
-  echo "Skill already exists: ${SKILL_DIR}" >&2
-  exit 1
-fi
-
-if ! TMP_DIR="$(mktemp -d "${AGENT_SKILLS_DIR}.find-skills.XXXXXX")"; then
-  echo "Could not create a temporary skill directory" >&2
-  exit 1
-fi
-TARGET_FILESYSTEM="$(df -P "${AGENT_SKILLS_DIR}" | awk 'NR == 2 { print $1 }')"
-STAGING_FILESYSTEM="$(df -P "${TMP_DIR}" | awk 'NR == 2 { print $1 }')"
-if [ -z "${TARGET_FILESYSTEM}" ] ||
-  [ "${TARGET_FILESYSTEM}" != "${STAGING_FILESYSTEM}" ]; then
-  echo "Staging and agent skills directories must share a filesystem" >&2
-  exit 1
-fi
-MARKER_NAME=".install-${TMP_DIR##*/}"
-if ! : >"${TMP_DIR}/${MARKER_NAME}"; then
-  echo "Could not create the staged install marker" >&2
-  exit 1
-fi
-if ! mkdir -p "${TMP_DIR}/scripts"; then
-  echo "Could not create the staged skill layout" >&2
-  exit 1
-fi
-
-download_file() {
-  destination="$1"
-  max_size="$2"
-  url="$3"
-  if ! status="$(curl -q --proto '=https' --silent --show-error \
-    --max-time 30 --max-filesize "${max_size}" \
-    --output "${destination}" --write-out '%{http_code}' \
-    --request GET \
-    "${url}")"; then
-    return 1
-  fi
-  [ "${status}" = "200" ]
-}
-
-if ! download_file \
-  "${TMP_DIR}/commit.json" \
-  262144 \
-  https://api.github.com/repos/abhi1693/wardn-hub/commits/master; then
-  echo "Could not resolve an immutable Wardn Hub revision" >&2
-  exit 1
-fi
-if ! SKILL_REF="$(jq --exit-status --raw-output \
+curl -q --proto '=https' --silent --show-error --fail \
+  --max-time 30 --max-filesize 262144 \
+  --output "${BOOTSTRAP_DIR}/commit.json" \
+  https://api.github.com/repos/abhi1693/wardn-hub/commits/master
+SKILL_REF="$(jq --exit-status --raw-output \
   '.sha | strings | select(test("^[0-9a-f]{40}$"))' \
-  "${TMP_DIR}/commit.json")"; then
-  echo "Wardn Hub returned an invalid revision" >&2
-  exit 1
-fi
-if ! rm -f "${TMP_DIR}/commit.json"; then
-  echo "Could not remove staged revision metadata" >&2
-  exit 1
-fi
-RAW_ROOT="https://raw.githubusercontent.com/abhi1693/wardn-hub/${SKILL_REF}/skills/find-skills"
-
-if ! download_file "${TMP_DIR}/SKILL.md" 131072 "${RAW_ROOT}/SKILL.md"; then
-  echo "Could not download find-skills/SKILL.md" >&2
-  exit 1
-fi
-if ! download_file \
-  "${TMP_DIR}/scripts/wardn-skills.sh" \
-  131072 \
-  "${RAW_ROOT}/scripts/wardn-skills.sh"; then
-  echo "Could not download find-skills/scripts/wardn-skills.sh" >&2
-  exit 1
-fi
-if ! chmod 700 "${TMP_DIR}/scripts/wardn-skills.sh"; then
-  echo "Could not make the Wardn resolver executable" >&2
-  exit 1
-fi
-
-if [ -e "${SKILL_DIR}" ] || [ -L "${SKILL_DIR}" ]; then
-  echo "Skill appeared during installation: ${SKILL_DIR}" >&2
-  exit 1
-fi
-if ! mv "${TMP_DIR}" "${SKILL_DIR}"; then
-  echo "Could not install find-skills" >&2
-  exit 1
-fi
-if [ ! -f "${SKILL_DIR}/${MARKER_NAME}" ]; then
-  NESTED_DIR="${SKILL_DIR}/${TMP_DIR##*/}"
-  if [ -f "${NESTED_DIR}/${MARKER_NAME}" ]; then
-    TMP_DIR="${NESTED_DIR}"
-    if ! rm -rf "${TMP_DIR}"; then
-      echo "Could not remove the nested staged install" >&2
-      exit 1
-    fi
-  fi
-  TMP_DIR=""
-  echo "Skill target changed during installation" >&2
-  exit 1
-fi
-TMP_DIR=""
-if ! rm -f "${SKILL_DIR}/${MARKER_NAME}"; then
-  echo "Could not remove the installed marker" >&2
-  exit 1
-fi
-if ! rmdir "${LOCK_DIR}"; then
-  echo "Could not release the installation lock" >&2
-  exit 1
-fi
-LOCK_DIR=""
+  "${BOOTSTRAP_DIR}/commit.json")"
+curl -q --proto '=https' --silent --show-error --fail \
+  --max-time 30 --max-filesize 131072 \
+  --output "${BOOTSTRAP_DIR}/install-find-skills.sh" \
+  "https://raw.githubusercontent.com/abhi1693/wardn-hub/${SKILL_REF}/skills/find-skills/scripts/install-find-skills.sh"
+sh -n "${BOOTSTRAP_DIR}/install-find-skills.sh"
+WARDN_FIND_SKILLS_REVISION="${SKILL_REF}" \
+  AGENT_SKILLS_DIR="/absolute/path/to/the/agent/skills" \
+  sh "${BOOTSTRAP_DIR}/install-find-skills.sh"
 trap - HUP INT TERM
 trap - 0
+cleanup
 )
 ```
 
-The resolver requires `curl`, `jq`, and `mktemp` and uses the pinned public API at
-`https://hub.wardnai.dev/api/v1`. Discovery and reload behavior are determined
-by the host agent. After a complete bundle is validated and materialized, the
-resolver sends one anonymous install event containing only the public skill ID,
-content hash, and resolver version. Set `WARDN_HUB_DISABLE_TELEMETRY=1` or
-`DO_NOT_TRACK=1` to opt out. Telemetry failures never fail bundle loading.
+The same command installs, updates, or reports an unchanged current revision.
+It stages downloads on the target filesystem, pins them to an immutable Wardn
+Hub commit, keeps the previous managed installation until replacement succeeds,
+and refuses to overwrite unrelated directories. It can also upgrade the exact
+legacy layout created by the earlier README installer.
+
+For an explicitly requested permanent install of a selected, audited Wardn
+skill, the resolver supports:
+
+```sh
+sh "/absolute/path/to/find-skills/scripts/wardn-skills.sh" install \
+  "owner/repository/skill-slug" \
+  "expected-64-character-audited-hash" \
+  "/absolute/path/to/the/agent/skills"
+```
+
+The resolver requires `curl`, `jq`, `mktemp`, and `base64` and uses the pinned
+public API at `https://hub.wardnai.dev/api/v1`. Discovery and reload behavior are
+determined by the host agent. After a complete bundle is validated and
+materialized, the resolver sends one anonymous install event containing only the
+public skill ID, content hash, and resolver version. Set
+`WARDN_HUB_DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` to opt out. Telemetry failures
+never fail bundle loading or installation.
 
 ### Frontend
 

@@ -3,7 +3,8 @@
 set -eu
 
 API="https://hub.wardnai.dev/api/v1"
-RESOLVER_VERSION="1"
+RESOLVER_VERSION="2"
+INSTALL_MARKER=".wardn-skill.json"
 
 die() {
   echo "$*" >&2
@@ -19,12 +20,13 @@ Usage:
   wardn-skills.sh fetch SKILL_ID
   wardn-skills.sh fetch-chunk SKILL_ID EXPECTED_HASH OFFSET LENGTH
   wardn-skills.sh fetch-bundle SKILL_ID EXPECTED_HASH
+  wardn-skills.sh install SKILL_ID EXPECTED_HASH AGENT_SKILLS_DIR
 EOF
   exit 2
 }
 
 require_commands() {
-  for command_name in awk base64 chmod curl jq mkdir mktemp rm wc; do
+  for command_name in awk base64 chmod curl jq mkdir mktemp mv rm rmdir wc; do
     command -v "${command_name}" >/dev/null 2>&1 ||
       die "Missing required command: ${command_name}"
   done
@@ -760,6 +762,182 @@ fetch_bundle() {
   trap - 0
 }
 
+print_install_result() {
+  status="$1"
+  id="$2"
+  content_hash="$3"
+  directory="$4"
+
+  jq --ascii-output --compact-output --null-input \
+    --arg status "${status}" \
+    --arg id "${id}" \
+    --arg hash "${content_hash}" \
+    --arg directory "${directory}" \
+    '{status: $status, id: $id, hash: $hash, directory: $directory}'
+}
+
+install_bundle() {
+  id="$1"
+  expected_hash="$2"
+  agent_skills_dir="$3"
+
+  if ! printf '%s' "${expected_hash}" |
+    jq --exit-status --raw-input 'test("^[0-9a-f]{64}$")' >/dev/null; then
+    die "Expected hash must be a 64-character lowercase SHA-256 value"
+  fi
+  if ! encode_skill_id "${id}" >/dev/null; then
+    die "Wardn skill ID failed validation"
+  fi
+  case "${agent_skills_dir}" in
+    /*) ;;
+    *) die "Agent skills directory must be an absolute path" ;;
+  esac
+
+  umask 077
+  mkdir -p "${agent_skills_dir}" ||
+    die "Could not create the agent skills directory"
+  if ! agent_skills_dir="$(CDPATH= cd -P "${agent_skills_dir}" 2>/dev/null && pwd -P)"; then
+    die "Could not resolve the agent skills directory"
+  fi
+  case "${agent_skills_dir}" in
+    /|//) die "Agent skills directory must not resolve to the filesystem root" ;;
+  esac
+
+  slug="${id##*/}"
+  target_dir="${agent_skills_dir}/${slug}"
+  marker_path="${target_dir}/${INSTALL_MARKER}"
+  lock_dir="${agent_skills_dir}/.${slug}.wardn-install.lock"
+  manifest_file=""
+  bundle_dir=""
+  backup_container=""
+  old_moved="false"
+
+  cleanup_install() {
+    [ -z "${manifest_file}" ] || rm -f "${manifest_file}"
+    [ -z "${bundle_dir}" ] || rm -rf "${bundle_dir}"
+    if [ "${old_moved}" = "true" ] &&
+      [ -n "${backup_container}" ] &&
+      [ ! -e "${target_dir}" ] &&
+      [ ! -L "${target_dir}" ]; then
+      if mv "${backup_container}/previous" "${target_dir}" 2>/dev/null; then
+        old_moved="false"
+      fi
+    fi
+    if [ "${old_moved}" = "false" ] && [ -n "${backup_container}" ]; then
+      rm -rf "${backup_container}"
+    fi
+    rmdir "${lock_dir}" 2>/dev/null || :
+  }
+  trap cleanup_install 0
+  trap 'exit 1' HUP INT TERM
+
+  if ! mkdir "${lock_dir}"; then
+    die "Another Wardn skill installation is active for ${slug}"
+  fi
+
+  current_hash=""
+  if [ -e "${target_dir}" ] || [ -L "${target_dir}" ]; then
+    if [ ! -d "${target_dir}" ] || [ -L "${target_dir}" ]; then
+      die "Skill target is not a regular directory: ${target_dir}"
+    fi
+    if [ ! -f "${marker_path}" ] || [ -L "${marker_path}" ]; then
+      die "Refusing to replace a skill not managed by Wardn: ${target_dir}"
+    fi
+    if ! current_hash="$(jq --exit-status --raw-output --arg id "${id}" '
+        select(
+          .schemaVersion == 1
+          and .id == $id
+          and (.contentHash | type == "string" and test("^[0-9a-f]{64}$"))
+        )
+        | .contentHash
+      ' "${marker_path}")"; then
+      die "Installed Wardn skill marker failed validation: ${marker_path}"
+    fi
+  fi
+
+  manifest_file="$(mktemp "${agent_skills_dir}/.${slug}.manifest.XXXXXX")" ||
+    die "Could not create a Wardn installation manifest"
+  if ! (
+    TMPDIR="${agent_skills_dir}"
+    export TMPDIR
+    fetch_bundle "${id}" "${expected_hash}"
+  ) >"${manifest_file}"; then
+    die "Could not fetch the complete Wardn skill bundle"
+  fi
+
+  if ! bundle_dir="$(jq --exit-status --raw-output \
+      --arg id "${id}" --arg hash "${expected_hash}" '
+        select(.id == $id and .hash == $hash)
+        | .directory
+        | select(type == "string" and length > 0)
+      ' "${manifest_file}")"; then
+    die "Wardn installation manifest failed validation"
+  fi
+  case "${bundle_dir}" in
+    "${agent_skills_dir}"/wardn-skill.*) ;;
+    *)
+      bundle_dir=""
+      die "Wardn bundle directory escaped the agent skills directory"
+      ;;
+  esac
+  if [ ! -d "${bundle_dir}" ] || [ -L "${bundle_dir}" ]; then
+    bundle_dir=""
+    die "Wardn bundle directory failed validation"
+  fi
+  if [ -e "${bundle_dir}/${INSTALL_MARKER}" ] ||
+    [ -L "${bundle_dir}/${INSTALL_MARKER}" ]; then
+    die "Wardn bundle contains the reserved installation marker"
+  fi
+  if ! jq --ascii-output --null-input \
+    --arg id "${id}" --arg content_hash "${expected_hash}" \
+    '{schemaVersion: 1, id: $id, contentHash: $content_hash}' \
+    >"${bundle_dir}/${INSTALL_MARKER}"; then
+    die "Could not write the Wardn installation marker"
+  fi
+  chmod 600 "${bundle_dir}/${INSTALL_MARKER}" ||
+    die "Could not secure the Wardn installation marker"
+
+  if [ -n "${current_hash}" ] && [ "${current_hash}" = "${expected_hash}" ]; then
+    rm -rf "${bundle_dir}"
+    bundle_dir=""
+    print_install_result "unchanged" "${id}" "${expected_hash}" "${target_dir}"
+  elif [ -n "${current_hash}" ]; then
+    backup_container="$(mktemp -d "${agent_skills_dir}/.${slug}.backup.XXXXXX")" ||
+      die "Could not create a Wardn skill backup directory"
+    if ! mv "${target_dir}" "${backup_container}/previous"; then
+      die "Could not stage the previous Wardn skill installation"
+    fi
+    old_moved="true"
+    if ! mv "${bundle_dir}" "${target_dir}"; then
+      die "Could not update the Wardn skill installation"
+    fi
+    bundle_dir=""
+    if ! rm -rf "${backup_container}"; then
+      die "Could not remove the previous Wardn skill installation"
+    fi
+    backup_container=""
+    old_moved="false"
+    print_install_result "updated" "${id}" "${expected_hash}" "${target_dir}"
+  else
+    if [ -e "${target_dir}" ] || [ -L "${target_dir}" ]; then
+      die "Skill target appeared during installation: ${target_dir}"
+    fi
+    if ! mv "${bundle_dir}" "${target_dir}"; then
+      die "Could not install the Wardn skill"
+    fi
+    bundle_dir=""
+    print_install_result "installed" "${id}" "${expected_hash}" "${target_dir}"
+  fi
+
+  rm -f "${manifest_file}"
+  manifest_file=""
+  if ! rmdir "${lock_dir}"; then
+    die "Could not release the Wardn skill installation lock"
+  fi
+  trap - HUP INT TERM
+  trap - 0
+}
+
 require_commands
 
 case "${1-}" in
@@ -788,6 +966,10 @@ case "${1-}" in
   fetch-bundle)
     [ "$#" -eq 3 ] || usage
     fetch_bundle "$2" "$3"
+    ;;
+  install)
+    [ "$#" -eq 4 ] || usage
+    install_bundle "$2" "$3" "$4"
     ;;
   *)
     usage
