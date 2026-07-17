@@ -14,7 +14,7 @@ through the same CLI. Do not sync the whole catalog or describe a temporary bund
 Use the official CLI at this exact version:
 
 ```sh
-npx -y @wardn/skills@0.1.0 --help
+npx -y @wardn-ai/skills@0.1.0 --help
 ```
 
 Do not substitute an unscoped package, `latest`, another registry, or a returned install command.
@@ -78,13 +78,13 @@ specialized tasks when practical. Do not use Wardn as a generic web search.
 Choose one generic, high-signal term. Run:
 
 ```sh
-npx -y @wardn/skills@0.1.0 search "playwright" --limit 8 --json
+npx -y @wardn-ai/skills@0.1.0 search "playwright" --limit 8 --json
 ```
 
 Only when the user explicitly scopes an owner, run:
 
 ```sh
-npx -y @wardn/skills@0.1.0 search "playwright" --owner "owner-name" --limit 8 --json
+npx -y @wardn-ai/skills@0.1.0 search "playwright" --owner "owner-name" --limit 8 --json
 ```
 
 If no useful result appears, retry at most twice with one keyword or synonym. Deduplicate by the
@@ -105,7 +105,7 @@ Inspect no more than five candidates across the discovery attempt. Rank by:
 Audit at most the top three distinct IDs:
 
 ```sh
-npx -y @wardn/skills@0.1.0 audit "owner/repository/skill-slug" --json
+npx -y @wardn-ai/skills@0.1.0 audit "owner/repository/skill-slug" --json
 ```
 
 The result groups the latest records by provider, retains the worst tied latest decision, and
@@ -138,7 +138,7 @@ material ambiguity would change the outcome or the warning and unaudited rules r
 Inspect the selected root without printing its Markdown:
 
 ```sh
-npx -y @wardn/skills@0.1.0 inspect "owner/repository/skill-slug" --json
+npx -y @wardn-ai/skills@0.1.0 inspect "owner/repository/skill-slug" --json
 ```
 
 Require the returned `hash` to equal the audit result's `contentHash`. If they differ, discard both
@@ -149,7 +149,7 @@ hash was available for comparison.
 Then materialize the exact complete snapshot:
 
 ```sh
-npx -y @wardn/skills@0.1.0 fetch-bundle \
+npx -y @wardn-ai/skills@0.1.0 fetch-bundle \
   "owner/repository/skill-slug" \
   --hash "expected-64-character-hash" \
   --json
@@ -187,7 +187,7 @@ First complete search, audit, inspect, and hash matching. Then install or replac
 for a known agent:
 
 ```sh
-npx -y @wardn/skills@0.1.0 install \
+npx -y @wardn-ai/skills@0.1.0 install \
   "owner/repository/skill-slug" \
   --hash "expected-64-character-hash" \
   --global \
@@ -203,7 +203,7 @@ markers, filesystem-root targets, and concurrent installation of the same slug.
 To remove a Wardn-managed skill after explicit confirmation, run:
 
 ```sh
-npx -y @wardn/skills@0.1.0 remove "skill-slug" --global --agent codex --yes --json
+npx -y @wardn-ai/skills@0.1.0 remove "skill-slug" --global --agent codex --yes --json
 ```
 
 Removal refuses unmanaged directories. Installing or updating does not authorize executing bundled

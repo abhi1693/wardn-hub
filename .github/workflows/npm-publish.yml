@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish @wardn/skills
+    name: Publish @wardn-ai/skills
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -52,13 +52,13 @@ jobs:
           package_name="$(node -p "require('./hub/cli/package.json').name")"
           package_version="$(node -p "require('./hub/cli/package.json').version")"
 
-          if [[ "${package_name}" != "@wardn/skills" ]]; then
+          if [[ "${package_name}" != "@wardn-ai/skills" ]]; then
             echo "Unexpected npm package name: ${package_name}" >&2
             exit 1
           fi
 
-          if ! grep -Fq "@wardn/skills@${package_version}" skills/find-skills/SKILL.md; then
-            echo "find-skills must pin @wardn/skills@${package_version} before publishing." >&2
+          if ! grep -Fq "@wardn-ai/skills@${package_version}" skills/find-skills/SKILL.md; then
+            echo "find-skills must pin @wardn-ai/skills@${package_version} before publishing." >&2
             exit 1
           fi
 
@@ -96,12 +96,5 @@ jobs:
             exit 1
           fi
 
-      - name: Verify npm authentication
-        run: test "$(npm whoami)" = "abhi1693"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Publish package
-        run: npm publish --workspace @wardn/skills --access public --provenance --tag "${{ steps.package.outputs.npm_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace @wardn-ai/skills --access public --provenance --tag "${{ steps.package.outputs.npm_tag }}"

@@ -1,4 +1,4 @@
-# @wardn/skills
+# @wardn-ai/skills
 
 Search, audit, fetch, and manage complete, hash-identified agent skill bundles from
 [Wardn Hub](https://hub.wardnai.dev).
@@ -8,10 +8,10 @@ Search, audit, fetch, and manage complete, hash-identified agent skill bundles f
 The CLI includes the full resolver workflow used by Wardn's `find-skills` skill:
 
 ```sh
-npx -y @wardn/skills search "code audit" --limit 8 --json
-npx -y @wardn/skills audit owner/repository/skill-slug --json
-npx -y @wardn/skills inspect owner/repository/skill-slug --json
-npx -y @wardn/skills fetch-bundle owner/repository/skill-slug \
+npx -y @wardn-ai/skills search "code audit" --limit 8 --json
+npx -y @wardn-ai/skills audit owner/repository/skill-slug --json
+npx -y @wardn-ai/skills inspect owner/repository/skill-slug --json
+npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug \
   --hash expected-64-character-sha256 \
   --json
 ```
@@ -31,9 +31,9 @@ They do not replace `fetch-bundle` when a skill has scripts, references, or asse
 Run the CLI without installing it globally:
 
 ```sh
-npx @wardn/skills install owner/repository/skill-slug -g -a codex
-npx @wardn/skills update skill-slug -g -a codex
-npx @wardn/skills remove skill-slug -g -a codex -y
+npx @wardn-ai/skills install owner/repository/skill-slug -g -a codex
+npx @wardn-ai/skills update skill-slug -g -a codex
+npx @wardn-ai/skills remove skill-slug -g -a codex -y
 ```
 
 `install` is also available as `add` or `i`. `remove` is also available as
@@ -54,7 +54,7 @@ retain the prior managed installation until replacement succeeds.
 To install or update the script-free Wardn discovery skill itself:
 
 ```sh
-npx -y @wardn/skills install abhi1693/wardn-hub/find-skills \
+npx -y @wardn-ai/skills install abhi1693/wardn-hub/find-skills \
   --global \
   --agent codex
 ```
@@ -70,10 +70,10 @@ Telemetry failures never fail or undo an operation.
 Disable telemetry with any of:
 
 ```sh
-WARDN_HUB_DISABLE_TELEMETRY=1 npx @wardn/skills install ...
-DISABLE_TELEMETRY=1 npx @wardn/skills install ...
-DO_NOT_TRACK=1 npx @wardn/skills install ...
-npx @wardn/skills install ... --no-telemetry
+WARDN_HUB_DISABLE_TELEMETRY=1 npx @wardn-ai/skills install ...
+DISABLE_TELEMETRY=1 npx @wardn-ai/skills install ...
+DO_NOT_TRACK=1 npx @wardn-ai/skills install ...
+npx @wardn-ai/skills install ... --no-telemetry
 ```
 
 Self-hosted development instances can set `WARDN_HUB_API_BASE_URL`. HTTPS is

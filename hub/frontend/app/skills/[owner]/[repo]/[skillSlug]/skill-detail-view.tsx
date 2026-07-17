@@ -1,4 +1,4 @@
-import { FileArchive, FileCode2, FileText, Sparkles } from "lucide-react";
+import { Download, FileArchive, FileCode2, Files, FileText, Hash, Sparkles } from "lucide-react";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -25,10 +25,10 @@ import {
   SkillAuditBadge,
   SkillAuditPanel,
   SkillFiles,
-  SkillFilesDisclosure,
   SkillsBreadcrumbs,
   SourceRepositoryLink,
 } from "../../../skills-ui";
+import { SkillDetailTabs } from "./skill-detail-tabs";
 
 type SkillDetailViewProps = {
   owner: string;
@@ -122,6 +122,7 @@ export async function SkillDetailView({
   const description = listing?.description?.trim() ?? "";
   const sourceOwnerIconUrl = skill.sourceOwnerIconUrl ?? listing?.sourceOwnerIconUrl;
   const viewingSkillMd = selectedFile.path === "SKILL.md";
+  const contentHash = audit?.contentHash ?? skill.hash ?? undefined;
 
   return (
     <main className="site-shell">
@@ -138,55 +139,123 @@ export async function SkillDetailView({
               ...(viewingSkillMd ? [] : [{ label: selectedFile.path }]),
             ]}
           />
-          <div className="skill-detail-title-row">
-            <span
-              aria-hidden="true"
-              className="skill-detail-icon"
-              style={
-                sourceOwnerIconUrl
-                  ? { backgroundImage: `url(${sourceOwnerIconUrl})` }
-                  : undefined
-              }
-            >
-              {sourceOwnerIconUrl ? null : <Sparkles size={24} />}
-            </span>
-            <div>
-              <span className="registry-hero-eyebrow">{source}</span>
-              <h1 id="skill-detail-title">
-                {title}
-                {listing?.isOfficial ? <OfficialBadge /> : null}
-                <SkillAuditBadge audit={audit} />
-              </h1>
+          <div className="skill-detail-hero-main">
+            <div className="skill-detail-title-row">
+              <span
+                aria-hidden="true"
+                className="skill-detail-icon"
+                style={
+                  sourceOwnerIconUrl
+                    ? { backgroundImage: `url(${sourceOwnerIconUrl})` }
+                    : undefined
+                }
+              >
+                {sourceOwnerIconUrl ? null : <Sparkles size={24} />}
+              </span>
+              <div>
+                <span className="registry-hero-eyebrow">{source}</span>
+                <h1 id="skill-detail-title">
+                  {title}
+                  {listing?.isOfficial ? <OfficialBadge /> : null}
+                  <SkillAuditBadge audit={audit} />
+                </h1>
+              </div>
             </div>
+            <SourceRepositoryLink source={source} sourceUrl={skill.sourceUrl ?? listing?.sourceUrl} />
           </div>
+          <dl className="skill-detail-facts">
+            {listing ? (
+              <div>
+                <dt>
+                  <Download aria-hidden="true" size={14} />
+                  Installs
+                </dt>
+                <dd>{listing.installs.toLocaleString("en-US")}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>
+                <Files aria-hidden="true" size={14} />
+                Bundle
+              </dt>
+              <dd>{files.length} files</dd>
+            </div>
+            {contentHash ? (
+              <div>
+                <dt>
+                  <Hash aria-hidden="true" size={14} />
+                  Snapshot
+                </dt>
+                <dd title={contentHash}>{contentHash.slice(0, 12)}</dd>
+              </div>
+            ) : null}
+          </dl>
         </div>
       </section>
 
-      <section className="skill-detail-layout" aria-label="Skill file browser">
-        <SkillFilesDisclosure activePath={selectedFile.path} files={files} skillId={id} />
-        <article className="skill-file-panel">
-          {description ? (
-            <section className="skill-description-panel" aria-label="Description">
-              <p>{description}</p>
+      <SkillDetailTabs
+        contentHash={contentHash}
+        fileCount={files.length}
+        files={
+          <div className="skill-tab-files-layout">
+            <section className="skill-files-index" aria-label="Bundle files">
+              <SkillFiles activePath={selectedFile.path} files={files} skillId={id} />
             </section>
-          ) : null}
-          <header className="skill-file-header">
-            <SkillFileTypeIcon file={selectedFile} />
-            <h2>{selectedFile.path}</h2>
-            {selectedFile.executable ? (
-              <span className="skill-file-executable">Executable</span>
-            ) : null}
-          </header>
-          <SkillFileContents file={selectedFile} />
-        </article>
-
-        <aside className="skill-side-panel">
-          <SourceRepositoryLink source={source} sourceUrl={skill.sourceUrl ?? listing?.sourceUrl} />
-          <SkillAuditPanel audit={audit} />
-          <SkillFiles activePath={selectedFile.path} files={files} skillId={id} />
-          <RelatedSkills currentId={id} skills={sourceSkills} />
-        </aside>
-      </section>
+            <article className="skill-file-panel">
+              <header className="skill-file-header">
+                <SkillFileTypeIcon file={selectedFile} />
+                <h2>{selectedFile.path}</h2>
+                {selectedFile.executable ? (
+                  <span className="skill-file-executable">Executable</span>
+                ) : null}
+              </header>
+              <SkillFileContents file={selectedFile} />
+            </article>
+          </div>
+        }
+        initialTab={viewingSkillMd ? "overview" : "files"}
+        overview={
+          <div className="skill-tab-overview-layout">
+            <section className="skill-overview-summary" aria-labelledby="skill-summary-heading">
+              <span className="registry-hero-eyebrow">Summary</span>
+              <h2 id="skill-summary-heading">What this skill helps an agent do</h2>
+              <p>
+                {description ||
+                  "This source did not publish a separate summary. Review SKILL.md before using the skill."}
+              </p>
+            </section>
+            <article className="skill-file-panel skill-overview-document">
+              <header className="skill-file-header">
+                <FileText aria-hidden="true" size={18} />
+                <h2>SKILL.md</h2>
+                <span className="skill-document-label">Published instructions</span>
+              </header>
+              <SkillFileContents
+                file={
+                  files.find((file) => file.path === "SKILL.md") ??
+                  ({ contents: "", encoding: "utf-8", path: "SKILL.md" } satisfies SkillFileRead)
+                }
+              />
+            </article>
+            <RelatedSkills currentId={id} skills={sourceSkills} />
+          </div>
+        }
+        security={
+          <div className="skill-tab-security-layout">
+            <div className="skill-security-intro">
+              <span className="registry-hero-eyebrow">Snapshot security</span>
+              <h2>Audit evidence for this exact bundle</h2>
+              <p>
+                Provider decisions apply to the content hash shown here. Review warnings and risk
+                categories before installation.
+              </p>
+            </div>
+            <SkillAuditPanel audit={audit} />
+          </div>
+        }
+        skillId={id}
+        skillSlug={skill.slug}
+      />
     </main>
   );
 }

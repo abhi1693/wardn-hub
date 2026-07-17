@@ -312,21 +312,21 @@ Use `--unset` to remove official status from that source owner.
 
 ### Manage agent skills with the npm CLI
 
-The publishable `@wardn/skills` workspace replaces the POSIX-only
+The publishable `@wardn-ai/skills` workspace replaces the POSIX-only
 `find-skills` support scripts. It now owns the full resolver workflow—search,
 audit normalization, root inspection, hash-pinned temporary bundle fetches—and
 marker-safe installation, update, and removal:
 
 ```sh
-npx -y @wardn/skills search "code audit" --limit 8 --json
-npx -y @wardn/skills audit owner/repository/skill-slug --json
-npx -y @wardn/skills inspect owner/repository/skill-slug --json
-npx -y @wardn/skills fetch-bundle owner/repository/skill-slug \
+npx -y @wardn-ai/skills search "code audit" --limit 8 --json
+npx -y @wardn-ai/skills audit owner/repository/skill-slug --json
+npx -y @wardn-ai/skills inspect owner/repository/skill-slug --json
+npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug \
   --hash expected-64-character-sha256 \
   --json
-npx @wardn/skills install owner/repository/skill-slug -g -a codex
-npx @wardn/skills update skill-slug -g -a codex
-npx @wardn/skills remove skill-slug -g -a codex -y
+npx @wardn-ai/skills install owner/repository/skill-slug -g -a codex
+npx @wardn-ai/skills update skill-slug -g -a codex
+npx @wardn-ai/skills remove skill-slug -g -a codex -y
 ```
 
 The repository's `find-skills` skill is declarative: it invokes an exact version
@@ -334,7 +334,7 @@ of this npm package and contains no bundled resolver or self-installer scripts.
 Install or update that bootstrap skill through the same lifecycle command:
 
 ```sh
-npx -y @wardn/skills install abhi1693/wardn-hub/find-skills -g -a codex
+npx -y @wardn-ai/skills install abhi1693/wardn-hub/find-skills -g -a codex
 ```
 
 Project installs are the default. Use `--global` for a user-level install,
@@ -358,7 +358,7 @@ content hash, CLI identifier, and CLI version. Set
 task context, user identifiers, or device identifiers, and a telemetry failure
 never fails or removes an installed bundle.
 
-Publish `@wardn/skills` independently from the Hub application version. Bump
+Publish `@wardn-ai/skills` independently from the Hub application version. Bump
 `hub/cli/package.json` and the exact package pin in `skills/find-skills/SKILL.md`,
 then push `skills-v<version>` (for example, `skills-v0.1.0`). The npm workflow can
 also be dispatched manually from `master`; it validates the version and pin,

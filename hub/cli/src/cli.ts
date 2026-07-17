@@ -201,12 +201,12 @@ Agents:
   ${Object.keys(agents).join(', ')}
 
 Examples:
-  npx @wardn/skills search "code audit" --json
-  npx @wardn/skills audit owner/repository/skill-slug --json
-  npx @wardn/skills fetch-bundle owner/repository/skill-slug --hash <sha256> --json
-  npx @wardn/skills install owner/repository/skill-slug -g -a codex
-  npx @wardn/skills update skill-slug -g -a codex
-  npx @wardn/skills remove skill-slug -g -a codex -y`);
+  npx @wardn-ai/skills search "code audit" --json
+  npx @wardn-ai/skills audit owner/repository/skill-slug --json
+  npx @wardn-ai/skills fetch-bundle owner/repository/skill-slug --hash <sha256> --json
+  npx @wardn-ai/skills install owner/repository/skill-slug -g -a codex
+  npx @wardn-ai/skills update skill-slug -g -a codex
+  npx @wardn-ai/skills remove skill-slug -g -a codex -y`);
 }
 
 function rejectManagementOptions(options: ParsedOptions, command: string): void {

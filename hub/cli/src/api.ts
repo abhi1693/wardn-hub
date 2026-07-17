@@ -271,7 +271,7 @@ export class HubClient {
       response = await this.#fetch(url, {
         headers: {
           accept: 'application/json',
-          'user-agent': `@wardn/skills/${this.version}`,
+          'user-agent': `@wardn-ai/skills/${this.version}`,
         },
         redirect: 'error',
         signal: AbortSignal.timeout(Math.min(this.#timeoutMs, timeoutMs)),
@@ -489,7 +489,7 @@ export class HubClient {
     try {
       await this.#fetch(url, {
         method: 'POST',
-        headers: { 'user-agent': `@wardn/skills/${this.version}` },
+        headers: { 'user-agent': `@wardn-ai/skills/${this.version}` },
         redirect: 'error',
         signal: AbortSignal.timeout(5_000),
       });
