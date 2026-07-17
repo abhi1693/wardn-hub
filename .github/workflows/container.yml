@@ -16,6 +16,7 @@ permissions:
 jobs:
   backend:
     name: Backend linux/arm64
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
     uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
     with:
       runs-on: ubuntu-24.04-arm
@@ -37,6 +38,7 @@ jobs:
 
   frontend:
     name: Frontend linux/arm64
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
     uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
     with:
       runs-on: ubuntu-24.04-arm
@@ -58,6 +60,7 @@ jobs:
 
   codex-app-server:
     name: Codex app-server linux/arm64
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
     uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
     with:
       runs-on: ubuntu-24.04-arm
