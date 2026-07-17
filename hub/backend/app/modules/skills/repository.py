@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, case, exists, func, or_, select, tuple_, update
+from sqlalchemy import Select, String, and_, case, cast, exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 
@@ -46,31 +46,44 @@ def official_owner_condition():
 
 
 def canonical_skill_condition():
-    """Keep one listing when old imports point at the same install location."""
-    duplicate = aliased(Skill)
-    duplicate_wins = or_(
-        duplicate.installs > Skill.installs,
-        and_(
-            duplicate.installs == Skill.installs,
-            func.length(duplicate.slug) < func.length(Skill.slug),
-        ),
-        and_(
-            duplicate.installs == Skill.installs,
-            func.length(duplicate.slug) == func.length(Skill.slug),
-            duplicate.slug < Skill.slug,
-        ),
+    """Keep the strongest listing for each non-empty install location.
+
+    Ranking all candidates once avoids the correlated anti-join that otherwise
+    scans every skill from the same source once for every catalog row.
+    """
+    candidate = aliased(Skill)
+    install_location = case(
+        (candidate.install_url != "", candidate.install_url),
+        else_=cast(candidate.id, String),
     )
-    return ~exists(
-        select(duplicate.id).where(
-            duplicate.id != Skill.id,
-            duplicate.source_type == Skill.source_type,
-            duplicate.source == Skill.source,
-            duplicate.install_url != "",
-            duplicate.install_url == Skill.install_url,
-            duplicate.status == "active",
-            duplicate.visibility == "public",
-            duplicate.current_snapshot_id.is_not(None),
-            duplicate_wins,
+    ranked_candidates = (
+        select(
+            candidate.id.label("skill_id"),
+            func.row_number()
+            .over(
+                partition_by=(
+                    candidate.source_type,
+                    candidate.source,
+                    install_location,
+                ),
+                order_by=(
+                    candidate.installs.desc(),
+                    func.length(candidate.slug),
+                    candidate.slug,
+                ),
+            )
+            .label("canonical_rank"),
+        )
+        .where(
+            candidate.status == "active",
+            candidate.visibility == "public",
+            candidate.current_snapshot_id.is_not(None),
+        )
+        .subquery()
+    )
+    return Skill.id.in_(
+        select(ranked_candidates.c.skill_id).where(
+            ranked_candidates.c.canonical_rank == 1
         )
     )
 

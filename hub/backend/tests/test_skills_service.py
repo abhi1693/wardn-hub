@@ -36,8 +36,12 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "CASE WHEN" in all_time_session.statements[-1]
     assert "lower(skills.source_name)" in all_time_session.statements[-1]
     assert "lower(skills.name)" in all_time_session.statements[-1]
-    assert "skills_1.install_url = skills.install_url" in all_time_session.statements[-1]
-    assert "skills_1.installs > skills.installs" in all_time_session.statements[-1]
+    assert "row_number() OVER" in all_time_session.statements[-1]
+    assert "skills_1.install_url !=" in all_time_session.statements[-1]
+    assert "skills_1.installs DESC" in all_time_session.statements[-1]
+    assert "length(skills_1.slug)" in all_time_session.statements[-1]
+    assert "canonical_rank" in all_time_session.statements[-1]
+    assert "NOT (EXISTS" not in all_time_session.statements[-1]
     assert "ORDER BY CASE WHEN" in all_time_session.statements[-1]
 
     trending_session = FakeSession()
