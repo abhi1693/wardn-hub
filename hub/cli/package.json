@@ -1,6 +1,6 @@
 {
   "name": "@wardn-ai/skills",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Search, audit, fetch, install, update, and remove agent skills from Wardn Hub",
   "type": "module",
   "bin": {

@@ -51,6 +51,11 @@ directory collisions, and updates whose Wardn ownership marker names a
 different skill. Installs and updates are staged on the target filesystem and
 retain the prior managed installation until replacement succeeds.
 
+A matching legacy `find-skills` installation created by Wardn's former shell
+self-installer is migrated automatically to the current ownership marker and
+script-free bundle. Unrelated or malformed `find-skills` directories remain
+untouched.
+
 To install or update the script-free Wardn discovery skill itself:
 
 ```sh

@@ -30,6 +30,9 @@ import {
 } from './validation.js';
 
 const INSTALL_MARKER = '.wardn-skill.json';
+const LEGACY_FIND_SKILLS_MARKER = '.wardn-find-skills.json';
+const LEGACY_FIND_SKILLS_ID = 'abhi1693/wardn-hub/find-skills';
+const LEGACY_REVISION_PATTERN = /^[0-9a-f]{40}$/;
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -99,6 +102,49 @@ export async function readInstallMarker(
   return marker;
 }
 
+async function readLegacyFindSkillsMarker(
+  targetDirectory: string,
+  expectedId: string,
+): Promise<boolean> {
+  const markerPath = join(targetDirectory, LEGACY_FIND_SKILLS_MARKER);
+  let markerStat;
+  try {
+    markerStat = await lstat(markerPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  if (!markerStat.isFile() || markerStat.isSymbolicLink() || markerStat.size > 4096) {
+    throw new Error(`legacy Wardn skill marker failed validation: ${markerPath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(markerPath, 'utf8')) as unknown;
+  } catch {
+    throw new Error(`legacy Wardn skill marker failed validation: ${markerPath}`);
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    (parsed as Record<string, unknown>).schemaVersion !== 1 ||
+    (parsed as Record<string, unknown>).repository !== 'abhi1693/wardn-hub' ||
+    (parsed as Record<string, unknown>).skill !== 'find-skills' ||
+    typeof (parsed as Record<string, unknown>).revision !== 'string' ||
+    !LEGACY_REVISION_PATTERN.test((parsed as Record<string, unknown>).revision as string)
+  ) {
+    throw new Error(`legacy Wardn skill marker failed validation: ${markerPath}`);
+  }
+
+  if (LEGACY_FIND_SKILLS_ID !== expectedId) {
+    throw new Error(
+      `skill slug collision: ${targetDirectory} is managed for ${LEGACY_FIND_SKILLS_ID}, not ${expectedId}`,
+    );
+  }
+  return true;
+}
+
 async function secureSkillsDirectory(path: string): Promise<string> {
   if (!isAbsolute(path)) {
     throw new Error('agent skills directory must be an absolute path');
@@ -118,7 +164,7 @@ async function secureSkillsDirectory(path: string): Promise<string> {
 async function writeBundleFiles(bundle: WardnBundle, stagingDirectory: string): Promise<void> {
   for (const file of bundle.files) {
     validateBundlePath(file.path);
-    if (file.path === INSTALL_MARKER) {
+    if (file.path === INSTALL_MARKER || file.path === LEGACY_FIND_SKILLS_MARKER) {
       throw new Error('Wardn bundle contains the reserved installation marker');
     }
     const outputPath = resolve(stagingDirectory, file.path);
@@ -209,8 +255,20 @@ export async function installBundle(
   let previousMoved = false;
   try {
     let currentMarker: WardnInstallMarker | undefined;
+    let legacyInstallation = false;
     if (await pathExists(targetDirectory)) {
-      currentMarker = await readInstallMarker(targetDirectory, bundle.id);
+      try {
+        currentMarker = await readInstallMarker(targetDirectory, bundle.id);
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !error.message.startsWith('refusing to manage a skill not installed by Wardn')
+        ) {
+          throw error;
+        }
+        legacyInstallation = await readLegacyFindSkillsMarker(targetDirectory, bundle.id);
+        if (!legacyInstallation) throw error;
+      }
     }
 
     const createdStagingDirectory = await mkdtemp(
@@ -231,7 +289,7 @@ export async function installBundle(
       };
     }
 
-    if (currentMarker !== undefined) {
+    if (currentMarker !== undefined || legacyInstallation) {
       backupDirectory = await mkdtemp(join(skillsDirectory, `.${slug}.backup.`));
       const previousDirectory = join(backupDirectory, 'previous');
       await rename(targetDirectory, previousDirectory);

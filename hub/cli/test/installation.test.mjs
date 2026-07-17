@@ -49,6 +49,22 @@ function bundle(hashCharacter, body = '# Weather\n') {
   };
 }
 
+function findSkillsBundle(hashCharacter, body = '# Find skills\n') {
+  return {
+    id: 'abhi1693/wardn-hub/find-skills',
+    hash: hashCharacter.repeat(64),
+    files: [
+      {
+        path: 'SKILL.md',
+        contents: Buffer.from(
+          `---\nname: find-skills\ndescription: Discover agent skills.\n---\n\n${body}`,
+        ),
+        executable: false,
+      },
+    ],
+  };
+}
+
 test('installBundle installs, leaves unchanged snapshots alone, and updates atomically', async () => {
   const root = await temporaryDirectory();
   const skillsDirectory = join(root, 'skills');
@@ -93,6 +109,59 @@ test('installBundle refuses unmanaged collisions and different Wardn IDs', async
   await assert.rejects(
     () => installBundle(bundle('a'), skillsDirectory),
     /slug collision/,
+  );
+});
+
+test('installBundle atomically migrates the legacy Wardn find-skills installation', async () => {
+  const root = await temporaryDirectory();
+  const skillsDirectory = join(root, 'skills');
+  const target = join(skillsDirectory, 'find-skills');
+  await mkdir(join(target, 'scripts'), { recursive: true });
+  await writeFile(join(target, 'SKILL.md'), '# Legacy bootstrap\n');
+  await writeFile(join(target, 'scripts/wardn-skills.sh'), '#!/bin/sh\n');
+  await writeFile(
+    join(target, '.wardn-find-skills.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      repository: 'abhi1693/wardn-hub',
+      skill: 'find-skills',
+      revision: 'e4d8c9e710e6be53c300f4ea87af68e228db1784',
+      workingTree: false,
+    }),
+  );
+
+  const migrated = await installBundle(findSkillsBundle('d'), skillsDirectory);
+
+  assert.equal(migrated.status, 'updated');
+  assert.match(await readFile(join(target, 'SKILL.md'), 'utf8'), /# Find skills/);
+  assert.deepEqual(await readInstallMarker(target), {
+    schemaVersion: 1,
+    id: 'abhi1693/wardn-hub/find-skills',
+    contentHash: 'd'.repeat(64),
+  });
+  await assert.rejects(() => readFile(join(target, 'scripts/wardn-skills.sh')), /ENOENT/);
+  await assert.rejects(() => readFile(join(target, '.wardn-find-skills.json')), /ENOENT/);
+});
+
+test('installBundle refuses an unrecognized legacy marker', async () => {
+  const root = await temporaryDirectory();
+  const skillsDirectory = join(root, 'skills');
+  const target = join(skillsDirectory, 'find-skills');
+  await mkdir(target, { recursive: true });
+  await writeFile(join(target, 'SKILL.md'), '# Other bootstrap\n');
+  await writeFile(
+    join(target, '.wardn-find-skills.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      repository: 'other/skills',
+      skill: 'find-skills',
+      revision: 'e4d8c9e710e6be53c300f4ea87af68e228db1784',
+    }),
+  );
+
+  await assert.rejects(
+    () => installBundle(findSkillsBundle('d'), skillsDirectory),
+    /legacy Wardn skill marker failed validation/,
   );
 });
 

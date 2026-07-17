@@ -347,8 +347,10 @@ The CLI preserves the resolver's security boundaries: it validates Wardn IDs,
 snapshot hashes, root metadata, encodings, paths, file counts, and decoded byte
 limits; refuses symlink and unmanaged-directory collisions; stages replacements
 on the target filesystem; and retains the previous managed installation until
-an update succeeds. `--hash` pins an install to an exact audited or otherwise
-selected snapshot.
+an update succeeds. A matching legacy `find-skills` installation created by the
+former Wardn shell self-installer is migrated automatically; unrelated or
+malformed directories remain untouched. `--hash` pins an install to an exact
+audited or otherwise selected snapshot.
 
 After a complete temporary bundle is materialized or a new installation succeeds,
 the CLI sends one best-effort anonymous event with only the public skill ID,
@@ -362,7 +364,8 @@ Publish `@wardn-ai/skills` independently from the Hub application version. Bump
 `hub/cli/package.json` and the exact package pin in `skills/find-skills/SKILL.md`,
 then push `skills-v<version>` (for example, `skills-v0.1.0`). The npm workflow can
 also be dispatched manually from `master`; it validates the version and pin,
-refuses an existing npm version, and publishes with provenance using `NPM_TOKEN`.
+refuses an existing npm version, and publishes with provenance through npm
+Trusted Publishing.
 
 ### Frontend
 
