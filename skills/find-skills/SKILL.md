@@ -78,7 +78,16 @@ specialized tasks when practical. Do not use Wardn as a generic web search.
 
 ### 2. Search
 
-Choose one generic, high-signal term. Run:
+Choose a small query set instead of relying on one literal task phrase. Start with the user's
+main domain/action in generic terms, then prepare up to two broader or adjacent synonyms that a
+skill author might have used. Prefer short terms over long phrases; avoid leaking sensitive task
+details. For example:
+
+- frontend UI critique: try `design review`, then `frontend design`, then `ui audit`.
+- source quality investigation: try `code review`, then `code audit`, then `security audit`.
+- browser automation: try `playwright`, then `browser testing`, then `e2e testing`.
+
+Run the first query:
 
 ```sh
 npx -y @wardn-ai/skills search "playwright" --limit 8 --json
@@ -90,8 +99,9 @@ Only when the user explicitly scopes an owner, run:
 npx -y @wardn-ai/skills search "playwright" --owner "owner-name" --limit 8 --json
 ```
 
-If no useful result appears, retry at most twice with one keyword or synonym. Deduplicate by the
-returned `id`. Do not assume the first result is best. Treat `installs` only as an adoption
+If no useful result appears, retry at most twice with the prepared broader or adjacent terms. Do not
+repeat the same concept with only stopword, pluralization, casing, or word-order changes. Deduplicate
+by the returned `id`. Do not assume the first result is best. Treat `installs` only as an adoption
 tie-breaker and `isOfficial` only as a publisher-identity tie-breaker; neither proves relevance,
 quality, or safety.
 
