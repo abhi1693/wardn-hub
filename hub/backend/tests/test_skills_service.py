@@ -15,11 +15,15 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
             self.statements = []
 
         async def scalar(self, statement: object) -> int:
-            self.statements.append(str(statement))
+            self.statements.append(
+                str(statement.compile(dialect=postgresql.dialect()))
+            )
             return 0
 
         async def execute(self, statement: object) -> SimpleNamespace:
-            self.statements.append(str(statement))
+            self.statements.append(
+                str(statement.compile(dialect=postgresql.dialect()))
+            )
             return SimpleNamespace(
                 scalars=lambda: SimpleNamespace(
                     unique=lambda: SimpleNamespace(all=list),
@@ -37,11 +41,11 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "CASE WHEN" in all_time_session.statements[-1]
     assert "lower(skills.source_name)" in all_time_session.statements[-1]
     assert "lower(skills.name)" in all_time_session.statements[-1]
-    assert "row_number() OVER" in all_time_session.statements[-1]
     assert "skills_1.install_url !=" in all_time_session.statements[-1]
     assert "skills_1.installs DESC" in all_time_session.statements[-1]
     assert "length(skills_1.slug)" in all_time_session.statements[-1]
-    assert "canonical_rank" in all_time_session.statements[-1]
+    assert "SELECT DISTINCT ON" in all_time_session.statements[-1]
+    assert "canonical_rank" not in all_time_session.statements[-1]
     assert "NOT (EXISTS" not in all_time_session.statements[-1]
     assert "ORDER BY CASE WHEN" in all_time_session.statements[-1]
 
@@ -66,11 +70,15 @@ async def test_list_skills_filters_by_current_audit_status() -> None:
             self.statements = []
 
         async def scalar(self, statement: object) -> int:
-            self.statements.append(str(statement))
+            self.statements.append(
+                str(statement.compile(dialect=postgresql.dialect()))
+            )
             return 0
 
         async def execute(self, statement: object) -> SimpleNamespace:
-            self.statements.append(str(statement))
+            self.statements.append(
+                str(statement.compile(dialect=postgresql.dialect()))
+            )
             return SimpleNamespace(
                 scalars=lambda: SimpleNamespace(
                     unique=lambda: SimpleNamespace(all=list),
@@ -113,6 +121,17 @@ def test_audit_filter_materializes_ranked_statuses_on_postgresql() -> None:
     assert "ranked_current_skill_audits AS MATERIALIZED" in compiled
     assert "current_skill_audit_weights AS MATERIALIZED" in compiled
     assert "NOT IN (SELECT" in compiled
+
+
+def test_canonical_skill_filter_uses_postgresql_distinct_on() -> None:
+    statement = repository.published_skill_query(Skill).where(
+        repository.canonical_skill_condition()
+    )
+
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+    assert "DISTINCT ON (skills_1.source_type, skills_1.source" in compiled
+    assert "skills_1.installs DESC" in compiled
+    assert "row_number()" not in compiled
 
 
 async def test_list_skills_rejects_unknown_audit_status() -> None:

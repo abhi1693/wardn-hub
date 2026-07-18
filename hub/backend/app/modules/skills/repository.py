@@ -48,44 +48,38 @@ def official_owner_condition():
 def canonical_skill_condition():
     """Keep the strongest listing for each non-empty install location.
 
-    Ranking all candidates once avoids the correlated anti-join that otherwise
-    scans every skill from the same source once for every catalog row.
+    PostgreSQL can estimate DISTINCT ON cardinality accurately and hash this
+    set into the surrounding catalog query. A row_number filter is estimated
+    as a tiny result and causes nested-loop rescans under audit-status filters.
     """
     candidate = aliased(Skill)
     install_location = case(
         (candidate.install_url != "", candidate.install_url),
         else_=cast(candidate.id, String),
     )
-    ranked_candidates = (
-        select(
-            candidate.id.label("skill_id"),
-            func.row_number()
-            .over(
-                partition_by=(
-                    candidate.source_type,
-                    candidate.source,
-                    install_location,
-                ),
-                order_by=(
-                    candidate.installs.desc(),
-                    func.length(candidate.slug),
-                    candidate.slug,
-                ),
-            )
-            .label("canonical_rank"),
-        )
+    canonical_candidates = (
+        select(candidate.id.label("skill_id"))
         .where(
             candidate.status == "active",
             candidate.visibility == "public",
             candidate.current_snapshot_id.is_not(None),
         )
+        .distinct(
+            candidate.source_type,
+            candidate.source,
+            install_location,
+        )
+        .order_by(
+            candidate.source_type,
+            candidate.source,
+            install_location,
+            candidate.installs.desc(),
+            func.length(candidate.slug),
+            candidate.slug,
+        )
         .subquery()
     )
-    return Skill.id.in_(
-        select(ranked_candidates.c.skill_id).where(
-            ranked_candidates.c.canonical_rank == 1
-        )
-    )
+    return Skill.id.in_(select(canonical_candidates.c.skill_id))
 
 
 def wardn_find_skills_order():
