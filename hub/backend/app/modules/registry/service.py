@@ -2270,28 +2270,9 @@ async def servers_with_latest(
     if not servers:
         return []
 
-    versions_by_server = await repository.list_published_versions_for_servers(
-        session,
-        {server.id for server in servers},
+    latest_by_server = await repository.list_current_versions_for_servers(
+        session, servers
     )
-    latest_by_server: dict[UUID, RegistryServerVersion] = {}
-    for server in servers:
-        versions = versions_by_server.get(server.id, [])
-        latest = next(
-            (
-                version
-                for version in versions
-                if server.current_version_id is not None
-                and version.id == server.current_version_id
-            ),
-            None,
-        )
-        if latest is None:
-            latest = next((version for version in versions if version.is_latest), None)
-        if latest is None and versions:
-            latest = versions[0]
-        if latest is not None:
-            latest_by_server[server.id] = latest
 
     latest_versions = list(latest_by_server.values())
     trust = await build_trust_context(

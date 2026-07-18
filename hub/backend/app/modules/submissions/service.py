@@ -800,6 +800,20 @@ async def list_submissions_for_system_fix(session: AsyncSession) -> list[Submiss
     return eligible
 
 
+async def next_submission_for_system_fix(
+    session: AsyncSession,
+    *,
+    exclude_ids: set[uuid.UUID] | None = None,
+    submission_id: uuid.UUID | None = None,
+) -> SubmissionRead | None:
+    submission = await repository.get_next_repairable_submission_for_system_fix(
+        session,
+        exclude_ids=exclude_ids,
+        submission_id=submission_id,
+    )
+    return submission_response(submission) if submission is not None else None
+
+
 def api_token_organization_ids(api_token: UserAPIToken | None) -> set[str]:
     if api_token is None:
         return set()
@@ -1199,6 +1213,20 @@ async def list_submissions_for_database_review(
 ) -> list[SubmissionRead]:
     submissions = await repository.list_submitted_submissions_for_review(session)
     return [submission_response(submission) for submission in submissions]
+
+
+async def next_submission_for_database_review(
+    session: AsyncSession,
+    *,
+    exclude_ids: set[uuid.UUID] | None = None,
+    submission_id: uuid.UUID | None = None,
+) -> SubmissionRead | None:
+    submission = await repository.get_next_submitted_submission_for_review(
+        session,
+        exclude_ids=exclude_ids,
+        submission_id=submission_id,
+    )
+    return submission_response(submission) if submission is not None else None
 
 
 async def get_submission_for_system_review(

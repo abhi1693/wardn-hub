@@ -128,7 +128,8 @@ def current_skill_audit_status_subquery():
             SkillSnapshot.status == "active",
             SkillSnapshot.is_latest.is_(True),
         )
-        .subquery()
+        .cte("ranked_current_skill_audits")
+        .prefix_with("MATERIALIZED", dialect="postgresql")
     )
     status_weight = case(
         (ranked_audits.c.status == "fail", 2),
@@ -143,7 +144,8 @@ def current_skill_audit_status_subquery():
         .where(ranked_audits.c.audit_rank == 1)
         .where(ranked_audits.c.status.in_(("pass", "warn", "fail")))
         .group_by(ranked_audits.c.skill_id)
-        .subquery()
+        .cte("current_skill_audit_weights")
+        .prefix_with("MATERIALIZED", dialect="postgresql")
     )
     return (
         select(
@@ -160,15 +162,16 @@ def current_skill_audit_status_subquery():
 
 def apply_audit_status_filter(statement: Select, audit_status: str) -> Select:
     current_audit_statuses = current_skill_audit_status_subquery()
+    audited_skill_ids = select(current_audit_statuses.c.skill_id)
     if audit_status == "unaudited":
-        return statement.outerjoin(
-            current_audit_statuses,
-            current_audit_statuses.c.skill_id == Skill.id,
-        ).where(current_audit_statuses.c.skill_id.is_(None))
-    return statement.join(
-        current_audit_statuses,
-        current_audit_statuses.c.skill_id == Skill.id,
-    ).where(current_audit_statuses.c.audit_status == audit_status)
+        return statement.where(Skill.id.not_in(audited_skill_ids))
+    return statement.where(
+        Skill.id.in_(
+            audited_skill_ids.where(
+                current_audit_statuses.c.audit_status == audit_status
+            )
+        )
+    )
 
 
 async def list_skills(

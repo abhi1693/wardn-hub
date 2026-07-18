@@ -160,7 +160,11 @@ export function CategoriesClient({
           <div className="category-grid">
             {filteredCategories.map((category) => (
               <article className="category-card" key={category.id}>
-                <Link className="category-card-main" href={categoryHref(category.slug)}>
+                <Link
+                  className="category-card-main"
+                  href={categoryHref(category.slug)}
+                  prefetch={false}
+                >
                   <strong>{category.name}</strong>
                   {category.description ? <span>{category.description}</span> : null}
                 </Link>

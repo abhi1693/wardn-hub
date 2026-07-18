@@ -296,6 +296,27 @@ async def list_published_versions_for_servers(
     return versions_by_server
 
 
+async def list_current_versions_for_servers(
+    session: AsyncSession,
+    servers: list[RegistryServer],
+) -> dict[UUID, RegistryServerVersion]:
+    """Load at most one current version per server for registry list responses."""
+    current_version_ids = {
+        server.current_version_id
+        for server in servers
+        if server.current_version_id is not None
+    }
+    if not current_version_ids:
+        return {}
+    result = await session.execute(
+        select(RegistryServerVersion).where(
+            RegistryServerVersion.id.in_(current_version_ids),
+            RegistryServerVersion.status == "active",
+        )
+    )
+    return {version.server_id: version for version in result.scalars().all()}
+
+
 async def list_server_versions(
     session: AsyncSession,
     name: str,

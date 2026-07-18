@@ -95,7 +95,9 @@ function CategoryTopServersTable({ servers }: { servers: RegistryServerRead[] })
             {topServers.map((server) => (
               <tr key={server.id}>
                 <td>
-                  <Link href={serverDetailPath(server.name)}>{server.title || server.name}</Link>
+                  <Link href={serverDetailPath(server.name)} prefetch={false}>
+                    {server.title || server.name}
+                  </Link>
                   <span>{server.name}</span>
                 </td>
                 <td>{server.description}</td>

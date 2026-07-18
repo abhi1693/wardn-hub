@@ -487,7 +487,7 @@ function ProgrammaticServerTable({
             }))).map((row) => (
               <tr key={`${row.server.id}:${row.packageTarget}:${row.transport}`}>
                 <td>
-                  <Link href={serverDetailPath(row.server.name)}>
+                  <Link href={serverDetailPath(row.server.name)} prefetch={false}>
                     {row.server.title || row.server.name}
                   </Link>
                   <span>{row.server.name}</span>

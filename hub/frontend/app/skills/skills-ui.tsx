@@ -257,7 +257,12 @@ export function SkillLeaderboard({
         <span className="skills-table-number">Installs</span>
       </div>
       {skills.map((skill, index) => (
-        <Link className="skills-table-row" href={skillDetailPath(skill.id)} key={skill.id}>
+        <Link
+          className="skills-table-row"
+          href={skillDetailPath(skill.id)}
+          key={skill.id}
+          prefetch={false}
+        >
           <span className="skills-table-rank">{index + 1}</span>
           <span className="skills-table-main">
             <span
@@ -313,7 +318,12 @@ export function SkillCardGrid({
   return (
     <div className="skill-grid">
       {skills.map((skill) => (
-        <Link className="skill-card" href={skillDetailPath(skill.id)} key={skill.id}>
+        <Link
+          className="skill-card"
+          href={skillDetailPath(skill.id)}
+          key={skill.id}
+          prefetch={false}
+        >
           <span className="skill-card-head">
             <span
               className="skill-card-icon"
@@ -363,7 +373,12 @@ export function SkillSourceTable({ groups }: { groups: SkillSourceGroup[] }) {
         <span>Skills</span>
       </div>
       {groups.map((group) => (
-        <Link className="skills-source-row" href={skillSourcePath(group.source)} key={group.source}>
+        <Link
+          className="skills-source-row"
+          href={skillSourcePath(group.source)}
+          key={group.source}
+          prefetch={false}
+        >
           <span className="skills-source-main">
             <strong>
               {group.source}
@@ -398,7 +413,12 @@ export function OfficialCreatorsTable({ owners }: { owners: SkillOwnerGroup[] })
         <span>Skills</span>
       </div>
       {owners.map((owner) => (
-        <Link className="skills-source-row official" href={skillOwnerPath(owner.owner)} key={owner.owner}>
+        <Link
+          className="skills-source-row official"
+          href={skillOwnerPath(owner.owner)}
+          key={owner.owner}
+          prefetch={false}
+        >
           <span className="skills-source-main">
             <strong>
               {owner.owner}
@@ -428,7 +448,7 @@ export function RelatedSkills({ currentId, skills }: { currentId: string; skills
       <h2>Related skills</h2>
       <div className="skills-related-list">
         {related.map((skill) => (
-          <Link href={skillDetailPath(skill.id)} key={skill.id}>
+          <Link href={skillDetailPath(skill.id)} key={skill.id} prefetch={false}>
             <Sparkles aria-hidden="true" size={16} />
             <span>{skill.name}</span>
           </Link>
@@ -479,6 +499,7 @@ function SkillFileLinks({
             className={`skill-file-list-item${active ? " active" : ""}`}
             href={href}
             key={file.path}
+            prefetch={false}
             title={file.path}
           >
             <SkillFileIcon file={file} />

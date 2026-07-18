@@ -503,6 +503,7 @@ export function SkillsClient({
                       },
                     }}
                     key={value}
+                    prefetch={false}
                   >
                     {label}
                   </Link>

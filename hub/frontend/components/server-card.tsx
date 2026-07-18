@@ -62,7 +62,7 @@ export function ServerCard({
     hideGenericCategory && listedCategoryName === "MCP Registry" ? "" : listedCategoryName;
 
   return (
-    <Link className="server-card" href={serverDetailHref(server.name)}>
+    <Link className="server-card" href={serverDetailHref(server.name)} prefetch={false}>
       <span className="server-card-head">
         <ServerIcon src={serverIconUrl(server)} title={server.title || server.name} />
         <span className="server-card-title-block">

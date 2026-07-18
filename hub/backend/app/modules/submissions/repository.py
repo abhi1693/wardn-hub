@@ -1,10 +1,11 @@
 import uuid
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.organizations.models import OrganizationMembership
+from app.modules.organizations.models import Organization, OrganizationMembership
 from app.modules.submissions.models import ServerSubmission
+from app.modules.users.models import User
 
 
 def submission_search_filter(search: str | None) -> object | None:
@@ -146,6 +147,68 @@ async def list_repairable_submissions_for_system_fix(
     )
     result = await session.execute(statement)
     return list(result.scalars().all())
+
+
+async def get_next_submitted_submission_for_review(
+    session: AsyncSession,
+    *,
+    exclude_ids: set[uuid.UUID] | None = None,
+    submission_id: uuid.UUID | None = None,
+) -> ServerSubmission | None:
+    statement = select(ServerSubmission).where(
+        ServerSubmission.status == "submitted"
+    )
+    if exclude_ids:
+        statement = statement.where(ServerSubmission.id.not_in(exclude_ids))
+    if submission_id is not None:
+        statement = statement.where(ServerSubmission.id == submission_id)
+    statement = statement.order_by(
+        ServerSubmission.submitted_at.asc().nullslast(),
+        ServerSubmission.created_at.asc(),
+        ServerSubmission.id.asc(),
+    ).limit(1)
+    result = await session.execute(statement)
+    return result.scalars().first()
+
+
+async def get_next_repairable_submission_for_system_fix(
+    session: AsyncSession,
+    *,
+    exclude_ids: set[uuid.UUID] | None = None,
+    submission_id: uuid.UUID | None = None,
+) -> ServerSubmission | None:
+    eligible_user_owner = exists(
+        select(User.id).where(
+            User.id == ServerSubmission.owner_user_id,
+            User.is_active.is_(True),
+            User.is_superuser.is_(True),
+        )
+    )
+    eligible_organization_owner = exists(
+        select(Organization.id).where(
+            Organization.id == ServerSubmission.owner_organization_id,
+            Organization.status == "active",
+            Organization.is_partner.is_(True),
+            Organization.partner_status == "active",
+        )
+    )
+    statement = select(ServerSubmission).where(
+        and_(
+            ServerSubmission.status.in_({"draft", "rejected"}),
+            or_(eligible_user_owner, eligible_organization_owner),
+        )
+    )
+    if exclude_ids:
+        statement = statement.where(ServerSubmission.id.not_in(exclude_ids))
+    if submission_id is not None:
+        statement = statement.where(ServerSubmission.id == submission_id)
+    statement = statement.order_by(
+        ServerSubmission.updated_at.asc().nullslast(),
+        ServerSubmission.created_at.asc(),
+        ServerSubmission.id.asc(),
+    ).limit(1)
+    result = await session.execute(statement)
+    return result.scalars().first()
 
 
 async def get_submission_by_name_version(

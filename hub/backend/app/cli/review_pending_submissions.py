@@ -446,6 +446,28 @@ class WardnHubDatabaseReviewClient:
 
         return self._run_database_operation(operation)
 
+    def next_submission(
+        self,
+        *,
+        skipped_ids: set[str],
+        submission_id: str | None,
+    ) -> dict[str, Any] | None:
+        async def operation(session: Any) -> dict[str, Any] | None:
+            from app.modules.submissions.service import next_submission_for_database_review
+
+            submission = await next_submission_for_database_review(
+                session,
+                exclude_ids={uuid.UUID(value) for value in skipped_ids},
+                submission_id=uuid.UUID(submission_id) if submission_id else None,
+            )
+            return (
+                submission_read_to_review_dict(submission)
+                if submission is not None
+                else None
+            )
+
+        return self._run_database_operation(operation)
+
     def get_submission(self, submission_id: str) -> dict[str, Any]:
         async def operation(session: Any) -> dict[str, Any]:
             from app.modules.submissions.service import get_submission_for_system_review
@@ -508,7 +530,11 @@ def bool_field(data: dict[str, Any], snake_case: str, camel_case: str) -> bool:
 
 
 def validate_database_review_client(client: WardnHubDatabaseReviewClient) -> dict[str, Any]:
-    client.list_submissions()
+    next_submission = getattr(client, "next_submission", None)
+    if callable(next_submission):
+        next_submission(skipped_ids=set(), submission_id=None)
+    else:
+        client.list_submissions()
     client.probe_moderation_access()
     return {
         "id": "database",
@@ -763,6 +789,12 @@ def next_submission_for_review(
     skipped_ids: set[str],
     submission_id: str | None,
 ) -> dict[str, Any] | None:
+    next_submission = getattr(client, "next_submission", None)
+    if callable(next_submission):
+        return next_submission(
+            skipped_ids=skipped_ids,
+            submission_id=submission_id,
+        )
     submissions = client.list_submissions()
     pending = pending_submissions(submissions, skipped_ids=skipped_ids)
     if submission_id:

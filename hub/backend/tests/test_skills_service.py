@@ -1,9 +1,10 @@
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.modules.skills import repository, service
-from app.modules.skills.models import SkillInstallEvent
+from app.modules.skills.models import Skill, SkillInstallEvent
 
 
 async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
@@ -88,7 +89,7 @@ async def test_list_skills_filters_by_current_audit_status() -> None:
     assert "row_number() OVER" in warned_sql
     assert "max(CASE" in warned_sql
     assert "audit_status" in warned_sql
-    assert "JOIN" in warned_sql
+    assert " IN (SELECT" in warned_sql
 
     unaudited_session = FakeSession()
     await repository.list_skills(
@@ -98,8 +99,20 @@ async def test_list_skills_filters_by_current_audit_status() -> None:
         audit_status="unaudited",
     )
     unaudited_sql = unaudited_session.statements[-1]
-    assert "LEFT OUTER JOIN" in unaudited_sql
-    assert "IS NULL" in unaudited_sql
+    assert "NOT IN (SELECT" in unaudited_sql
+    assert "LEFT OUTER JOIN" not in unaudited_sql
+
+
+def test_audit_filter_materializes_ranked_statuses_on_postgresql() -> None:
+    statement = repository.apply_audit_status_filter(
+        repository.published_skill_query(Skill),
+        "unaudited",
+    )
+
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+    assert "ranked_current_skill_audits AS MATERIALIZED" in compiled
+    assert "current_skill_audit_weights AS MATERIALIZED" in compiled
+    assert "NOT IN (SELECT" in compiled
 
 
 async def test_list_skills_rejects_unknown_audit_status() -> None:

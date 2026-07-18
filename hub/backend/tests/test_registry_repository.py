@@ -128,6 +128,26 @@ async def test_list_published_servers_uses_published_filters_for_count_and_rows(
 
 
 @pytest.mark.asyncio
+async def test_list_current_versions_loads_only_selected_current_ids() -> None:
+    session = CaptureSession()
+    first = RegistryServer(id=uuid4(), name="io.github.example/weather")
+    first.current_version_id = uuid4()
+    second = RegistryServer(id=uuid4(), name="io.github.example/calendar")
+    second.current_version_id = uuid4()
+
+    versions = await repository.list_current_versions_for_servers(
+        session, [first, second]
+    )
+
+    statement = sql(session.statements[0])
+    assert versions == {}
+    assert str(first.current_version_id) in statement
+    assert str(second.current_version_id) in statement
+    assert "mcp_server_versions.status = 'active'" in statement
+    assert "mcp_server_versions.server_id IN" not in statement
+
+
+@pytest.mark.asyncio
 async def test_get_published_server_version_requires_active_current_latest() -> None:
     session = CaptureSession()
     server = RegistryServer(id=uuid4(), name="io.github.example/weather")

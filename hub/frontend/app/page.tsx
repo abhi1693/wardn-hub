@@ -59,7 +59,7 @@ function FeaturedServerCard({ server }: { server: RegistryServerRead }) {
   const category = categoryLabel(server.categories?.[0]?.name);
 
   return (
-    <Link className="home-server-card" href={serverDetailPath(server.name)}>
+    <Link className="home-server-card" href={serverDetailPath(server.name)} prefetch={false}>
       <span className="home-server-card-head">
         <ServerIcon src={serverIconSource(server)} title={server.title || server.name} />
         <span className="home-server-card-title">
@@ -79,7 +79,11 @@ function FeaturedServerCard({ server }: { server: RegistryServerRead }) {
 
 function CategoryLink({ category }: { category: RegistryCategoryRead }) {
   return (
-    <Link className="home-category-link" href={`/categories/${encodeURIComponent(category.slug)}`}>
+    <Link
+      className="home-category-link"
+      href={`/categories/${encodeURIComponent(category.slug)}`}
+      prefetch={false}
+    >
       <span>{category.name}</span>
       <ArrowRight aria-hidden="true" size={15} />
     </Link>
