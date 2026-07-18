@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
@@ -32,6 +33,7 @@ GITHUB_OWNER_PATTERN = re.compile(
     r"^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
 )
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
+GITHUB_IMPORT_OUTPUT_FORMATS = ("json", "text")
 GITHUB_API_ROOT = "https://api.github.com"
 GITHUB_REPOSITORIES_PER_PAGE = 100
 GITHUB_SEARCH_RESULT_LIMIT = 1000
@@ -92,6 +94,55 @@ class InvalidSkillBundleError(SkillCliError):
         self.path = path
         self.reason = reason
         super().__init__(f"{reason}: {path}")
+
+
+class GitHubImportTextFormatter(logging.Formatter):
+    fields = (
+        "source",
+        "skill_id",
+        "reason",
+        "imported_skill_count",
+        "failed_skill_count",
+        "skipped_repository_count",
+    )
+
+    def formatTime(
+        self,
+        record: logging.LogRecord,
+        datefmt: str | None = None,
+    ) -> str:
+        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+        return f"{timestamp},{int(record.msecs):03d}"
+
+    def format(self, record: logging.LogRecord) -> str:
+        values: list[object] = [
+            self.formatTime(record),
+            record.levelname,
+            record.getMessage(),
+        ]
+        for field in self.fields:
+            if field == "reason":
+                value = getattr(
+                    record,
+                    "skip_reason",
+                    getattr(record, "failure_reason", ""),
+                )
+            else:
+                value = getattr(record, field, "")
+            if value != "":
+                values.append(value)
+        return "\t".join(str(value) for value in values if value != "")
+
+
+def configure_github_import_output(output: str) -> None:
+    if output != "text":
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(GitHubImportTextFormatter())
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
 
 
 SkillFileEncoding = Literal["utf-8", "base64"]
@@ -2698,6 +2749,7 @@ async def save_imported_repository(
 
 
 async def import_github_from_args(args: argparse.Namespace) -> int:
+    configure_github_import_output(str(getattr(args, "output", "json") or "json"))
     filters = github_repository_filters_from_args(args)
     requested_owner = filters.legacy_owners[0] if len(filters.legacy_owners) == 1 else ""
     raw_subfolder = str(getattr(args, "subfolder", "") or "")
@@ -3439,6 +3491,12 @@ def add_import_github_arguments(parser: argparse.ArgumentParser) -> None:
         "--all-github",
         action="store_true",
         help="Search all public GitHub repositories matching the supplied filters.",
+    )
+    parser.add_argument(
+        "--output",
+        choices=GITHUB_IMPORT_OUTPUT_FORMATS,
+        default="json",
+        help="Importer log output format. Use text for tab-separated human-readable logs.",
     )
     parser.add_argument(
         "--subfolder",

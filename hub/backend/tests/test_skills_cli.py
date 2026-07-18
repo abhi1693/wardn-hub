@@ -1,5 +1,6 @@
 import logging
 from argparse import Namespace
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1569,6 +1570,48 @@ def test_skill_slug_root_is_relative_to_import_subfolder() -> None:
     assert skills.skill_slug_root("skills/algorithmic-art", "skills") == "algorithmic-art"
 
 
+def test_github_import_text_formatter_outputs_compact_tsv() -> None:
+    record = logging.LogRecord(
+        name=skills.logger.name,
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="github request rate limited; waiting before retry",
+        args=(),
+        exc_info=None,
+    )
+    record.created = datetime(2026, 7, 18, 19, 31, 7).timestamp()
+    record.msecs = 889
+
+    assert skills.GitHubImportTextFormatter().format(record) == (
+        "2026-07-18 19:31:07,889\t"
+        "WARNING\t"
+        "github request rate limited; waiting before retry"
+    )
+
+    saved_record = logging.LogRecord(
+        name=skills.logger.name,
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="github skill import saved skill",
+        args=(),
+        exc_info=None,
+    )
+    saved_record.created = datetime(2026, 7, 18, 19, 32, 6).timestamp()
+    saved_record.msecs = 381
+    saved_record.source = "android/skills"
+    saved_record.skill_id = "android/skills/camera-camerax"
+
+    assert skills.GitHubImportTextFormatter().format(saved_record) == (
+        "2026-07-18 19:32:06,381\t"
+        "INFO\t"
+        "github skill import saved skill\t"
+        "android/skills\t"
+        "android/skills/camera-camerax"
+    )
+
+
 def test_manage_dispatches_skills_add(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     called = {}
     skill_file = tmp_path / "SKILL.md"
@@ -1652,6 +1695,8 @@ def test_manage_parses_filtered_multi_target_github_import(
             "Python",
             "--repo-name",
             "skills",
+            "--output",
+            "text",
             "--exclude-org",
             "bad-org",
             "--exclude-user",
@@ -1676,6 +1721,7 @@ def test_manage_parses_filtered_multi_target_github_import(
     assert called["active_within_days"] == 90
     assert called["language"] == "Python"
     assert called["repository_names"] == ["skills"]
+    assert called["output"] == "text"
     assert called["excluded_organizations"] == ["bad-org"]
     assert called["excluded_users"] == ["bad-user"]
     assert called["excluded_repositories"] == ["bad-org/bad-skills"]
