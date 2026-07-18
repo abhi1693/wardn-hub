@@ -2171,15 +2171,34 @@ async def save_refreshed_skill(
 def discover_skill_paths(
     tree: list[GitHubTreeItem],
     *,
+    recursive: bool,
     subfolder: str,
 ) -> list[str]:
     blobs = tree_blob_paths(tree)
     skill_path = f"{subfolder}/SKILL.md" if subfolder else "SKILL.md"
-    if skill_path in blobs:
-        return [skill_path]
+    if not recursive:
+        if skill_path in blobs:
+            return [skill_path]
+        if subfolder:
+            raise SkillNotFoundError(f"No SKILL.md found in GitHub subfolder: {subfolder}")
+        raise SkillNotFoundError("No SKILL.md found in GitHub repository root")
+
+    if subfolder:
+        prefix = f"{subfolder}/"
+        skill_paths = [
+            path
+            for path in blobs
+            if path == skill_path or (path.startswith(prefix) and path.endswith("/SKILL.md"))
+        ]
+    else:
+        skill_paths = [
+            path for path in blobs if path == "SKILL.md" or path.endswith("/SKILL.md")
+        ]
+    if skill_paths:
+        return sorted(skill_paths)
     if subfolder:
         raise SkillNotFoundError(f"No SKILL.md found in GitHub subfolder: {subfolder}")
-    raise SkillNotFoundError("No SKILL.md found in GitHub repository root")
+    raise SkillNotFoundError("No SKILL.md found in GitHub repository")
 
 
 async def import_skill_from_github_path(
@@ -2305,6 +2324,7 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
         "requested_owner": requested_owner or None,
         "scope": scope_label,
         "subfolder": subfolder,
+        "recursive": bool(getattr(args, "recursive", False)),
         "repository_filters": {
             "min_stars": filters.min_stars,
             "max_stars": filters.max_stars,
@@ -2511,7 +2531,11 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                 },
             )
             try:
-                skill_paths = discover_skill_paths(tree, subfolder=subfolder)
+                skill_paths = discover_skill_paths(
+                    tree,
+                    recursive=bool(getattr(args, "recursive", False)),
+                    subfolder=subfolder,
+                )
             except SkillNotFoundError as exc:
                 skipped_repository_count += 1
                 logger.info(
@@ -3017,7 +3041,15 @@ def add_import_github_arguments(parser: argparse.ArgumentParser) -> None:
         type=import_subfolder_argument,
         help=(
             "Repository subfolder containing SKILL.md. "
-            "When omitted, only the repository root SKILL.md is imported."
+            "When omitted, the repository root is the selected scope."
+        ),
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help=(
+            "Import every SKILL.md under the selected scope. With --subfolder, recursion "
+            "is limited to that subfolder; otherwise it scans the whole repository."
         ),
     )
     parser.add_argument(

@@ -15,12 +15,14 @@ RESOLVED_COMMIT_SHA = "a" * 40
 def github_import_args(
     *,
     owner: str = "acme",
+    recursive: bool = False,
     subfolder: str = "skills",
     github_token: str = "github-token",
     timeout_seconds: float = 3.0,
 ) -> Namespace:
     return Namespace(
         owner=owner,
+        recursive=recursive,
         subfolder=subfolder,
         github_token=github_token,
         timeout_seconds=timeout_seconds,
@@ -1008,10 +1010,28 @@ def test_discover_skill_paths_uses_exact_skill_subfolder() -> None:
         skills.GitHubTreeItem(path="skills/weather/nested/SKILL.md", type="blob", size=50),
     ]
 
-    assert skills.discover_skill_paths(tree, subfolder="skills") == ["skills/SKILL.md"]
+    assert skills.discover_skill_paths(tree, recursive=False, subfolder="skills") == [
+        "skills/SKILL.md"
+    ]
 
 
-def test_discover_skill_paths_does_not_recurse_under_subfolder() -> None:
+def test_discover_skill_paths_recurses_under_subfolder_when_requested() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/docs/SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="examples/demo/SKILL.md", type="blob", size=50),
+    ]
+
+    assert skills.discover_skill_paths(tree, recursive=True, subfolder="skills") == [
+        "skills/SKILL.md",
+        "skills/docs/SKILL.md",
+        "skills/weather/SKILL.md",
+    ]
+
+
+def test_discover_skill_paths_does_not_recurse_under_subfolder_by_default() -> None:
     tree = [
         skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
         skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
@@ -1020,7 +1040,7 @@ def test_discover_skill_paths_does_not_recurse_under_subfolder() -> None:
     ]
 
     with pytest.raises(skills.SkillNotFoundError, match="No SKILL.md found in GitHub subfolder"):
-        skills.discover_skill_paths(tree, subfolder="skills")
+        skills.discover_skill_paths(tree, recursive=False, subfolder="skills")
 
 
 def test_discover_skill_paths_only_uses_repository_root_without_subfolder() -> None:
@@ -1030,7 +1050,21 @@ def test_discover_skill_paths_only_uses_repository_root_without_subfolder() -> N
         skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
     ]
 
-    assert skills.discover_skill_paths(tree, subfolder="") == ["SKILL.md"]
+    assert skills.discover_skill_paths(tree, recursive=False, subfolder="") == ["SKILL.md"]
+
+
+def test_discover_skill_paths_recurses_from_repository_root_when_requested() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
+    ]
+
+    assert skills.discover_skill_paths(tree, recursive=True, subfolder="") == [
+        "SKILL.md",
+        "skills/SKILL.md",
+        "skills/weather/SKILL.md",
+    ]
 
 
 def test_discover_skill_paths_does_not_recurse_from_repository_root() -> None:
@@ -1040,7 +1074,7 @@ def test_discover_skill_paths_does_not_recurse_from_repository_root() -> None:
     ]
 
     with pytest.raises(skills.SkillNotFoundError, match="repository root"):
-        skills.discover_skill_paths(tree, subfolder="")
+        skills.discover_skill_paths(tree, recursive=False, subfolder="")
 
 
 def test_skill_bundle_tree_items_uses_nearest_skill_root() -> None:
