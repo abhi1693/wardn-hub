@@ -4997,21 +4997,6 @@ button:disabled,
   line-height: 20px;
 }
 
-.skills-table-slug {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 220px;
-  align-items: center;
-  border-radius: 999px;
-  background: var(--surface-container-low);
-  color: var(--muted-foreground);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  overflow-wrap: anywhere;
-  padding: 2px 7px;
-}
-
 .skills-official-badge {
   display: inline-flex;
   min-height: 22px;
@@ -7328,10 +7313,6 @@ button:disabled,
     gap: 8px;
     padding-right: 10px;
     padding-left: 10px;
-  }
-
-  .skills-table-slug {
-    max-width: 180px;
   }
 
   .registry-hero-search {

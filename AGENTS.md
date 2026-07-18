@@ -17,6 +17,18 @@ The intended layout follows the Wardn AI monorepo shape:
 - API prefix: `/api/v1`
 - Settings prefix: `WARDN_HUB_`
 
+## Skill Discovery
+
+For every substantive task in this repo, search Wardn Hub for applicable skills
+using the `find-skills` skill before proceeding. If an applicable Wardn Hub skill
+is found, use it according to the `find-skills` workflow.
+
+If `find-skills` is not installed, install it first:
+
+```sh
+npx -y @wardn-ai/skills install 'abhi1693/wardn-hub/find-skills' --global --agent codex
+```
+
 ## Release Checklist
 
 Use this checklist when asked to release Wardn Hub and related home-lab workloads.

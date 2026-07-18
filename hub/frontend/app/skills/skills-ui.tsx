@@ -246,9 +246,6 @@ export function SkillLeaderboard({
           <span className="skills-table-main">
             <strong>
               {skill.name}
-              {skill.slug !== skill.name ? (
-                <span className="skills-table-slug">{skill.slug}</span>
-              ) : null}
               {skill.isOfficial ? <OfficialBadge /> : null}
               <SkillAuditBadge status={skill.auditStatus} />
             </strong>
