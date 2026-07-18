@@ -1003,16 +1003,15 @@ async def test_github_recursive_tree_classifies_truncated_response_as_skippable(
 def test_discover_skill_paths_uses_exact_skill_subfolder() -> None:
     tree = [
         skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=50),
         skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
         skills.GitHubTreeItem(path="skills/weather/nested/SKILL.md", type="blob", size=50),
     ]
 
-    assert skills.discover_skill_paths(tree, subfolder="skills/weather") == [
-        "skills/weather/SKILL.md"
-    ]
+    assert skills.discover_skill_paths(tree, subfolder="skills") == ["skills/SKILL.md"]
 
 
-def test_discover_skill_paths_recurses_under_parent_subfolder() -> None:
+def test_discover_skill_paths_does_not_recurse_under_subfolder() -> None:
     tree = [
         skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
         skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
@@ -1020,10 +1019,28 @@ def test_discover_skill_paths_recurses_under_parent_subfolder() -> None:
         skills.GitHubTreeItem(path="examples/demo/SKILL.md", type="blob", size=50),
     ]
 
-    assert skills.discover_skill_paths(tree, subfolder="skills") == [
-        "skills/docs/SKILL.md",
-        "skills/weather/SKILL.md",
+    with pytest.raises(skills.SkillNotFoundError, match="No SKILL.md found in GitHub subfolder"):
+        skills.discover_skill_paths(tree, subfolder="skills")
+
+
+def test_discover_skill_paths_only_uses_repository_root_without_subfolder() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
     ]
+
+    assert skills.discover_skill_paths(tree, subfolder="") == ["SKILL.md"]
+
+
+def test_discover_skill_paths_does_not_recurse_from_repository_root() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=50),
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob", size=50),
+    ]
+
+    with pytest.raises(skills.SkillNotFoundError, match="repository root"):
+        skills.discover_skill_paths(tree, subfolder="")
 
 
 def test_skill_bundle_tree_items_uses_nearest_skill_root() -> None:
@@ -1340,7 +1357,7 @@ def test_manage_import_github_rejects_non_owner_input(owner: str) -> None:
         )
 
 
-def test_manage_import_github_scans_whole_repository_when_subfolder_is_omitted(
+def test_manage_import_github_scans_repository_root_when_subfolder_is_omitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     called: dict[str, object] = {}
@@ -2090,7 +2107,9 @@ async def test_import_github_logs_progress(
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(github_import_args())
+    result = await skills.import_github_from_args(
+        github_import_args(subfolder="skills/weather")
+    )
 
     assert result == 0
     records = [record for record in caplog.records if record.name == skills.logger.name]
@@ -2281,7 +2300,9 @@ async def test_import_github_scans_same_subfolder_across_repositories(
     monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
 
-    result = await skills.import_github_from_args(github_import_args())
+    result = await skills.import_github_from_args(
+        github_import_args(subfolder="skills/shared")
+    )
 
     assert result == 0
     assert requested_refs == [
@@ -2338,8 +2359,8 @@ async def test_import_github_preflights_aggregate_bundle_size(
             ref: str,
         ) -> list[skills.GitHubTreeItem]:
             return [
-                skills.GitHubTreeItem(path="skills/one/SKILL.md", type="blob", size=6),
-                skills.GitHubTreeItem(path="skills/two/SKILL.md", type="blob", size=6),
+                skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=11),
+                skills.GitHubTreeItem(path="skills/nested/SKILL.md", type="blob", size=6),
             ]
 
         async def raw_file(
@@ -2435,7 +2456,9 @@ async def test_import_github_continues_after_repository_specific_failure(
     monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
     monkeypatch.setattr(skills, "save_imported_repository", fake_save)
 
-    result = await skills.import_github_from_args(github_import_args())
+    result = await skills.import_github_from_args(
+        github_import_args(subfolder="skills/working")
+    )
 
     assert result == 1
     assert calls == ["broken", "working"]
@@ -2517,7 +2540,9 @@ async def test_import_github_skips_truncated_tree_without_failing_successful_imp
     monkeypatch.setattr(skills, "save_imported_repository", fake_save)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(github_import_args())
+    result = await skills.import_github_from_args(
+        github_import_args(subfolder="skills/working")
+    )
 
     assert result == 0
     assert tree_calls == ["large-repository", "working"]
@@ -2723,7 +2748,7 @@ async def test_owner_import_matches_github_source_case_insensitively_and_preserv
     assert skill.name == "Weather"
 
 
-async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
+async def test_import_github_ignores_nested_invalid_skill_and_commits_exact_subfolder(
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -2768,8 +2793,8 @@ async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
         ) -> list[skills.GitHubTreeItem]:
             assert ref == RESOLVED_COMMIT_SHA
             return [
+                skills.GitHubTreeItem(path="skills/SKILL.md", type="blob"),
                 skills.GitHubTreeItem(path="skills/binary/SKILL.md", type="blob"),
-                skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob"),
             ]
 
         async def raw_file(
@@ -2783,7 +2808,7 @@ async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
                     path,
                     "GitHub file contains a NUL byte at offset 42 (line 3)",
                 )
-            assert path == "skills/weather/SKILL.md"
+            assert path == "skills/SKILL.md"
             return "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n"
 
     commits = 0
@@ -2821,13 +2846,13 @@ async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
 
     result = await skills.import_github_from_args(github_import_args())
 
-    assert result == 1
-    assert saved_paths == ["skills/weather"]
+    assert result == 0
+    assert saved_paths == ["skills"]
     assert commits == 1
     output_lines = capsys.readouterr().out.splitlines()
     assert output_lines[-1] == (
         "imported 1 skill(s) from 1 of 1 active GitHub repositories for acme: "
-        "0 repositories skipped, 0 failed, 1 skills failed"
+        "0 repositories skipped, 0 failed, 0 skills failed"
     )
 
     records = [record for record in caplog.records if record.name == skills.logger.name]
@@ -2836,19 +2861,14 @@ async def test_import_github_skips_invalid_skill_and_commits_valid_skills(
         for record in records
         if record.message == "github skill import skipped invalid skill"
     ]
-    assert len(skipped_records) == 1
-    assert skipped_records[0].levelno == logging.WARNING
-    assert skipped_records[0].source_path == "skills/binary/SKILL.md"
-    assert skipped_records[0].skip_reason == (
-        "GitHub file contains a NUL byte at offset 42 (line 3): skills/binary/SKILL.md"
-    )
+    assert skipped_records == []
     assert "github skills import failed" not in [record.message for record in records]
 
     completed_record = next(
         record for record in records if record.message == "github skills import completed"
     )
     assert completed_record.skill_count == 1
-    assert completed_record.failed_skill_count == 1
+    assert completed_record.failed_skill_count == 0
     assert completed_record.matched_repository_count == 1
 
 
@@ -2910,26 +2930,25 @@ async def test_import_github_fails_when_all_discovered_skills_are_invalid(
     monkeypatch.setattr(skills, "AsyncSessionLocal", fail_if_session_is_opened)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(github_import_args())
+    result = await skills.import_github_from_args(
+        github_import_args(subfolder="skills/binary")
+    )
 
     assert result == 1
     records = [record for record in caplog.records if record.name == skills.logger.name]
     assert sum(
         record.message == "github skill import skipped invalid skill" for record in records
-    ) == 2
+    ) == 1
     assert records[-1].message == "github skills import completed"
-    assert records[-1].failed_skill_count == 2
+    assert records[-1].failed_skill_count == 1
 
 
 @pytest.mark.parametrize(
     ("skill_paths", "failure_kind"),
-    [
-        (["skills/binary/SKILL.md"], "invalid-text"),
-        (
-            ["skills/unavailable/SKILL.md", "skills/weather/SKILL.md"],
-            "http",
-        ),
-    ],
+        [
+            (["skills/binary/SKILL.md"], "invalid-text"),
+            (["skills/unavailable/SKILL.md"], "http"),
+        ],
 )
 async def test_import_github_isolates_invalid_skill_and_repository_fetch_errors(
     caplog: pytest.LogCaptureFixture,
@@ -2991,9 +3010,7 @@ async def test_import_github_isolates_invalid_skill_and_repository_fetch_errors(
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
     result = await skills.import_github_from_args(
-        github_import_args(
-            subfolder="skills" if len(skill_paths) > 1 else "skills/binary"
-        )
+        github_import_args(subfolder=skill_paths[0].removesuffix("/SKILL.md"))
     )
 
     assert result == 1

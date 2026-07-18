@@ -2174,36 +2174,12 @@ def discover_skill_paths(
     subfolder: str,
 ) -> list[str]:
     blobs = tree_blob_paths(tree)
+    skill_path = f"{subfolder}/SKILL.md" if subfolder else "SKILL.md"
+    if skill_path in blobs:
+        return [skill_path]
     if subfolder:
-        skill_path = f"{subfolder}/SKILL.md"
-        if skill_path in blobs:
-            return [skill_path]
-
-        prefix = f"{subfolder}/"
-        skill_paths = sorted(
-            item.path
-            for item in tree
-            if item.type == "blob"
-            and item.path.startswith(prefix)
-            and Path(item.path).name == "SKILL.md"
-            and not should_skip_tree_path(item.path)
-        )
-        if not skill_paths:
-            raise SkillNotFoundError(
-                f"No SKILL.md files found under GitHub subfolder: {subfolder}"
-            )
-        return skill_paths
-
-    skill_paths = sorted(
-        item.path
-        for item in tree
-        if item.type == "blob"
-        and Path(item.path).name == "SKILL.md"
-        and not should_skip_tree_path(item.path)
-    )
-    if not skill_paths:
-        raise SkillNotFoundError("No SKILL.md files found in GitHub repository")
-    return skill_paths
+        raise SkillNotFoundError(f"No SKILL.md found in GitHub subfolder: {subfolder}")
+    raise SkillNotFoundError("No SKILL.md found in GitHub repository root")
 
 
 async def import_skill_from_github_path(
@@ -3040,8 +3016,8 @@ def add_import_github_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         type=import_subfolder_argument,
         help=(
-            "Repository subfolder containing one SKILL.md or nested skill folders. "
-            "When omitted, scan the whole repository tree."
+            "Repository subfolder containing SKILL.md. "
+            "When omitted, only the repository root SKILL.md is imported."
         ),
     )
     parser.add_argument(
