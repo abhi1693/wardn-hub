@@ -57,6 +57,59 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "ORDER BY CASE WHEN" in trending_session.statements[-1]
 
 
+async def test_list_skills_filters_by_current_audit_status() -> None:
+    class FakeSession:
+        statements: list[str]
+
+        def __init__(self) -> None:
+            self.statements = []
+
+        async def scalar(self, statement: object) -> int:
+            self.statements.append(str(statement))
+            return 0
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statements.append(str(statement))
+            return SimpleNamespace(
+                scalars=lambda: SimpleNamespace(
+                    unique=lambda: SimpleNamespace(all=list),
+                )
+            )
+
+    warned_session = FakeSession()
+    await repository.list_skills(
+        warned_session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        audit_status="warn",
+    )
+    warned_sql = warned_session.statements[-1]
+    assert "skill_audits" in warned_sql
+    assert "row_number() OVER" in warned_sql
+    assert "max(CASE" in warned_sql
+    assert "audit_status" in warned_sql
+    assert "JOIN" in warned_sql
+
+    unaudited_session = FakeSession()
+    await repository.list_skills(
+        unaudited_session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        audit_status="unaudited",
+    )
+    unaudited_sql = unaudited_session.statements[-1]
+    assert "LEFT OUTER JOIN" in unaudited_sql
+    assert "IS NULL" in unaudited_sql
+
+
+async def test_list_skills_rejects_unknown_audit_status() -> None:
+    with pytest.raises(ValueError, match="audit_status"):
+        await service.list_skills(
+            object(),  # type: ignore[arg-type]
+            audit_status="unknown",
+        )
+
+
 def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:
     expression = repository.wardn_find_skills_order().compile(
         compile_kwargs={"literal_binds": True}

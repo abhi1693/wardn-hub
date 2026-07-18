@@ -11799,6 +11799,24 @@
             }
           },
           {
+            "description": "Filter by current audit status: pass, warn, fail, or unaudited.",
+            "in": "query",
+            "name": "audit_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by current audit status: pass, warn, fail, or unaudited.",
+              "title": "Audit Status"
+            }
+          },
+          {
             "in": "query",
             "name": "page",
             "required": false,

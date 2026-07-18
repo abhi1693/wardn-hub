@@ -71,6 +71,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
     async def list_skills(*args, **kwargs):
         assert kwargs == {
             "view": "trending",
+            "audit_status": "warn",
             "page": 0,
             "per_page": 10,
             "query": "find",
@@ -88,6 +89,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
     response = TestClient(create_app()).get(
         "/api/v1/skills"
         "?view=trending"
+        "&audit_status=warn"
         "&per_page=10"
         "&q=find"
         "&owner=vercel-labs"

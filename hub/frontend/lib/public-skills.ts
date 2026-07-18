@@ -209,6 +209,7 @@ export async function listPublicSkills(params?: {
 }
 
 export async function listPublicSkillsPage(params?: {
+  auditStatus?: "fail" | "pass" | "unaudited" | "warn";
   limit?: number;
   official?: boolean;
   owner?: string;
@@ -223,6 +224,7 @@ export async function listPublicSkillsPage(params?: {
     per_page: params?.limit ?? DEFAULT_SKILLS_LIMIT,
     view: params?.view ?? "all-time",
   };
+  if (params?.auditStatus) listParams.audit_status = params.auditStatus;
   if (query) listParams.q = query;
   if (params?.owner) listParams.owner = params.owner;
   if (params?.source) listParams.source = params.source;

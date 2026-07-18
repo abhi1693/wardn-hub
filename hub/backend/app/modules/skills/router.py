@@ -30,6 +30,12 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 async def list_skill_catalog(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     view: str = "all-time",
+    audit_status: Annotated[
+        str | None,
+        Query(
+            description="Filter by current audit status: pass, warn, fail, or unaudited.",
+        ),
+    ] = None,
     page: Annotated[int, Query(ge=0)] = 0,
     per_page: Annotated[int, Query(ge=1, le=500)] = 100,
     q: str | None = None,
@@ -41,6 +47,7 @@ async def list_skill_catalog(
         return await list_skills(
             session,
             view=view,
+            audit_status=audit_status,
             page=page,
             per_page=per_page,
             query=q,

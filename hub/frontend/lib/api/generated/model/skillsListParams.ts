@@ -8,6 +8,10 @@
 export type SkillsListParams = {
 view?: string;
 /**
+ * Filter by current audit status: pass, warn, fail, or unaudited.
+ */
+audit_status?: string | null;
+/**
  * @minimum 0
  */
 page?: number;

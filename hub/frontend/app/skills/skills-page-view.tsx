@@ -5,7 +5,10 @@ import { listPublicSkillsPage } from "@/lib/public-skills";
 import { SkillsClient } from "./skills-client";
 
 export type SkillView = "all-time" | "hot" | "trending";
+export type SkillAuditFilter = "fail" | "pass" | "unaudited" | "warn";
 export type SkillsSearchParams = Promise<{
+  audit_status?: string | string[];
+  official?: string | string[];
   q?: string | string[];
 }>;
 
@@ -18,6 +21,21 @@ function emptyPagination(): SkillPagination {
   return { hasMore: false, page: 0, perPage: SKILLS_PAGE_SIZE, total: 0 };
 }
 
+function auditFilterParam(value: string | string[] | undefined): SkillAuditFilter | undefined {
+  const filter = firstSearchParam(value).toLowerCase();
+  if (filter === "pass" || filter === "warn" || filter === "fail" || filter === "unaudited") {
+    return filter;
+  }
+  return undefined;
+}
+
+function officialFilterParam(value: string | string[] | undefined): boolean | undefined {
+  const filter = firstSearchParam(value).toLowerCase();
+  if (filter === "true") return true;
+  if (filter === "false") return false;
+  return undefined;
+}
+
 export async function SkillsPageView({
   searchParams,
   view,
@@ -27,10 +45,14 @@ export async function SkillsPageView({
 }) {
   const resolvedSearchParams = await searchParams;
   const searchQuery = firstSearchParam(resolvedSearchParams?.q);
+  const auditStatus = auditFilterParam(resolvedSearchParams?.audit_status);
+  const official = officialFilterParam(resolvedSearchParams?.official);
   const state = await (async () => {
     try {
       const response = await listPublicSkillsPage({
+        auditStatus,
         limit: SKILLS_PAGE_SIZE,
+        official,
         query: searchQuery,
         view,
       });
@@ -45,11 +67,13 @@ export async function SkillsPageView({
   })();
 
   return (
-    <main className="site-shell">
+    <main className="site-shell skills-index-page">
       <PublicHeader />
       <SkillsClient
         initialError={state.error}
         initialPagination={state.pagination}
+        initialAuditStatus={auditStatus}
+        initialOfficial={official}
         initialQuery={searchQuery}
         initialSkills={state.skills}
         initialView={view}

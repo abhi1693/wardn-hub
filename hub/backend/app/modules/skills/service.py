@@ -23,6 +23,7 @@ from app.modules.skills.schemas import (
 )
 
 VALID_SKILL_VIEWS = {"all-time", "trending", "hot"}
+VALID_SKILL_AUDIT_FILTERS = {"pass", "warn", "fail", "unaudited"}
 
 
 def split_skill_id(skill_id: str) -> tuple[str, str]:
@@ -84,6 +85,7 @@ async def list_skills(
     session: AsyncSession,
     *,
     view: str = "all-time",
+    audit_status: str | None = None,
     page: int = 0,
     per_page: int = 100,
     query: str | None = None,
@@ -93,6 +95,9 @@ async def list_skills(
 ) -> SkillListResponse:
     if view not in VALID_SKILL_VIEWS:
         raise ValueError("view must be one of all-time, trending, or hot")
+    normalized_audit_status = audit_status.strip().lower() if audit_status else None
+    if normalized_audit_status and normalized_audit_status not in VALID_SKILL_AUDIT_FILTERS:
+        raise ValueError("audit_status must be one of pass, warn, fail, or unaudited")
     offset = page * per_page
     search_query = query.strip() if query else None
     skills, total = await repository.list_skills(
@@ -100,6 +105,7 @@ async def list_skills(
         offset=offset,
         limit=per_page,
         view=view,
+        audit_status=normalized_audit_status,
         search=search_query,
         owner=owner,
         source=source,

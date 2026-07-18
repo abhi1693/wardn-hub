@@ -1,4 +1,5 @@
 import {
+  BadgeCheck,
   ChevronDown,
   Clock3,
   ExternalLink,
@@ -89,7 +90,12 @@ export function SkillsPageHeader({
 }
 
 export function OfficialBadge() {
-  return <span className="skills-official-badge">Official</span>;
+  return (
+    <span aria-label="Official source" className="skills-official-badge" title="Official source">
+      <BadgeCheck aria-hidden="true" size={14} />
+      <span className="sr-only">Official</span>
+    </span>
+  );
 }
 
 type SkillAuditStatus = "fail" | "pending" | "pass" | "warn";
@@ -126,6 +132,13 @@ function skillAuditLabel(status: SkillAuditStatus) {
   return "Audit pending";
 }
 
+function skillAuditCompactLabel(status: SkillAuditStatus) {
+  if (status === "pass") return "Passed";
+  if (status === "warn") return "Review";
+  if (status === "fail") return "Failed";
+  return "Pending";
+}
+
 function SkillAuditStatusIcon({ status, size = 14 }: { status: SkillAuditStatus; size?: number }) {
   if (status === "pass") return <ShieldCheck aria-hidden="true" size={size} />;
   if (status === "warn") return <ShieldAlert aria-hidden="true" size={size} />;
@@ -135,20 +148,23 @@ function SkillAuditStatusIcon({ status, size = 14 }: { status: SkillAuditStatus;
 
 export function SkillAuditBadge({
   audit,
+  compact = false,
   status: listedStatus,
 }: {
   audit?: SkillAuditResponse | null;
+  compact?: boolean;
   status?: SkillRead["auditStatus"];
 }) {
   const status = listedStatus ?? skillAuditStatus(currentSkillAudits(audit ?? null));
+  const label = skillAuditLabel(status);
   return (
     <span
-      aria-label={`Security ${skillAuditLabel(status).toLowerCase()}`}
+      aria-label={`Security ${label.toLowerCase()}`}
       className={`skill-audit-badge ${status}`}
-      title={skillAuditLabel(status)}
+      title={label}
     >
       <SkillAuditStatusIcon status={status} />
-      {skillAuditLabel(status)}
+      {compact ? skillAuditCompactLabel(status) : label}
     </span>
   );
 }
@@ -244,12 +260,32 @@ export function SkillLeaderboard({
         <Link className="skills-table-row" href={skillDetailPath(skill.id)} key={skill.id}>
           <span className="skills-table-rank">{index + 1}</span>
           <span className="skills-table-main">
-            <strong>
-              {skill.name}
-              {skill.isOfficial ? <OfficialBadge /> : null}
-              <SkillAuditBadge status={skill.auditStatus} />
-            </strong>
-            <small>{skill.description || skill.slug}</small>
+            <span
+              className="skills-table-source-avatar"
+              style={
+                skill.sourceOwnerIconUrl
+                  ? { backgroundImage: `url(${skill.sourceOwnerIconUrl})` }
+                  : undefined
+              }
+              aria-hidden="true"
+            >
+              {skill.sourceOwnerIconUrl
+                ? null
+                : (skill.sourceOwner ?? skill.source).slice(0, 1).toUpperCase()}
+            </span>
+            <span className="skills-table-copy">
+              <span className="skills-table-title-line">
+                <strong>
+                  {skill.name}
+                  {skill.isOfficial ? <OfficialBadge /> : null}
+                </strong>
+                <SkillAuditBadge compact status={skill.auditStatus} />
+              </span>
+              <small>{skill.description || skill.slug}</small>
+              <span className="skills-table-mobile-meta">
+                {skill.source}
+              </span>
+            </span>
           </span>
           <span className="skills-table-source">{skill.source}</span>
           <span className="skills-table-number">{skill.installs.toLocaleString("en-US")}</span>
@@ -299,7 +335,7 @@ export function SkillCardGrid({
           </span>
           <span className="skill-card-description">{skill.description || skill.slug}</span>
           <span className="skill-card-audit">
-            <SkillAuditBadge status={skill.auditStatus} />
+            <SkillAuditBadge compact status={skill.auditStatus} />
           </span>
           <span className="skill-card-footer">
             <span>{skill.sourceOwner || skill.source}</span>

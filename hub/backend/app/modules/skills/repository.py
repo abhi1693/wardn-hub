@@ -101,12 +101,83 @@ def wardn_find_skills_order():
     )
 
 
+def current_skill_audit_status_subquery():
+    ranked_audits = (
+        select(
+            SkillAudit.skill_id.label("skill_id"),
+            SkillAudit.slug.label("slug"),
+            SkillAudit.status.label("status"),
+        )
+        .add_columns(
+            func.row_number()
+            .over(
+                partition_by=(SkillAudit.skill_id, SkillAudit.slug),
+                order_by=(SkillAudit.audited_at.desc(), SkillAudit.id.desc()),
+            )
+            .label("audit_rank")
+        )
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == SkillAudit.snapshot_id,
+                SkillSnapshot.skill_id == SkillAudit.skill_id,
+                SkillSnapshot.content_hash == SkillAudit.content_hash,
+            ),
+        )
+        .where(
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+        )
+        .subquery()
+    )
+    status_weight = case(
+        (ranked_audits.c.status == "fail", 2),
+        (ranked_audits.c.status == "warn", 1),
+        (ranked_audits.c.status == "pass", 0),
+    )
+    worst_statuses = (
+        select(
+            ranked_audits.c.skill_id.label("skill_id"),
+            func.max(status_weight).label("status_weight"),
+        )
+        .where(ranked_audits.c.audit_rank == 1)
+        .where(ranked_audits.c.status.in_(("pass", "warn", "fail")))
+        .group_by(ranked_audits.c.skill_id)
+        .subquery()
+    )
+    return (
+        select(
+            worst_statuses.c.skill_id.label("skill_id"),
+            case(
+                (worst_statuses.c.status_weight == 2, "fail"),
+                (worst_statuses.c.status_weight == 1, "warn"),
+                else_="pass",
+            ).label("audit_status"),
+        )
+        .subquery()
+    )
+
+
+def apply_audit_status_filter(statement: Select, audit_status: str) -> Select:
+    current_audit_statuses = current_skill_audit_status_subquery()
+    if audit_status == "unaudited":
+        return statement.outerjoin(
+            current_audit_statuses,
+            current_audit_statuses.c.skill_id == Skill.id,
+        ).where(current_audit_statuses.c.skill_id.is_(None))
+    return statement.join(
+        current_audit_statuses,
+        current_audit_statuses.c.skill_id == Skill.id,
+    ).where(current_audit_statuses.c.audit_status == audit_status)
+
+
 async def list_skills(
     session: AsyncSession,
     *,
     offset: int,
     limit: int,
     view: str = "all-time",
+    audit_status: str | None = None,
     search: str | None = None,
     owner: str | None = None,
     source: str | None = None,
@@ -152,6 +223,10 @@ async def list_skills(
             condition = ~condition
         statement = statement.where(condition)
         total_statement = total_statement.where(condition)
+
+    if audit_status:
+        statement = apply_audit_status_filter(statement, audit_status)
+        total_statement = apply_audit_status_filter(total_statement, audit_status)
 
     if view == "all-time":
         statement = statement.order_by(
