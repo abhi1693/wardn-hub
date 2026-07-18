@@ -121,6 +121,25 @@ class SkillOfficialResponse(BaseModel):
     generated_at: datetime = Field(alias="generatedAt")
 
 
+class SkillGitHubImportRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    repository_url: str = Field(
+        alias="repositoryUrl",
+        min_length=1,
+        max_length=2048,
+        description="GitHub repository URL to scan for SKILL.md files.",
+    )
+
+
+class SkillGitHubImportResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    source: str
+    imported_skill_count: int = Field(alias="importedSkillCount", ge=0)
+    skill_ids: list[str] = Field(alias="skillIds")
+
+
 class SkillSnapshotCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

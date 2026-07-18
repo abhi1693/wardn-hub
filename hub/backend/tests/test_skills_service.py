@@ -119,6 +119,19 @@ def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:
     assert "find-skills" in str(expression)
 
 
+@pytest.mark.parametrize(
+    ("path", "subfolder"),
+    [
+        ("", ""),
+        ("SKILL.md", ""),
+        ("skills/weather", "skills/weather"),
+        ("skills/weather/SKILL.md", "skills/weather"),
+    ],
+)
+def test_github_import_subfolder_from_url_path(path: str, subfolder: str) -> None:
+    assert service.github_import_subfolder_from_url_path(path) == subfolder
+
+
 async def test_record_install_event_increments_counter_atomically() -> None:
     class FakeSession:
         added: list[object]

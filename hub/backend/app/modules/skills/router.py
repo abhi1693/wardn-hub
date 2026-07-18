@@ -10,6 +10,8 @@ from app.modules.skills.exceptions import SkillAuditNotFoundError, SkillNotFound
 from app.modules.skills.schemas import (
     SkillAuditResponse,
     SkillDetailResponse,
+    SkillGitHubImportRequest,
+    SkillGitHubImportResponse,
     SkillListResponse,
     SkillOfficialResponse,
     SkillSearchResponse,
@@ -17,6 +19,7 @@ from app.modules.skills.schemas import (
 from app.modules.skills.service import (
     get_skill_audit,
     get_skill_detail,
+    import_github_skill_request,
     list_official_skills,
     list_skills,
     record_skill_install,
@@ -74,6 +77,21 @@ async def list_official_skill_catalog(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SkillOfficialResponse:
     return await list_official_skills(session)
+
+
+@router.post(
+    "/import-github",
+    response_model=SkillGitHubImportResponse,
+    operation_id="skills_import_github",
+    responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse}},
+)
+async def import_github_skill_catalog(
+    payload: SkillGitHubImportRequest,
+) -> SkillGitHubImportResponse:
+    try:
+        return await import_github_skill_request(payload.repository_url)
+    except ValueError as exc:
+        raise bad_request(exc, detail=str(exc)) from exc
 
 
 @router.get(

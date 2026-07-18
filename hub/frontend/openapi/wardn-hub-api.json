@@ -5711,6 +5711,49 @@
         "title": "SkillFileRead",
         "type": "object"
       },
+      "SkillGitHubImportRequest": {
+        "properties": {
+          "repositoryUrl": {
+            "description": "GitHub repository URL to scan for SKILL.md files.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Repositoryurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repositoryUrl"
+        ],
+        "title": "SkillGitHubImportRequest",
+        "type": "object"
+      },
+      "SkillGitHubImportResponse": {
+        "properties": {
+          "importedSkillCount": {
+            "minimum": 0.0,
+            "title": "Importedskillcount",
+            "type": "integer"
+          },
+          "skillIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skillids",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "importedSkillCount",
+          "skillIds"
+        ],
+        "title": "SkillGitHubImportResponse",
+        "type": "object"
+      },
       "SkillListResponse": {
         "properties": {
           "data": {
@@ -11979,6 +12022,57 @@
           }
         },
         "summary": "Get Skill Catalog Audit",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/import-github": {
+      "post": {
+        "operationId": "skills_import_github",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillGitHubImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillGitHubImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Github Skill Catalog",
         "tags": [
           "skills"
         ]

@@ -3,8 +3,23 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from time import perf_counter
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cli.skills import (
+    DEFAULT_IMPORT_TIMEOUT_SECONDS,
+    GitHubClient,
+    GitHubSystemicError,
+    SkillCliError,
+    discover_skill_paths,
+    github_token_from_args,
+    import_skill_from_github_path,
+    parse_github_repository_url,
+    save_imported_repository,
+    skill_bundle_tree_items,
+    validate_import_subfolder,
+    validate_unique_imported_skill_slugs,
+)
 from app.core.config import get_settings
 from app.modules.skills import repository
 from app.modules.skills.exceptions import SkillAuditNotFoundError, SkillNotFoundError
@@ -15,6 +30,7 @@ from app.modules.skills.schemas import (
     SkillAuditResponse,
     SkillDetailResponse,
     SkillFileRead,
+    SkillGitHubImportResponse,
     SkillListResponse,
     SkillOfficialResponse,
     SkillPagination,
@@ -24,6 +40,10 @@ from app.modules.skills.schemas import (
 
 VALID_SKILL_VIEWS = {"all-time", "trending", "hot"}
 VALID_SKILL_AUDIT_FILTERS = {"pass", "warn", "fail", "unaudited"}
+
+
+class SkillGitHubImportError(ValueError):
+    pass
 
 
 def split_skill_id(skill_id: str) -> tuple[str, str]:
@@ -48,6 +68,70 @@ def name_from_skill(skill: Skill) -> str:
 def skill_url(skill: Skill) -> str:
     base_url = get_settings().registry_public_base_url.rstrip("/")
     return f"{base_url}/skills/{skill.source}/{skill.slug}"
+
+
+def github_import_subfolder_from_url_path(path: str) -> str:
+    normalized = path.strip().strip("/")
+    if not normalized:
+        return ""
+    if normalized == "SKILL.md":
+        return ""
+    if normalized.endswith("/SKILL.md"):
+        normalized = normalized[: -len("/SKILL.md")]
+    return validate_import_subfolder(normalized) if normalized else ""
+
+
+async def import_github_skill_request(
+    repository_url: str,
+) -> SkillGitHubImportResponse:
+    try:
+        repo = parse_github_repository_url(repository_url)
+        subfolder = github_import_subfolder_from_url_path(repo.path)
+    except SkillCliError as exc:
+        raise SkillGitHubImportError(str(exc)) from exc
+
+    try:
+        async with GitHubClient(
+            token=github_token_from_args(None),
+            timeout_seconds=DEFAULT_IMPORT_TIMEOUT_SECONDS,
+        ) as client:
+            metadata = await client.repository_metadata(repo)
+            if not metadata.default_branch:
+                raise SkillGitHubImportError("GitHub repository has no default branch")
+            requested_ref = repo.ref or metadata.default_branch
+            resolved_ref = await client.resolve_commit_sha(repo, requested_ref)
+            tree = await client.recursive_tree(repo, resolved_ref)
+            skill_paths = discover_skill_paths(tree, recursive=True, subfolder=subfolder)
+            imported = []
+            for skill_path in skill_paths:
+                bundle_items = skill_bundle_tree_items(tree, skill_path=skill_path)
+                imported.append(
+                    await import_skill_from_github_path(
+                        client=client,
+                        repo=repo,
+                        ref=requested_ref,
+                        tree=tree,
+                        skill_path=skill_path,
+                        fetch_ref=resolved_ref,
+                        owner_avatar_url=metadata.owner_avatar_url,
+                        import_subfolder=subfolder,
+                        bundle_items=bundle_items,
+                    )
+                )
+            validate_unique_imported_skill_slugs(imported)
+            results = await save_imported_repository(imported)
+    except (SkillCliError, GitHubSystemicError) as exc:
+        raise SkillGitHubImportError(str(exc)) from exc
+    except httpx.RequestError as exc:
+        detail = str(exc).strip() or type(exc).__name__
+        raise SkillGitHubImportError(f"GitHub request failed: {detail}") from exc
+
+    skill_ids = [f"{skill.source}/{skill.slug}" for skill, _snapshot, _source_path in results]
+    return SkillGitHubImportResponse(
+        source=repo.source,
+        importedSkillCount=len(skill_ids),
+        skillIds=skill_ids,
+    )
 
 
 def official_owner_key(skill: Skill) -> tuple[str, str]:

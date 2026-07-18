@@ -9,6 +9,8 @@ import type {
   HTTPValidationError,
   SkillAuditResponse,
   SkillDetailResponse,
+  SkillGitHubImportRequest,
+  SkillGitHubImportResponse,
   SkillListResponse,
   SkillOfficialResponse,
   SkillSearchResponse,
@@ -126,6 +128,60 @@ export const skillsAuditGet = async (skillId: string, options?: RequestInit): Pr
 
   const data: skillsAuditGetResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as skillsAuditGetResponse
+}
+
+
+export type skillsImportGithubResponse200 = {
+  data: SkillGitHubImportResponse
+  status: 200
+}
+
+export type skillsImportGithubResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type skillsImportGithubResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type skillsImportGithubResponseSuccess = (skillsImportGithubResponse200) & {
+  headers: Headers;
+};
+export type skillsImportGithubResponseError = (skillsImportGithubResponse400 | skillsImportGithubResponse422) & {
+  headers: Headers;
+};
+
+export type skillsImportGithubResponse = (skillsImportGithubResponseSuccess | skillsImportGithubResponseError)
+
+export const getSkillsImportGithubUrl = () => {
+
+
+
+
+  return `http://localhost:8000/api/v1/skills/import-github`
+}
+
+/**
+ * @summary Import Github Skill Catalog
+ */
+export const skillsImportGithub = async (skillGitHubImportRequest: SkillGitHubImportRequest, options?: RequestInit): Promise<skillsImportGithubResponse> => {
+
+  const res = await fetch(getSkillsImportGithubUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(skillGitHubImportRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: skillsImportGithubResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as skillsImportGithubResponse
 }
 
 

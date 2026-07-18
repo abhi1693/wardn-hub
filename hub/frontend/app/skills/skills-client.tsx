@@ -1,24 +1,30 @@
 "use client";
 
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   BadgeCheck,
   CircleDashed,
+  GitBranch,
   Globe2,
+  Loader2,
+  PackagePlus,
   Search,
   Shield,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
   UsersRound,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
+import type { FormEvent } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
 import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
-import { listPublicSkillsPage } from "@/lib/public-skills";
+import { importPublicGitHubSkill, listPublicSkillsPage } from "@/lib/public-skills";
 import { SkillLeaderboard } from "./skills-ui";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -103,6 +109,127 @@ function SkillsFilterGroup<T extends string>({
   );
 }
 
+function RequestSkillDialog({ onImported }: { onImported: () => void }) {
+  const inputId = useId();
+  const tooltipId = useId();
+  const [open, setOpen] = useState(false);
+  const [repositoryUrl, setRepositoryUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const trimmedRepositoryUrl = repositoryUrl.trim();
+
+  const validRepositoryUrl =
+    /^https:\/\/(www\.)?github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+(?:\/(?:tree|blob)\/[^?#]+)?\/?$/.test(
+      trimmedRepositoryUrl,
+    );
+
+  async function submitRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+    if (!validRepositoryUrl) {
+      setError(
+        "Enter a GitHub repository or subfolder URL, for example https://github.com/owner/repository/tree/main/skills/example.",
+      );
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await importPublicGitHubSkill(trimmedRepositoryUrl);
+      setSuccess(
+        `Imported ${response.importedSkillCount.toLocaleString("en-US")} ${
+          response.importedSkillCount === 1 ? "skill" : "skills"
+        } from ${response.source}.`,
+      );
+      setRepositoryUrl("");
+      onImported();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to import this repository.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog.Root
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) return;
+        setError("");
+        setSuccess("");
+        setSubmitting(false);
+      }}
+      open={open}
+    >
+      <div className="skills-request-card">
+        <Dialog.Trigger asChild>
+          <button
+            aria-describedby={tooltipId}
+            className="skills-request-trigger"
+            type="button"
+          >
+            <PackagePlus aria-hidden="true" size={16} />
+            <span>Request a Skill</span>
+          </button>
+        </Dialog.Trigger>
+        <span className="skills-request-tooltip" id={tooltipId} role="tooltip">
+          Can&apos;t find the skill you need? Send a GitHub repo with a SKILL.md.
+        </span>
+      </div>
+      <Dialog.Portal>
+        <Dialog.Overlay className="skills-request-overlay" />
+        <Dialog.Content className="skills-request-dialog">
+          <div className="skills-request-dialog-header">
+            <Dialog.Title>Request a Skill</Dialog.Title>
+            <Dialog.Close asChild>
+              <button className="skills-request-close" aria-label="Close" type="button">
+                <X aria-hidden="true" size={18} />
+              </button>
+            </Dialog.Close>
+          </div>
+          <Dialog.Description className="skills-request-description">
+            After a quick automated review, any valid skill files will be added to the
+            marketplace.
+          </Dialog.Description>
+          <form className="skills-request-form" onSubmit={submitRequest}>
+            <label htmlFor={inputId}>
+              <span>
+                <GitBranch aria-hidden="true" size={19} />
+                GitHub repository URL
+              </span>
+              <input
+                autoComplete="url"
+                disabled={submitting}
+                id={inputId}
+                onChange={(event) => {
+                  setRepositoryUrl(event.currentTarget.value);
+                  setError("");
+                  setSuccess("");
+                }}
+                placeholder="https://github.com/owner/repository/tree/main/skills/example"
+                required
+                type="url"
+                value={repositoryUrl}
+              />
+            </label>
+            {error ? <p className="skills-request-error">{error}</p> : null}
+            {success ? <p className="skills-request-success">{success}</p> : null}
+            <button
+              className="skills-request-submit"
+              disabled={submitting || !trimmedRepositoryUrl}
+              type="submit"
+            >
+              {submitting ? <Loader2 aria-hidden="true" size={16} /> : null}
+              <span>{submitting ? "Checking for SKILL.md..." : "Submit"}</span>
+            </button>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function SkillsClient({
   initialError,
   initialAuditStatus,
@@ -141,6 +268,30 @@ export function SkillsClient({
   const resultSummaryDetail = `${pagination.total.toLocaleString("en-US")} ${
     pagination.total === 1 ? "result" : "results"
   }`;
+
+  const reloadFirstPage = useCallback(async () => {
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
+    setError("");
+    setLoading(true);
+    try {
+      const response = await listPublicSkillsPage({
+        auditStatus: auditStatus || undefined,
+        limit: SKILLS_PAGE_SIZE,
+        official: official ? official === "true" : undefined,
+        query: hasSearchQuery ? trimmedQuery : undefined,
+        view: initialView,
+      });
+      if (latestRequestId.current !== requestId) return;
+      setSkills(response.skills);
+      setPagination(response.pagination);
+    } catch (caught) {
+      if (latestRequestId.current !== requestId) return;
+      setError(caught instanceof Error ? caught.message : "Unable to load skills.");
+    } finally {
+      if (latestRequestId.current === requestId) setLoading(false);
+    }
+  }, [auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
 
   const updateQuery = useCallback((nextQuery: string) => {
     latestRequestId.current += 1;
@@ -283,27 +434,30 @@ export function SkillsClient({
             <p>
               Browse reusable agent skills, inspect published files, and follow trusted sources.
             </p>
-            <form
-              className="registry-hero-search-form"
-              onSubmit={(event) => event.preventDefault()}
-              role="search"
-            >
-              <label className="registry-hero-search" htmlFor={searchInputId}>
-                <Search aria-hidden="true" size={22} />
-                <span className="sr-only">Search skills</span>
-                <input
-                  aria-label="Search skills"
-                  autoComplete="off"
-                  id={searchInputId}
-                  name="q"
-                  onChange={(event) => updateQuery(event.currentTarget.value)}
-                  placeholder="Search skills"
-                  ref={searchInputRef}
-                  type="search"
-                  value={query}
-                />
-              </label>
-            </form>
+            <div className="skills-hero-search-row">
+              <form
+                className="registry-hero-search-form"
+                onSubmit={(event) => event.preventDefault()}
+                role="search"
+              >
+                <label className="registry-hero-search" htmlFor={searchInputId}>
+                  <Search aria-hidden="true" size={22} />
+                  <span className="sr-only">Search skills</span>
+                  <input
+                    aria-label="Search skills"
+                    autoComplete="off"
+                    id={searchInputId}
+                    name="q"
+                    onChange={(event) => updateQuery(event.currentTarget.value)}
+                    placeholder="Search skills"
+                    ref={searchInputRef}
+                    type="search"
+                    value={query}
+                  />
+                </label>
+              </form>
+              <RequestSkillDialog onImported={reloadFirstPage} />
+            </div>
           </div>
         </div>
       </section>

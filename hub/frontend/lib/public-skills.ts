@@ -2,6 +2,7 @@ import type {
   SkillAuditResponse,
   SkillDetailResponse,
   SkillFileRead,
+  SkillGitHubImportResponse,
   SkillListResponse,
   SkillPagination,
   SkillRead,
@@ -14,8 +15,8 @@ const DEFAULT_SKILLS_LIMIT = 100;
 class SkillsRequestError extends Error {
   status: number;
 
-  constructor(status: number, path: string) {
-    super(`Skills API returned ${status} from ${path}`);
+  constructor(status: number, path: string, detail?: string) {
+    super(detail || `Skills API returned ${status} from ${path}`);
     this.name = "SkillsRequestError";
     this.status = status;
   }
@@ -57,20 +58,43 @@ function resolveApiBaseUrl() {
 }
 
 async function skillsRequest<T>(path: string, params?: Record<string, boolean | number | string>) {
+  return skillsJsonRequest<T>(path, { params });
+}
+
+async function skillsJsonRequest<T>(
+  path: string,
+  options?: {
+    body?: unknown;
+    method?: "GET" | "POST";
+    params?: Record<string, boolean | number | string>;
+  },
+) {
   const baseUrl = resolveApiBaseUrl();
   const origin = typeof window !== "undefined" ? window.location.origin : resolveSiteUrl();
   const url = new URL(`${baseUrl}${path}`, origin);
-  for (const [key, value] of Object.entries(params ?? {})) {
+  for (const [key, value] of Object.entries(options?.params ?? {})) {
     url.searchParams.set(key, String(value));
   }
 
   const response = await fetch(url, {
+    body: options?.body === undefined ? undefined : JSON.stringify(options.body),
     cache: "no-store",
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      ...(options?.body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    method: options?.method ?? "GET",
   });
 
   if (!response.ok) {
-    throw new SkillsRequestError(response.status, url.pathname);
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      if (typeof payload.detail === "string") detail = payload.detail;
+    } catch {
+      detail = "";
+    }
+    throw new SkillsRequestError(response.status, url.pathname, detail);
   }
 
   return (await response.json()) as T;
@@ -232,6 +256,13 @@ export async function listPublicSkillsPage(params?: {
 
   const response = await skillsRequest<SkillListResponse>("/skills", listParams);
   return { pagination: response.pagination, skills: response.data };
+}
+
+export async function importPublicGitHubSkill(repositoryUrl: string) {
+  return skillsJsonRequest<SkillGitHubImportResponse>("/skills/import-github", {
+    body: { repositoryUrl },
+    method: "POST",
+  });
 }
 
 export async function getPublicSkill(

@@ -11,6 +11,7 @@ from app.modules.skills.schemas import (
     SkillAuditResponse,
     SkillDetailResponse,
     SkillFileRead,
+    SkillGitHubImportResponse,
     SkillListResponse,
     SkillOfficialResponse,
     SkillPagination,
@@ -47,6 +48,7 @@ def test_skills_openapi_exposes_public_paths() -> None:
         "/api/v1/skills",
         "/api/v1/skills/search",
         "/api/v1/skills/official",
+        "/api/v1/skills/import-github",
         "/api/v1/skills/{skill_id}",
         "/api/v1/skills/audit/{skill_id}",
         "/api/v1/skills/telemetry/{skill_id}",
@@ -54,6 +56,10 @@ def test_skills_openapi_exposes_public_paths() -> None:
     assert schema["paths"]["/api/v1/skills"]["get"]["operationId"] == "skills_list"
     assert schema["paths"]["/api/v1/skills/search"]["get"]["operationId"] == "skills_search"
     assert schema["paths"]["/api/v1/skills/official"]["get"]["operationId"] == "skills_official"
+    assert (
+        schema["paths"]["/api/v1/skills/import-github"]["post"]["operationId"]
+        == "skills_import_github"
+    )
     assert schema["paths"]["/api/v1/skills/{skill_id}"]["get"]["operationId"] == "skills_get"
     assert (
         schema["paths"]["/api/v1/skills/telemetry/{skill_id}"]["post"]["operationId"]
@@ -175,6 +181,51 @@ def test_official_skills_groups_by_owner(monkeypatch) -> None:
     assert response.json()["data"][0]["owner"] == "vercel-labs"
     assert response.json()["data"][0]["featuredRepo"] == "skills"
     assert response.json()["totalSkills"] == 1
+
+
+def test_import_github_skill_catalog_imports_repository_url(monkeypatch) -> None:
+    async def import_github_skill_request(repository_url: str):
+        assert repository_url == "https://github.com/android/skills"
+        return SkillGitHubImportResponse(
+            source="android/skills",
+            importedSkillCount=2,
+            skillIds=[
+                "android/skills/camera-camerax",
+                "android/skills/testing-testing-setup",
+            ],
+        )
+
+    monkeypatch.setattr(router, "import_github_skill_request", import_github_skill_request)
+
+    response = TestClient(create_app()).post(
+        "/api/v1/skills/import-github",
+        json={"repositoryUrl": "https://github.com/android/skills"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source": "android/skills",
+        "importedSkillCount": 2,
+        "skillIds": [
+            "android/skills/camera-camerax",
+            "android/skills/testing-testing-setup",
+        ],
+    }
+
+
+def test_import_github_skill_catalog_returns_400(monkeypatch) -> None:
+    async def import_github_skill_request(repository_url: str):
+        raise ValueError("No SKILL.md found in GitHub repository")
+
+    monkeypatch.setattr(router, "import_github_skill_request", import_github_skill_request)
+
+    response = TestClient(create_app()).post(
+        "/api/v1/skills/import-github",
+        json={"repositoryUrl": "https://github.com/example/not-a-skill"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No SKILL.md found in GitHub repository"
 
 
 def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:

@@ -214,6 +214,8 @@ export * from './skillAuditResponse';
 export * from './skillDetailResponse';
 export * from './skillFileRead';
 export * from './skillFileReadEncoding';
+export * from './skillGitHubImportRequest';
+export * from './skillGitHubImportResponse';
 export * from './skillListResponse';
 export * from './skillOfficialResponse';
 export * from './skillPagination';
