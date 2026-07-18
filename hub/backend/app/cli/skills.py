@@ -196,6 +196,11 @@ class GitHubRepositoryFilters:
     created_after: str = ""
     created_before: str = ""
     language: str = ""
+    repository_names: tuple[str, ...] = ()
+    excluded_organizations: tuple[str, ...] = ()
+    excluded_users: tuple[str, ...] = ()
+    excluded_repositories: tuple[str, ...] = ()
+    excluded_repository_names: tuple[str, ...] = ()
     topics: tuple[str, ...] = ()
     verified_orgs_only: bool = False
     max_repositories: int | None = None
@@ -554,6 +559,19 @@ def github_repository_argument(value: str) -> str:
     return f"{owner}/{repository}"
 
 
+def github_repository_name_argument(value: str) -> str:
+    normalized = value.strip()
+    if (
+        not normalized
+        or len(normalized) > 100
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+", normalized)
+    ):
+        raise argparse.ArgumentTypeError(
+            "repository name match may contain letters, numbers, dots, hyphens, and underscores"
+        )
+    return normalized
+
+
 def github_timestamp_argument(value: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -637,6 +655,19 @@ def github_repository_filters_from_args(args: argparse.Namespace) -> GitHubRepos
     repositories = unique_casefolded(
         [github_repository_argument(repository) for repository in raw_repositories]
     )
+    excluded_organizations = unique_casefolded(
+        [
+            validate_github_owner(owner)
+            for owner in (getattr(args, "excluded_organizations", []) or [])
+        ]
+    )
+    excluded_users = unique_casefolded(
+        [validate_github_owner(owner) for owner in (getattr(args, "excluded_users", []) or [])]
+    )
+    raw_excluded_repositories = list(getattr(args, "excluded_repositories", []) or [])
+    excluded_repositories = unique_casefolded(
+        [github_repository_argument(repository) for repository in raw_excluded_repositories]
+    )
     all_github = bool(getattr(args, "all_github", False))
     if all_github and (legacy_owners or organizations or users or repositories):
         raise SkillCliError(
@@ -688,6 +719,15 @@ def github_repository_filters_from_args(args: argparse.Namespace) -> GitHubRepos
         created_after=created_after,
         created_before=created_before,
         language=str(getattr(args, "language", "") or "").strip(),
+        repository_names=unique_casefolded(
+            list(getattr(args, "repository_names", []) or [])
+        ),
+        excluded_organizations=excluded_organizations,
+        excluded_users=excluded_users,
+        excluded_repositories=excluded_repositories,
+        excluded_repository_names=unique_casefolded(
+            list(getattr(args, "excluded_repository_names", []) or [])
+        ),
         topics=unique_casefolded(list(getattr(args, "topics", []) or [])),
         verified_orgs_only=bool(getattr(args, "verified_orgs_only", False)),
         max_repositories=getattr(args, "max_repositories", None),
@@ -1043,9 +1083,14 @@ def github_repository_search_query(
     created_start: datetime,
     created_end: datetime,
 ) -> str:
-    qualifiers = ["is:public", "archived:false"]
+    qualifiers = [*filters.repository_names, "is:public", "archived:false"]
     if target.qualifier:
         qualifiers.append(f"{target.qualifier}:{target.value}")
+    if filters.repository_names:
+        qualifiers.append("in:name")
+    qualifiers.extend(f"-org:{owner}" for owner in filters.excluded_organizations)
+    qualifiers.extend(f"-user:{owner}" for owner in filters.excluded_users)
+    qualifiers.extend(f"-repo:{repository}" for repository in filters.excluded_repositories)
     if filters.min_stars is not None:
         qualifiers.append(f"stars:>={filters.min_stars}")
     if filters.max_stars is not None:
@@ -1121,6 +1166,28 @@ def github_metadata_matches_filters(
         return False
     metadata_topics = {topic.casefold() for topic in metadata.topics}
     return all(topic.casefold() in metadata_topics for topic in filters.topics)
+
+
+def github_repository_excluded(
+    repo: GitHubRepository,
+    owner_type: Literal["User", "Organization"],
+    filters: GitHubRepositoryFilters,
+) -> bool:
+    owner = repo.owner.casefold()
+    source = repo.source.casefold()
+    repo_name = repo.repo.casefold()
+    if owner_type == "Organization" and owner in {
+        organization.casefold() for organization in filters.excluded_organizations
+    }:
+        return True
+    if owner_type == "User" and owner in {user.casefold() for user in filters.excluded_users}:
+        return True
+    if source in {repository.casefold() for repository in filters.excluded_repositories}:
+        return True
+    return any(
+        excluded_name.casefold() in repo_name
+        for excluded_name in filters.excluded_repository_names
+    )
 
 
 def github_repository_from_search_item(
@@ -1553,6 +1620,9 @@ class GitHubClient:
                     stats.filtered_repository_count += 1
                     continue
                 seen_sources.add(source_key)
+                if github_repository_excluded(candidate.repo, owner_type, filters):
+                    stats.filtered_repository_count += 1
+                    continue
                 metadata = await self.repository_metadata(candidate.repo)
                 if filters.verified_orgs_only:
                     if owner_type != "Organization" or not await self.organization_is_verified(
@@ -1701,6 +1771,9 @@ class GitHubClient:
                 if candidate is None:
                     stats.filtered_repository_count += 1
                     continue
+                if github_repository_excluded(candidate.repo, owner_type, filters):
+                    stats.filtered_repository_count += 1
+                    continue
                 if filters.verified_orgs_only:
                     if owner_type != "Organization" or not await self.organization_is_verified(
                         candidate.repo.owner
@@ -1771,7 +1844,7 @@ class GitHubClient:
             ):
                 continue
             if recursive:
-                if filters.topics:
+                if filters.topics or filters.repository_names:
                     async for repository in self._iter_repository_search_skill_repositories(
                         filters,
                         target,
@@ -2656,6 +2729,11 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
             "created_after": filters.created_after,
             "created_before": filters.created_before,
             "language": filters.language,
+            "repository_names": filters.repository_names,
+            "excluded_organizations": filters.excluded_organizations,
+            "excluded_users": filters.excluded_users,
+            "excluded_repositories": filters.excluded_repositories,
+            "excluded_repository_names": filters.excluded_repository_names,
             "topics": filters.topics,
             "verified_orgs_only": filters.verified_orgs_only,
             "max_repositories": filters.max_repositories,
@@ -3424,6 +3502,49 @@ def add_import_github_arguments(parser: argparse.ArgumentParser) -> None:
         type=github_language_argument,
         default=None,
         help="Only repositories whose primary language matches this value.",
+    )
+    parser.add_argument(
+        "--repo-name",
+        dest="repository_names",
+        action="append",
+        default=[],
+        type=github_repository_name_argument,
+        help=(
+            "Only repositories whose name matches this term. "
+            "Repeat to require several name terms."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-org",
+        dest="excluded_organizations",
+        action="append",
+        default=[],
+        type=github_owner_argument,
+        help="Exclude repositories owned by this GitHub organization. Repeat as needed.",
+    )
+    parser.add_argument(
+        "--exclude-user",
+        dest="excluded_users",
+        action="append",
+        default=[],
+        type=github_owner_argument,
+        help="Exclude repositories owned by this GitHub user. Repeat as needed.",
+    )
+    parser.add_argument(
+        "--exclude-repo",
+        dest="excluded_repositories",
+        action="append",
+        default=[],
+        type=github_repository_argument,
+        help="Exclude this GitHub repository in owner/repo form. Repeat as needed.",
+    )
+    parser.add_argument(
+        "--exclude-repo-name",
+        dest="excluded_repository_names",
+        action="append",
+        default=[],
+        type=github_repository_name_argument,
+        help="Exclude repositories whose name contains this term. Repeat as needed.",
     )
     parser.add_argument(
         "--topic",

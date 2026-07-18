@@ -726,6 +726,62 @@ async def test_github_recursive_discovery_uses_code_search_and_metadata_filters(
     assert stats.active_repository_count == 1
 
 
+async def test_github_recursive_code_search_applies_exclusions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_calls: list[str] = []
+
+    async def fake_search_code_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubCodeSearchPage:
+        return skills.GitHubCodeSearchPage(
+            total_count=4,
+            incomplete_results=False,
+            items=[
+                github_code_search_item("blocked", owner="blocked-org"),
+                github_code_search_item("blocked-repo"),
+                github_code_search_item("sample-skills"),
+                github_code_search_item("kept"),
+            ],
+        )
+
+    async def fake_repository_metadata(
+        repo: skills.GitHubRepository,
+    ) -> skills.GitHubRepositoryMetadata:
+        metadata_calls.append(repo.source)
+        return skills.GitHubRepositoryMetadata(
+            default_branch="main",
+            owner_avatar_url=f"https://avatars.example/{repo.owner}.png",
+        )
+
+    filters = skills.GitHubRepositoryFilters(
+        all_github=True,
+        excluded_organizations=("blocked-org",),
+        excluded_repositories=("acme/blocked-repo",),
+        excluded_repository_names=("skills",),
+    )
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_code_page", fake_search_code_page)
+        monkeypatch.setattr(client, "repository_metadata", fake_repository_metadata)
+        repositories = [
+            repository
+            async for repository in client.iter_repositories(
+                filters,
+                stats,
+                recursive=True,
+                subfolder="skills",
+            )
+        ]
+
+    assert [repository.repo.source for repository in repositories] == ["acme/kept"]
+    assert metadata_calls == ["acme/kept"]
+    assert stats.filtered_repository_count == 3
+    assert stats.active_repository_count == 1
+
+
 async def test_github_recursive_topic_discovery_uses_repository_search_then_skill_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -783,6 +839,123 @@ async def test_github_recursive_topic_discovery_uses_repository_search_then_skil
     ]
     assert stats.active_repository_count == 2
     assert stats.filtered_repository_count == 1
+
+
+async def test_github_recursive_repo_name_discovery_uses_repository_search_then_skill_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_queries: list[tuple[str, int]] = []
+    code_queries: list[tuple[str, int]] = []
+
+    async def fake_search_repository_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubRepositorySearchPage:
+        repository_queries.append((query, page))
+        return skills.GitHubRepositorySearchPage(
+            total_count=2,
+            incomplete_results=False,
+            items=[
+                github_search_repository("agent-skills"),
+                github_search_repository("prompt-skills"),
+            ],
+        )
+
+    async def fake_search_code_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubCodeSearchPage:
+        code_queries.append((query, page))
+        has_skill = "prompt-skills" in query
+        return skills.GitHubCodeSearchPage(
+            total_count=1 if has_skill else 0,
+            incomplete_results=False,
+            items=[github_code_search_item("prompt-skills")] if has_skill else [],
+        )
+
+    filters = skills.GitHubRepositoryFilters(
+        all_github=True,
+        repository_names=("skills",),
+    )
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_repository_page", fake_search_repository_page)
+        monkeypatch.setattr(client, "search_code_page", fake_search_code_page)
+        repositories = [
+            repository
+            async for repository in client.iter_repositories(
+                filters,
+                stats,
+                recursive=True,
+                subfolder="skills",
+            )
+        ]
+
+    assert [repository.repo.source for repository in repositories] == ["acme/prompt-skills"]
+    assert len(repository_queries) == 1
+    assert "skills" in repository_queries[0][0]
+    assert "in:name" in repository_queries[0][0]
+    assert code_queries == [
+        ("filename:SKILL.md repo:acme/agent-skills path:skills", 1),
+        ("filename:SKILL.md repo:acme/prompt-skills path:skills", 1),
+    ]
+    assert stats.active_repository_count == 2
+    assert stats.filtered_repository_count == 1
+
+
+async def test_github_repository_search_applies_exclusions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    async def fake_search_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubRepositorySearchPage:
+        calls.append((query, page))
+        return skills.GitHubRepositorySearchPage(
+            total_count=4,
+            incomplete_results=False,
+            items=[
+                github_search_repository("blocked", owner="blocked-org"),
+                github_search_repository("blocked-repo"),
+                github_search_repository("sample-skills"),
+                github_search_repository("kept"),
+            ],
+        )
+
+    filters = skills.GitHubRepositoryFilters(
+        all_github=True,
+        excluded_organizations=("blocked-org",),
+        excluded_repositories=("acme/blocked-repo",),
+        excluded_repository_names=("skills",),
+    )
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    budget = skills.GitHubSearchBudget(remaining=None)
+    start = skills.parse_github_datetime("2026-01-01T00:00:00Z", upper_bound=False)
+    end = skills.parse_github_datetime("2026-01-01T00:00:02Z", upper_bound=True)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_repository_page", fake_search_page)
+        repositories = [
+            repository
+            async for repository in client._search_repository_window(
+                filters,
+                skills.GitHubSearchTarget(qualifier="", value=""),
+                created_start=start,
+                created_end=end,
+                stats=stats,
+                budget=budget,
+            )
+        ]
+
+    assert [repository.repo.source for repository in repositories] == ["acme/kept"]
+    assert "-org:blocked-org" in calls[0][0]
+    assert "-repo:acme/blocked-repo" in calls[0][0]
+    assert stats.filtered_repository_count == 3
+    assert stats.active_repository_count == 1
 
 
 async def test_github_repository_search_shards_more_than_one_thousand_results(
@@ -1456,6 +1629,16 @@ def test_manage_parses_filtered_multi_target_github_import(
             "90",
             "--language",
             "Python",
+            "--repo-name",
+            "skills",
+            "--exclude-org",
+            "bad-org",
+            "--exclude-user",
+            "bad-user",
+            "--exclude-repo",
+            "bad-org/bad-skills",
+            "--exclude-repo-name",
+            "sample",
             "--topic",
             "agents",
             "--verified-orgs-only",
@@ -1471,6 +1654,11 @@ def test_manage_parses_filtered_multi_target_github_import(
     assert called["min_stars"] == 100
     assert called["active_within_days"] == 90
     assert called["language"] == "Python"
+    assert called["repository_names"] == ["skills"]
+    assert called["excluded_organizations"] == ["bad-org"]
+    assert called["excluded_users"] == ["bad-user"]
+    assert called["excluded_repositories"] == ["bad-org/bad-skills"]
+    assert called["excluded_repository_names"] == ["sample"]
     assert called["topics"] == ["agents"]
     assert called["verified_orgs_only"] is True
     assert called["max_repositories"] == 500
