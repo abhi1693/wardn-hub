@@ -153,7 +153,12 @@ class GitHubRepositoryMetadata:
     owner_avatar_url: str
     fork: bool = False
     archived: bool = False
+    created_at: str = ""
     disabled: bool = False
+    language: str = ""
+    pushed_at: str = ""
+    stargazers_count: int = 0
+    topics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -220,6 +225,13 @@ class GitHubDiscoveryStats:
 
 @dataclass(frozen=True)
 class GitHubRepositorySearchPage:
+    total_count: int
+    incomplete_results: bool
+    items: list[dict[str, object]]
+
+
+@dataclass(frozen=True)
+class GitHubCodeSearchPage:
     total_count: int
     incomplete_results: bool
     items: list[dict[str, object]]
@@ -1052,6 +1064,65 @@ def github_repository_search_query(
     return " ".join(qualifiers)
 
 
+def github_skill_code_search_query(
+    target: GitHubSearchTarget,
+    *,
+    recursive: bool,
+    subfolder: str,
+) -> str:
+    qualifiers = ["filename:SKILL.md"]
+    if target.qualifier:
+        qualifiers.append(f"{target.qualifier}:{target.value}")
+    if subfolder:
+        qualifiers.append(f"path:{subfolder}")
+    elif not recursive:
+        qualifiers.append("path:/")
+    return " ".join(qualifiers)
+
+
+def github_skill_repository_code_search_query(
+    repo: GitHubRepository,
+    *,
+    recursive: bool,
+    subfolder: str,
+) -> str:
+    return github_skill_code_search_query(
+        GitHubSearchTarget(qualifier="repo", value=repo.source),
+        recursive=recursive,
+        subfolder=subfolder,
+    )
+
+
+def github_metadata_matches_filters(
+    metadata: GitHubRepositoryMetadata,
+    filters: GitHubRepositoryFilters,
+) -> bool:
+    if filters.min_stars is not None and metadata.stargazers_count < filters.min_stars:
+        return False
+    if filters.max_stars is not None and metadata.stargazers_count > filters.max_stars:
+        return False
+    if filters.pushed_after and metadata.pushed_at:
+        pushed_at = parse_github_datetime(metadata.pushed_at, upper_bound=False)
+        if pushed_at < parse_github_datetime(filters.pushed_after, upper_bound=False):
+            return False
+    if filters.pushed_before and metadata.pushed_at:
+        pushed_at = parse_github_datetime(metadata.pushed_at, upper_bound=False)
+        if pushed_at > parse_github_datetime(filters.pushed_before, upper_bound=True):
+            return False
+    if filters.created_after and metadata.created_at:
+        created_at = parse_github_datetime(metadata.created_at, upper_bound=False)
+        if created_at < parse_github_datetime(filters.created_after, upper_bound=False):
+            return False
+    if filters.created_before and metadata.created_at:
+        created_at = parse_github_datetime(metadata.created_at, upper_bound=False)
+        if created_at > parse_github_datetime(filters.created_before, upper_bound=True):
+            return False
+    if filters.language and metadata.language.casefold() != filters.language.casefold():
+        return False
+    metadata_topics = {topic.casefold() for topic in metadata.topics}
+    return all(topic.casefold() in metadata_topics for topic in filters.topics)
+
+
 def github_repository_from_search_item(
     item: dict[str, object],
 ) -> tuple[GitHubImportRepository | None, str]:
@@ -1088,6 +1159,53 @@ def github_repository_from_search_item(
     if full_name_value.casefold() != expected_source.casefold():
         raise GitHubSystemicError("GitHub repository search result has inconsistent ownership")
     default_branch_value = item.get("default_branch")
+    default_branch = (
+        default_branch_value.strip() if isinstance(default_branch_value, str) else ""
+    )
+    avatar_value = owner_value.get("avatar_url")
+    avatar_url = avatar_value.strip() if isinstance(avatar_value, str) else ""
+    return (
+        GitHubImportRepository(
+            repo=GitHubRepository(
+                owner=owner_login,
+                repo=name,
+                url=f"https://github.com/{owner_login}/{name}",
+            ),
+            default_branch=default_branch,
+            owner_avatar_url=avatar_url,
+        ),
+        str(owner_type),
+    )
+
+
+def github_repository_from_code_search_item(
+    item: dict[str, object],
+) -> tuple[GitHubImportRepository, str]:
+    repository = item.get("repository")
+    if not isinstance(repository, dict):
+        raise GitHubSystemicError("GitHub code search result has no repository metadata")
+    name_value = repository.get("name")
+    full_name_value = repository.get("full_name")
+    owner_value = repository.get("owner")
+    if not isinstance(name_value, str) or not name_value.strip():
+        raise GitHubSystemicError("GitHub code search result has no repository name")
+    if not isinstance(full_name_value, str) or not isinstance(owner_value, dict):
+        raise GitHubSystemicError("GitHub code search result has invalid ownership")
+    owner_login_value = owner_value.get("login")
+    owner_type = owner_value.get("type")
+    if not isinstance(owner_login_value, str) or owner_type not in {"User", "Organization"}:
+        raise GitHubSystemicError("GitHub code search result has invalid owner metadata")
+    try:
+        owner_login = validate_github_owner(owner_login_value)
+    except SkillCliError as exc:
+        raise GitHubSystemicError(
+            "GitHub code search result has an invalid owner login"
+        ) from exc
+    name = name_value.strip()
+    expected_source = f"{owner_login}/{name}"
+    if full_name_value.casefold() != expected_source.casefold():
+        raise GitHubSystemicError("GitHub code search result has inconsistent ownership")
+    default_branch_value = repository.get("default_branch")
     default_branch = (
         default_branch_value.strip() if isinstance(default_branch_value, str) else ""
     )
@@ -1338,6 +1456,170 @@ class GitHubClient:
             items=items,
         )
 
+    async def search_code_page(
+        self,
+        query: str,
+        *,
+        page: int,
+    ) -> GitHubCodeSearchPage:
+        response = await self._get(
+            f"{GITHUB_API_ROOT}/search/code",
+            params={
+                "q": query,
+                "sort": "indexed",
+                "order": "desc",
+                "page": str(page),
+                "per_page": str(GITHUB_REPOSITORIES_PER_PAGE),
+            },
+        )
+        if response.status_code >= 400:
+            raise github_http_error(
+                response.status_code,
+                github_response_error_message(
+                    response,
+                    "GitHub code search failed",
+                ),
+            )
+        payload = github_json(response, "code search")
+        if not isinstance(payload, dict):
+            raise GitHubSystemicError("GitHub returned an invalid code search response")
+        total_count = payload.get("total_count")
+        incomplete_results = payload.get("incomplete_results")
+        items = payload.get("items")
+        if (
+            not isinstance(total_count, int)
+            or total_count < 0
+            or not isinstance(incomplete_results, bool)
+            or not isinstance(items, list)
+            or any(not isinstance(item, dict) for item in items)
+        ):
+            raise GitHubSystemicError("GitHub returned an invalid code search response")
+        if incomplete_results:
+            raise GitHubSystemicError("GitHub code search returned incomplete results")
+        return GitHubCodeSearchPage(
+            total_count=total_count,
+            incomplete_results=incomplete_results,
+            items=items,
+        )
+
+    async def _iter_code_search_repositories(
+        self,
+        filters: GitHubRepositoryFilters,
+        target: GitHubSearchTarget,
+        *,
+        recursive: bool,
+        subfolder: str,
+        stats: GitHubDiscoveryStats,
+        budget: GitHubSearchBudget,
+    ) -> AsyncIterator[GitHubImportRepository]:
+        if budget.exhausted:
+            return
+        query = github_skill_code_search_query(
+            target,
+            recursive=recursive,
+            subfolder=subfolder,
+        )
+        first_page = await self.search_code_page(query, page=1)
+        stats.search_query_count += 1
+        remaining_budget = budget.remaining
+        if (
+            first_page.total_count > GITHUB_SEARCH_RESULT_LIMIT
+            and (remaining_budget is None or remaining_budget > GITHUB_SEARCH_RESULT_LIMIT)
+        ):
+            raise SkillCliError(
+                "GitHub code search found more than 1,000 SKILL.md matches; add a narrower "
+                "target, subfolder, repository filter, or --max-repositories"
+            )
+        maximum_results = min(first_page.total_count, GITHUB_SEARCH_RESULT_LIMIT)
+        page_count = (maximum_results + GITHUB_REPOSITORIES_PER_PAGE - 1) // (
+            GITHUB_REPOSITORIES_PER_PAGE
+        )
+        seen_sources: set[str] = set()
+        for page_number in range(1, page_count + 1):
+            if budget.exhausted:
+                return
+            page = (
+                first_page
+                if page_number == 1
+                else await self.search_code_page(query, page=page_number)
+            )
+            if page_number > 1:
+                stats.search_query_count += 1
+            stats.listed_repository_count += len(page.items)
+            for raw_item in page.items:
+                candidate, owner_type = github_repository_from_code_search_item(raw_item)
+                source_key = candidate.repo.source.casefold()
+                if source_key in seen_sources:
+                    stats.filtered_repository_count += 1
+                    continue
+                seen_sources.add(source_key)
+                metadata = await self.repository_metadata(candidate.repo)
+                if filters.verified_orgs_only:
+                    if owner_type != "Organization" or not await self.organization_is_verified(
+                        candidate.repo.owner
+                    ):
+                        stats.filtered_repository_count += 1
+                        continue
+                if not github_metadata_matches_filters(metadata, filters):
+                    stats.filtered_repository_count += 1
+                    continue
+                if not budget.consume():
+                    return
+                stats.active_repository_count += 1
+                yield GitHubImportRepository(
+                    repo=candidate.repo,
+                    default_branch=metadata.default_branch,
+                    owner_avatar_url=metadata.owner_avatar_url or candidate.owner_avatar_url,
+                )
+
+    async def repository_has_skill_code(
+        self,
+        repo: GitHubRepository,
+        *,
+        recursive: bool,
+        subfolder: str,
+    ) -> bool:
+        query = github_skill_repository_code_search_query(
+            repo,
+            recursive=recursive,
+            subfolder=subfolder,
+        )
+        page = await self.search_code_page(query, page=1)
+        return bool(page.items)
+
+    async def _iter_repository_search_skill_repositories(
+        self,
+        filters: GitHubRepositoryFilters,
+        target: GitHubSearchTarget,
+        *,
+        created_start: datetime,
+        created_end: datetime,
+        recursive: bool,
+        subfolder: str,
+        stats: GitHubDiscoveryStats,
+        budget: GitHubSearchBudget,
+    ) -> AsyncIterator[GitHubImportRepository]:
+        async for repository in self._search_repository_window(
+            filters,
+            target,
+            created_start=created_start,
+            created_end=created_end,
+            stats=stats,
+            budget=GitHubSearchBudget(remaining=None),
+        ):
+            if budget.exhausted:
+                return
+            if not await self.repository_has_skill_code(
+                repository.repo,
+                recursive=recursive,
+                subfolder=subfolder,
+            ):
+                stats.filtered_repository_count += 1
+                continue
+            if not budget.consume():
+                return
+            yield repository
+
     async def _search_repository_window(
         self,
         filters: GitHubRepositoryFilters,
@@ -1434,6 +1716,9 @@ class GitHubClient:
         self,
         filters: GitHubRepositoryFilters,
         stats: GitHubDiscoveryStats,
+        *,
+        recursive: bool = False,
+        subfolder: str = "",
     ) -> AsyncIterator[GitHubImportRepository]:
         targets: list[GitHubSearchTarget] = []
         for requested_owner in filters.legacy_owners:
@@ -1484,6 +1769,30 @@ class GitHubClient:
                 and target.qualifier == "org"
                 and not await self.organization_is_verified(target.value)
             ):
+                continue
+            if recursive:
+                if filters.topics:
+                    async for repository in self._iter_repository_search_skill_repositories(
+                        filters,
+                        target,
+                        created_start=start,
+                        created_end=end,
+                        recursive=recursive,
+                        subfolder=subfolder,
+                        stats=stats,
+                        budget=budget,
+                    ):
+                        yield repository
+                    continue
+                async for repository in self._iter_code_search_repositories(
+                    filters,
+                    target,
+                    recursive=recursive,
+                    subfolder=subfolder,
+                    stats=stats,
+                    budget=budget,
+                ):
+                    yield repository
                 continue
             async for repository in self._search_repository_window(
                 filters,
@@ -1655,12 +1964,26 @@ class GitHubClient:
         owner_avatar_url = ""
         if isinstance(owner, dict) and isinstance(owner.get("avatar_url"), str):
             owner_avatar_url = owner["avatar_url"].strip()
+        created_at = payload.get("created_at")
+        pushed_at = payload.get("pushed_at")
+        language = payload.get("language")
+        stargazers_count = payload.get("stargazers_count")
+        topics = payload.get("topics")
         return GitHubRepositoryMetadata(
             default_branch=default_branch.strip(),
             owner_avatar_url=owner_avatar_url,
             fork=fork,
             archived=archived,
+            created_at=created_at.strip() if isinstance(created_at, str) else "",
             disabled=disabled,
+            language=language.strip() if isinstance(language, str) else "",
+            pushed_at=pushed_at.strip() if isinstance(pushed_at, str) else "",
+            stargazers_count=stargazers_count
+            if isinstance(stargazers_count, int) and not isinstance(stargazers_count, bool)
+            else 0,
+            topics=tuple(topic for topic in topics if isinstance(topic, str))
+            if isinstance(topics, list)
+            else (),
         )
 
     async def resolve_commit_sha(self, repo: GitHubRepository, ref: str) -> str:
@@ -2389,7 +2712,12 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
         iter_repositories = getattr(client, "iter_repositories", None)
         streaming_discovery = callable(iter_repositories)
         if streaming_discovery:
-            repository_iterator = iter_repositories(filters, discovery_stats).__aiter__()
+            repository_iterator = iter_repositories(
+                filters,
+                discovery_stats,
+                recursive=bool(getattr(args, "recursive", False)),
+                subfolder=subfolder,
+            ).__aiter__()
             logger.info("github skills import repository streaming started", extra=log_context)
         else:
             if len(filters.legacy_owners) != 1 or any(

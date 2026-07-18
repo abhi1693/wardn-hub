@@ -620,6 +620,14 @@ def github_search_repository(name: str, *, owner: str = "acme") -> dict[str, obj
     }
 
 
+def github_code_search_item(name: str, *, owner: str = "acme") -> dict[str, object]:
+    return {
+        "name": "SKILL.md",
+        "path": "skills/example/SKILL.md",
+        "repository": github_search_repository(name, owner=owner),
+    }
+
+
 async def test_github_repository_search_streams_pages_and_stops_at_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -661,6 +669,120 @@ async def test_github_repository_search_streams_pages_and_stops_at_budget(
     assert "pushed:>=2026-01-01" in calls[0][0]
     assert stats.listed_repository_count == 1
     assert stats.active_repository_count == 1
+
+
+async def test_github_recursive_discovery_uses_code_search_and_metadata_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+    metadata_calls: list[str] = []
+
+    async def fake_search_code_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubCodeSearchPage:
+        calls.append((query, page))
+        return skills.GitHubCodeSearchPage(
+            total_count=3,
+            incomplete_results=False,
+            items=[
+                github_code_search_item("small"),
+                github_code_search_item("large"),
+                github_code_search_item("large"),
+            ],
+        )
+
+    async def fake_repository_metadata(
+        repo: skills.GitHubRepository,
+    ) -> skills.GitHubRepositoryMetadata:
+        metadata_calls.append(repo.source)
+        return skills.GitHubRepositoryMetadata(
+            default_branch="main",
+            owner_avatar_url=f"https://avatars.example/{repo.owner}.png",
+            stargazers_count=50 if repo.repo == "large" else 5,
+        )
+
+    filters = skills.GitHubRepositoryFilters(all_github=True, min_stars=30)
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_code_page", fake_search_code_page)
+        monkeypatch.setattr(client, "repository_metadata", fake_repository_metadata)
+        repositories = [
+            repository
+            async for repository in client.iter_repositories(
+                filters,
+                stats,
+                recursive=True,
+                subfolder="skills",
+            )
+        ]
+
+    assert [repository.repo.source for repository in repositories] == ["acme/large"]
+    assert calls == [("filename:SKILL.md path:skills", 1)]
+    assert metadata_calls == ["acme/small", "acme/large"]
+    assert stats.listed_repository_count == 3
+    assert stats.filtered_repository_count == 2
+    assert stats.active_repository_count == 1
+
+
+async def test_github_recursive_topic_discovery_uses_repository_search_then_skill_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository_queries: list[tuple[str, int]] = []
+    code_queries: list[tuple[str, int]] = []
+
+    async def fake_search_repository_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubRepositorySearchPage:
+        repository_queries.append((query, page))
+        return skills.GitHubRepositorySearchPage(
+            total_count=2,
+            incomplete_results=False,
+            items=[
+                github_search_repository("without-skill"),
+                github_search_repository("with-skill"),
+            ],
+        )
+
+    async def fake_search_code_page(
+        query: str,
+        *,
+        page: int,
+    ) -> skills.GitHubCodeSearchPage:
+        code_queries.append((query, page))
+        return skills.GitHubCodeSearchPage(
+            total_count=1 if "with-skill" in query else 0,
+            incomplete_results=False,
+            items=[github_code_search_item("with-skill")] if "with-skill" in query else [],
+        )
+
+    filters = skills.GitHubRepositoryFilters(all_github=True, topics=("agents",))
+    stats = skills.GitHubDiscoveryStats(scope_label=filters.scope_label)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client, "search_repository_page", fake_search_repository_page)
+        monkeypatch.setattr(client, "search_code_page", fake_search_code_page)
+        repositories = [
+            repository
+            async for repository in client.iter_repositories(
+                filters,
+                stats,
+                recursive=True,
+                subfolder="skills",
+            )
+        ]
+
+    assert [repository.repo.source for repository in repositories] == ["acme/with-skill"]
+    assert len(repository_queries) == 1
+    assert "topic:agents" in repository_queries[0][0]
+    assert code_queries == [
+        ("filename:SKILL.md repo:acme/without-skill path:skills", 1),
+        ("filename:SKILL.md repo:acme/with-skill path:skills", 1),
+    ]
+    assert stats.active_repository_count == 2
+    assert stats.filtered_repository_count == 1
 
 
 async def test_github_repository_search_shards_more_than_one_thousand_results(
