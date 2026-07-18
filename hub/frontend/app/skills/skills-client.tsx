@@ -279,7 +279,6 @@ export function SkillsClient({
       <section className="registry-hero-section" aria-labelledby="skills-title">
         <div className="registry-hero-inner">
           <div className="registry-hero-copy">
-            <span className="registry-hero-eyebrow">The open agent skills ecosystem</span>
             <h1 id="skills-title">Skills</h1>
             <p>
               Browse reusable agent skills, inspect published files, and follow trusted sources.
