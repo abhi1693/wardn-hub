@@ -139,10 +139,14 @@ def configure_github_import_output(output: str) -> None:
         return
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(GitHubImportTextFormatter())
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
     logger.handlers.clear()
-    logger.addHandler(handler)
-    logger.propagate = False
+    logger.propagate = True
     logger.setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 SkillFileEncoding = Literal["utf-8", "base64"]

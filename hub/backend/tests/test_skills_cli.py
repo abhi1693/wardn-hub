@@ -1612,6 +1612,35 @@ def test_github_import_text_formatter_outputs_compact_tsv() -> None:
     )
 
 
+def test_configure_github_import_text_output_formats_root_and_suppresses_httpx_info() -> None:
+    root_logger = logging.getLogger()
+    original_handlers = root_logger.handlers[:]
+    original_root_level = root_logger.level
+    original_skills_handlers = skills.logger.handlers[:]
+    original_skills_propagate = skills.logger.propagate
+    original_skills_level = skills.logger.level
+    httpx_logger = logging.getLogger("httpx")
+    original_httpx_level = httpx_logger.level
+
+    try:
+        skills.configure_github_import_output("text")
+
+        assert len(root_logger.handlers) == 1
+        assert isinstance(root_logger.handlers[0].formatter, skills.GitHubImportTextFormatter)
+        assert skills.logger.handlers == []
+        assert skills.logger.propagate is True
+        assert httpx_logger.level == logging.WARNING
+    finally:
+        root_logger.handlers.clear()
+        root_logger.handlers.extend(original_handlers)
+        root_logger.setLevel(original_root_level)
+        skills.logger.handlers.clear()
+        skills.logger.handlers.extend(original_skills_handlers)
+        skills.logger.propagate = original_skills_propagate
+        skills.logger.setLevel(original_skills_level)
+        httpx_logger.setLevel(original_httpx_level)
+
+
 def test_manage_dispatches_skills_add(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     called = {}
     skill_file = tmp_path / "SKILL.md"
