@@ -1417,6 +1417,27 @@ def test_skill_bundle_tree_items_uses_nearest_skill_root() -> None:
     ]
 
 
+def test_skill_bundle_tree_items_allows_build_skill_root() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="build/agp/agp-9-upgrade/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="build/agp/agp-9-upgrade/references/guide.md", type="blob"),
+        skills.GitHubTreeItem(
+            path="build/agp/agp-9-upgrade/node_modules/package/index.js",
+            type="blob",
+        ),
+    ]
+
+    items = skills.skill_bundle_tree_items(
+        tree,
+        skill_path="build/agp/agp-9-upgrade/SKILL.md",
+    )
+
+    assert [item.path for item in items] == [
+        "build/agp/agp-9-upgrade/SKILL.md",
+        "build/agp/agp-9-upgrade/references/guide.md",
+    ]
+
+
 async def test_fetch_skill_bundle_preserves_text_binary_and_executable_files() -> None:
     class FakeGitHubClient:
         async def raw_file(

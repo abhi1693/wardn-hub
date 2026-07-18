@@ -58,7 +58,6 @@ SKIPPED_PATH_PARTS = {
     ".svn",
     ".venv",
     "__pycache__",
-    "build",
     "dist",
     "node_modules",
     "vendor",
