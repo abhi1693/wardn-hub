@@ -278,8 +278,8 @@ function printSearchResult(result: SkillSearchResult, json: boolean): void {
   );
   result.data.forEach((skill, index) => {
     const installs = `${skill.installs} ${pluralize(skill.installs, 'install')}`;
-    const labels = [skill.isOfficial ? 'official' : 'community', installs];
-    if (skill.isDuplicate === true) labels.push('duplicate');
+    const audit = skill.auditStatus ?? 'unaudited';
+    const labels = [skill.isOfficial ? 'official' : 'community', installs, audit];
     console.log(`\n${index + 1}. ${skill.name}`);
     console.log(`   ${skill.description}`);
     console.log(`   ID: ${skill.id}`);

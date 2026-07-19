@@ -22,8 +22,12 @@ def valid_skill_md(*, body: str = "# Weather\n\nUse the weather API carefully.")
     )
 
 
-def audit_target(*, files: list[dict] | None = None) -> cli.SkillAuditTarget:
-    skill_md = valid_skill_md()
+def audit_target(
+    *,
+    files: list[dict] | None = None,
+    skill_md: str | None = None,
+) -> cli.SkillAuditTarget:
+    skill_md = skill_md or valid_skill_md()
     bundle_files = files or [{"path": "SKILL.md", "contents": skill_md}]
     return cli.SkillAuditTarget(
         skill_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
@@ -175,6 +179,53 @@ def test_inspect_bundle_rejects_snapshot_root_mismatch() -> None:
 
     assert decision.status == "fail"
     assert "invalid-bundle" in decision.categories
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "# Weather\n\nRead `../_shared/common.md` before continuing.",
+        "# Weather\n\nSee [the required guide](references/guide.md) before continuing.",
+        "# Weather\n\nRead references/guide.md before continuing.",
+        "# Weather\n\n[Required guide]: references/guide.md",
+    ],
+)
+def test_inspect_bundle_rejects_escaping_or_missing_required_references(body: str) -> None:
+    skill_md = valid_skill_md(body=body)
+    target = audit_target(
+        skill_md=skill_md,
+        files=[{"path": "SKILL.md", "contents": skill_md}],
+    )
+
+    decision = cli.policy_decision(cli.inspect_bundle(target))
+
+    assert decision.status == "fail"
+    assert "resolver-incompatible" in decision.categories
+
+
+def test_inspect_bundle_accepts_complete_transitive_references_and_ignores_examples() -> None:
+    skill_md = valid_skill_md(
+        body=(
+            "# Weather\n\n"
+            "Read [the guide](references/guide.md) before continuing.\n\n"
+            "Read https://example.com/external-guide.md only when the user requests it.\n\n"
+            "[External]: HTTPS://example.com/guide.md\n\n"
+            "```markdown\nRead `examples/not-bundled.md`.\n```"
+        )
+    )
+    files = [
+        {"path": "SKILL.md", "contents": skill_md},
+        {
+            "path": "references/guide.md",
+            "contents": "# Guide\n\nSee [the details](details.md).\n",
+        },
+        {"path": "references/details.md", "contents": "# Details\n"},
+    ]
+    target = audit_target(skill_md=skill_md, files=files)
+
+    decision = cli.policy_decision(cli.inspect_bundle(target))
+
+    assert decision.status == "pass"
 
 
 def test_resolver_frontmatter_validation_matches_supported_scalar_rules() -> None:

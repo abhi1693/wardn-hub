@@ -47,7 +47,6 @@ class Skill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     current_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     installs: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     visibility: Mapped[str] = mapped_column(
         String(32),

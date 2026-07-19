@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal, Protocol, TextIO
+from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import and_, exists, or_, select
@@ -45,6 +46,23 @@ MAX_ROOT_SKILL_CHARS = 65_536
 MAX_PATH_CHARS = 1_024
 MAX_PATH_PARTS = 64
 MAX_STORED_AUDIT_OUTPUT_CHARS = 100_000
+MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]\n]*\]\(([^)\n]+)\)")
+MARKDOWN_REFERENCE_PATTERN = re.compile(r"^\s*\[[^\]\n]+\]:\s*(\S+)")
+INLINE_CODE_PATTERN = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
+REFERENCE_DIRECTIVE_PATTERN = re.compile(
+    r"^\s*(?:(?:[-*+]|[0-9]+[.)])\s+)?"
+    r"(?:(?:for|when)\b[^:,.]*[:,]\s*)?"
+    r"(?:read|see|open|load|follow|consult)\b",
+    re.IGNORECASE,
+)
+LOCAL_PATH_PATTERN = re.compile(
+    r"^(?:\.\.?/)?[^\s`]+(?:/[^\s`]+)*\.[A-Za-z0-9]{1,16}(?:[?#].*)?$"
+)
+LOCAL_PATH_TOKEN_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])(?:\.\.?/)?(?:[A-Za-z0-9._-]+/)*"
+    r"[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,16}(?:[?#][^\s`),;]*)?"
+)
+EXTERNAL_TARGET_PATTERN = re.compile(r"(?:https?://|mailto:|data:|//)\S+", re.IGNORECASE)
 
 
 class SkillAuditFinding(BaseModel):
@@ -441,6 +459,133 @@ def finding(
     )
 
 
+def markdown_instruction_lines(contents: str) -> list[str]:
+    lines: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in contents.splitlines():
+        fence = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if fence is not None:
+            marker = fence.group(1)
+            if fence_character is None:
+                fence_character = marker[0]
+                fence_length = len(marker)
+            elif marker[0] == fence_character and len(marker) >= fence_length:
+                fence_character = None
+                fence_length = 0
+            continue
+        if fence_character is None:
+            lines.append(line)
+    return lines
+
+
+def markdown_link_target(value: str) -> str:
+    target = value.strip()
+    if target.startswith("<"):
+        closing = target.find(">")
+        return target[1:closing] if closing > 0 else target
+    return target.split(maxsplit=1)[0] if target else ""
+
+
+def local_reference_targets(contents: str) -> set[str]:
+    targets: set[str] = set()
+    for line in markdown_instruction_lines(contents):
+        reference_definition = MARKDOWN_REFERENCE_PATTERN.match(line)
+        if reference_definition is not None:
+            targets.add(markdown_link_target(reference_definition.group(1)))
+        targets.update(
+            target
+            for match in MARKDOWN_LINK_PATTERN.finditer(line)
+            if (target := markdown_link_target(match.group(1)))
+        )
+        if REFERENCE_DIRECTIVE_PATTERN.search(line) is None:
+            continue
+        targets.update(
+            target
+            for match in INLINE_CODE_PATTERN.finditer(line)
+            if (target := match.group(1).strip()) and LOCAL_PATH_PATTERN.fullmatch(target)
+        )
+        line_without_code = EXTERNAL_TARGET_PATTERN.sub("", INLINE_CODE_PATTERN.sub("", line))
+        targets.update(
+            match.group(0) for match in LOCAL_PATH_TOKEN_PATTERN.finditer(line_without_code)
+        )
+    return targets
+
+
+def resolve_bundle_reference(source_path: str, target: str) -> str | None:
+    stripped = target.strip()
+    lowered = stripped.lower()
+    if lowered.startswith(("http://", "https://", "mailto:", "data:")) or stripped.startswith(
+        "//"
+    ):
+        return ""
+    path = unquote(stripped.split("#", 1)[0].split("?", 1)[0].strip())
+    if not path:
+        return ""
+    if path.startswith("/") or "\\" in path:
+        return None
+
+    parts = list(PurePosixPath(source_path).parent.parts)
+    for part in path.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if not parts:
+                return None
+            parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
+def required_reference_findings(
+    decoded_files: list[dict[str, Any]],
+) -> list[SkillAuditFinding]:
+    available_paths = {str(item["path"]) for item in decoded_files}
+    findings: list[SkillAuditFinding] = []
+    seen: set[tuple[str, str]] = set()
+    for item in decoded_files:
+        source_path = str(item["path"])
+        contents = item.get("contents")
+        if not isinstance(contents, str) or PurePosixPath(source_path).suffix.lower() not in {
+            ".md",
+            ".markdown",
+            ".mdx",
+        }:
+            continue
+        for target in sorted(local_reference_targets(contents)):
+            key = (source_path, target)
+            if key in seen:
+                continue
+            seen.add(key)
+            resolved = resolve_bundle_reference(source_path, target)
+            if resolved == "":
+                continue
+            if resolved is None:
+                findings.append(
+                    finding(
+                        "high",
+                        "resolver-incompatible",
+                        f"Required local reference escapes the skill bundle: {target[:512]}",
+                        path=source_path,
+                    )
+                )
+                continue
+            if resolved in available_paths or any(
+                path.startswith(f"{resolved.rstrip('/')}/") for path in available_paths
+            ):
+                continue
+            findings.append(
+                finding(
+                    "high",
+                    "resolver-incompatible",
+                    f"Required local reference is missing from the skill bundle: {target[:512]}",
+                    path=source_path,
+                )
+            )
+    return findings
+
+
 def inspect_bundle(target: SkillAuditTarget) -> BundleInspection:
     inspection = BundleInspection()
     files = target.files
@@ -583,6 +728,7 @@ def inspect_bundle(target: SkillAuditTarget) -> BundleInspection:
                 "SKILL.md needs nonempty name and description frontmatter plus instructions.",
             )
         )
+    inspection.hard_findings.extend(required_reference_findings(inspection.decoded_files))
     return inspection
 
 

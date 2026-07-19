@@ -24,7 +24,7 @@ export interface SkillSearchItem {
   description: string;
   source: string;
   isOfficial: boolean;
-  isDuplicate: boolean | null;
+  auditStatus: 'pass' | 'warn' | 'fail' | null;
   installs: number;
   url: string;
   sourceUrl: string | null;

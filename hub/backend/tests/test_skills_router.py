@@ -71,6 +71,9 @@ def test_skills_openapi_exposes_public_paths() -> None:
         schema["paths"]["/api/v1/skills/audit/{skill_id}"]["get"]["operationId"]
         == "skills_audit_get"
     )
+    skill_properties = schema["components"]["schemas"]["SkillRead"]["properties"]
+    assert "auditStatus" in skill_properties
+    assert "isDuplicate" not in skill_properties
 
 
 def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
@@ -122,7 +125,6 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
                 "description": "Find reusable agent skills.",
                 "installs": 42,
                 "isOfficial": True,
-                "isDuplicate": None,
                 "auditStatus": "warn",
             }
         ],

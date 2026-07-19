@@ -15,14 +15,16 @@ npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug --json
 ```
 
 These examples use the latest published release. Append an exact version, for
-example `@wardn-ai/skills@0.1.4`, when you want to pin the CLI.
+example `@wardn-ai/skills@0.1.5`, when you want to pin the CLI.
 
-`search` returns a bounded compact result set. `audit` normalizes the latest
-decision for each audit provider and reports hard rejects, warnings, historical
-failures, and the audited content hash. `inspect` validates the root `SKILL.md`
-without printing it. `fetch-bundle` fetches the latest snapshot by default and
-writes the complete validated bundle to a private temporary directory described
-by its JSON manifest. Pass `--hash <sha256>` to require an exact snapshot instead.
+`search` returns a bounded compact result set including current audit status; its
+`installs` value is a weak popularity signal because temporary materializations
+also increment it. `audit` normalizes the latest decision for each provider and
+audit slug and reports hard rejects, warnings, historical failures, and the
+audited content hash. `inspect` validates the root `SKILL.md` without printing it.
+`fetch-bundle` fetches the latest snapshot by default and writes the complete
+validated bundle to a private temporary directory described by its JSON manifest.
+Pass `--hash <sha256>` to require an exact snapshot instead.
 
 Compatibility commands `fetch` and `fetch-chunk` can retrieve the root Markdown.
 They do not replace `fetch-bundle` when a skill has scripts, references, or assets.

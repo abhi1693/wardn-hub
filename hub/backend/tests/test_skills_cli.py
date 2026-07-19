@@ -2254,7 +2254,6 @@ async def test_refresh_existing_skill_snapshot_preserves_catalog_fields(
         description="Curated description",
         visibility="unlisted",
         installs=42,
-        is_duplicate=True,
         owner_user_id="owner-id",
         install_url="https://docs.example/weather",
     )
@@ -2304,7 +2303,6 @@ async def test_refresh_existing_skill_snapshot_preserves_catalog_fields(
     assert skill.description == "Curated description"
     assert skill.visibility == "unlisted"
     assert skill.installs == 42
-    assert skill.is_duplicate is True
     assert skill.owner_user_id == "owner-id"
     assert skill.install_url == "https://docs.example/weather"
 

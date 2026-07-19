@@ -128,7 +128,7 @@ function validateSearchItem(value: unknown): SkillSearchItem {
     name,
     description,
     isOfficial,
-    isDuplicate,
+    auditStatus,
     installs,
     url,
     sourceUrl,
@@ -148,7 +148,10 @@ function validateSearchItem(value: unknown): SkillSearchItem {
     name.length > 200 ||
     typeof description !== 'string' ||
     typeof isOfficial !== 'boolean' ||
-    (isDuplicate !== null && typeof isDuplicate !== 'boolean') ||
+    (auditStatus !== null &&
+      auditStatus !== 'pass' &&
+      auditStatus !== 'warn' &&
+      auditStatus !== 'fail') ||
     !isInteger(installs) ||
     typeof url !== 'string' ||
     url.length > 2048 ||
@@ -164,7 +167,7 @@ function validateSearchItem(value: unknown): SkillSearchItem {
     description: truncate(description, 500),
     source,
     isOfficial,
-    isDuplicate,
+    auditStatus,
     installs,
     url,
     sourceUrl,
@@ -356,19 +359,21 @@ export class HubClient {
       throw new Error('Wardn skill audit response failed validation');
     }
 
-    const latestByProvider = new Map<string, ValidatedAudit>();
+    const latestByCheck = new Map<string, ValidatedAudit>();
     for (const audit of audits) {
-      const selected = latestByProvider.get(audit.slug);
+      const checkKey = `${audit.provider}\u0000${audit.slug}`;
+      const selected = latestByCheck.get(checkKey);
       if (
         selected === undefined ||
         audit.timeKey > selected.timeKey ||
         (audit.timeKey === selected.timeKey && decisionSeverity(audit) >= decisionSeverity(selected))
       ) {
-        latestByProvider.set(audit.slug, audit);
+        latestByCheck.set(checkKey, audit);
       }
     }
-    const latest = [...latestByProvider.values()].sort((left, right) =>
-      left.slug.localeCompare(right.slug),
+    const latest = [...latestByCheck.values()].sort(
+      (left, right) =>
+        left.provider.localeCompare(right.provider) || left.slug.localeCompare(right.slug),
     );
     return {
       id,

@@ -160,7 +160,6 @@ def skill_read(
         description=skill.description,
         installs=skill.installs,
         isOfficial=official_owner_key(skill) in (official_owner_keys or set()),
-        isDuplicate=True if skill.is_duplicate else None,
         auditStatus=(audit_statuses or {}).get(skill.id),
     )
 

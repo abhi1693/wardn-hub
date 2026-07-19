@@ -5877,17 +5877,6 @@
             "title": "Installs",
             "type": "integer"
           },
-          "isDuplicate": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Isduplicate"
-          },
           "isOfficial": {
             "default": false,
             "title": "Isofficial",
@@ -7191,7 +7180,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.120"
+    "version": "0.2.121"
   },
   "openapi": "3.1.0",
   "paths": {

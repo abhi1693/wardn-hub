@@ -141,7 +141,7 @@ test('HubClient validates compact skill search results', async () => {
               name: 'Code Audit',
               description: 'Review source safely.',
               isOfficial: false,
-              isDuplicate: null,
+              auditStatus: 'pass',
               installs: 42,
               url: 'https://hub.wardnai.dev/skills/acme/skills/code-audit',
               sourceUrl: 'https://github.com/acme/skills',
@@ -157,6 +157,7 @@ test('HubClient validates compact skill search results', async () => {
 
   assert.equal(result.count, 1);
   assert.equal(result.data[0].id, 'acme/skills/code-audit');
+  assert.equal(result.data[0].auditStatus, 'pass');
   const url = new URL(requestedUrl);
   assert.equal(url.pathname, '/api/v1/skills/search');
   assert.equal(url.searchParams.get('q'), 'code audit');
@@ -201,6 +202,15 @@ test('HubClient normalizes current audits and treats 404 as unaudited', async ()
               riskLevel: 'medium',
               categories: null,
             },
+            {
+              provider: 'Independent Review',
+              slug: 'policy',
+              status: 'pass',
+              summary: 'Independent policy check passed.',
+              auditedAt: '2026-07-17T12:00:00Z',
+              riskLevel: 'low',
+              categories: [],
+            },
           ],
         }),
         { status: 200 },
@@ -212,10 +222,14 @@ test('HubClient normalizes current audits and treats 404 as unaudited', async ()
   assert.equal(result.hardRejectCount, 1);
   assert.equal(result.warningCount, 1);
   assert.equal(result.failureCount, 1);
-  assert.equal(result.latestAudits[0].status, 'fail');
-  assert.equal(result.latestAudits[0].summaryTruncated, true);
-  assert.equal(result.latestAudits[0].summary.length, 240);
-  assert.doesNotMatch(result.latestAudits[0].summary, /[\r\n\t]/);
+  assert.equal(result.latestAudits.length, 3);
+  const policyAudit = result.latestAudits.find(
+    (audit) => audit.provider === 'Wardn Policy' && audit.slug === 'policy',
+  );
+  assert.equal(policyAudit.status, 'fail');
+  assert.equal(policyAudit.summaryTruncated, true);
+  assert.equal(policyAudit.summary.length, 240);
+  assert.doesNotMatch(policyAudit.summary, /[\r\n\t]/);
 
   const unauditedClient = new HubClient({
     version: '0.1.0',

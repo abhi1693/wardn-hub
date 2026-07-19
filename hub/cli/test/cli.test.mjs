@@ -45,7 +45,7 @@ before(async () => {
               name: 'Weather',
               description: 'Check weather.',
               isOfficial: false,
-              isDuplicate: null,
+              auditStatus: 'pass',
               installs: 3,
               url: 'https://hub.wardnai.dev/skills/acme/skills/weather',
               sourceUrl: 'https://github.com/acme/skills',
@@ -242,7 +242,7 @@ test('CLI search is human-readable by default and JSON only when requested', asy
     assert.match(humanOutput, /Found 1 skill for "weather":/);
     assert.match(humanOutput, /1\. Weather/);
     assert.match(humanOutput, /ID: acme\/skills\/weather/);
-    assert.match(humanOutput, /community · 3 installs/);
+    assert.match(humanOutput, /community · 3 installs · pass/);
     assert.match(humanOutput, /https:\/\/hub\.wardnai\.dev\/skills\/acme\/skills\/weather/);
     assert.throws(() => JSON.parse(humanOutput), SyntaxError);
 
@@ -251,6 +251,7 @@ test('CLI search is human-readable by default and JSON only when requested', asy
     const jsonOutput = JSON.parse(output.join('\n'));
     assert.equal(jsonOutput.count, 1);
     assert.equal(jsonOutput.data[0].id, 'acme/skills/weather');
+    assert.equal(jsonOutput.data[0].auditStatus, 'pass');
   } finally {
     console.log = originalLog;
   }

@@ -28,7 +28,6 @@ class SkillRead(BaseModel):
     description: str = ""
     installs: int = Field(ge=0)
     is_official: bool = Field(default=False, alias="isOfficial")
-    is_duplicate: bool | None = Field(default=None, alias="isDuplicate")
     audit_status: SkillAuditStatus | None = Field(default=None, alias="auditStatus")
 
 

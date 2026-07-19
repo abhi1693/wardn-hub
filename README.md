@@ -329,7 +329,7 @@ npx @wardn-ai/skills remove skill-slug -g -a codex -y
 
 The repository's `find-skills` skill is declarative: it invokes the latest release
 of this npm package by default and contains no bundled resolver or self-installer
-scripts. Append an exact version, such as `@wardn-ai/skills@0.1.4`, when a pinned
+scripts. Append an exact version, such as `@wardn-ai/skills@0.1.5`, when a pinned
 release is preferred.
 Install or update that bootstrap skill through the same lifecycle command:
 
