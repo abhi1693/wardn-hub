@@ -225,9 +225,10 @@ export async function SkillDetailView({
           <div>
             <strong>Package resolution {skill.resolutionStatus ?? "pending"}</strong>
             <p>
-              This snapshot cannot be installed or security-scored until its repository
-              dependencies are resolved into package format 2.
-              {packageIssue ? ` ${packageIssue}` : " Refresh the GitHub source to rebuild it."}
+              This legacy snapshot cannot be installed or security-scored. Refresh will
+              publish it only if it is a self-contained package format 2 bundle; otherwise
+              the importer removes the skill.
+              {packageIssue ? ` ${packageIssue}` : " Refresh the GitHub source to validate it."}
             </p>
           </div>
         </section>

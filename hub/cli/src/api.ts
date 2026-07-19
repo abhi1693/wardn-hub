@@ -200,7 +200,7 @@ function decodeBundleFile(value: unknown): WardnBundleFile {
   return { path, contents: decoded, encoding, executable };
 }
 
-function validateRepositoryPackage(payload: Record<string, unknown>): string {
+function validateSkillPackage(payload: Record<string, unknown>): string {
   if (payload.bundleFormatVersion !== 2) {
     throw new Error('Wardn skill package must be refreshed to bundle format 2');
   }
@@ -571,7 +571,7 @@ export class HubClient {
     ) {
       throw new Error('Wardn skill detail failed validation');
     }
-    const sourceEntrypoint = validateRepositoryPackage(payload);
+    const sourceEntrypoint = validateSkillPackage(payload);
     const fileValue = payload.files[0];
     if (!isRecord(fileValue) || fileValue.path !== 'SKILL.md' || typeof fileValue.contents !== 'string') {
       throw new Error('Wardn skill detail failed validation');
@@ -607,7 +607,7 @@ export class HubClient {
     if (!isRecord(payload) || payload.id !== id || typeof payload.hash !== 'string') {
       throw new Error('Wardn Hub returned an invalid bundle identity');
     }
-    const sourceEntrypoint = validateRepositoryPackage(payload);
+    const sourceEntrypoint = validateSkillPackage(payload);
     const hash = validateHash(payload.hash);
     if (expectedHash !== undefined && hash !== expectedHash) {
       throw new Error('Wardn skill changed since the expected hash was selected');

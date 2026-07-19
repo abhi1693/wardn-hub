@@ -439,7 +439,7 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
         skill_md="# Weather",
         bundle_format_version=2,
         source_commit_sha="a" * 40,
-        source_entrypoint="context/skills/weather/SKILL.md",
+        source_entrypoint="SKILL.md",
         resolution_status="complete",
         resolution_issues=[],
         files=[
@@ -489,7 +489,7 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     assert (bundle_detail.files or [])[2].encoding == "base64"
     assert (bundle_detail.files or [])[3].executable is True
     assert bundle_detail.bundle_format_version == 2
-    assert bundle_detail.source_entrypoint == "context/skills/weather/SKILL.md"
+    assert bundle_detail.source_entrypoint == "SKILL.md"
     assert bundle_detail.resolution_status == "complete"
 
 

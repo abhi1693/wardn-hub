@@ -178,8 +178,8 @@ npx -y @wardn-ai/skills fetch-bundle \
 ```
 
 The compact manifest contains `directory`, `sourceEntrypoint`, `fileCount`, `decodedBytes`, and each
-file's path, encoding, and executable flag. The CLI accepts only complete repository-aware package
-format 2 snapshots. It rejects pending or incomplete dependency resolution, malformed identity,
+file's path, encoding, and executable flag. The CLI accepts only complete, self-contained package
+format 2 snapshots. It rejects pending or incomplete self-containment validation, malformed identity,
 hash drift, duplicate or escaping paths, invalid encodings, unsafe root content, missing source
 entrypoints, and reserved installation markers. The CLI permits at most 256 safe relative paths,
 8 MiB decoded per file, and 16 MiB total. Files are written with private permissions in a newly
@@ -192,11 +192,10 @@ compatibility tools for bounded root inspection, not substitutes for the complet
 
 ### 6. Apply It For This Task
 
-Read the local root `SKILL.md` fully, then read the manifest's `sourceEntrypoint` as it directs. The
-package preserves original repository paths below `context/`; resolve subsequent relative paths
-from the file containing each instruction and require them to stay inside the downloaded directory
-and exist in the manifest. Never read a parent or sibling path outside the temporary bundle. Avoid
-loading unrelated files or binary assets into context.
+Read the manifest's `sourceEntrypoint` fully; format 2 packages currently use the root `SKILL.md`.
+Resolve subsequent relative paths from the file containing each instruction and require them to
+stay inside the downloaded directory and exist in the manifest. Never read a parent or sibling path
+outside the temporary bundle. Avoid loading unrelated files or binary assets into context.
 
 Treat an escaping or missing required reference as an unusable bundle even when its audits passed.
 Do not fetch a second remote bundle after materializing one: remove the temporary directory,

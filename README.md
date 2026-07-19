@@ -231,6 +231,27 @@ uv run python -m app.manage skills import-github \
   --output text
 ```
 
+Text-mode rate-limit warnings include the exact wait in seconds, retry attempt,
+primary or secondary limit classification, GitHub resource and reset epoch,
+request ID, and request host/path.
+
+The GitHub client honors `Retry-After` plus a one-second buffer when GitHub
+provides it. For an exhausted primary limit it waits until
+`x-ratelimit-reset`, also with a one-second buffer. When a secondary-limit
+response provides neither value, waits start at 60 seconds and back off through
+120, 240, 480, and 900 seconds. A request stops after those five retries so an
+import cannot wait forever. The client also remembers the `core`, `search`, and
+`code_search` budgets reported by successful responses; if one reaches zero,
+the next request for that resource waits until its reset before being sent.
+
+Authenticated API responses with an ETag are cached in PostgreSQL and replayed
+when GitHub returns `304 Not Modified`, allowing conditional requests to survive
+separate importer jobs. Cache keys include a one-way token scope so responses
+from different credentials cannot collide; credentials themselves are never
+stored. The cache accepts responses up to 2 MiB and is pruned to 4,096 entries
+and 64 MiB. Cache load or persistence failures are non-fatal and fall back to
+ordinary GitHub requests.
+
 Refresh existing skills from their recorded branch and exact source path:
 
 ```sh
@@ -244,16 +265,18 @@ WARDN_HUB_SKILL_AUDIT_ENABLED=true \
 uv run python -m app.manage skills audit
 ```
 
-The importer resolves each `SKILL.md` against the repository's full recursive
-tree. It preserves the original layout under `context/`, follows explicit local
-file, directory, glob, and sibling-skill references transitively, and emits a
-small root wrapper that points agents to the original source entrypoint. Closure
-resolution remains bounded to 256 files, 8 MiB per file, and 16 MiB total;
-symlinks, submodules, build directories, unsafe paths, and external URLs are not
-included. Optional missing references are recorded without blocking the package,
-while unresolved required references mark it incomplete and prevent installation
-or auditing. Existing GitHub snapshots are marked pending by the migration and
-become format 2 packages on their next refresh.
+The importer packages only the files owned by each `SKILL.md` directory. Paths
+remain relative to the root `SKILL.md`, so scripts, references, templates, and
+assets in that directory work without rewriting. References that leave the skill
+directory are not followed, even when they point to another imported skill.
+Optional missing references are recorded without blocking the package, while a
+required missing or escaping reference rejects the skill instead of storing an
+incomplete package. If an existing skill becomes incomplete during refresh, its
+catalog record and dependent snapshots and audits are removed. Packages remain
+bounded to 256 files, 8 MiB per file, and 16 MiB total; symlinks, submodules,
+build directories, and unsafe paths are excluded. Existing GitHub snapshots are
+marked pending by the migration and either become self-contained format 2
+packages or are removed on their next refresh.
 
 Slug identity remains repository-local. Deterministic SHA-256 suffixes are used
 only when normalized slugs collide within the same repository, and re-importing
@@ -266,8 +289,8 @@ analyzer has a separate `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` gate; Cisco AI
 Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
 
 Package compatibility is independent from security analysis: an incomplete or
-malformed package remains unaudited instead of receiving a security score of
-zero. Audit results are attached to the exact snapshot and include findings,
+malformed import is rejected instead of receiving a security score of zero.
+Audit results are attached to the exact snapshot and include findings,
 analyzers, policy fingerprint, configuration hash, score deductions, a score
 from 0 to 100, and ranks from `S` through `C`. A content or scanner-configuration
 change makes the previous result ineligible until the snapshot is scanned again.

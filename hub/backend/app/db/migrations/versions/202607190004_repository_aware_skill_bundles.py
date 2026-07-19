@@ -1,4 +1,4 @@
-"""Track repository-aware skill packages and their dependency resolution.
+"""Track self-contained skill packages and their reference validation.
 
 Revision ID: 202607190004
 Revises: 202607190003
@@ -69,9 +69,10 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # GitHub bundles must be rebuilt from their repositories because older rows
-    # only contain a skill-local subtree. Non-GitHub snapshots are already
-    # self-contained and can use the v2 contract directly.
+    # Older GitHub snapshots were not checked for required references escaping
+    # their skill directory, so they must be rebuilt before using the v2
+    # contract. Refresh promotes self-contained packages and removes incomplete
+    # skills. Non-GitHub snapshots are already treated as self-contained.
     op.execute(
         """
         UPDATE skill_snapshots AS snapshot

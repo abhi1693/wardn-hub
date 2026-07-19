@@ -24,12 +24,19 @@ import httpx
 import yaml
 from markdown_it import MarkdownIt
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import AsyncSessionLocal, engine
-from app.modules.skills.models import Skill, SkillAudit, SkillSnapshot, SkillSourceOwner
+from app.modules.skills.models import (
+    GitHubHttpCache,
+    Skill,
+    SkillAudit,
+    SkillSnapshot,
+    SkillSourceOwner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +52,23 @@ GITHUB_CREATED_AT_FLOOR = datetime(1970, 1, 1, tzinfo=UTC)
 GITHUB_RATE_LIMIT_WAIT_BUFFER_SECONDS = 1.0
 GITHUB_SECONDARY_RATE_LIMIT_WAIT_SECONDS = 60.0
 GITHUB_SECONDARY_RATE_LIMIT_MAX_WAIT_SECONDS = 15 * 60.0
+GITHUB_RATE_LIMIT_MAX_RETRIES = 5
 GITHUB_TRANSIENT_RETRY_BASE_SECONDS = 1.0
 GITHUB_TRANSIENT_RETRY_MAX_SECONDS = 8.0
 GITHUB_TRANSIENT_MAX_RETRIES = 3
+GITHUB_ETAG_CACHE_MAX_ENTRIES = 4096
+GITHUB_ETAG_CACHE_MAX_BYTES = 64 * 1024 * 1024
+GITHUB_ETAG_CACHE_MAX_ENTRY_BYTES = 2 * 1024 * 1024
+GITHUB_NOT_MODIFIED_RESPONSE_HEADERS = {
+    "etag",
+    "last-modified",
+    "x-github-request-id",
+    "x-ratelimit-limit",
+    "x-ratelimit-remaining",
+    "x-ratelimit-reset",
+    "x-ratelimit-resource",
+    "x-ratelimit-used",
+}
 GITHUB_ERROR_BODY_MAX_CHARS = 1000
 DEFAULT_USER_AGENT = "WardnHubSkillsImporter/0.1"
 DEFAULT_IMPORT_TIMEOUT_SECONDS = 20.0
@@ -61,7 +82,6 @@ MAX_SKILL_PATH_PARTS = 64
 MAX_BUNDLE_FETCH_CONCURRENCY = 8
 MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
 SKILL_BUNDLE_FORMAT_VERSION = 2
-SKILL_BUNDLE_CONTEXT_DIRECTORY = "context"
 MAX_SKILL_RESOLUTION_ISSUES = 128
 MAX_SKILL_DEPENDENCY_MANIFEST_ENTRIES = 512
 SKIPPED_PATH_PARTS = {
@@ -81,7 +101,8 @@ REFERENCE_DIRECTIVE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 OPTIONAL_REFERENCE_PATTERN = re.compile(
-    r"\b(?:optional|optionally|example|examples|if available|when available|if present)\b",
+    r"\b(?:optional|optionally|example|examples|if available|when available|if present|"
+    r"if (?:it|they) exists?)\b",
     re.IGNORECASE,
 )
 RUNTIME_OUTPUT_PATTERN = re.compile(
@@ -137,10 +158,32 @@ class GitHubImportTextFormatter(logging.Formatter):
         "source",
         "skill_id",
         "reason",
+        "response_status_code",
+        "github_request_id",
+        "request_host",
+        "request_path",
+        "rate_limit_reason",
+        "rate_limit_resource",
+        "rate_limit_remaining",
+        "rate_limit_reset",
+        "retry_attempt",
+        "retry_wait_seconds",
         "imported_skill_count",
         "failed_skill_count",
         "skipped_repository_count",
     )
+    labeled_fields = {
+        "response_status_code": "status",
+        "github_request_id": "request_id",
+        "request_host": "host",
+        "request_path": "path",
+        "rate_limit_reason": "limit",
+        "rate_limit_resource": "resource",
+        "rate_limit_remaining": "remaining",
+        "rate_limit_reset": "reset_epoch",
+        "retry_attempt": "attempt",
+        "retry_wait_seconds": "wait_seconds",
+    }
 
     def formatTime(
         self,
@@ -166,7 +209,8 @@ class GitHubImportTextFormatter(logging.Formatter):
             else:
                 value = getattr(record, field, "")
             if value != "":
-                values.append(value)
+                label = self.labeled_fields.get(field)
+                values.append(f"{label}={value}" if label else value)
         return "\t".join(str(value) for value in values if value != "")
 
 
@@ -459,6 +503,21 @@ class GitHubRateLimitWait:
     reason: Literal["primary", "secondary"]
 
 
+@dataclass(frozen=True)
+class GitHubRateLimitBudget:
+    remaining: int
+    reset_epoch_seconds: float
+
+
+@dataclass(frozen=True)
+class GitHubETagCacheEntry:
+    cache_key: str
+    etag: str
+    response_headers: dict[str, str]
+    body: bytes
+    last_accessed_at: datetime
+
+
 def github_http_error(status_code: int, message: str) -> SkillCliError:
     if status_code in {401, 403, 429} or status_code >= 500:
         return GitHubSystemicError(message)
@@ -531,7 +590,7 @@ def github_rate_limit_wait(
     if remaining == "0":
         try:
             reset_epoch_seconds = float(reset)
-        except ValueError:
+        except (TypeError, ValueError):
             reset_epoch_seconds = now_epoch_seconds + GITHUB_SECONDARY_RATE_LIMIT_WAIT_SECONDS
         return GitHubRateLimitWait(
             seconds=max(0.0, reset_epoch_seconds - now_epoch_seconds)
@@ -563,6 +622,139 @@ def github_transient_retry_wait(retry_attempt: int) -> float:
         GITHUB_TRANSIENT_RETRY_BASE_SECONDS * (2**retry_attempt),
         GITHUB_TRANSIENT_RETRY_MAX_SECONDS,
     )
+
+
+def github_rate_limit_resource_for_request(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.hostname != "api.github.com":
+        return None
+    if parsed.path == "/search/code":
+        return "code_search"
+    if parsed.path.startswith("/search/"):
+        return "search"
+    return "core"
+
+
+def github_rate_limit_budget(
+    response: object,
+    *,
+    fallback_resource: str | None,
+) -> tuple[str, GitHubRateLimitBudget] | None:
+    resource = github_response_header(response, "x-ratelimit-resource") or fallback_resource
+    remaining = github_response_header(response, "x-ratelimit-remaining")
+    reset = github_response_header(response, "x-ratelimit-reset")
+    if not resource or remaining is None or reset is None:
+        return None
+    try:
+        remaining_value = int(remaining)
+        reset_value = float(reset)
+    except (TypeError, ValueError):
+        return None
+    if remaining_value < 0 or reset_value < 0:
+        return None
+    return resource, GitHubRateLimitBudget(
+        remaining=remaining_value,
+        reset_epoch_seconds=reset_value,
+    )
+
+
+def github_etag_cache_key(
+    *,
+    token_scope: str,
+    url: str,
+    params: dict[str, str] | None,
+) -> str | None:
+    if urlparse(url).hostname != "api.github.com" or not token_scope:
+        return None
+    query = str(httpx.QueryParams(sorted((params or {}).items())))
+    material = f"{token_scope}\0{url}\0{query}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def github_cacheable_response_headers(response: object) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for name in ("content-type", "etag", "last-modified"):
+        value = github_response_header(response, name)
+        if value:
+            headers[name] = value
+    return headers
+
+
+async def load_github_etag_cache() -> dict[str, GitHubETagCacheEntry]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(GitHubHttpCache)
+            .order_by(GitHubHttpCache.last_accessed_at.desc())
+            .limit(GITHUB_ETAG_CACHE_MAX_ENTRIES)
+        )
+        rows = result.scalars().all()
+    entries: dict[str, GitHubETagCacheEntry] = {}
+    total_bytes = 0
+    for row in rows:
+        if row.body_bytes != len(row.body) or row.body_bytes > GITHUB_ETAG_CACHE_MAX_ENTRY_BYTES:
+            continue
+        if total_bytes + row.body_bytes > GITHUB_ETAG_CACHE_MAX_BYTES:
+            break
+        entries[row.cache_key] = GitHubETagCacheEntry(
+            cache_key=row.cache_key,
+            etag=row.etag,
+            response_headers=dict(row.response_headers),
+            body=row.body,
+            last_accessed_at=row.last_accessed_at,
+        )
+        total_bytes += row.body_bytes
+    return entries
+
+
+async def persist_github_etag_cache(entries: list[GitHubETagCacheEntry]) -> None:
+    if not entries:
+        return
+    values = [
+        {
+            "cache_key": entry.cache_key,
+            "etag": entry.etag,
+            "response_headers": entry.response_headers,
+            "body": entry.body,
+            "body_bytes": len(entry.body),
+            "last_accessed_at": entry.last_accessed_at,
+        }
+        for entry in entries
+    ]
+    statement = postgresql_insert(GitHubHttpCache).values(values)
+    statement = statement.on_conflict_do_update(
+        index_elements=[GitHubHttpCache.cache_key],
+        set_={
+            "etag": statement.excluded.etag,
+            "response_headers": statement.excluded.response_headers,
+            "body": statement.excluded.body,
+            "body_bytes": statement.excluded.body_bytes,
+            "last_accessed_at": statement.excluded.last_accessed_at,
+        },
+    )
+    async with AsyncSessionLocal() as session:
+        await session.execute(statement)
+        rows = (
+            await session.execute(
+                select(
+                    GitHubHttpCache.cache_key,
+                    GitHubHttpCache.body_bytes,
+                ).order_by(GitHubHttpCache.last_accessed_at.desc())
+            )
+        ).all()
+        retained_bytes = 0
+        expired_keys: list[str] = []
+        for index, (cache_key, body_bytes) in enumerate(rows):
+            retained_bytes += body_bytes
+            if (
+                index >= GITHUB_ETAG_CACHE_MAX_ENTRIES
+                or retained_bytes > GITHUB_ETAG_CACHE_MAX_BYTES
+            ):
+                expired_keys.append(cache_key)
+        if expired_keys:
+            await session.execute(
+                delete(GitHubHttpCache).where(GitHubHttpCache.cache_key.in_(expired_keys))
+            )
+        await session.commit()
 
 
 def github_json(response: object, description: str) -> object:
@@ -1055,6 +1247,11 @@ async def add_skill(
     *,
     preserve_catalog_state: bool = False,
 ) -> tuple[Skill, SkillSnapshot]:
+    if payload.resolution_status != "complete":
+        raise SkillCliError(
+            f"refusing to store {payload.resolution_status} skill package: "
+            f"{payload.source}/{payload.slug}"
+        )
     if payload.source_type == "github":
         owner_lock_key = f"wardn-hub:github-owner:{payload.source_owner.casefold()}"
         await session.execute(
@@ -1486,13 +1683,14 @@ class GitHubClient:
         timeout_seconds: float = DEFAULT_IMPORT_TIMEOUT_SECONDS,
         user_agent: str = DEFAULT_USER_AGENT,
     ) -> None:
+        normalized_token = token.strip()
         headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": user_agent,
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        if token.strip():
-            headers["Authorization"] = f"Bearer {token.strip()}"
+        if normalized_token:
+            headers["Authorization"] = f"Bearer {normalized_token}"
         self._client = httpx.AsyncClient(
             timeout=timeout_seconds,
             headers=headers,
@@ -1500,12 +1698,152 @@ class GitHubClient:
             event_hooks={"request": [validate_github_request]},
         )
         self._verified_org_cache: OrderedDict[str, bool] = OrderedDict()
+        self._etag_token_scope = (
+            hashlib.sha256(normalized_token.encode("utf-8")).hexdigest() if normalized_token else ""
+        )
+        self._etag_cache_enabled = bool(normalized_token)
+        self._etag_cache: dict[str, GitHubETagCacheEntry] = {}
+        self._etag_cache_bytes = 0
+        self._etag_cache_dirty: set[str] = set()
+        self._rate_limit_budgets: dict[str, GitHubRateLimitBudget] = {}
 
     async def __aenter__(self) -> GitHubClient:
+        if self._etag_cache_enabled:
+            try:
+                self._etag_cache = await load_github_etag_cache()
+                self._etag_cache_bytes = sum(len(entry.body) for entry in self._etag_cache.values())
+            except Exception:
+                self._etag_cache_enabled = False
+                logger.warning(
+                    "github conditional response cache unavailable; continuing without it",
+                    exc_info=True,
+                )
         return self
 
     async def __aexit__(self, *args: object) -> None:
-        await self._client.aclose()
+        try:
+            if self._etag_cache_enabled and self._etag_cache_dirty:
+                entries = [
+                    self._etag_cache[cache_key]
+                    for cache_key in self._etag_cache_dirty
+                    if cache_key in self._etag_cache
+                ]
+                try:
+                    await persist_github_etag_cache(entries)
+                except Exception:
+                    logger.warning(
+                        "github conditional response cache could not be saved",
+                        exc_info=True,
+                    )
+        finally:
+            await self._client.aclose()
+
+    async def _wait_for_known_rate_limit(self, resource: str | None, url: str) -> None:
+        if resource is None:
+            return
+        budget = self._rate_limit_budgets.get(resource)
+        if budget is None or budget.remaining > 0:
+            return
+        now_epoch_seconds = time.time()
+        if budget.reset_epoch_seconds <= now_epoch_seconds:
+            self._rate_limit_budgets.pop(resource, None)
+            return
+        wait_seconds = (
+            budget.reset_epoch_seconds - now_epoch_seconds + GITHUB_RATE_LIMIT_WAIT_BUFFER_SECONDS
+        )
+        logger.warning(
+            "github rate limit exhausted; waiting before request",
+            extra={
+                "request_host": urlparse(url).hostname,
+                "request_path": urlparse(url).path,
+                "rate_limit_reason": "primary",
+                "rate_limit_resource": resource,
+                "rate_limit_remaining": budget.remaining,
+                "rate_limit_reset": budget.reset_epoch_seconds,
+                "retry_wait_seconds": wait_seconds,
+            },
+        )
+        await asyncio.sleep(wait_seconds)
+        self._rate_limit_budgets.pop(resource, None)
+
+    def _record_rate_limit_budget(
+        self,
+        response: object,
+        fallback_resource: str | None,
+    ) -> None:
+        parsed = github_rate_limit_budget(response, fallback_resource=fallback_resource)
+        if parsed is not None:
+            resource, budget = parsed
+            self._rate_limit_budgets[resource] = budget
+
+    def _cache_key(self, url: str, params: dict[str, str] | None) -> str | None:
+        if not self._etag_cache_enabled:
+            return None
+        return github_etag_cache_key(
+            token_scope=self._etag_token_scope,
+            url=url,
+            params=params,
+        )
+
+    def _store_cache_response(self, cache_key: str | None, response: httpx.Response) -> None:
+        if cache_key is None or response.status_code != 200:
+            return
+        headers = github_cacheable_response_headers(response)
+        etag = headers.get("etag")
+        if not etag or len(response.content) > GITHUB_ETAG_CACHE_MAX_ENTRY_BYTES:
+            return
+        previous = self._etag_cache.get(cache_key)
+        if previous is not None:
+            self._etag_cache_bytes -= len(previous.body)
+        self._etag_cache[cache_key] = GitHubETagCacheEntry(
+            cache_key=cache_key,
+            etag=etag,
+            response_headers=headers,
+            body=response.content,
+            last_accessed_at=datetime.now(UTC),
+        )
+        self._etag_cache_bytes += len(response.content)
+        self._etag_cache_dirty.add(cache_key)
+        while (
+            len(self._etag_cache) > GITHUB_ETAG_CACHE_MAX_ENTRIES
+            or self._etag_cache_bytes > GITHUB_ETAG_CACHE_MAX_BYTES
+        ):
+            expired_key, expired_entry = min(
+                self._etag_cache.items(),
+                key=lambda item: item[1].last_accessed_at,
+            )
+            self._etag_cache.pop(expired_key)
+            self._etag_cache_bytes -= len(expired_entry.body)
+            self._etag_cache_dirty.discard(expired_key)
+
+    def _cached_response(
+        self,
+        entry: GitHubETagCacheEntry,
+        not_modified_response: httpx.Response,
+    ) -> httpx.Response:
+        headers = dict(entry.response_headers)
+        for name in GITHUB_NOT_MODIFIED_RESPONSE_HEADERS:
+            value = github_response_header(not_modified_response, name)
+            if value:
+                headers[name] = value
+        refreshed_entry = replace(
+            entry,
+            etag=headers.get("etag", entry.etag),
+            response_headers={
+                name: value
+                for name, value in headers.items()
+                if name in {"content-type", "etag", "last-modified"}
+            },
+            last_accessed_at=datetime.now(UTC),
+        )
+        self._etag_cache[entry.cache_key] = refreshed_entry
+        self._etag_cache_dirty.add(entry.cache_key)
+        return httpx.Response(
+            status_code=200,
+            headers=headers,
+            content=entry.body,
+            request=not_modified_response.request,
+        )
 
     async def _get(
         self,
@@ -1516,12 +1854,21 @@ class GitHubClient:
     ) -> httpx.Response:
         rate_limit_retry_attempt = 0
         transient_retry_attempt = 0
+        resource = github_rate_limit_resource_for_request(url)
+        cache_key = self._cache_key(url, params)
+        use_conditional_request = cache_key in self._etag_cache if cache_key else False
+        retried_unconditional_not_modified = False
         while True:
+            await self._wait_for_known_rate_limit(resource, url)
             request_kwargs: dict[str, object] = {}
             if params is not None:
                 request_kwargs["params"] = params
             if follow_redirects is not None:
                 request_kwargs["follow_redirects"] = follow_redirects
+            if use_conditional_request and cache_key is not None:
+                request_kwargs["headers"] = {
+                    "If-None-Match": self._etag_cache[cache_key].etag,
+                }
             try:
                 response = await self._client.get(  # type: ignore[arg-type]
                     url,
@@ -1549,16 +1896,54 @@ class GitHubClient:
                 )
                 await asyncio.sleep(retry_wait)
                 continue
+            self._record_rate_limit_budget(response, resource)
+            if response.status_code == 304:
+                if cache_key is not None and cache_key in self._etag_cache:
+                    return self._cached_response(self._etag_cache[cache_key], response)
+                if retried_unconditional_not_modified:
+                    return response
+                use_conditional_request = False
+                retried_unconditional_not_modified = True
+                continue
             wait = github_rate_limit_wait(
                 response,
                 retry_attempt=rate_limit_retry_attempt,
                 now_epoch_seconds=time.time(),
             )
             if wait is not None:
+                if rate_limit_retry_attempt >= GITHUB_RATE_LIMIT_MAX_RETRIES:
+                    logger.error(
+                        "github request rate limit retries exhausted",
+                        extra={
+                            "response_status_code": response.status_code,
+                            "github_request_id": github_response_header(
+                                response, "x-github-request-id"
+                            ),
+                            "request_host": urlparse(url).hostname,
+                            "request_path": urlparse(url).path,
+                            "rate_limit_reason": wait.reason,
+                            "rate_limit_resource": github_response_header(
+                                response, "x-ratelimit-resource"
+                            )
+                            or resource,
+                            "rate_limit_remaining": github_response_header(
+                                response, "x-ratelimit-remaining"
+                            ),
+                            "rate_limit_reset": github_response_header(
+                                response, "x-ratelimit-reset"
+                            ),
+                            "retry_attempt": rate_limit_retry_attempt,
+                        },
+                    )
+                    return response
                 rate_limit_retry_attempt += 1
                 logger.warning(
                     "github request rate limited; waiting before retry",
                     extra={
+                        "response_status_code": response.status_code,
+                        "github_request_id": github_response_header(
+                            response, "x-github-request-id"
+                        ),
                         "request_host": urlparse(url).hostname,
                         "request_path": urlparse(url).path,
                         "rate_limit_reason": wait.reason,
@@ -1574,8 +1959,11 @@ class GitHubClient:
                     },
                 )
                 await asyncio.sleep(wait.seconds)
+                if resource is not None:
+                    self._rate_limit_budgets.pop(resource, None)
                 continue
             if response.status_code < 500:
+                self._store_cache_response(cache_key, response)
                 return response
             if transient_retry_attempt >= GITHUB_TRANSIENT_MAX_RETRIES:
                 return response
@@ -2412,14 +2800,6 @@ def validate_skill_file_path(path: str) -> str:
     return normalized
 
 
-def _invalid_skill_path(path: str) -> bool:
-    try:
-        validate_skill_file_path(path)
-    except ValueError:
-        return True
-    return False
-
-
 def path_is_within_skill_root(path: str, root: str) -> bool:
     return not root or path.startswith(f"{root}/")
 
@@ -2558,14 +2938,14 @@ def looks_like_local_dependency(
     allow_bare_directory: bool = False,
 ) -> bool:
     normalized = normalize_dependency_target(target)
-    if not normalized or normalized.startswith(("/", "#")) or "\\" in normalized:
+    if not normalized or normalized.startswith(("/", "#", "~/", "@")) or "\\" in normalized:
         return False
     if normalized.casefold() in NON_PATH_REFERENCE_LITERALS:
         return False
     lowered = normalized.lower()
     if lowered.startswith(("http://", "https://", "mailto:", "data:", "//")):
         return False
-    if any(marker in normalized for marker in ("${", "{{", "}}", "<path", "<file")):
+    if any(marker in normalized for marker in ("${", "{{", "}}", "<", ">")):
         return False
     if allow_extensionless:
         return not any(character.isspace() for character in normalized) and ":" not in normalized
@@ -2625,29 +3005,59 @@ def local_dependency_references(contents: str) -> list[LocalDependencyReference]
                     add(source, required=False, kind="asset")
 
     for line in markdown_instruction_lines(contents):
-        directive = REFERENCE_DIRECTIVE_PATTERN.search(line)
+        directives = list(REFERENCE_DIRECTIVE_PATTERN.finditer(line))
         runtime_output = RUNTIME_OUTPUT_PATTERN.search(line)
         required = not bool(OPTIONAL_REFERENCE_PATTERN.search(line)) and not runtime_output
-        for match in MARKDOWN_LINK_PATTERN.finditer(line):
-            destination = match.group(1).strip().strip("<>").split(maxsplit=1)[0]
-            is_asset = match.group(0).startswith("!")
-            add(
-                destination,
-                required=required and not is_asset,
-                kind="asset" if is_asset else "link",
-            )
-        if not directive or runtime_output:
+        if not directives or runtime_output:
             continue
         for match in INLINE_CODE_PATTERN.finditer(line):
+            directive = next(
+                (
+                    candidate
+                    for candidate in reversed(directives)
+                    if candidate.end() <= match.start()
+                ),
+                None,
+            )
+            if directive is None:
+                continue
+            gap = line[directive.end() : match.start()]
+            # Bind a path to the directive immediately introducing it. A broad
+            # line-level match turns versions, domains, field names, and examples
+            # into dependencies whenever prose happens to contain words such as
+            # "use", "include", or "review" elsewhere on the same line.
+            if len(gap) > 64 or len(re.findall(r"\b\w+\b", gap)) > 6:
+                continue
+            target = normalize_dependency_target(match.group(1))
+            # Inline code is also used for API names, model artifacts, versions,
+            # and other runtime values. Require a directory component (including
+            # an explicit ./ or ../) before treating it as a package dependency.
+            # Markdown links remain the supported way to reference a file beside
+            # SKILL.md without a directory component.
+            if "/" not in target:
+                continue
             add(
-                match.group(1),
+                target,
                 required=required,
                 kind="directive",
                 allow_bare_directory=True,
             )
         line_without_links = MARKDOWN_LINK_PATTERN.sub(" ", INLINE_CODE_PATTERN.sub(" ", line))
         for match in PLAIN_LOCAL_PATH_PATTERN.finditer(line_without_links):
-            add(match.group(0), required=required, kind="directive")
+            target = match.group(0)
+            if not target.startswith(("./", "../")):
+                continue
+            directive = next(
+                (
+                    candidate
+                    for candidate in reversed(directives)
+                    if candidate.end() <= match.start()
+                ),
+                None,
+            )
+            if directive is None or match.start() - directive.end() > 64:
+                continue
+            add(target, required=required, kind="directive")
     return sorted(references.values(), key=lambda item: (item.target, item.kind))
 
 
@@ -2672,96 +3082,40 @@ def resolve_repository_dependency(source_path: str, target: str) -> str | None:
         return None
 
 
-def dependency_matches(
-    tree: list[GitHubTreeItem],
+def bundle_dependency_matches(
+    items: list[GitHubTreeItem],
     *,
+    skill_root: str,
     source_path: str,
     reference: LocalDependencyReference,
 ) -> tuple[str, list[GitHubTreeItem]]:
     resolved = resolve_repository_dependency(source_path, reference.target)
     if not resolved:
         return "invalid", []
+    if not path_is_within_skill_root(resolved, skill_root):
+        return "external", []
     regular_blobs = [
         item
-        for item in tree
+        for item in items
         if item.type == "blob" and item.mode != "120000" and not should_skip_tree_path(item.path)
     ]
-    candidates = [resolved]
-    normalized_target = normalize_dependency_target(reference.target)
-    if not normalized_target.startswith(("./", "../")):
-        try:
-            repository_root_candidate = validate_skill_file_path(
-                unquote(normalized_target).rstrip("/")
-            )
-        except ValueError:
-            repository_root_candidate = ""
-        if repository_root_candidate and repository_root_candidate not in candidates:
-            candidates.append(repository_root_candidate)
-
-    for candidate in candidates:
-        if any(character in candidate for character in "*?["):
-            matches = sorted(
-                (item for item in regular_blobs if fnmatch.fnmatchcase(item.path, candidate)),
-                key=lambda item: item.path,
-            )
-            if matches:
-                return "glob", matches
-            continue
-        exact = next((item for item in regular_blobs if item.path == candidate), None)
-        if exact is not None:
-            if PurePosixPath(exact.path).name == "SKILL.md":
-                return "skill", skill_bundle_tree_items(tree, skill_path=exact.path)
-            return "file", [exact]
-        prefix = f"{candidate.rstrip('/')}/"
-        directory = sorted(
-            (item for item in regular_blobs if item.path.startswith(prefix)),
+    if any(character in resolved for character in "*?["):
+        matches = sorted(
+            (item for item in regular_blobs if fnmatch.fnmatchcase(item.path, resolved)),
             key=lambda item: item.path,
         )
-        if directory:
-            return "directory", directory
-
-    # Some skill collections refer to sibling components by shorthand such as
-    # `problem-statement.md` even though the repository stores that component
-    # at `skills/problem-statement/SKILL.md`. Resolve the shorthand only when
-    # it identifies exactly one skill root so ambiguous monorepos fail closed.
-    shorthand = PurePosixPath(normalized_target)
-    if (
-        len(shorthand.parts) == 1
-        and shorthand.suffix.casefold() in {".md", ".mdx"}
-        and shorthand.name.casefold() not in {"skill.md", "skill.mdx"}
-    ):
-        skill_roots = [
-            item
-            for item in regular_blobs
-            if PurePosixPath(item.path).name == "SKILL.md"
-            and PurePosixPath(item.path).parent.name.casefold() == shorthand.stem.casefold()
-        ]
-        if len(skill_roots) == 1:
-            return "skill-alias", skill_bundle_tree_items(tree, skill_path=skill_roots[0].path)
-        if len(skill_roots) > 1:
-            return "ambiguous-skill-alias", []
+        return ("glob", matches) if matches else ("missing", [])
+    exact = next((item for item in regular_blobs if item.path == resolved), None)
+    if exact is not None:
+        return "file", [exact]
+    prefix = f"{resolved.rstrip('/')}/"
+    directory = sorted(
+        (item for item in regular_blobs if item.path.startswith(prefix)),
+        key=lambda item: item.path,
+    )
+    if directory:
+        return "directory", directory
     return "missing", []
-
-
-def package_wrapper(*, repo: GitHubRepository, skill_path: str, source_skill_md: str) -> str:
-    metadata = parse_frontmatter(source_skill_md)
-    root = skill_root_from_skill_path(skill_path)
-    name = metadata.get("name") or Path(root).name or repo.repo
-    description = metadata.get("description") or (
-        f"Packaged instructions from {repo.source}/{skill_path}."
-    )
-    entrypoint = f"{SKILL_BUNDLE_CONTEXT_DIRECTORY}/{skill_path}"
-    encoded_entrypoint = quote(entrypoint, safe="/")
-    return (
-        "---\n"
-        f"name: {json.dumps(name, ensure_ascii=False)}\n"
-        f"description: {json.dumps(description, ensure_ascii=False)}\n"
-        "---\n\n"
-        "# Wardn repository package\n\n"
-        f"Read the [source skill instructions](<{encoded_entrypoint}>) completely before acting. "
-        "Resolve every relative path from the directory containing those source "
-        "instructions. The `context/` tree preserves the original repository layout.\n"
-    )
 
 
 def valid_source_skill_document(contents: str) -> bool:
@@ -2789,17 +3143,12 @@ async def fetch_skill_bundle(
 ) -> FetchedSkillBundle:
     if items is None:
         items = skill_bundle_tree_items(tree, skill_path=skill_path)
+    root = skill_root_from_skill_path(skill_path)
     for item in items:
         try:
-            validate_skill_file_path(f"{SKILL_BUNDLE_CONTEXT_DIRECTORY}/{item.path}")
+            validate_skill_file_path(relative_skill_file_path(root, item.path))
         except ValueError as exc:
             raise InvalidSkillBundleError(item.path, str(exc)) from exc
-    if len(items) >= MAX_SKILL_BUNDLE_FILES:
-        raise InvalidSkillBundleError(
-            skill_path,
-            f"repository-aware bundle must leave room for its root wrapper "
-            f"within the {MAX_SKILL_BUNDLE_FILES} file limit",
-        )
     source_skill_md, source_skill_contents = await fetch_skill_md(
         client=client,
         repo=repo,
@@ -2807,15 +3156,14 @@ async def fetch_skill_bundle(
         skill_path=skill_path,
     )
     semaphore = asyncio.Semaphore(MAX_BUNDLE_FETCH_CONCURRENCY)
-    selected: dict[str, GitHubTreeItem] = {item.path: item for item in items}
     fetched_bytes: dict[str, bytes] = {skill_path: source_skill_contents}
     resolution_issues: list[SkillResolutionIssue] = []
     dependency_manifest: list[SkillDependencyManifestEntry] = []
     if not valid_source_skill_document(source_skill_md):
         resolution_issues.append(
             {
-                "sourcePath": skill_path,
-                "target": skill_path,
+                "sourcePath": "SKILL.md",
+                "target": "SKILL.md",
                 "reason": (
                     "source SKILL.md must have nonempty name and description frontmatter "
                     "plus instructions"
@@ -2839,141 +3187,75 @@ async def fetch_skill_bundle(
     )
     fetched_bytes.update(initial_fetched)
 
-    pending_markdown = [skill_path]
-    inspected_markdown: set[str] = set()
-    while pending_markdown:
-        source_path = pending_markdown.pop(0)
-        if source_path in inspected_markdown:
+    pending_instruction_paths = [skill_path]
+    validated_instruction_paths: set[str] = set()
+    while pending_instruction_paths:
+        source_path = pending_instruction_paths.pop(0)
+        if source_path in validated_instruction_paths:
             continue
-        inspected_markdown.add(source_path)
+        validated_instruction_paths.add(source_path)
         try:
             contents = fetched_bytes[source_path].decode("utf-8")
         except (KeyError, UnicodeDecodeError):
             continue
         for reference in local_dependency_references(contents):
-            dependency_failed = False
-            try:
-                kind, matches = dependency_matches(
-                    tree,
-                    source_path=source_path,
-                    reference=reference,
-                )
-            except InvalidSkillBundleError as exc:
-                kind, matches = "invalid", []
-                dependency_failed = True
-                if len(resolution_issues) < MAX_SKILL_RESOLUTION_ISSUES:
-                    resolution_issues.append(
-                        {
-                            "sourcePath": source_path,
-                            "target": reference.target,
-                            "reason": str(exc),
-                            "required": True,
-                        }
-                    )
-            resolved_paths = [item.path for item in matches]
+            kind, matches = bundle_dependency_matches(
+                items,
+                skill_root=root,
+                source_path=source_path,
+                reference=reference,
+            )
+            source_relative = relative_skill_file_path(root, source_path)
+            resolved_paths = [relative_skill_file_path(root, item.path) for item in matches]
             if len(dependency_manifest) < MAX_SKILL_DEPENDENCY_MANIFEST_ENTRIES:
                 dependency_manifest.append(
                     {
-                        "sourcePath": source_path,
+                        "sourcePath": source_relative,
                         "target": reference.target,
                         "kind": kind,
                         "required": reference.required,
                         "resolvedPaths": resolved_paths,
                     }
                 )
-            if dependency_failed:
-                continue
             if not matches:
                 if len(resolution_issues) < MAX_SKILL_RESOLUTION_ISSUES:
+                    if kind == "external":
+                        reason = "reference leaves the skill directory"
+                    elif kind == "invalid":
+                        reason = "reference is unsafe"
+                    else:
+                        reason = "skill bundle reference did not resolve"
                     resolution_issues.append(
                         {
-                            "sourcePath": source_path,
+                            "sourcePath": source_relative,
                             "target": reference.target,
-                            "reason": (
-                                "reference escapes the repository or is unsafe"
-                                if kind == "invalid"
-                                else "repository reference did not resolve"
-                            ),
+                            "reason": reason,
                             "required": reference.required,
                         }
                     )
                 continue
+            if reference.required:
+                pending_instruction_paths.extend(
+                    item.path
+                    for item in matches
+                    if item.path.lower().endswith((".md", ".mdx"))
+                    and item.path not in validated_instruction_paths
+                    and item.path not in pending_instruction_paths
+                )
 
-            additions = [item for item in matches if item.path not in selected]
-            invalid_addition = next(
-                (
-                    item
-                    for item in additions
-                    if item.size < 0
-                    or item.size > MAX_SKILL_FILE_BYTES
-                    or (_invalid_skill_path(f"{SKILL_BUNDLE_CONTEXT_DIRECTORY}/{item.path}"))
-                ),
-                None,
-            )
-            if invalid_addition is not None:
-                if len(resolution_issues) < MAX_SKILL_RESOLUTION_ISSUES:
-                    resolution_issues.append(
-                        {
-                            "sourcePath": source_path,
-                            "target": reference.target,
-                            "reason": (
-                                f"dependency file {invalid_addition.path} has "
-                                + (
-                                    "an invalid size"
-                                    if invalid_addition.size < 0
-                                    or invalid_addition.size > MAX_SKILL_FILE_BYTES
-                                    else "an unsafe package path"
-                                )
-                            ),
-                            "required": True,
-                        }
-                    )
-                continue
-            if len(selected) + len(additions) >= MAX_SKILL_BUNDLE_FILES:
-                if len(resolution_issues) < MAX_SKILL_RESOLUTION_ISSUES:
-                    resolution_issues.append(
-                        {
-                            "sourcePath": source_path,
-                            "target": reference.target,
-                            "reason": f"dependency closure exceeds {MAX_SKILL_BUNDLE_FILES} files",
-                            "required": True,
-                        }
-                    )
-                continue
-            advertised_addition = sum(item.size for item in additions)
-            if sum(item.size for item in selected.values()) + advertised_addition > (
-                MAX_SKILL_BUNDLE_BYTES
-            ):
-                if len(resolution_issues) < MAX_SKILL_RESOLUTION_ISSUES:
-                    resolution_issues.append(
-                        {
-                            "sourcePath": source_path,
-                            "target": reference.target,
-                            "reason": f"dependency closure exceeds {MAX_SKILL_BUNDLE_BYTES} bytes",
-                            "required": True,
-                        }
-                    )
-                continue
-            selected.update((item.path, item) for item in additions)
-            new_files = await asyncio.gather(*(fetch_item(item) for item in additions))
-            fetched_bytes.update(new_files)
-            pending_markdown.extend(
-                item.path for item in matches if item.path.lower().endswith((".md", ".mdx"))
-            )
-
-    wrapper = package_wrapper(repo=repo, skill_path=skill_path, source_skill_md=source_skill_md)
-    files: list[SkillSnapshotFile] = [{"path": "SKILL.md", "contents": wrapper}]
-    for path, item in sorted(selected.items()):
+    files: list[SkillSnapshotFile] = []
+    for path, item in sorted(
+        ((item.path, item) for item in items),
+        key=lambda pair: (relative_skill_file_path(root, pair[0]) != "SKILL.md", pair[0]),
+    ):
         files.append(
             snapshot_file_from_bytes(
-                path=f"{SKILL_BUNDLE_CONTEXT_DIRECTORY}/{path}",
+                path=relative_skill_file_path(root, path),
                 contents=fetched_bytes[path],
                 executable=item.mode == "100755",
             )
         )
-    bundle_size = len(wrapper.encode("utf-8")) + sum(
-        len(contents) for contents in fetched_bytes.values()
-    )
+    bundle_size = sum(len(contents) for contents in fetched_bytes.values())
     if bundle_size > MAX_SKILL_BUNDLE_BYTES:
         raise InvalidSkillBundleError(
             skill_path,
@@ -2984,12 +3266,12 @@ async def fetch_skill_bundle(
     )
     return FetchedSkillBundle(
         source_skill_md=source_skill_md,
-        skill_md=wrapper,
+        skill_md=source_skill_md,
         files=files,
         bundle_size=bundle_size,
         bundle_format_version=SKILL_BUNDLE_FORMAT_VERSION,
         source_commit_sha=ref,
-        source_entrypoint=f"{SKILL_BUNDLE_CONTEXT_DIRECTORY}/{skill_path}",
+        source_entrypoint="SKILL.md",
         resolution_status=resolution_status,
         resolution_issues=resolution_issues,
         dependency_manifest=dependency_manifest,
@@ -3116,12 +3398,10 @@ async def load_skill_refresh_targets() -> tuple[list[SkillRefreshTarget], list[S
     return targets, issues
 
 
-async def refresh_existing_skill_snapshot(
+async def lock_skill_refresh_state(
     session: AsyncSession,
     target: SkillRefreshTarget,
-    *,
-    bundle: FetchedSkillBundle,
-) -> tuple[str, bool]:
+) -> tuple[Skill, SkillSnapshot]:
     result = await session.execute(
         select(Skill).where(Skill.id == target.skill_id).with_for_update()
     )
@@ -3154,6 +3434,18 @@ async def refresh_existing_skill_snapshot(
         or current_snapshot.content_hash != target.current_hash
     ):
         raise SkillCliError(f"skill snapshot changed while refresh was running: {target.id}")
+    return skill, current_snapshot
+
+
+async def refresh_existing_skill_snapshot(
+    session: AsyncSession,
+    target: SkillRefreshTarget,
+    *,
+    bundle: FetchedSkillBundle,
+) -> tuple[str, bool]:
+    if bundle.resolution_status != "complete":
+        raise SkillCliError(f"refusing to store incomplete skill package: {target.id}")
+    skill, current_snapshot = await lock_skill_refresh_state(session, target)
 
     hash_value = content_hash(bundle.files)
     metadata_unchanged = (
@@ -3198,6 +3490,17 @@ async def save_refreshed_skill(
             await session.rollback()
             raise
     return result
+
+
+async def remove_incomplete_refreshed_skill(target: SkillRefreshTarget) -> None:
+    async with AsyncSessionLocal() as session:
+        try:
+            skill, _snapshot = await lock_skill_refresh_state(session, target)
+            await session.execute(delete(Skill).where(Skill.id == skill.id))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def discover_skill_paths(
@@ -3330,15 +3633,23 @@ async def import_skill_from_github_path(
         },
     )
     if bundle.resolution_status == "incomplete":
+        required_issues = [
+            f"{issue['sourcePath']} -> {issue['target']}: {issue['reason']}"
+            for issue in bundle.resolution_issues
+            if issue["required"]
+        ]
+        failure_reason = "; ".join(required_issues)[:GITHUB_ERROR_BODY_MAX_CHARS]
         logger.warning(
-            "github skill import package incomplete",
+            "github skill import rejected incomplete skill",
             extra={
                 "source": repo.source,
                 "skill_id": f"{repo.source}/{slug}",
-                "failure_reason": "; ".join(
-                    issue["reason"] for issue in bundle.resolution_issues if issue["required"]
-                )[:GITHUB_ERROR_BODY_MAX_CHARS],
+                "failure_reason": failure_reason,
             },
+        )
+        raise InvalidSkillBundleError(
+            skill_path,
+            f"skill package is not self-contained: {failure_reason}",
         )
     payload = SkillAddInput(
         source=repo.source,
@@ -4044,6 +4355,7 @@ async def refresh_github_from_args(args: argparse.Namespace) -> int:
     total = len(targets) + len(provenance_issues)
     updated = 0
     unchanged = 0
+    removed = 0
     failed = len(provenance_issues)
     refreshed_bytes = 0
     logger.info(
@@ -4065,7 +4377,7 @@ async def refresh_github_from_args(args: argparse.Namespace) -> int:
         )
 
     def finish_refresh() -> int:
-        succeeded = updated + unchanged
+        succeeded = updated + unchanged + removed
         logger.info(
             "github skills refresh completed",
             extra={
@@ -4073,19 +4385,20 @@ async def refresh_github_from_args(args: argparse.Namespace) -> int:
                 "refreshed_skill_count": succeeded,
                 "updated_skill_count": updated,
                 "unchanged_skill_count": unchanged,
+                "removed_skill_count": removed,
                 "failed_skill_count": failed,
                 "skill_bundle_bytes": refreshed_bytes,
             },
         )
         print(
             f"refreshed {succeeded} of {total} GitHub skill(s): "
-            f"{updated} updated, {unchanged} unchanged, {failed} failed"
+            f"{updated} updated, {unchanged} unchanged, {removed} removed, {failed} failed"
         )
         return 1 if failed else 0
 
     def abort_refresh(exc: Exception) -> int:
         nonlocal failed
-        failed = total - updated - unchanged
+        failed = total - updated - unchanged - removed
         logger.error(
             "github skills refresh aborted",
             extra={
@@ -4179,6 +4492,46 @@ async def refresh_github_from_args(args: argparse.Namespace) -> int:
                             if isinstance(exc, (GitHubSystemicError, httpx.RequestError)):
                                 return abort_refresh(exc)
                             failed += 1
+                            continue
+
+                        if bundle.resolution_status != "complete":
+                            try:
+                                await remove_incomplete_refreshed_skill(target)
+                            except SkillCliError as exc:
+                                failed += 1
+                                log_github_refresh_failure(
+                                    "github skill refresh failed",
+                                    exc,
+                                    context={
+                                        "skill_id": target.id,
+                                        "source": target.source,
+                                        "source_path": target.skill_path,
+                                        "requested_ref": requested_ref,
+                                        "resolved_ref": resolved_ref,
+                                        "failure_stage": "remove-incomplete",
+                                    },
+                                )
+                                continue
+                            removed += 1
+                            refreshed_bytes += bundle.bundle_size
+                            logger.warning(
+                                "github skill refresh removed incomplete skill",
+                                extra={
+                                    "skill_id": target.id,
+                                    "source": target.source,
+                                    "source_path": target.skill_path,
+                                    "requested_ref": requested_ref,
+                                    "resolved_ref": resolved_ref,
+                                    "skill_file_count": len(bundle.files),
+                                    "skill_bundle_bytes": bundle.bundle_size,
+                                    "skill_resolution_issue_count": len(bundle.resolution_issues),
+                                    "failure_reason": "; ".join(
+                                        issue["reason"]
+                                        for issue in bundle.resolution_issues
+                                        if issue["required"]
+                                    )[:GITHUB_ERROR_BODY_MAX_CHARS],
+                                },
+                            )
                             continue
 
                         try:

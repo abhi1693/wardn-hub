@@ -3,12 +3,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -19,6 +21,23 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class GitHubHttpCache(Base):
+    __tablename__ = "github_http_cache"
+
+    cache_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    etag: Mapped[str] = mapped_column(Text, nullable=False)
+    response_headers: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, nullable=False)
+    body: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    body_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    last_accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
 
 
 class Skill(UUIDPrimaryKeyMixin, TimestampMixin, Base):

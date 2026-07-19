@@ -26,9 +26,9 @@ gate is disabled or a snapshot has not been scanned, it reports the skill as
 unaudited. `inspect` validates the root `SKILL.md` without printing it.
 `fetch-bundle` fetches the latest snapshot by default and writes the complete
 validated bundle to a private temporary directory described by its JSON manifest.
-The manifest includes `sourceEntrypoint`, which points to the original instructions
-inside the layout-preserving `context/` tree. The CLI accepts only dependency-complete
-repository package format 2 snapshots and confirms that the source entrypoint exists.
+The manifest includes `sourceEntrypoint`, which identifies the package's root
+`SKILL.md`. The CLI accepts only complete, self-contained package format 2
+snapshots and confirms that the source entrypoint exists.
 Pass `--hash <sha256>` to require an exact snapshot instead.
 
 Compatibility commands `fetch` and `fetch-chunk` can retrieve the root Markdown.
@@ -55,7 +55,7 @@ host exposes a custom directory. Supported built-in targets are `codex`,
 
 Omit `--hash` to use the latest Wardn snapshot, or pass `--hash <sha256>` to
 require a specific snapshot. The CLI refuses
-pending or incomplete dependency resolution, path traversal, symlink targets,
+pending or incomplete self-containment validation, path traversal, symlink targets,
 malformed or oversized bundles, unmanaged
 directory collisions, and updates whose Wardn ownership marker names a
 different skill. Installs and updates are staged on the target filesystem and
