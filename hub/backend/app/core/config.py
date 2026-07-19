@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     otel_exporter_otlp_traces_headers: str = ""
     otel_traces_sample_ratio: float = 1.0
     otel_excluded_urls: str = ""
+    valkey_url: str = ""
+    valkey_sentinels: str = ""
+    valkey_sentinel_service: str = "valkey"
+    valkey_password: str = ""
+    valkey_sentinel_password: str = ""
     public_rate_limit_enabled: bool = False
     public_rate_limit_requests: int = 120
     public_rate_limit_window_seconds: int = 60
@@ -95,9 +100,17 @@ class Settings(BaseSettings):
     public_rate_limit_valkey_password: str = ""
     public_rate_limit_valkey_sentinel_password: str = ""
     public_rate_limit_valkey_socket_timeout_seconds: float = 5.0
+    public_rate_limit_valkey_max_connections: int = 10
     skill_telemetry_rate_limit_requests: int = 20
     skill_telemetry_rate_limit_window_seconds: int = 60
     skill_telemetry_rate_limit_key_prefix: str = "wardn-hub:skill-telemetry-rate-limit"
+    cache_enabled: bool = False
+    cache_valkey_db: int = 6
+    cache_key_prefix: str = "wardn-hub:cache"
+    cache_default_ttl_seconds: int = 60
+    cache_max_value_bytes: int = 1024 * 1024
+    cache_command_timeout_seconds: float = 0.25
+    cache_max_connections: int = 10
     skill_audit_enabled: bool = False
     skill_audit_llm_enabled: bool = False
 
@@ -172,6 +185,10 @@ class Settings(BaseSettings):
         "public_rate_limit_window_seconds",
         "skill_telemetry_rate_limit_requests",
         "skill_telemetry_rate_limit_window_seconds",
+        "public_rate_limit_valkey_max_connections",
+        "cache_default_ttl_seconds",
+        "cache_max_value_bytes",
+        "cache_max_connections",
     )
     @classmethod
     def validate_positive_public_rate_limit_int(cls, value: int) -> int:
@@ -179,14 +196,17 @@ class Settings(BaseSettings):
             raise ValueError("public rate limit values must be positive")
         return value
 
-    @field_validator("public_rate_limit_valkey_db")
+    @field_validator("public_rate_limit_valkey_db", "cache_valkey_db")
     @classmethod
     def validate_public_rate_limit_valkey_db(cls, value: int) -> int:
         if value < 0:
             raise ValueError("public_rate_limit_valkey_db must be zero or positive")
         return value
 
-    @field_validator("public_rate_limit_valkey_socket_timeout_seconds")
+    @field_validator(
+        "public_rate_limit_valkey_socket_timeout_seconds",
+        "cache_command_timeout_seconds",
+    )
     @classmethod
     def validate_public_rate_limit_valkey_socket_timeout_seconds(cls, value: float) -> float:
         if value <= 0:
@@ -203,6 +223,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_release_settings(self) -> "Settings":
         self.validate_public_rate_limit_settings()
+        self.validate_cache_settings()
         if self.environment in LOCAL_ENVIRONMENTS:
             self.validate_auth_provider_settings()
             return self
@@ -231,11 +252,28 @@ class Settings(BaseSettings):
     def validate_public_rate_limit_settings(self) -> None:
         if not self.public_rate_limit_enabled:
             return
-        if not self.public_rate_limit_valkey_url and not self.public_rate_limit_valkey_sentinels:
+        if not self.has_valkey_connection_settings():
             raise ValueError(
-                "public_rate_limit_valkey_url or public_rate_limit_valkey_sentinels is required "
-                "when public rate limiting is enabled"
+                "Valkey connection settings are required when public rate limiting is enabled"
             )
+
+    def validate_cache_settings(self) -> None:
+        if not self.cache_enabled:
+            return
+        if not self.has_valkey_connection_settings():
+            raise ValueError("Valkey connection settings are required when caching is enabled")
+        if self.cache_max_value_bytes > 8 * 1024 * 1024:
+            raise ValueError("cache_max_value_bytes must not exceed 8 MiB")
+        if self.cache_max_connections > 100:
+            raise ValueError("cache_max_connections must not exceed 100")
+
+    def has_valkey_connection_settings(self) -> bool:
+        return bool(
+            self.valkey_url
+            or self.valkey_sentinels
+            or self.public_rate_limit_valkey_url
+            or self.public_rate_limit_valkey_sentinels
+        )
 
     def validate_auth_provider_settings(self) -> None:
         supported_providers = {"local", "oidc"}

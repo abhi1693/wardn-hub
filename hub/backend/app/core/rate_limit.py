@@ -7,13 +7,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from redis.asyncio import Redis
-from redis.asyncio.sentinel import Sentinel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import Settings
+from app.core.valkey import (
+    connection_config_from_settings,
+    create_async_valkey_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,31 +46,6 @@ class RateLimitDecision:
     remaining: int
     reset_at: int
     retry_after: int
-
-
-def parse_sentinels(value: str, *, setting_name: str) -> list[tuple[str, int]]:
-    sentinels: list[tuple[str, int]] = []
-    for item in value.split(","):
-        raw = item.strip()
-        if not raw:
-            continue
-        host, separator, port_value = raw.rpartition(":")
-        if not separator or not host or not port_value:
-            raise ValueError(f"{setting_name} entries must use host:port")
-        try:
-            port = int(port_value)
-        except ValueError as exc:
-            raise ValueError(f"{setting_name} entries must use numeric ports") from exc
-        sentinels.append((host, port))
-    return sentinels
-
-
-def normalize_valkey_url(url: str) -> str:
-    if url.startswith("valkey://"):
-        return f"redis://{url.removeprefix('valkey://')}"
-    if url.startswith("valkeys://"):
-        return f"rediss://{url.removeprefix('valkeys://')}"
-    return url
 
 
 def public_rate_limit_path_prefixes(api_prefix: str) -> tuple[str, ...]:
@@ -146,42 +123,21 @@ class FixedWindowValkeyRateLimiter:
         limit: int | None = None,
         window_seconds: int | None = None,
         key_prefix: str | None = None,
+        client: ValkeyClient | None = None,
     ) -> FixedWindowValkeyRateLimiter | None:
         if not settings.public_rate_limit_enabled:
             return None
 
-        socket_timeout = settings.public_rate_limit_valkey_socket_timeout_seconds
-        if settings.public_rate_limit_valkey_url:
-            client = Redis.from_url(
-                normalize_valkey_url(settings.public_rate_limit_valkey_url),
-                db=settings.public_rate_limit_valkey_db,
-                password=settings.public_rate_limit_valkey_password or None,
-                socket_timeout=socket_timeout,
-                socket_connect_timeout=socket_timeout,
-                socket_keepalive=True,
-                decode_responses=True,
-            )
-        else:
-            sentinels = parse_sentinels(
-                settings.public_rate_limit_valkey_sentinels,
-                setting_name="public_rate_limit_valkey_sentinels",
-            )
-            sentinel_password = settings.public_rate_limit_valkey_sentinel_password or None
-            redis_password = settings.public_rate_limit_valkey_password or None
-            sentinel_kwargs = {"password": sentinel_password} if sentinel_password else None
-            sentinel = Sentinel(
-                sentinels,
-                socket_timeout=socket_timeout,
-                sentinel_kwargs=sentinel_kwargs,
-            )
-            client = sentinel.master_for(
-                settings.public_rate_limit_valkey_sentinel_service.strip() or "valkey",
-                db=settings.public_rate_limit_valkey_db,
-                password=redis_password,
-                socket_timeout=socket_timeout,
-                socket_connect_timeout=socket_timeout,
-                socket_keepalive=True,
-                decode_responses=True,
+        if client is None:
+            client = create_async_valkey_client(
+                connection_config_from_settings(
+                    settings,
+                    db=settings.public_rate_limit_valkey_db,
+                    socket_timeout_seconds=(
+                        settings.public_rate_limit_valkey_socket_timeout_seconds
+                    ),
+                    max_connections=settings.public_rate_limit_valkey_max_connections,
+                )
             )
 
         return cls(

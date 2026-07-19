@@ -13,9 +13,8 @@ from app.core.rate_limit import (
     client_identifier,
     is_public_rate_limited_request,
     is_skill_telemetry_rate_limited_request,
-    normalize_valkey_url,
-    parse_sentinels,
 )
+from app.core.valkey import normalize_valkey_url, parse_sentinels
 
 
 class FakeValkey:

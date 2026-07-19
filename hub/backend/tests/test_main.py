@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.core.config import APP_VERSION
+from app import main
+from app.core.config import APP_VERSION, Settings
 from app.main import create_app
 
 
@@ -43,3 +44,35 @@ def test_root_docs_routes_redirect_to_versioned_docs_ui() -> None:
     assert docs.headers["location"] == "/api/v1/docs"
     assert redoc.status_code == 307
     assert redoc.headers["location"] == "/api/v1/redoc"
+
+
+def test_valkey_resources_use_bounded_shared_pools(monkeypatch) -> None:
+    settings = Settings(
+        environment="local",
+        api_prefix="/api/v1",
+        log_level="INFO",
+        api_token_secret="test-token-secret",
+        api_token_prefix="wardn_hub",
+        session_cookie_name="wardn_hub_session",
+        session_secret="test-session-secret",
+        session_ttl_seconds=43200,
+        registry_public_base_url="http://localhost:3000",
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/wardn_hub",
+        valkey_url="valkey://localhost:6379",
+        public_rate_limit_enabled=True,
+        cache_enabled=True,
+    )
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+
+    app = main.create_app()
+
+    assert app.state.public_rate_limiter.client is app.state.skill_telemetry_rate_limiter.client
+    assert app.state.cache.client is not app.state.public_rate_limiter.client
+    assert app.state.public_rate_limiter.client.connection_pool.connection_kwargs["db"] == 5
+    assert app.state.public_rate_limiter.client.connection_pool.max_connections == 10
+    assert app.state.cache.client.connection_pool.connection_kwargs["db"] == 6
+    assert app.state.cache.client.connection_pool.max_connections == 10
+    assert app.state.managed_valkey_resources == [
+        app.state.public_rate_limiter,
+        app.state.cache,
+    ]

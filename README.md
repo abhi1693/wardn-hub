@@ -252,6 +252,12 @@ stored. The cache accepts responses up to 2 MiB and is pruned to 4,096 entries
 and 64 MiB. Cache load or persistence failures are non-fatal and fall back to
 ordinary GitHub requests.
 
+Public skill-search responses can be cached in Valkey by enabling
+`WARDN_HUB_CACHE_ENABLED`. The API stores only final serialized response bytes
+with native Valkey TTLs; it keeps no local entry cache, bounds both payload size
+and connection pools, and treats cache failures as misses. Cache keys are
+environment-scoped, versioned, and hash all query material.
+
 Refresh existing skills from their recorded branch and exact source path:
 
 ```sh
@@ -314,7 +320,9 @@ high-entropy session and API-token keys.
 | `WARDN_HUB_SKILL_AUDIT_ENABLED` | Master gate for skill auditing and audit exposure |
 | `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` | Separate gate for the scanner's semantic LLM analyzer |
 | `SKILL_SCANNER_LLM_*` | LLM provider, model, key, endpoint, API version, and temperature |
+| `WARDN_HUB_VALKEY_*` | Shared direct or Sentinel Valkey connection used by bounded remote state clients |
 | `WARDN_HUB_PUBLIC_RATE_LIMIT_*` | Valkey-backed public API and telemetry rate limiting |
+| `WARDN_HUB_CACHE_*` | Stateless Valkey response caching, including DB, TTL, value, timeout, and connection bounds |
 | `WARDN_HUB_OTEL_*` | OpenTelemetry service, exporter, resource, and sampling settings |
 
 Frontend routing and metadata use:

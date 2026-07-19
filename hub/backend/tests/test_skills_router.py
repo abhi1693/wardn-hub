@@ -190,6 +190,64 @@ def test_search_skills_rejects_short_queries() -> None:
     assert response.status_code == 422
 
 
+def test_search_skills_replays_serialized_valkey_response(monkeypatch) -> None:
+    class FakeRemoteCache:
+        def __init__(self) -> None:
+            self.values: dict[str, bytes] = {}
+            self.set_calls = 0
+
+        async def get(self, key: str) -> bytes | None:
+            return self.values.get(key)
+
+        async def set(
+            self,
+            key: str,
+            value: bytes,
+            *,
+            ttl_seconds: int | None = None,
+        ) -> bool:
+            assert ttl_seconds is None
+            self.set_calls += 1
+            self.values[key] = value
+            return True
+
+    service_calls = 0
+
+    async def search_skills(*args, **kwargs):
+        nonlocal service_calls
+        service_calls += 1
+        return SkillSearchResponse(
+            data=[skill_read("remote-cache")],
+            query=kwargs["query"],
+            searchType="lexical",
+            count=1,
+            hasMore=False,
+            nextCursor=None,
+            durationMs=3,
+            auditEnabled=True,
+        )
+
+    monkeypatch.setattr(router, "search_skills", search_skills)
+    app = create_app()
+    cache = FakeRemoteCache()
+    app.state.cache = cache
+    client = TestClient(app)
+
+    miss = client.get("/api/v1/skills/search?q=Remote%20Cache&limit=5")
+    hit = client.get("/api/v1/skills/search?q=remote%20cache&limit=5")
+
+    assert miss.status_code == 200
+    assert miss.headers["X-Cache"] == "MISS"
+    assert hit.status_code == 200
+    assert hit.headers["X-Cache"] == "HIT"
+    assert hit.content == miss.content
+    assert hit.json()["data"][0]["slug"] == "remote-cache"
+    assert service_calls == 1
+    assert cache.set_calls == 1
+    assert len(cache.values) == 1
+    assert "remote" not in next(iter(cache.values))
+
+
 def test_official_skills_groups_by_owner(monkeypatch) -> None:
     generated_at = datetime(2026, 7, 10, tzinfo=UTC)
 

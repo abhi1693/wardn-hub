@@ -1,8 +1,9 @@
-from typing import Annotated
+from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import ByteCache, cache_key
 from app.core.router import bad_request, not_found
 from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
@@ -27,6 +28,7 @@ from app.modules.skills.service import (
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"])
+SKILL_SEARCH_CACHE_VERSION = 1
 
 
 @router.get("", response_model=SkillListResponse, operation_id="skills_list")
@@ -64,6 +66,7 @@ async def list_skill_catalog(
 
 @router.get("/search", response_model=SkillSearchResponse, operation_id="skills_search")
 async def search_skill_catalog(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     q: Annotated[str, Query(min_length=3, max_length=200)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -74,9 +77,31 @@ async def search_skill_catalog(
     ] = None,
     official: bool | None = None,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
-) -> SkillSearchResponse:
+) -> Response:
+    cache = cast(ByteCache | None, getattr(request.app.state, "cache", None))
+    key = cache_key(
+        "skill-search",
+        version=SKILL_SEARCH_CACHE_VERSION,
+        material={
+            "auditEnabled": request.app.state.settings.skill_audit_enabled,
+            "auditStatus": (audit_status or "").strip().lower(),
+            "cursor": cursor or "",
+            "limit": limit,
+            "official": official,
+            "owner": (owner or "").strip().casefold(),
+            "query": q.strip().casefold(),
+        },
+    )
+    if cache is not None:
+        cached = await cache.get(key)
+        if cached is not None:
+            return Response(
+                content=cached,
+                media_type="application/json",
+                headers={"X-Cache": "HIT"},
+            )
     try:
-        return await search_skills(
+        result = await search_skills(
             session,
             query=q,
             limit=limit,
@@ -87,6 +112,14 @@ async def search_skill_catalog(
         )
     except ValueError as exc:
         raise bad_request(exc, detail=str(exc)) from exc
+    body = result.model_dump_json(by_alias=True).encode("utf-8")
+    if cache is not None:
+        await cache.set(key, body)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"X-Cache": "MISS" if cache is not None else "BYPASS"},
+    )
 
 
 @router.get("/official", response_model=SkillOfficialResponse, operation_id="skills_official")

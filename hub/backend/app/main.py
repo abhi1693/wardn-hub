@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app.api.router import api_router
+from app.core.cache import ValkeyByteCache
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.rate_limit import (
@@ -24,8 +25,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        for rate_limiter in getattr(app.state, "rate_limiters", []):
-            await rate_limiter.close()
+        for resource in getattr(app.state, "managed_valkey_resources", []):
+            await resource.close()
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
         redoc_url=f"{settings.api_prefix}/redoc",
         lifespan=lifespan,
     )
+    app.state.settings = settings
 
     @app.get("/docs", include_in_schema=False)
     async def docs_redirect() -> RedirectResponse:
@@ -49,6 +51,7 @@ def create_app() -> FastAPI:
         return RedirectResponse(f"{settings.api_prefix}/redoc")
 
     rate_limiter = FixedWindowValkeyRateLimiter.from_settings(settings)
+    managed_valkey_resources = []
     if rate_limiter is not None:
         app.state.public_rate_limiter = rate_limiter
         telemetry_rate_limiter = FixedWindowValkeyRateLimiter.from_settings(
@@ -56,9 +59,10 @@ def create_app() -> FastAPI:
             limit=settings.skill_telemetry_rate_limit_requests,
             window_seconds=settings.skill_telemetry_rate_limit_window_seconds,
             key_prefix=settings.skill_telemetry_rate_limit_key_prefix,
+            client=rate_limiter.client,
         )
         app.state.skill_telemetry_rate_limiter = telemetry_rate_limiter
-        app.state.rate_limiters = [rate_limiter, telemetry_rate_limiter]
+        managed_valkey_resources.append(rate_limiter)
         app.add_middleware(
             PublicAPIRateLimitMiddleware,
             settings=settings,
@@ -69,6 +73,13 @@ def create_app() -> FastAPI:
             settings=settings,
             limiter=telemetry_rate_limiter,
         )
+
+    app.state.cache = None
+    if settings.cache_enabled:
+        cache = ValkeyByteCache.from_settings(settings)
+        app.state.cache = cache
+        managed_valkey_resources.append(cache)
+    app.state.managed_valkey_resources = managed_valkey_resources
 
     app.add_middleware(
         CORSMiddleware,

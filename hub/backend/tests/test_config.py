@@ -386,12 +386,18 @@ def test_public_rate_limit_defaults_to_disabled(monkeypatch) -> None:
     assert settings.public_rate_limit_valkey_db == 5
     assert settings.skill_telemetry_rate_limit_requests == 20
     assert settings.skill_telemetry_rate_limit_window_seconds == 60
+    assert settings.cache_enabled is False
+    assert settings.cache_valkey_db == 6
+    assert settings.cache_default_ttl_seconds == 60
+    assert settings.cache_max_value_bytes == 1024 * 1024
+    assert settings.cache_command_timeout_seconds == 0.25
+    assert settings.cache_max_connections == 10
 
 
 def test_public_rate_limit_requires_valkey_when_enabled(monkeypatch) -> None:
     set_required_settings(monkeypatch, {"WARDN_HUB_PUBLIC_RATE_LIMIT_ENABLED": "true"})
 
-    with pytest.raises(ValidationError, match="public_rate_limit_valkey"):
+    with pytest.raises(ValidationError, match="Valkey connection settings"):
         Settings(_env_file=None)
 
 
@@ -408,6 +414,53 @@ def test_public_rate_limit_accepts_valkey_sentinels_when_enabled(monkeypatch) ->
 
     assert settings.public_rate_limit_enabled is True
     assert settings.public_rate_limit_valkey_sentinels == "valkey.valkey.svc:26379"
+
+
+def test_cache_requires_valkey_when_enabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch, {"WARDN_HUB_CACHE_ENABLED": "true"})
+
+    with pytest.raises(ValidationError, match="Valkey connection settings"):
+        Settings(_env_file=None)
+
+
+def test_cache_accepts_generic_valkey_sentinels(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_CACHE_ENABLED": "true",
+            "WARDN_HUB_VALKEY_SENTINELS": "valkey.valkey.svc:26379",
+        },
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cache_enabled is True
+    assert settings.valkey_sentinels == "valkey.valkey.svc:26379"
+
+
+def test_cache_bounds_value_size_and_connections(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_CACHE_ENABLED": "true",
+            "WARDN_HUB_VALKEY_URL": "valkey://localhost:6379",
+            "WARDN_HUB_CACHE_MAX_VALUE_BYTES": str(9 * 1024 * 1024),
+        },
+    )
+    with pytest.raises(ValidationError, match="8 MiB"):
+        Settings(_env_file=None)
+
+    monkeypatch.setenv("WARDN_HUB_CACHE_MAX_VALUE_BYTES", str(1024 * 1024))
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_CACHE_ENABLED": "true",
+            "WARDN_HUB_VALKEY_URL": "valkey://localhost:6379",
+            "WARDN_HUB_CACHE_MAX_CONNECTIONS": "101",
+        },
+    )
+    with pytest.raises(ValidationError, match="100"):
+        Settings(_env_file=None)
 
 
 def test_public_rate_limit_values_must_be_positive(monkeypatch) -> None:
