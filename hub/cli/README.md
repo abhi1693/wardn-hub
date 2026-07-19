@@ -15,7 +15,7 @@ npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug --json
 ```
 
 These examples use the latest published release. Append an exact version, for
-example `@wardn-ai/skills@0.1.6`, when you want to pin the CLI.
+example `@wardn-ai/skills@0.1.7`, when you want to pin the CLI.
 
 `search` returns a bounded compact result set including current audit status; its
 `installs` value is a weak popularity signal because temporary materializations

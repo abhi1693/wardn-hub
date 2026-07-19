@@ -20,7 +20,6 @@ FROM base AS runner
 
 ENV HOSTNAME=0.0.0.0 \
     NODE_ENV=production \
-    NODE_OPTIONS=--max-old-space-size=2048 \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     WARDN_HUB_API_INTERNAL_BASE_URL=http://localhost:8000
