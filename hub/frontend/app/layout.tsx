@@ -20,16 +20,16 @@ export const metadata: Metadata = {
   applicationName: siteConfig.name,
   description: siteConfig.description,
   icons: {
-    apple: [{ sizes: "180x180", type: "image/png", url: "/apple-touch-icon.png" }],
+    apple: [{ sizes: "180x180", type: "image/png", url: "/wardn-brand-180x180.png" }],
     icon: [
-      { url: "/favicon.ico" },
-      { sizes: "16x16", type: "image/png", url: "/favicon-16x16.png" },
-      { sizes: "32x32", type: "image/png", url: "/favicon-32x32.png" },
+      { url: "/wardn-brand-favicon.ico" },
+      { sizes: "16x16", type: "image/png", url: "/wardn-brand-16x16.png" },
+      { sizes: "32x32", type: "image/png", url: "/wardn-brand-32x32.png" },
     ],
-    shortcut: ["/favicon.ico"],
+    shortcut: ["/wardn-brand-favicon.ico"],
   },
   keywords: [...siteConfig.keywords],
-  manifest: "/site.webmanifest",
+  manifest: "/wardn-brand.webmanifest",
   metadataBase: new URL(siteConfig.url),
   openGraph: {
     description: siteConfig.description,
@@ -63,7 +63,7 @@ export const metadata: Metadata = {
   },
   other: {
     "msapplication-TileColor": "#0f172a",
-    "msapplication-TileImage": "/mstile-150x150.png",
+    "msapplication-TileImage": "/wardn-brand-mstile-150x150.png",
   },
 };
 
