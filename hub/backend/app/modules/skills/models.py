@@ -40,6 +40,7 @@ class Skill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     install_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     website_url: Mapped[str] = mapped_column(String(2048), default="", nullable=False)
     repository: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    repository_subfolder: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     owner_organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -54,6 +55,16 @@ class Skill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+
+
+Index(
+    "uq_skills_source_repository_subfolder",
+    Skill.source_type,
+    func.lower(Skill.source),
+    Skill.repository_subfolder,
+    unique=True,
+    postgresql_where=Skill.repository_subfolder.is_not(None),
+)
 
 
 class SkillSourceOwner(UUIDPrimaryKeyMixin, TimestampMixin, Base):

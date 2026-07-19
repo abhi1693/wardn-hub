@@ -1,6 +1,6 @@
-import Image from "next/image";
 import Link from "next/link";
 
+import { BrandMark } from "@/components/brand-mark";
 import { siteConfig } from "@/lib/site";
 
 const footerSections = [
@@ -75,13 +75,7 @@ export function SiteFooter() {
       <div className="site-footer-inner">
         <div className="site-footer-brand">
           <Link className="site-footer-brand-link" href="/">
-            <Image
-              alt=""
-              aria-hidden="true"
-              height={28}
-              src="/icon-192x192.png"
-              width={28}
-            />
+            <BrandMark className="site-footer-brand-mark" sizes="28px" />
             <strong>{siteConfig.name}</strong>
           </Link>
           <span>{siteConfig.tagline}</span>

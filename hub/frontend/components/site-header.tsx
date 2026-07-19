@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -20,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { currentSession, logout, setApiToken } from "@/lib/api/hub";
 import type { UserRead } from "@/lib/api/generated/model";
+import { BrandMark } from "@/components/brand-mark";
 
 type HeaderItem = {
   active?: boolean;
@@ -58,24 +58,10 @@ function canManagePartners(user: UserRead | null) {
   return Boolean(user?.is_superuser || user?.is_global_partner_manager);
 }
 
-function BrandMark() {
-  return (
-    <Image
-      alt=""
-      aria-hidden="true"
-      className="site-brand-mark"
-      height={32}
-      priority
-      src="/icon-192x192.png"
-      width={32}
-    />
-  );
-}
-
 function HeaderBrand({ href, onClick }: { href: string; onClick?: () => void }) {
   const content = (
     <>
-      <BrandMark />
+      <BrandMark className="site-brand-mark" priority sizes="30px" />
       <span className="site-brand-text">Wardn Hub</span>
     </>
   );

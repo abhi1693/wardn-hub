@@ -49,6 +49,7 @@ GITHUB_ERROR_BODY_MAX_CHARS = 1000
 DEFAULT_USER_AGENT = "WardnHubSkillsImporter/0.1"
 DEFAULT_IMPORT_TIMEOUT_SECONDS = 20.0
 MAX_LOGGED_SKILL_PATHS = 20
+MAX_SKILL_SLUG_LENGTH = 200
 MAX_SKILL_BUNDLE_FILES = 256
 MAX_SKILL_FILE_BYTES = 8 * 1024 * 1024
 MAX_SKILL_BUNDLE_BYTES = 16 * 1024 * 1024
@@ -176,7 +177,7 @@ class SkillAddInput:
     install_url: str = ""
     website_url: str = ""
     repository_url: str = ""
-    repository_subfolder: str = ""
+    repository_subfolder: str | None = None
     repository_ref: str = ""
 
 
@@ -891,7 +892,7 @@ def repository_payload(payload: SkillAddInput) -> dict[str, str]:
         "source": payload.source_type,
         "url": payload.repository_url,
     }
-    if payload.repository_subfolder:
+    if payload.repository_subfolder is not None:
         repository["subfolder"] = payload.repository_subfolder
     if payload.repository_ref:
         repository["branch"] = payload.repository_ref
@@ -969,13 +970,17 @@ async def add_skill(
     if payload.source_type == "github":
         source_filter = func.lower(Skill.source) == payload.source.lower()
     skill: Skill | None = None
-    if preserve_catalog_state and payload.repository_subfolder:
+    has_repository_identity = (
+        preserve_catalog_state
+        and payload.source_type == "github"
+        and payload.repository_subfolder is not None
+    )
+    if has_repository_identity:
         result = await session.execute(
             select(Skill).where(
                 Skill.source_type == payload.source_type,
                 source_filter,
-                Skill.repository["subfolder"].as_string()
-                == payload.repository_subfolder,
+                Skill.repository_subfolder == payload.repository_subfolder,
             )
         )
         skill = result.scalar_one_or_none()
@@ -989,18 +994,29 @@ async def add_skill(
             )
         )
         skill = result.scalar_one_or_none()
-        if skill is not None and preserve_catalog_state and payload.repository_subfolder:
-            existing_repository = skill.repository
-            existing_subfolder = (
-                existing_repository.get("subfolder")
-                if isinstance(existing_repository, dict)
-                else None
-            )
-            if existing_subfolder and existing_subfolder != payload.repository_subfolder:
-                raise SkillCliError(
-                    f"skill slug {payload.slug} already belongs to repository subfolder "
-                    f"{existing_subfolder}"
+        if skill is not None and has_repository_identity:
+            existing_subfolder = skill.repository_subfolder
+            if existing_subfolder != payload.repository_subfolder:
+                skill_path = (
+                    f"{payload.repository_subfolder}/SKILL.md"
+                    if payload.repository_subfolder
+                    else "SKILL.md"
                 )
+                collision_slug = repository_collision_slug(payload.slug, skill_path)
+                result = await session.execute(
+                    select(Skill).where(
+                        Skill.source_type == payload.source_type,
+                        source_filter,
+                        Skill.slug == collision_slug,
+                    )
+                )
+                collision_owner = result.scalar_one_or_none()
+                if collision_owner is not None:
+                    raise SkillCliError(
+                        f"deterministic skill slug {collision_slug} is already in use"
+                    )
+                payload = replace(payload, slug=collision_slug)
+                skill = None
     if skill is None:
         skill = Skill(
             source_type=payload.source_type,
@@ -1016,6 +1032,7 @@ async def add_skill(
             install_url=payload.install_url,
             website_url=payload.website_url,
             repository=repository_payload(payload),
+            repository_subfolder=payload.repository_subfolder,
             installs=0,
             status="active",
             visibility="public",
@@ -1033,6 +1050,8 @@ async def add_skill(
         skill.install_url = payload.install_url
         skill.website_url = payload.website_url
         skill.repository = repository_payload(payload)
+        if payload.repository_subfolder is not None:
+            skill.repository_subfolder = payload.repository_subfolder
         if not preserve_catalog_state:
             skill.status = "active"
             skill.visibility = "public"
@@ -1751,6 +1770,7 @@ class GitHubClient:
             created_end=created_end,
             stats=stats,
             budget=GitHubSearchBudget(remaining=None),
+            count_active=False,
         ):
             if budget.exhausted:
                 return
@@ -1763,6 +1783,7 @@ class GitHubClient:
                 continue
             if not budget.consume():
                 return
+            stats.active_repository_count += 1
             yield repository
 
     async def _search_repository_window(
@@ -1774,6 +1795,7 @@ class GitHubClient:
         created_end: datetime,
         stats: GitHubDiscoveryStats,
         budget: GitHubSearchBudget,
+        count_active: bool = True,
     ) -> AsyncIterator[GitHubImportRepository]:
         if budget.exhausted:
             return
@@ -1813,6 +1835,7 @@ class GitHubClient:
                 created_end=midpoint,
                 stats=stats,
                 budget=budget,
+                count_active=count_active,
             ):
                 yield repository
             async for repository in self._search_repository_window(
@@ -1822,6 +1845,7 @@ class GitHubClient:
                 created_end=created_end,
                 stats=stats,
                 budget=budget,
+                count_active=count_active,
             ):
                 yield repository
             return
@@ -1857,7 +1881,8 @@ class GitHubClient:
                         continue
                 if not budget.consume():
                     return
-                stats.active_repository_count += 1
+                if count_active:
+                    stats.active_repository_count += 1
                 yield candidate
 
     async def iter_repositories(
@@ -2746,6 +2771,7 @@ async def import_skill_from_github_path(
     owner_avatar_url: str,
     import_subfolder: str,
     bundle_items: list[GitHubTreeItem] | None = None,
+    resolved_slug: str | None = None,
 ) -> ImportedSkill:
     root = skill_root_from_skill_path(skill_path)
     skill_md, files, bundle_size = await fetch_skill_bundle(
@@ -2756,12 +2782,13 @@ async def import_skill_from_github_path(
         skill_path=skill_path,
         items=bundle_items,
     )
-    _root, name, slug, description = skill_import_metadata(
+    _root, name, derived_slug, description = skill_import_metadata(
         repo=repo,
         skill_path=skill_path,
         import_subfolder=import_subfolder,
         skill_md=skill_md,
     )
+    slug = validate_skill_slug(resolved_slug or derived_slug)
     repository_url = f"{repo.url}/tree/{fetch_ref}"
     if root:
         encoded_root = "/".join(quote(part, safe="") for part in root.split("/"))
@@ -2831,6 +2858,42 @@ def validate_unique_planned_skill_slugs(planned: list[PlannedSkillImport]) -> No
                 f"{previous_path}, {item.skill_path}"
             )
         paths_by_slug[item.slug] = item.skill_path
+
+
+def repository_collision_slug(slug: str, skill_path: str) -> str:
+    source_root = skill_root_from_skill_path(skill_path)
+    suffix = hashlib.sha256(source_root.encode("utf-8")).hexdigest()
+    maximum_prefix_length = MAX_SKILL_SLUG_LENGTH - len(suffix) - 1
+    prefix = slug[:maximum_prefix_length].rstrip("-_") or "skill"
+    return validate_skill_slug(f"{prefix}-{suffix}")
+
+
+def disambiguate_planned_skill_slugs(
+    planned: list[PlannedSkillImport],
+) -> tuple[list[PlannedSkillImport], dict[str, list[str]]]:
+    paths_by_slug: dict[str, list[str]] = {}
+    for item in planned:
+        paths_by_slug.setdefault(item.slug, []).append(item.skill_path)
+
+    collisions = {
+        slug: paths
+        for slug, paths in paths_by_slug.items()
+        if len(paths) > 1
+    }
+    if not collisions:
+        return planned, {}
+
+    resolved = [
+        replace(
+            item,
+            slug=repository_collision_slug(item.slug, item.skill_path),
+        )
+        if item.slug in collisions
+        else item
+        for item in planned
+    ]
+    validate_unique_planned_skill_slugs(resolved)
+    return resolved, collisions
 
 
 async def call_optional_session_method(session: object, name: str) -> None:
@@ -3219,19 +3282,25 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
 
             if repository_failed or not planned_skill_imports:
                 continue
-            try:
-                validate_unique_planned_skill_slugs(planned_skill_imports)
-            except SkillCliError as exc:
-                failed_repository_count += 1
+            planned_skill_imports, slug_collisions = disambiguate_planned_skill_slugs(
+                planned_skill_imports
+            )
+            if slug_collisions:
                 logger.warning(
-                    "github skills import repository failed",
+                    "github skills import slug collisions disambiguated",
                     extra={
                         **repo_context,
                         "resolved_ref": resolved_ref,
-                        "failure_reason": str(exc),
+                        "collision_group_count": len(slug_collisions),
+                        "collision_skill_count": sum(
+                            len(paths) for paths in slug_collisions.values()
+                        ),
+                        "collision_slugs": list(slug_collisions)[:MAX_LOGGED_SKILL_PATHS],
+                        "collision_slugs_truncated": (
+                            len(slug_collisions) > MAX_LOGGED_SKILL_PATHS
+                        ),
                     },
                 )
-                continue
 
             saved_records: list[SavedImportedSkill] = []
             repository_bytes = 0
@@ -3255,6 +3324,7 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                                 or candidate.owner_avatar_url,
                                 import_subfolder=subfolder,
                                 bundle_items=bundle_items,
+                                resolved_slug=planned_skill.slug,
                             )
                             repository_bytes = checked_github_import_size(
                                 repository_bytes,

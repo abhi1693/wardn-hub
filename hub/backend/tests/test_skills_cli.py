@@ -859,7 +859,7 @@ async def test_github_recursive_topic_discovery_uses_repository_search_then_skil
         ("filename:SKILL.md repo:acme/without-skill path:skills", 1),
         ("filename:SKILL.md repo:acme/with-skill path:skills", 1),
     ]
-    assert stats.active_repository_count == 2
+    assert stats.active_repository_count == 1
     assert stats.filtered_repository_count == 1
 
 
@@ -923,7 +923,7 @@ async def test_github_recursive_repo_name_discovery_uses_repository_search_then_
         ("filename:SKILL.md repo:acme/agent-skills path:skills", 1),
         ("filename:SKILL.md repo:acme/prompt-skills path:skills", 1),
     ]
-    assert stats.active_repository_count == 2
+    assert stats.active_repository_count == 1
     assert stats.filtered_repository_count == 1
 
 
@@ -3231,6 +3231,46 @@ def test_import_github_rejects_duplicate_derived_slugs() -> None:
         skills.validate_unique_imported_skill_slugs(imported)  # type: ignore[arg-type]
 
 
+def test_repository_slug_collisions_are_disambiguated_deterministically() -> None:
+    planned = [
+        skills.PlannedSkillImport(
+            skill_path="composio-skills/google-admin-automation/SKILL.md",
+            slug="composio-skills-google-admin-automation",
+        ),
+        skills.PlannedSkillImport(
+            skill_path="composio-skills/google_admin-automation/SKILL.md",
+            slug="composio-skills-google-admin-automation",
+        ),
+        skills.PlannedSkillImport(
+            skill_path="skills/weather/SKILL.md",
+            slug="skills-weather",
+        ),
+    ]
+
+    resolved, collisions = skills.disambiguate_planned_skill_slugs(planned)
+    reversed_resolved, _ = skills.disambiguate_planned_skill_slugs(
+        list(reversed(planned))
+    )
+
+    slugs_by_path = {item.skill_path: item.slug for item in resolved}
+    reversed_slugs_by_path = {item.skill_path: item.slug for item in reversed_resolved}
+    assert collisions == {
+        "composio-skills-google-admin-automation": [
+            "composio-skills/google-admin-automation/SKILL.md",
+            "composio-skills/google_admin-automation/SKILL.md",
+        ]
+    }
+    assert slugs_by_path == reversed_slugs_by_path
+    assert slugs_by_path["skills/weather/SKILL.md"] == "skills-weather"
+    collision_slugs = {
+        slug
+        for path, slug in slugs_by_path.items()
+        if path.startswith("composio-skills/")
+    }
+    assert len(collision_slugs) == 2
+    assert all(len(slug) <= skills.MAX_SKILL_SLUG_LENGTH for slug in collision_slugs)
+
+
 async def test_owner_import_matches_github_source_case_insensitively_and_preserves_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3254,6 +3294,7 @@ async def test_owner_import_matches_github_source_case_insensitively_and_preserv
             "subfolder": "skills/weather",
             "branch": "main",
         },
+        repository_subfolder="skills/weather",
         status="quarantined",
         visibility="unlisted",
     )
@@ -3307,12 +3348,79 @@ async def test_owner_import_matches_github_source_case_insensitively_and_preserv
     assert result is skill
     assert "pg_advisory_xact_lock" in statements[0]
     assert "lower(skills.source)" in statements[1]
-    assert "skills.repository" in statements[1]
+    assert "skills.repository_subfolder" in statements[1]
     assert skill.source == "Acme/Agent-Skills"
     assert skill.slug == "weather-skill"
     assert skill.status == "quarantined"
     assert skill.visibility == "unlisted"
     assert skill.name == "Weather"
+
+
+async def test_owner_import_disambiguates_slug_occupied_by_another_source_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    occupied = SimpleNamespace(repository_subfolder="skills/old-weather")
+    statements: list[str] = []
+    created: list[object] = []
+
+    class FakeSession:
+        async def execute(self, statement: object) -> SimpleNamespace:
+            statements.append(str(statement))
+            selected = occupied if len(statements) == 3 else None
+            return SimpleNamespace(scalar_one_or_none=lambda: selected)
+
+        def add(self, value: object) -> None:
+            created.append(value)
+
+        async def flush(self) -> None:
+            return None
+
+    async def fake_upsert(
+        session: object,
+        selected_skill: object,
+        *,
+        skill_md: str,
+        files: list[skills.SkillSnapshotFile],
+    ) -> SimpleNamespace:
+        assert selected_skill is created[0]
+        return SimpleNamespace(content_hash="new-hash")
+
+    async def fake_owner_upsert(session: object, payload: skills.SkillAddInput) -> None:
+        return None
+
+    payload = skills.SkillAddInput(
+        source="acme/agent-skills",
+        source_owner="acme",
+        source_name="agent-skills",
+        source_owner_url="https://github.com/acme",
+        source_owner_icon_url="",
+        source_url="https://github.com/acme/agent-skills",
+        slug="weather",
+        name="Weather",
+        description="Weather APIs",
+        skill_md="# Weather",
+        files=[{"path": "SKILL.md", "contents": "# Weather"}],
+        repository_url="https://github.com/acme/agent-skills",
+        repository_subfolder="skills/new-weather",
+        repository_ref="main",
+    )
+    monkeypatch.setattr(skills, "upsert_skill_snapshot", fake_upsert)
+    monkeypatch.setattr(skills, "upsert_source_owner_metadata", fake_owner_upsert)
+
+    skill, _snapshot = await skills.add_skill(
+        FakeSession(),  # type: ignore[arg-type]
+        payload,
+        preserve_catalog_state=True,
+    )
+
+    expected_slug = skills.repository_collision_slug(
+        "weather",
+        "skills/new-weather/SKILL.md",
+    )
+    assert skill.slug == expected_slug
+    assert skill.repository_subfolder == "skills/new-weather"
+    assert len(created) == 1
+    assert len(statements) == 4
 
 
 async def test_import_github_ignores_nested_invalid_skill_and_commits_exact_subfolder(
@@ -3538,6 +3646,123 @@ async def test_import_github_commits_recursive_skills_once_per_repository(
     assert rollbacks == 0
     assert expunges == 2
     assert saved_paths == ["skills/one", "skills/two"]
+
+
+async def test_import_github_imports_same_repository_slug_collisions(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill_paths = [
+        "composio-skills/google-admin-automation/SKILL.md",
+        "composio-skills/google_admin-automation/SKILL.md",
+        "skills/weather/SKILL.md",
+    ]
+
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def list_active_repositories(
+            self,
+            owner: str,
+        ) -> skills.GitHubRepositoryListing:
+            return repository_listing(import_repository("agent-skills"))
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            return skills.GitHubRepositoryMetadata(
+                default_branch="main",
+                owner_avatar_url="",
+            )
+
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            return RESOLVED_COMMIT_SHA
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            return [
+                skills.GitHubTreeItem(path=path, type="blob")
+                for path in skill_paths
+            ]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            return f"---\nname: {Path(path).parent.name}\n---\n"
+
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+        def expunge_all(self) -> None:
+            return None
+
+    saved: list[tuple[str | None, str]] = []
+
+    async def fake_add_skill(
+        session: object,
+        payload: skills.SkillAddInput,
+        *,
+        preserve_catalog_state: bool,
+    ):
+        assert preserve_catalog_state is True
+        saved.append((payload.repository_subfolder, payload.slug))
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash=f"hash-{payload.slug}"),
+        )
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
+    caplog.set_level(logging.INFO, logger=skills.logger.name)
+
+    result = await skills.import_github_from_args(
+        github_import_args(recursive=True, subfolder="")
+    )
+
+    assert result == 0
+    assert [subfolder for subfolder, _slug in saved] == [
+        "composio-skills/google-admin-automation",
+        "composio-skills/google_admin-automation",
+        "skills/weather",
+    ]
+    assert len({slug for _subfolder, slug in saved}) == 3
+    assert dict(saved)["skills/weather"] == "skills-weather"
+    collision_record = next(
+        record
+        for record in caplog.records
+        if record.message == "github skills import slug collisions disambiguated"
+    )
+    assert collision_record.collision_group_count == 1
+    assert collision_record.collision_skill_count == 2
 
 
 async def test_import_github_fails_when_all_discovered_skills_are_invalid(
