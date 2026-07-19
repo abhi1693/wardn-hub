@@ -1,5 +1,6 @@
 import logging
 from argparse import Namespace
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -781,6 +782,26 @@ async def test_github_recursive_code_search_applies_exclusions(
     assert metadata_calls == ["acme/kept"]
     assert stats.filtered_repository_count == 3
     assert stats.active_repository_count == 1
+
+
+@pytest.mark.parametrize("account_type", ["User", "Organization"])
+def test_github_repository_excludes_existing_owner_regardless_of_account_type(
+    account_type: str,
+) -> None:
+    filters = skills.GitHubRepositoryFilters(
+        all_github=True,
+        excluded_existing_owners=frozenset({"acme"}),
+    )
+
+    assert skills.github_repository_excluded(
+        skills.GitHubRepository(
+            owner="Acme",
+            repo="agent-skills",
+            url="https://github.com/Acme/agent-skills",
+        ),
+        account_type,  # type: ignore[arg-type]
+        filters,
+    )
 
 
 async def test_github_recursive_topic_discovery_uses_repository_search_then_skill_probe(
@@ -1730,6 +1751,7 @@ def test_manage_parses_filtered_multi_target_github_import(
             "bad-org",
             "--exclude-user",
             "bad-user",
+            "--exclude-existing-owners",
             "--exclude-repo",
             "bad-org/bad-skills",
             "--exclude-repo-name",
@@ -1753,6 +1775,7 @@ def test_manage_parses_filtered_multi_target_github_import(
     assert called["output"] == "text"
     assert called["excluded_organizations"] == ["bad-org"]
     assert called["excluded_users"] == ["bad-user"]
+    assert called["exclude_existing_owners"] is True
     assert called["excluded_repositories"] == ["bad-org/bad-skills"]
     assert called["excluded_repository_names"] == ["sample"]
     assert called["topics"] == ["agents"]
@@ -1769,6 +1792,38 @@ def test_github_import_filters_require_target_and_validate_ranges() -> None:
     args.max_stars = 10
     with pytest.raises(skills.SkillCliError, match="min-stars"):
         skills.github_repository_filters_from_args(args)
+
+
+async def test_load_existing_github_skill_owners_is_distinct_and_case_insensitive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statements: list[str] = []
+
+    class FakeResult:
+        def scalars(self) -> "FakeResult":
+            return self
+
+        def all(self) -> list[str]:
+            return ["acme", "octocat"]
+
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def execute(self, statement: object) -> FakeResult:
+            statements.append(str(statement))
+            return FakeResult()
+
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+
+    assert await skills.load_existing_github_skill_owners() == frozenset(
+        {"acme", "octocat"}
+    )
+    assert "SELECT DISTINCT lower(skills.source_owner)" in statements[0]
+    assert "skills.source_type" in statements[0]
 
 
 def test_manage_import_github_rejects_missing_or_conflicting_targets() -> None:
@@ -2433,6 +2488,51 @@ async def test_upsert_skill_snapshot_refuses_quarantined_content() -> None:
     assert snapshot.is_latest is False
 
 
+async def test_import_github_merges_auto_detected_existing_owner_exclusions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovered_filters: list[skills.GitHubRepositoryFilters] = []
+
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def iter_repositories(
+            self,
+            filters: skills.GitHubRepositoryFilters,
+            stats: skills.GitHubDiscoveryStats,
+            *,
+            recursive: bool,
+            subfolder: str,
+        ) -> AsyncIterator[skills.GitHubImportRepository]:
+            discovered_filters.append(filters)
+            if False:
+                yield import_repository("unused")
+
+    async def fake_load_existing_owners() -> frozenset[str]:
+        return frozenset({"acme", "octocat"})
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(
+        skills,
+        "load_existing_github_skill_owners",
+        fake_load_existing_owners,
+    )
+    args = github_import_args()
+    args.exclude_existing_owners = True
+
+    assert await skills.import_github_from_args(args) == 1
+    assert discovered_filters[0].excluded_existing_owners == frozenset(
+        {"acme", "octocat"}
+    )
+
+
 async def test_import_github_logs_progress(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
@@ -2569,6 +2669,7 @@ async def test_import_github_logs_progress(
     discovered_record = records[3]
     assert discovered_record.skill_count == 1
     assert discovered_record.skill_paths == ["skills/weather/SKILL.md"]
+    assert records[4].skill_id == "acme/agent-skills/weather"
     assert records[4].skill_file_count == 2
     saved_record = records[5]
     assert saved_record.skill_id == "acme/agent-skills/weather"

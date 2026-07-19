@@ -62,6 +62,53 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "ORDER BY CASE WHEN" in trending_session.statements[-1]
 
 
+async def test_list_skills_applies_identifier_match_and_exact_id_ordering() -> None:
+    class FakeSession:
+        statements: list[str]
+
+        def __init__(self) -> None:
+            self.statements = []
+
+        async def scalar(self, statement: object) -> int:
+            self.statements.append(
+                str(
+                    statement.compile(
+                        dialect=postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
+            return 0
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statements.append(
+                str(
+                    statement.compile(
+                        dialect=postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
+            return SimpleNamespace(
+                scalars=lambda: SimpleNamespace(
+                    unique=lambda: SimpleNamespace(all=list),
+                )
+            )
+
+    session = FakeSession()
+    await repository.list_skills(
+        session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        search="abhi1693/wardn-hub/find-skills",
+    )
+
+    sql = session.statements[-1]
+    assert "skills.source ILIKE 'abhi1693/wardn-hub'" in sql
+    assert "skills.slug ILIKE 'find-skills'" in sql
+    assert "ORDER BY CASE WHEN (lower(skills.source)" in sql
+
+
 async def test_list_skills_filters_by_current_audit_status() -> None:
     class FakeSession:
         statements: list[str]
@@ -149,6 +196,48 @@ def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:
 
     assert "wardn-hub" in str(expression)
     assert "find-skills" in str(expression)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_source"),
+    [
+        ("wardn-hub/find-skills", "wardn-hub"),
+        ("abhi1693/wardn-hub/find-skills", "abhi1693/wardn-hub"),
+    ],
+)
+def test_skill_identifier_search_matches_repository_slug_and_full_id(
+    query: str,
+    expected_source: str,
+) -> None:
+    condition = repository.skill_identifier_condition(query)
+    assert condition is not None
+
+    compiled = str(
+        condition.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    assert f"skills.source ILIKE '{expected_source}'" in compiled
+    assert "skills.slug ILIKE 'find-skills'" in compiled
+    assert "skills.source_name ILIKE" in compiled
+
+
+def test_skill_identifier_search_prioritizes_exact_full_id() -> None:
+    expression = repository.skill_identifier_order(
+        "abhi1693/wardn-hub/find-skills"
+    )
+    assert expression is not None
+
+    compiled = str(
+        expression.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    assert "lower(skills.source) = 'abhi1693/wardn-hub'" in compiled
+    assert "lower(skills.slug) = 'find-skills'" in compiled
+    assert "THEN 0" in compiled
 
 
 @pytest.mark.parametrize(

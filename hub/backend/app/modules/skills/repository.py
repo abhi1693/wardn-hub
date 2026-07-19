@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import Select, String, and_, case, cast, exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.modules.skills.models import (
     Skill,
@@ -92,6 +93,54 @@ def wardn_find_skills_order():
             0,
         ),
         else_=1,
+    )
+
+
+def skill_identifier_parts(search: str) -> tuple[str, str] | None:
+    source_or_repository, separator, slug = search.strip().rpartition("/")
+    if not separator or not source_or_repository or not slug:
+        return None
+    return source_or_repository, slug
+
+
+def skill_identifier_condition(search: str) -> ColumnElement[bool] | None:
+    parts = skill_identifier_parts(search)
+    if parts is None:
+        return None
+    source_or_repository, slug = parts
+    return and_(
+        Skill.slug.ilike(slug),
+        or_(
+            Skill.source.ilike(source_or_repository),
+            Skill.source_name.ilike(source_or_repository),
+            Skill.source.ilike(f"%/{source_or_repository}"),
+        ),
+    )
+
+
+def skill_identifier_order(search: str) -> ColumnElement[int] | None:
+    parts = skill_identifier_parts(search)
+    if parts is None:
+        return None
+    source_or_repository, slug = parts
+    normalized_source = source_or_repository.casefold()
+    normalized_slug = slug.casefold()
+    return case(
+        (
+            and_(
+                func.lower(Skill.source) == normalized_source,
+                func.lower(Skill.slug) == normalized_slug,
+            ),
+            0,
+        ),
+        (
+            and_(
+                func.lower(Skill.source_name) == normalized_source,
+                func.lower(Skill.slug) == normalized_slug,
+            ),
+            1,
+        ),
+        else_=2,
     )
 
 
@@ -188,14 +237,18 @@ async def list_skills(
 
     if search:
         pattern = f"%{search.strip()}%"
-        condition = or_(
+        conditions: list[ColumnElement[bool]] = [
             Skill.name.ilike(pattern),
             Skill.slug.ilike(pattern),
             Skill.source.ilike(pattern),
             Skill.source_owner.ilike(pattern),
             Skill.source_name.ilike(pattern),
             Skill.description.ilike(pattern),
-        )
+        ]
+        identifier_condition = skill_identifier_condition(search)
+        if identifier_condition is not None:
+            conditions.append(identifier_condition)
+        condition = or_(*conditions)
         statement = statement.where(condition)
         total_statement = total_statement.where(condition)
 
@@ -225,8 +278,12 @@ async def list_skills(
         statement = apply_audit_status_filter(statement, audit_status)
         total_statement = apply_audit_status_filter(total_statement, audit_status)
 
+    identifier_order = skill_identifier_order(search) if search else None
+    identifier_ordering = [identifier_order] if identifier_order is not None else []
+
     if view == "all-time":
         statement = statement.order_by(
+            *identifier_ordering,
             wardn_find_skills_order(),
             Skill.installs.desc(),
             Skill.name.asc(),
@@ -247,6 +304,7 @@ async def list_skills(
             recent_installs,
             recent_installs.c.skill_id == Skill.id,
         ).order_by(
+            *identifier_ordering,
             wardn_find_skills_order(),
             func.coalesce(recent_installs.c.recent_installs, 0).desc(),
             Skill.installs.desc(),
@@ -254,7 +312,11 @@ async def list_skills(
             Skill.source.asc(),
         )
     else:
-        statement = statement.order_by(wardn_find_skills_order(), Skill.name.asc())
+        statement = statement.order_by(
+            *identifier_ordering,
+            wardn_find_skills_order(),
+            Skill.name.asc(),
+        )
 
     total = await session.scalar(total_statement)
     result = await session.execute(statement.offset(offset).limit(limit))

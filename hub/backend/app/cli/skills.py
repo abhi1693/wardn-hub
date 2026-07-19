@@ -12,7 +12,7 @@ import sys
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Literal, NotRequired, TypedDict
@@ -253,6 +253,7 @@ class GitHubRepositoryFilters:
     repository_names: tuple[str, ...] = ()
     excluded_organizations: tuple[str, ...] = ()
     excluded_users: tuple[str, ...] = ()
+    excluded_existing_owners: frozenset[str] = frozenset()
     excluded_repositories: tuple[str, ...] = ()
     excluded_repository_names: tuple[str, ...] = ()
     topics: tuple[str, ...] = ()
@@ -1230,6 +1231,8 @@ def github_repository_excluded(
     owner = repo.owner.casefold()
     source = repo.source.casefold()
     repo_name = repo.repo.casefold()
+    if owner in filters.excluded_existing_owners:
+        return True
     if owner_type == "Organization" and owner in {
         organization.casefold() for organization in filters.excluded_organizations
     }:
@@ -2686,6 +2689,7 @@ async def import_skill_from_github_path(
         "github skill import fetched skill file",
         extra={
             "source": repo.source,
+            "skill_id": f"{repo.source}/{slug}",
             "ref": ref,
             "resolved_ref": fetch_ref,
             "source_path": skill_path,
@@ -2752,9 +2756,29 @@ async def save_imported_repository(
     return results
 
 
+async def load_existing_github_skill_owners() -> frozenset[str]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(func.lower(Skill.source_owner))
+            .where(
+                Skill.source_type == "github",
+                Skill.source_owner != "",
+            )
+            .distinct()
+        )
+        owners = [validate_github_owner(owner) for owner in result.scalars().all()]
+    return frozenset(owner.casefold() for owner in owners)
+
+
 async def import_github_from_args(args: argparse.Namespace) -> int:
     configure_github_import_output(str(getattr(args, "output", "json") or "json"))
     filters = github_repository_filters_from_args(args)
+    exclude_existing_owners = bool(getattr(args, "exclude_existing_owners", False))
+    if exclude_existing_owners:
+        filters = replace(
+            filters,
+            excluded_existing_owners=await load_existing_github_skill_owners(),
+        )
     requested_owner = filters.legacy_owners[0] if len(filters.legacy_owners) == 1 else ""
     raw_subfolder = str(getattr(args, "subfolder", "") or "")
     subfolder = validate_import_subfolder(raw_subfolder) if raw_subfolder else ""
@@ -2787,6 +2811,8 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
             "repository_names": filters.repository_names,
             "excluded_organizations": filters.excluded_organizations,
             "excluded_users": filters.excluded_users,
+            "exclude_existing_owners": exclude_existing_owners,
+            "excluded_existing_owner_count": len(filters.excluded_existing_owners),
             "excluded_repositories": filters.excluded_repositories,
             "excluded_repository_names": filters.excluded_repository_names,
             "topics": filters.topics,
@@ -3590,6 +3616,14 @@ def add_import_github_arguments(parser: argparse.ArgumentParser) -> None:
         default=[],
         type=github_owner_argument,
         help="Exclude repositories owned by this GitHub user. Repeat as needed.",
+    )
+    parser.add_argument(
+        "--exclude-existing-owners",
+        action="store_true",
+        help=(
+            "Automatically exclude every GitHub user or organization that already owns "
+            "a skill in Hub."
+        ),
     )
     parser.add_argument(
         "--exclude-repo",
