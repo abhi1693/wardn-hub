@@ -328,6 +328,24 @@ class ImportedSkill:
 
 
 @dataclass(frozen=True)
+class PlannedSkillImport:
+    skill_path: str
+    slug: str
+
+
+@dataclass(frozen=True)
+class SavedImportedSkill:
+    source: str
+    slug: str
+    source_path: str
+    content_hash: str | None
+
+    @property
+    def skill_id(self) -> str:
+        return f"{self.source}/{self.slug}"
+
+
+@dataclass(frozen=True)
 class SkillRefreshTarget:
     skill_id: object
     current_snapshot_id: object | None
@@ -2398,16 +2416,12 @@ async def fetch_skill_bundle(
     if items is None:
         items = skill_bundle_tree_items(tree, skill_path=skill_path)
     skill_item = next(item for item in items if item.path == skill_path)
-    skill_md = await client.raw_file(repo, ref, skill_path)
-    if not skill_md.strip():
-        raise InvalidSkillTextError(skill_path, "GitHub SKILL.md is empty")
-
-    skill_contents = skill_md.encode("utf-8")
-    if len(skill_contents) > MAX_SKILL_FILE_BYTES:
-        raise InvalidSkillBundleError(
-            skill_path,
-            f"skill file exceeds {MAX_SKILL_FILE_BYTES} bytes",
-        )
+    skill_md, skill_contents = await fetch_skill_md(
+        client=client,
+        repo=repo,
+        ref=ref,
+        skill_path=skill_path,
+    )
     skill_file: SkillSnapshotFile = {"path": "SKILL.md", "contents": skill_md}
     if skill_item.mode == "100755":
         skill_file["executable"] = True
@@ -2446,6 +2460,26 @@ async def fetch_skill_bundle(
             f"skill bundle exceeds {MAX_SKILL_BUNDLE_BYTES} bytes",
         )
     return skill_md, files, bundle_size
+
+
+async def fetch_skill_md(
+    *,
+    client: GitHubClient,
+    repo: GitHubRepository,
+    ref: str,
+    skill_path: str,
+) -> tuple[str, bytes]:
+    skill_md = await client.raw_file(repo, ref, skill_path)
+    if not skill_md.strip():
+        raise InvalidSkillTextError(skill_path, "GitHub SKILL.md is empty")
+
+    skill_contents = skill_md.encode("utf-8")
+    if len(skill_contents) > MAX_SKILL_FILE_BYTES:
+        raise InvalidSkillBundleError(
+            skill_path,
+            f"skill file exceeds {MAX_SKILL_FILE_BYTES} bytes",
+        )
+    return skill_md, skill_contents
 
 
 def skill_refresh_target(skill: Skill, current_hash: str | None) -> SkillRefreshTarget:
@@ -2654,6 +2688,53 @@ def discover_skill_paths(
     raise SkillNotFoundError("No SKILL.md found in GitHub repository")
 
 
+def skill_import_metadata(
+    *,
+    repo: GitHubRepository,
+    skill_path: str,
+    import_subfolder: str,
+    skill_md: str,
+) -> tuple[str, str, str, str]:
+    root = skill_root_from_skill_path(skill_path)
+    frontmatter = parse_frontmatter(skill_md)
+    name = (frontmatter.get("name") or Path(root).name or repo.repo).strip()
+    slug = validate_skill_slug(
+        slug_from_skill_root(skill_slug_root(root, import_subfolder), name)
+    )
+    description = (frontmatter.get("description") or "").strip()
+    return root, name, slug, description
+
+
+async def plan_skill_import(
+    *,
+    client: GitHubClient,
+    repo: GitHubRepository,
+    ref: str,
+    tree: list[GitHubTreeItem],
+    skill_path: str,
+    import_subfolder: str,
+    current_repository_bytes: int,
+) -> tuple[PlannedSkillImport, int]:
+    bundle_items = skill_bundle_tree_items(tree, skill_path=skill_path)
+    repository_bytes = checked_github_import_size(
+        current_repository_bytes,
+        sum(item.size for item in bundle_items),
+    )
+    skill_md, _skill_contents = await fetch_skill_md(
+        client=client,
+        repo=repo,
+        ref=ref,
+        skill_path=skill_path,
+    )
+    _root, _name, slug, _description = skill_import_metadata(
+        repo=repo,
+        skill_path=skill_path,
+        import_subfolder=import_subfolder,
+        skill_md=skill_md,
+    )
+    return PlannedSkillImport(skill_path=skill_path, slug=slug), repository_bytes
+
+
 async def import_skill_from_github_path(
     *,
     client: GitHubClient,
@@ -2675,12 +2756,12 @@ async def import_skill_from_github_path(
         skill_path=skill_path,
         items=bundle_items,
     )
-    frontmatter = parse_frontmatter(skill_md)
-    name = (frontmatter.get("name") or Path(root).name or repo.repo).strip()
-    slug = validate_skill_slug(
-        slug_from_skill_root(skill_slug_root(root, import_subfolder), name)
+    _root, name, slug, description = skill_import_metadata(
+        repo=repo,
+        skill_path=skill_path,
+        import_subfolder=import_subfolder,
+        skill_md=skill_md,
     )
-    description = (frontmatter.get("description") or "").strip()
     repository_url = f"{repo.url}/tree/{fetch_ref}"
     if root:
         encoded_root = "/".join(quote(part, safe="") for part in root.split("/"))
@@ -2738,6 +2819,27 @@ def validate_unique_imported_skill_slugs(imported: list[ImportedSkill]) -> None:
                 f"{previous_path}, {item.source_path}"
             )
         paths_by_slug[slug] = item.source_path
+
+
+def validate_unique_planned_skill_slugs(planned: list[PlannedSkillImport]) -> None:
+    paths_by_slug: dict[str, str] = {}
+    for item in planned:
+        previous_path = paths_by_slug.get(item.slug)
+        if previous_path is not None:
+            raise SkillCliError(
+                f"multiple skill paths resolve to slug {item.slug}: "
+                f"{previous_path}, {item.skill_path}"
+            )
+        paths_by_slug[item.slug] = item.skill_path
+
+
+async def call_optional_session_method(session: object, name: str) -> None:
+    method = getattr(session, name, None)
+    if not callable(method):
+        return
+    result = method()
+    if asyncio.iscoroutine(result):
+        await result
 
 
 async def save_imported_repository(
@@ -3057,69 +3159,19 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     "skill_paths_truncated": len(skill_paths) > MAX_LOGGED_SKILL_PATHS,
                 },
             )
-            fetchable_skill_paths: list[str] = []
-            bundle_items_by_path: dict[str, list[GitHubTreeItem]] = {}
+            planned_skill_imports: list[PlannedSkillImport] = []
             attempted_repository_bytes = 0
             repository_failed = False
             for skill_path in skill_paths:
                 try:
-                    bundle_items = skill_bundle_tree_items(
-                        tree,
-                        skill_path=skill_path,
-                    )
-                    attempted_repository_bytes = checked_github_import_size(
-                        attempted_repository_bytes,
-                        sum(item.size for item in bundle_items),
-                    )
-                except InvalidSkillBundleError as exc:
-                    failed_skill_count += 1
-                    logger.warning(
-                        "github skill import skipped invalid skill",
-                        extra={
-                            **repo_context,
-                            "resolved_ref": resolved_ref,
-                            "source_path": skill_path,
-                            "skip_reason": str(exc),
-                        },
-                    )
-                    continue
-                except SkillCliError as exc:
-                    failed_repository_count += 1
-                    repository_failed = True
-                    logger.warning(
-                        "github skills import repository failed",
-                        extra={
-                            **repo_context,
-                            "resolved_ref": resolved_ref,
-                            "source_path": skill_path,
-                            "failure_reason": str(exc),
-                        },
-                    )
-                    break
-                bundle_items_by_path[skill_path] = bundle_items
-                fetchable_skill_paths.append(skill_path)
-
-            if repository_failed or not fetchable_skill_paths:
-                continue
-            imported: list[ImportedSkill] = []
-            repository_bytes = 0
-            for skill_path in fetchable_skill_paths:
-                try:
-                    imported_skill = await import_skill_from_github_path(
+                    planned_skill, attempted_repository_bytes = await plan_skill_import(
                         client=client,
                         repo=repo,
-                        ref=ref,
+                        ref=resolved_ref,
                         tree=tree,
                         skill_path=skill_path,
-                        fetch_ref=resolved_ref,
-                        owner_avatar_url=metadata.owner_avatar_url
-                        or candidate.owner_avatar_url,
                         import_subfolder=subfolder,
-                        bundle_items=bundle_items_by_path[skill_path],
-                    )
-                    repository_bytes = checked_github_import_size(
-                        repository_bytes,
-                        imported_skill.bundle_size,
+                        current_repository_bytes=attempted_repository_bytes,
                     )
                 except (InvalidSkillTextError, InvalidSkillBundleError) as exc:
                     failed_skill_count += 1
@@ -3163,13 +3215,12 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         },
                     )
                     break
-                imported.append(imported_skill)
+                planned_skill_imports.append(planned_skill)
 
-            if repository_failed or not imported:
+            if repository_failed or not planned_skill_imports:
                 continue
             try:
-                validate_unique_imported_skill_slugs(imported)
-                results = await save_imported_repository(imported)
+                validate_unique_planned_skill_slugs(planned_skill_imports)
             except SkillCliError as exc:
                 failed_repository_count += 1
                 logger.warning(
@@ -3181,28 +3232,136 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                     },
                 )
                 continue
-            except Exception:
-                logger.exception(
-                    "github skills import database failed",
-                    extra={
-                        **repo_context,
-                        "resolved_ref": resolved_ref,
-                    },
-                )
-                raise
+
+            saved_records: list[SavedImportedSkill] = []
+            repository_bytes = 0
+            async with AsyncSessionLocal() as session:
+                try:
+                    for planned_skill in planned_skill_imports:
+                        skill_path = planned_skill.skill_path
+                        try:
+                            bundle_items = skill_bundle_tree_items(
+                                tree,
+                                skill_path=skill_path,
+                            )
+                            imported_skill = await import_skill_from_github_path(
+                                client=client,
+                                repo=repo,
+                                ref=ref,
+                                tree=tree,
+                                skill_path=skill_path,
+                                fetch_ref=resolved_ref,
+                                owner_avatar_url=metadata.owner_avatar_url
+                                or candidate.owner_avatar_url,
+                                import_subfolder=subfolder,
+                                bundle_items=bundle_items,
+                            )
+                            repository_bytes = checked_github_import_size(
+                                repository_bytes,
+                                imported_skill.bundle_size,
+                            )
+                        except (InvalidSkillTextError, InvalidSkillBundleError) as exc:
+                            failed_skill_count += 1
+                            logger.warning(
+                                "github skill import skipped invalid skill",
+                                extra={
+                                    **repo_context,
+                                    "resolved_ref": resolved_ref,
+                                    "source_path": skill_path,
+                                    "skip_reason": str(exc),
+                                },
+                            )
+                            continue
+                        except (GitHubSystemicError, httpx.RequestError) as exc:
+                            failed_repository_count += (
+                                active_repository_count - current_repository_index
+                                if discovery_stats.known_repository_count is not None
+                                else 1
+                            )
+                            logger.error(
+                                "github skills import aborted",
+                                extra={
+                                    **repo_context,
+                                    "resolved_ref": resolved_ref,
+                                    "source_path": skill_path,
+                                    "failure_reason": str(exc) or type(exc).__name__,
+                                    "failed_repository_count": failed_repository_count,
+                                },
+                            )
+                            await call_optional_session_method(session, "rollback")
+                            return finish_import()
+                        except SkillCliError as exc:
+                            failed_repository_count += 1
+                            repository_failed = True
+                            logger.warning(
+                                "github skills import repository failed",
+                                extra={
+                                    **repo_context,
+                                    "resolved_ref": resolved_ref,
+                                    "source_path": skill_path,
+                                    "failure_reason": str(exc),
+                                },
+                            )
+                            break
+
+                        try:
+                            skill, snapshot = await add_skill(
+                                session,
+                                imported_skill.payload,
+                                preserve_catalog_state=True,
+                            )
+                            await call_optional_session_method(session, "flush")
+                        except SkillCliError as exc:
+                            failed_repository_count += 1
+                            repository_failed = True
+                            logger.warning(
+                                "github skills import repository failed",
+                                extra={
+                                    **repo_context,
+                                    "resolved_ref": resolved_ref,
+                                    "source_path": skill_path,
+                                    "failure_reason": str(exc),
+                                },
+                            )
+                            break
+
+                        saved_records.append(
+                            SavedImportedSkill(
+                                source=skill.source,
+                                slug=skill.slug,
+                                source_path=imported_skill.source_path,
+                                content_hash=snapshot.content_hash,
+                            )
+                        )
+                        await call_optional_session_method(session, "expunge_all")
+
+                    if repository_failed or not saved_records:
+                        await call_optional_session_method(session, "rollback")
+                        continue
+                    await session.commit()
+                except Exception:
+                    await call_optional_session_method(session, "rollback")
+                    logger.exception(
+                        "github skills import database failed",
+                        extra={
+                            **repo_context,
+                            "resolved_ref": resolved_ref,
+                        },
+                    )
+                    raise
 
             imported_repository_count += 1
-            imported_skill_count += len(results)
+            imported_skill_count += len(saved_records)
             imported_bytes += repository_bytes
-            for skill, snapshot, source_path in results:
+            for saved_record in saved_records:
                 logger.info(
                     "github skill import saved skill",
                     extra={
                         **repo_context,
                         "resolved_ref": resolved_ref,
-                        "skill_id": f"{skill.source}/{skill.slug}",
-                        "source_path": source_path,
-                        "snapshot_hash": snapshot.content_hash,
+                        "skill_id": saved_record.skill_id,
+                        "source_path": saved_record.source_path,
+                        "snapshot_hash": saved_record.content_hash,
                     },
                 )
 

@@ -2981,21 +2981,35 @@ async def test_import_github_continues_after_repository_specific_failure(
 
     saved_sources: list[str] = []
 
-    async def fake_save(
-        imported: list[skills.ImportedSkill],
-    ) -> list[tuple[SimpleNamespace, SimpleNamespace, str]]:
-        item = imported[0]
-        saved_sources.append(item.payload.source)
-        return [
-            (
-                SimpleNamespace(source=item.payload.source, slug=item.payload.slug),
-                SimpleNamespace(content_hash="hash-working"),
-                item.source_path,
-            )
-        ]
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    async def fake_add_skill(
+        session: object,
+        payload: skills.SkillAddInput,
+        *,
+        preserve_catalog_state: bool,
+    ):
+        assert preserve_catalog_state is True
+        saved_sources.append(payload.source)
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash="hash-working"),
+        )
 
     monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
-    monkeypatch.setattr(skills, "save_imported_repository", fake_save)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
 
     result = await skills.import_github_from_args(
         github_import_args(subfolder="skills/working")
@@ -3065,20 +3079,34 @@ async def test_import_github_skips_truncated_tree_without_failing_successful_imp
         ) -> str:
             return "---\nname: Working\n---\n"
 
-    async def fake_save(
-        imported: list[skills.ImportedSkill],
-    ) -> list[tuple[SimpleNamespace, SimpleNamespace, str]]:
-        item = imported[0]
-        return [
-            (
-                SimpleNamespace(source=item.payload.source, slug=item.payload.slug),
-                SimpleNamespace(content_hash="hash-working"),
-                item.source_path,
-            )
-        ]
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    async def fake_add_skill(
+        session: object,
+        payload: skills.SkillAddInput,
+        *,
+        preserve_catalog_state: bool,
+    ):
+        assert preserve_catalog_state is True
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash="hash-working"),
+        )
 
     monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
-    monkeypatch.setattr(skills, "save_imported_repository", fake_save)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
     result = await skills.import_github_from_args(
@@ -3411,6 +3439,107 @@ async def test_import_github_ignores_nested_invalid_skill_and_commits_exact_subf
     assert completed_record.skill_count == 1
     assert completed_record.failed_skill_count == 0
     assert completed_record.matched_repository_count == 1
+
+
+async def test_import_github_commits_recursive_skills_once_per_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeGitHubClient:
+        def __init__(self, *, token: str, timeout_seconds: float) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeGitHubClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def list_active_repositories(
+            self,
+            owner: str,
+        ) -> skills.GitHubRepositoryListing:
+            return repository_listing(import_repository("agent-skills"))
+
+        async def repository_metadata(
+            self,
+            repo: skills.GitHubRepository,
+        ) -> skills.GitHubRepositoryMetadata:
+            return skills.GitHubRepositoryMetadata(default_branch="main", owner_avatar_url="")
+
+        async def resolve_commit_sha(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> str:
+            return RESOLVED_COMMIT_SHA
+
+        async def recursive_tree(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+        ) -> list[skills.GitHubTreeItem]:
+            return [
+                skills.GitHubTreeItem(path="skills/one/SKILL.md", type="blob"),
+                skills.GitHubTreeItem(path="skills/two/SKILL.md", type="blob"),
+            ]
+
+        async def raw_file(
+            self,
+            repo: skills.GitHubRepository,
+            ref: str,
+            path: str,
+        ) -> str:
+            name = "One" if path == "skills/one/SKILL.md" else "Two"
+            return f"---\nname: {name}\ndescription: {name} skill.\n---\n"
+
+    commits = 0
+    rollbacks = 0
+    expunges = 0
+    saved_paths: list[str] = []
+
+    class FakeSessionContext:
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            nonlocal commits
+            commits += 1
+
+        async def rollback(self) -> None:
+            nonlocal rollbacks
+            rollbacks += 1
+
+        def expunge_all(self) -> None:
+            nonlocal expunges
+            expunges += 1
+
+    async def fake_add_skill(
+        session: object,
+        payload: skills.SkillAddInput,
+        *,
+        preserve_catalog_state: bool,
+    ):
+        assert preserve_catalog_state is True
+        saved_paths.append(payload.repository_subfolder)
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash=f"hash-{payload.slug}"),
+        )
+
+    monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
+
+    result = await skills.import_github_from_args(github_import_args(recursive=True))
+
+    assert result == 0
+    assert commits == 1
+    assert rollbacks == 0
+    assert expunges == 2
+    assert saved_paths == ["skills/one", "skills/two"]
 
 
 async def test_import_github_fails_when_all_discovered_skills_are_invalid(
