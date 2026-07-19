@@ -1384,6 +1384,25 @@ def test_discover_skill_paths_recurses_from_repository_root_when_requested() -> 
     ]
 
 
+def test_discover_skill_paths_ignores_symlinked_and_skipped_skill_roots() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="skills/weather/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(
+            path=".gemini/skills/weather/SKILL.md",
+            type="blob",
+            mode="120000",
+        ),
+        skills.GitHubTreeItem(
+            path="node_modules/example/SKILL.md",
+            type="blob",
+        ),
+    ]
+
+    assert skills.discover_skill_paths(tree, recursive=True, subfolder="") == [
+        "skills/weather/SKILL.md"
+    ]
+
+
 def test_discover_skill_paths_does_not_recurse_from_repository_root() -> None:
     tree = [
         skills.GitHubTreeItem(path="skills/SKILL.md", type="blob", size=50),
@@ -3587,6 +3606,11 @@ async def test_import_github_commits_recursive_skills_once_per_repository(
             return [
                 skills.GitHubTreeItem(path="skills/one/SKILL.md", type="blob"),
                 skills.GitHubTreeItem(path="skills/two/SKILL.md", type="blob"),
+                skills.GitHubTreeItem(
+                    path="skills/symlink/SKILL.md",
+                    type="blob",
+                    mode="120000",
+                ),
             ]
 
         async def raw_file(

@@ -2285,12 +2285,17 @@ class GitHubClient:
         return decoded
 
 
-def tree_blob_paths(tree: list[GitHubTreeItem]) -> set[str]:
-    return {item.path for item in tree if item.type == "blob"}
-
-
 def should_skip_tree_path(path: str) -> bool:
     return any(part in SKIPPED_PATH_PARTS for part in PurePosixPath(path).parts)
+
+
+def is_regular_skill_root(item: GitHubTreeItem) -> bool:
+    return (
+        item.type == "blob"
+        and item.mode != "120000"
+        and PurePosixPath(item.path).name == "SKILL.md"
+        and not should_skip_tree_path(item.path)
+    )
 
 
 def skill_root_from_skill_path(path: str) -> str:
@@ -2332,10 +2337,7 @@ def skill_bundle_tree_items(
     skill_roots = {
         skill_root_from_skill_path(item.path)
         for item in tree
-        if item.type == "blob"
-        and item.mode != "120000"
-        and PurePosixPath(item.path).name == "SKILL.md"
-        and not should_skip_tree_path(item.path)
+        if is_regular_skill_root(item)
     }
 
     owned_items: list[GitHubTreeItem] = []
@@ -2686,10 +2688,10 @@ def discover_skill_paths(
     recursive: bool,
     subfolder: str,
 ) -> list[str]:
-    blobs = tree_blob_paths(tree)
+    regular_skill_paths = {item.path for item in tree if is_regular_skill_root(item)}
     skill_path = f"{subfolder}/SKILL.md" if subfolder else "SKILL.md"
     if not recursive:
-        if skill_path in blobs:
+        if skill_path in regular_skill_paths:
             return [skill_path]
         if subfolder:
             raise SkillNotFoundError(f"No SKILL.md found in GitHub subfolder: {subfolder}")
@@ -2699,12 +2701,14 @@ def discover_skill_paths(
         prefix = f"{subfolder}/"
         skill_paths = [
             path
-            for path in blobs
+            for path in regular_skill_paths
             if path == skill_path or (path.startswith(prefix) and path.endswith("/SKILL.md"))
         ]
     else:
         skill_paths = [
-            path for path in blobs if path == "SKILL.md" or path.endswith("/SKILL.md")
+            path
+            for path in regular_skill_paths
+            if path == "SKILL.md" or path.endswith("/SKILL.md")
         ]
     if skill_paths:
         return sorted(skill_paths)
