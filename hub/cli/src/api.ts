@@ -456,8 +456,8 @@ export class HubClient {
 
   async search(query: string, owner?: string, limit = 8): Promise<SkillSearchResult> {
     const normalizedQuery = query.trim();
-    if (normalizedQuery.length < 2 || normalizedQuery.length > 200) {
-      throw new Error('search query must contain between 2 and 200 characters');
+    if (normalizedQuery.length < 3 || normalizedQuery.length > 200) {
+      throw new Error('search query must contain between 3 and 200 characters');
     }
     if (!isInteger(limit, 1) || limit > 200) {
       throw new Error('search limit must be between 1 and 200');

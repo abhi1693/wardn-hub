@@ -40,8 +40,10 @@ def contract_payload() -> dict[str, object]:
     search = SkillSearchResponse(
         data=[skill],
         query="code audit",
-        searchType="semantic",
+        searchType="lexical",
         count=1,
+        hasMore=False,
+        nextCursor=None,
         durationMs=3,
         auditEnabled=True,
     )

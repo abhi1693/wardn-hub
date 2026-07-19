@@ -24,7 +24,11 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
 import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
-import { importPublicGitHubSkill, listPublicSkillsPage } from "@/lib/public-skills";
+import {
+  importPublicGitHubSkill,
+  listPublicSkillsPage,
+  searchPublicSkillsPage,
+} from "@/lib/public-skills";
 import { SkillLeaderboard } from "./skills-ui";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -238,6 +242,7 @@ export function SkillsClient({
   initialOfficial,
   initialPagination,
   initialQuery,
+  initialSearchCursor,
   initialSkills,
   initialView,
 }: {
@@ -247,6 +252,7 @@ export function SkillsClient({
   initialOfficial?: boolean;
   initialPagination: SkillPagination;
   initialQuery: string;
+  initialSearchCursor: string;
   initialSkills: SkillRead[];
   initialView: SkillView;
 }) {
@@ -264,15 +270,23 @@ export function SkillsClient({
   );
   const [skills, setSkills] = useState<SkillRead[]>(initialSkills);
   const [pagination, setPagination] = useState<SkillPagination>(initialPagination);
+  const [searchCursor, setSearchCursor] = useState(initialSearchCursor);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
   const trimmedQuery = query.trim();
   const hasSearchQuery = trimmedQuery.length > 0;
-  const hasMore = pagination.hasMore;
+  const canSearch = trimmedQuery.length >= 3;
+  const hasMore = canSearch ? Boolean(searchCursor) : !hasSearchQuery && pagination.hasMore;
   const resultSummaryTitle = sourceFilterLabel(official);
-  const resultSummaryDetail = `${pagination.total.toLocaleString("en-US")} ${
-    pagination.total === 1 ? "result" : "results"
-  }`;
+  const resultSummaryDetail = hasSearchQuery
+    ? canSearch
+      ? `${skills.length.toLocaleString("en-US")}${searchCursor ? "+" : ""} ${
+          skills.length === 1 && !searchCursor ? "result" : "results"
+        }`
+      : "Enter at least 3 characters to search"
+    : `${pagination.total.toLocaleString("en-US")} ${
+        pagination.total === 1 ? "result" : "results"
+      }`;
 
   const reloadFirstPage = useCallback(async () => {
     const requestId = latestRequestId.current + 1;
@@ -280,6 +294,23 @@ export function SkillsClient({
     setError("");
     setLoading(true);
     try {
+      if (hasSearchQuery) {
+        if (!canSearch) {
+          setSkills([]);
+          setSearchCursor("");
+          return;
+        }
+        const response = await searchPublicSkillsPage({
+          auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+          limit: SKILLS_PAGE_SIZE,
+          official: official ? official === "true" : undefined,
+          query: trimmedQuery,
+        });
+        if (latestRequestId.current !== requestId) return;
+        setSkills(response.skills);
+        setSearchCursor(response.nextCursor);
+        return;
+      }
       const response = await listPublicSkillsPage({
         auditStatus: auditEnabled ? auditStatus || undefined : undefined,
         limit: SKILLS_PAGE_SIZE,
@@ -290,13 +321,24 @@ export function SkillsClient({
       if (latestRequestId.current !== requestId) return;
       setSkills(response.skills);
       setPagination(response.pagination);
+      setSearchCursor("");
     } catch (caught) {
       if (latestRequestId.current !== requestId) return;
       setError(caught instanceof Error ? caught.message : "Unable to load skills.");
+      setSkills([]);
+      setSearchCursor("");
     } finally {
       if (latestRequestId.current === requestId) setLoading(false);
     }
-  }, [auditEnabled, auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
+  }, [
+    auditEnabled,
+    auditStatus,
+    canSearch,
+    hasSearchQuery,
+    initialView,
+    official,
+    trimmedQuery,
+  ]);
 
   const updateQuery = useCallback((nextQuery: string) => {
     latestRequestId.current += 1;
@@ -370,6 +412,23 @@ export function SkillsClient({
 
       void (async () => {
         try {
+          if (hasSearchQuery) {
+            if (!canSearch) {
+              setSkills([]);
+              setSearchCursor("");
+              return;
+            }
+            const response = await searchPublicSkillsPage({
+              auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+              limit: SKILLS_PAGE_SIZE,
+              official: official ? official === "true" : undefined,
+              query: trimmedQuery,
+            });
+            if (latestRequestId.current !== requestId) return;
+            setSkills(response.skills);
+            setSearchCursor(response.nextCursor);
+            return;
+          }
           const response = await listPublicSkillsPage({
             auditStatus: auditEnabled ? auditStatus || undefined : undefined,
             limit: SKILLS_PAGE_SIZE,
@@ -380,11 +439,13 @@ export function SkillsClient({
           if (latestRequestId.current !== requestId) return;
           setSkills(response.skills);
           setPagination(response.pagination);
+          setSearchCursor("");
         } catch (caught) {
           if (latestRequestId.current !== requestId) return;
           setError(caught instanceof Error ? caught.message : "Unable to load skills.");
           setSkills([]);
           setPagination(EMPTY_SKILLS_PAGINATION);
+          setSearchCursor("");
         } finally {
           if (latestRequestId.current === requestId) setLoading(false);
         }
@@ -392,7 +453,15 @@ export function SkillsClient({
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [auditEnabled, auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
+  }, [
+    auditEnabled,
+    auditStatus,
+    canSearch,
+    hasSearchQuery,
+    initialView,
+    official,
+    trimmedQuery,
+  ]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loading) return;
@@ -402,6 +471,20 @@ export function SkillsClient({
     setLoading(true);
     setError("");
     try {
+      if (canSearch) {
+        if (!searchCursor) return;
+        const response = await searchPublicSkillsPage({
+          auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+          cursor: searchCursor,
+          limit: SKILLS_PAGE_SIZE,
+          official: official ? official === "true" : undefined,
+          query: trimmedQuery,
+        });
+        if (latestRequestId.current !== requestId) return;
+        setSkills((current) => [...current, ...response.skills]);
+        setSearchCursor(response.nextCursor);
+        return;
+      }
       const response = await listPublicSkillsPage({
         auditStatus: auditEnabled ? auditStatus || undefined : undefined,
         limit: SKILLS_PAGE_SIZE,
@@ -422,12 +505,14 @@ export function SkillsClient({
   }, [
     auditEnabled,
     auditStatus,
+    canSearch,
     hasMore,
     hasSearchQuery,
     initialView,
     loading,
     official,
     pagination.page,
+    searchCursor,
     trimmedQuery,
   ]);
 

@@ -1,3 +1,4 @@
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +6,148 @@ from sqlalchemy.dialects import postgresql
 
 from app.modules.skills import repository, service
 from app.modules.skills.models import Skill, SkillInstallEvent
+
+
+async def test_indexed_skill_search_uses_bounded_ranked_candidates() -> None:
+    class FakeSession:
+        statement = ""
+        params: dict[str, object] = {}
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            compiled = statement.compile(dialect=postgresql.dialect())
+            self.statement = str(compiled)
+            self.params = compiled.params
+            return SimpleNamespace(all=list)
+
+    session = FakeSession()
+    page = await repository.search_skill_documents(  # type: ignore[arg-type]
+        session,
+        query="document skill",
+        limit=8,
+        owner="acme",
+        official=True,
+        audit_status="warn",
+    )
+
+    assert page == repository.SkillSearchPage(skills=[], has_more=False, next_cursor=None)
+    assert "skill_search_documents.search_vector @@" in session.statement
+    assert "skill_search_documents.identity_text %" in session.statement
+    assert "similarity(skill_search_documents.identity_text" in session.statement
+    assert "skill_search_documents.is_canonical IS true" in session.statement
+    assert "skill_search_documents.source_owner" in session.statement
+    assert "skill_source_owners.is_official IS true" in session.statement
+    assert "skill_audits" in session.statement
+    assert "LIMIT" in session.statement
+    assert 9 in session.params.values()
+    assert "count(" not in session.statement.lower()
+
+
+async def test_search_skills_returns_and_accepts_stable_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(
+            skill_audit_enabled=True,
+            registry_public_base_url="https://hub.example",
+        ),
+    )
+    skill_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    skill = SimpleNamespace(
+        id=skill_id,
+        source="acme/skills",
+        slug="document-search",
+        name="Document Search",
+        source_type="github",
+        source_owner="acme",
+        source_name="skills",
+        source_owner_url="https://github.com/acme",
+        source_owner_icon_url="",
+        source_url="https://github.com/acme/skills",
+        install_url="https://github.com/acme/skills/tree/main/document-search",
+        description="Search skill instructions.",
+        installs=5,
+    )
+    next_position = repository.SkillSearchCursor(
+        match_tier=3,
+        text_rank=0.25,
+        trigram_rank=0.125,
+        installs=5,
+        name="document search",
+        source="acme/skills",
+        skill_id=skill_id,
+    )
+    captured_cursors: list[repository.SkillSearchCursor | None] = []
+
+    async def search_documents(*args: object, **kwargs: object):
+        captured_cursors.append(kwargs["cursor"])  # type: ignore[arg-type]
+        return repository.SkillSearchPage(
+            skills=[skill],  # type: ignore[list-item]
+            has_more=True,
+            next_cursor=next_position,
+        )
+
+    async def official_owner_keys(*args: object):
+        return {("github", "acme")}
+
+    async def current_skill_audits(*args: object):
+        return {}
+
+    monkeypatch.setattr(service.repository, "search_skill_documents", search_documents)
+    monkeypatch.setattr(service.repository, "official_owner_keys", official_owner_keys)
+    monkeypatch.setattr(service.repository, "current_skill_audits", current_skill_audits)
+
+    first_page = await service.search_skills(
+        object(),  # type: ignore[arg-type]
+        query="Document skill",
+        limit=1,
+        owner="ACME",
+        official=True,
+    )
+    second_page = await service.search_skills(
+        object(),  # type: ignore[arg-type]
+        query=" document SKILL ",
+        limit=1,
+        owner="acme",
+        official=True,
+        cursor=first_page.next_cursor,
+    )
+
+    assert first_page.search_type == "lexical"
+    assert first_page.count == 1
+    assert first_page.has_more is True
+    assert first_page.next_cursor
+    assert first_page.data[0].is_official is True
+    assert captured_cursors == [None, next_position]
+    assert second_page.next_cursor == first_page.next_cursor
+
+
+def test_search_cursor_rejects_filter_changes_and_non_finite_ranks() -> None:
+    position = repository.SkillSearchCursor(
+        match_tier=3,
+        text_rank=0.25,
+        trigram_rank=0.125,
+        installs=5,
+        name="document search",
+        source="acme/skills",
+        skill_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+    )
+    fingerprint = service.skill_search_cursor_fingerprint(
+        query="document skill",
+        owner=None,
+        audit_status=None,
+        official=None,
+    )
+    cursor = service.encode_skill_search_cursor(position, fingerprint)
+
+    with pytest.raises(ValueError, match="cursor"):
+        service.decode_skill_search_cursor(cursor, "different-filter")
+
+    invalid = repository.SkillSearchCursor(**{**position.__dict__, "text_rank": float("nan")})
+    invalid_cursor = service.encode_skill_search_cursor(invalid, fingerprint)
+    with pytest.raises(ValueError, match="cursor"):
+        service.decode_skill_search_cursor(invalid_cursor, fingerprint)
 
 
 async def test_skill_leaderboard_views_sort_by_install_activity() -> None:

@@ -65,11 +65,28 @@ async def list_skill_catalog(
 @router.get("/search", response_model=SkillSearchResponse, operation_id="skills_search")
 async def search_skill_catalog(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    q: Annotated[str, Query(min_length=2, max_length=200)],
+    q: Annotated[str, Query(min_length=3, max_length=200)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     owner: str | None = None,
+    audit_status: Annotated[
+        str | None,
+        Query(description="Filter by current audit status: pass, warn, fail, or unaudited."),
+    ] = None,
+    official: bool | None = None,
+    cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> SkillSearchResponse:
-    return await search_skills(session, query=q, limit=limit, owner=owner)
+    try:
+        return await search_skills(
+            session,
+            query=q,
+            limit=limit,
+            owner=owner,
+            audit_status=audit_status,
+            official=official,
+            cursor=cursor,
+        )
+    except ValueError as exc:
+        raise bad_request(exc, detail=str(exc)) from exc
 
 
 @router.get("/official", response_model=SkillOfficialResponse, operation_id="skills_official")

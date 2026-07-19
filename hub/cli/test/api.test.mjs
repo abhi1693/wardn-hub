@@ -24,6 +24,8 @@ function emptySearchPayload(query) {
     searchType: 'fuzzy',
     auditEnabled: true,
     count: 0,
+    hasMore: false,
+    nextCursor: null,
     durationMs: 1,
     data: [],
   };
@@ -224,6 +226,8 @@ test('HubClient validates compact skill search results', async () => {
           searchType: 'semantic',
           auditEnabled: true,
           count: 1,
+          hasMore: false,
+          nextCursor: null,
           durationMs: 3,
           data: [
             {

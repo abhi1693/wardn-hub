@@ -61,6 +61,8 @@ class SkillSearchResponse(BaseModel):
     query: str
     search_type: str = Field(alias="searchType")
     count: int
+    has_more: bool = Field(alias="hasMore")
+    next_cursor: str | None = Field(alias="nextCursor")
     duration_ms: int = Field(alias="durationMs")
     audit_enabled: bool = Field(alias="auditEnabled")
 
@@ -100,9 +102,7 @@ class SkillDetailResponse(BaseModel):
     bundle_format_version: int | None = Field(default=None, alias="bundleFormatVersion")
     source_commit_sha: str | None = Field(default=None, alias="sourceCommitSha")
     source_entrypoint: str | None = Field(default=None, alias="sourceEntrypoint")
-    resolution_status: SkillResolutionStatus | None = Field(
-        default=None, alias="resolutionStatus"
-    )
+    resolution_status: SkillResolutionStatus | None = Field(default=None, alias="resolutionStatus")
     resolution_issues: list[SkillResolutionIssueRead] = Field(
         default_factory=list, alias="resolutionIssues"
     )

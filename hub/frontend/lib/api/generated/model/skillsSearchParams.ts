@@ -7,7 +7,7 @@
 
 export type SkillsSearchParams = {
 /**
- * @minLength 2
+ * @minLength 3
  * @maxLength 200
  */
 q: string;
@@ -17,4 +17,10 @@ q: string;
  */
 limit?: number;
 owner?: string | null;
+/**
+ * Filter by current audit status: pass, warn, fail, or unaudited.
+ */
+audit_status?: string | null;
+official?: boolean | null;
+cursor?: string | null;
 };

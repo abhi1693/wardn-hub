@@ -11,6 +11,8 @@ export interface SkillSearchResponse {
   count: number;
   data: SkillRead[];
   durationMs: number;
+  hasMore: boolean;
+  nextCursor: string | null;
   query: string;
   searchType: string;
 }

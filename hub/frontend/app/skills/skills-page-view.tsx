@@ -1,7 +1,7 @@
 import { PublicHeader } from "@/components/site-header";
 import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
 import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
-import { listPublicSkillsPage } from "@/lib/public-skills";
+import { listPublicSkillsPage, searchPublicSkillsPage } from "@/lib/public-skills";
 import { SkillsClient } from "./skills-client";
 
 export type SkillView = "all-time" | "hot" | "trending";
@@ -49,6 +49,31 @@ export async function SkillsPageView({
   const official = officialFilterParam(resolvedSearchParams?.official);
   const state = await (async () => {
     try {
+      if (searchQuery.length >= 3) {
+        const response = await searchPublicSkillsPage({
+          auditStatus,
+          limit: SKILLS_PAGE_SIZE,
+          official,
+          query: searchQuery,
+        });
+        return {
+          auditEnabled: response.auditEnabled,
+          error: "",
+          pagination: emptyPagination(),
+          searchCursor: response.nextCursor,
+          skills: response.skills,
+        };
+      }
+      if (searchQuery) {
+        const response = await listPublicSkillsPage({ limit: 1 });
+        return {
+          auditEnabled: response.auditEnabled,
+          error: "",
+          pagination: emptyPagination(),
+          searchCursor: "",
+          skills: [] as SkillRead[],
+        };
+      }
       const response = await listPublicSkillsPage({
         auditStatus,
         limit: SKILLS_PAGE_SIZE,
@@ -60,6 +85,7 @@ export async function SkillsPageView({
         auditEnabled: response.auditEnabled,
         error: "",
         pagination: response.pagination,
+        searchCursor: "",
         skills: response.skills,
       };
     } catch (caught) {
@@ -67,6 +93,7 @@ export async function SkillsPageView({
         auditEnabled: false,
         error: caught instanceof Error ? caught.message : "Unable to load skills.",
         pagination: emptyPagination(),
+        searchCursor: "",
         skills: [] as SkillRead[],
       };
     }
@@ -82,6 +109,7 @@ export async function SkillsPageView({
         initialAuditStatus={auditStatus}
         initialOfficial={official}
         initialQuery={searchQuery}
+        initialSearchCursor={state.searchCursor}
         initialSkills={state.skills}
         initialView={view}
       />

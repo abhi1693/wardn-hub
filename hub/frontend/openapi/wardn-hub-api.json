@@ -6320,6 +6320,21 @@
             "title": "Durationms",
             "type": "integer"
           },
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
           "query": {
             "title": "Query",
             "type": "string"
@@ -6334,6 +6349,8 @@
           "query",
           "searchType",
           "count",
+          "hasMore",
+          "nextCursor",
           "durationMs",
           "auditEnabled"
         ],
@@ -12444,7 +12461,7 @@
             "required": true,
             "schema": {
               "maxLength": 200,
-              "minLength": 2,
+              "minLength": 3,
               "title": "Q",
               "type": "string"
             }
@@ -12475,6 +12492,57 @@
                 }
               ],
               "title": "Owner"
+            }
+          },
+          {
+            "description": "Filter by current audit status: pass, warn, fail, or unaudited.",
+            "in": "query",
+            "name": "audit_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by current audit status: pass, warn, fail, or unaudited.",
+              "title": "Audit Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "official",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Official"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           }
         ],

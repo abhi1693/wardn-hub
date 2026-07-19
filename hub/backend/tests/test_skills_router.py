@@ -151,12 +151,21 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
 
 def test_search_skills_returns_search_metadata(monkeypatch) -> None:
     async def search_skills(*args, **kwargs):
-        assert kwargs == {"query": "react native", "limit": 5, "owner": "expo"}
+        assert kwargs == {
+            "query": "react native",
+            "limit": 5,
+            "owner": "expo",
+            "audit_status": None,
+            "official": None,
+            "cursor": None,
+        }
         return SkillSearchResponse(
             data=[skill_read("react-native")],
             query="react native",
-            searchType="semantic",
+            searchType="lexical",
             count=1,
+            hasMore=False,
+            nextCursor=None,
             durationMs=3,
             auditEnabled=True,
         )
@@ -168,9 +177,17 @@ def test_search_skills_returns_search_metadata(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["searchType"] == "semantic"
+    assert response.json()["searchType"] == "lexical"
     assert response.json()["count"] == 1
+    assert response.json()["hasMore"] is False
+    assert response.json()["nextCursor"] is None
     assert response.json()["data"][0]["slug"] == "react-native"
+
+
+def test_search_skills_rejects_short_queries() -> None:
+    response = TestClient(create_app()).get("/api/v1/skills/search?q=ai")
+
+    assert response.status_code == 422
 
 
 def test_official_skills_groups_by_owner(monkeypatch) -> None:

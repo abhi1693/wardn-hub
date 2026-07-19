@@ -6,6 +6,7 @@ import type {
   SkillListResponse,
   SkillPagination,
   SkillRead,
+  SkillSearchResponse,
 } from "@/lib/api/generated/model";
 import { resolveSiteUrl } from "@/lib/site";
 
@@ -258,6 +259,41 @@ export async function listPublicSkillsPage(params?: {
   return {
     auditEnabled: response.auditEnabled,
     pagination: response.pagination,
+    skills: response.data,
+  };
+}
+
+export async function searchPublicSkillsPage(params: {
+  auditStatus?: "fail" | "pass" | "unaudited" | "warn";
+  cursor?: string;
+  limit?: number;
+  official?: boolean;
+  owner?: string;
+  query: string;
+}): Promise<{
+  auditEnabled: boolean;
+  hasMore: boolean;
+  nextCursor: string;
+  skills: SkillRead[];
+}> {
+  const query = params.query.trim();
+  if (query.length < 3) {
+    throw new Error("Search queries must contain at least 3 characters.");
+  }
+  const searchParams: Record<string, boolean | number | string> = {
+    limit: params.limit ?? DEFAULT_SKILLS_LIMIT,
+    q: query,
+  };
+  if (params.auditStatus) searchParams.audit_status = params.auditStatus;
+  if (params.cursor) searchParams.cursor = params.cursor;
+  if (params.official !== undefined) searchParams.official = params.official;
+  if (params.owner) searchParams.owner = params.owner;
+
+  const response = await skillsRequest<SkillSearchResponse>("/skills/search", searchParams);
+  return {
+    auditEnabled: response.auditEnabled,
+    hasMore: response.hasMore === true,
+    nextCursor: response.nextCursor ?? "",
     skills: response.data,
   };
 }

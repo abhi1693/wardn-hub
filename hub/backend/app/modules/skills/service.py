@@ -1,3 +1,8 @@
+import base64
+import binascii
+import hashlib
+import json
+import math
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -201,11 +206,7 @@ async def list_skills(
         official=official,
     )
     official_keys = await repository.official_owner_keys(session, skills)
-    audit_results = (
-        await repository.current_skill_audits(session, skills)
-        if audit_enabled
-        else {}
-    )
+    audit_results = await repository.current_skill_audits(session, skills) if audit_enabled else {}
     return SkillListResponse(
         data=[
             skill_read(
@@ -231,24 +232,37 @@ async def search_skills(
     query: str,
     limit: int = 50,
     owner: str | None = None,
+    audit_status: str | None = None,
+    official: bool | None = None,
+    cursor: str | None = None,
 ) -> SkillSearchResponse:
     audit_enabled = get_settings().skill_audit_enabled
     search_query = query.strip()
-    started_at = perf_counter()
-    skills, _total = await repository.list_skills(
-        session,
-        offset=0,
-        limit=limit,
-        view="all-time",
-        search=search_query,
+    normalized_audit_status = audit_status.strip().lower() if audit_status else None
+    if normalized_audit_status and normalized_audit_status not in VALID_SKILL_AUDIT_FILTERS:
+        raise ValueError("audit_status must be one of pass, warn, fail, or unaudited")
+    if not audit_enabled:
+        normalized_audit_status = None
+    cursor_fingerprint = skill_search_cursor_fingerprint(
+        query=search_query,
         owner=owner,
+        audit_status=normalized_audit_status,
+        official=official,
     )
+    decoded_cursor = decode_skill_search_cursor(cursor, cursor_fingerprint) if cursor else None
+    started_at = perf_counter()
+    page = await repository.search_skill_documents(
+        session,
+        query=search_query,
+        limit=limit,
+        owner=owner,
+        audit_status=normalized_audit_status,
+        official=official,
+        cursor=decoded_cursor,
+    )
+    skills = page.skills
     official_keys = await repository.official_owner_keys(session, skills)
-    audit_results = (
-        await repository.current_skill_audits(session, skills)
-        if audit_enabled
-        else {}
-    )
+    audit_results = await repository.current_skill_audits(session, skills) if audit_enabled else {}
     return SkillSearchResponse(
         data=[
             skill_read(
@@ -259,11 +273,96 @@ async def search_skills(
             for skill in skills
         ],
         query=search_query,
-        searchType="semantic" if " " in search_query else "fuzzy",
+        searchType="lexical",
         count=len(skills),
+        hasMore=page.has_more,
+        nextCursor=(
+            encode_skill_search_cursor(page.next_cursor, cursor_fingerprint)
+            if page.next_cursor
+            else None
+        ),
         durationMs=max(0, int((perf_counter() - started_at) * 1000)),
         auditEnabled=audit_enabled,
     )
+
+
+def skill_search_cursor_fingerprint(
+    *,
+    query: str,
+    owner: str | None,
+    audit_status: str | None,
+    official: bool | None,
+) -> str:
+    material = json.dumps(
+        {
+            "auditStatus": audit_status or "",
+            "official": official,
+            "owner": (owner or "").strip().casefold(),
+            "query": query.strip().casefold(),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def encode_skill_search_cursor(
+    cursor: repository.SkillSearchCursor,
+    fingerprint: str,
+) -> str:
+    payload = {
+        "f": fingerprint,
+        "i": cursor.installs,
+        "id": str(cursor.skill_id),
+        "n": cursor.name,
+        "r": cursor.text_rank.hex(),
+        "s": cursor.source,
+        "t": cursor.match_tier,
+        "v": 1,
+        "z": cursor.trigram_rank.hex(),
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    return encoded.decode("ascii").rstrip("=")
+
+
+def decode_skill_search_cursor(
+    value: str,
+    expected_fingerprint: str,
+) -> repository.SkillSearchCursor:
+    if not value or len(value) > 2048:
+        raise ValueError("search cursor is invalid")
+    try:
+        padding = "=" * (-len(value) % 4)
+        payload = json.loads(base64.b64decode(value + padding, altchars=b"-_", validate=True))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("v") != 1
+            or payload.get("f") != expected_fingerprint
+        ):
+            raise ValueError
+        cursor = repository.SkillSearchCursor(
+            match_tier=int(payload["t"]),
+            text_rank=float.fromhex(payload["r"]),
+            trigram_rank=float.fromhex(payload["z"]),
+            installs=int(payload["i"]),
+            name=str(payload["n"]),
+            source=str(payload["s"]),
+            skill_id=uuid.UUID(payload["id"]),
+        )
+    except (binascii.Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("search cursor is invalid") from exc
+    if (
+        cursor.match_tier not in range(5)
+        or cursor.installs < 0
+        or not math.isfinite(cursor.text_rank)
+        or not math.isfinite(cursor.trigram_rank)
+        or not cursor.name
+        or not cursor.source
+    ):
+        raise ValueError("search cursor is invalid")
+    return cursor
 
 
 async def get_skill_detail(
@@ -412,11 +511,7 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
         official=True,
     )
     official_keys = await repository.official_owner_keys(session, skills)
-    audit_results = (
-        await repository.current_skill_audits(session, skills)
-        if audit_enabled
-        else {}
-    )
+    audit_results = await repository.current_skill_audits(session, skills) if audit_enabled else {}
     groups: dict[str, list[Skill]] = defaultdict(list)
     for skill in skills:
         groups[owner_from_skill(skill)].append(skill)

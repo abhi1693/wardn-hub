@@ -2,7 +2,20 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, String, and_, case, cast, exists, func, or_, select, tuple_, update
+from sqlalchemy import (
+    Select,
+    String,
+    and_,
+    case,
+    cast,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 from sqlalchemy.sql.elements import ColumnElement
@@ -12,6 +25,7 @@ from app.modules.skills.models import (
     Skill,
     SkillAudit,
     SkillInstallEvent,
+    SkillSearchDocument,
     SkillSnapshot,
     SkillSourceOwner,
 )
@@ -22,6 +36,24 @@ class CurrentSkillAudit:
     status: str
     score: int
     rank: str
+
+
+@dataclass(frozen=True)
+class SkillSearchCursor:
+    match_tier: int
+    text_rank: float
+    trigram_rank: float
+    installs: int
+    name: str
+    source: str
+    skill_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class SkillSearchPage:
+    skills: list[Skill]
+    has_more: bool
+    next_cursor: SkillSearchCursor | None
 
 
 def published_skill_query(*entities) -> Select:
@@ -45,11 +77,14 @@ def published_skill_query(*entities) -> Select:
     )
 
 
-def official_owner_condition():
+def official_owner_condition(
+    source_type=Skill.source_type,
+    source_owner=Skill.source_owner,
+):
     return exists(
         select(SkillSourceOwner.id).where(
-            SkillSourceOwner.source_type == Skill.source_type,
-            func.lower(SkillSourceOwner.source_owner) == func.lower(Skill.source_owner),
+            SkillSourceOwner.source_type == source_type,
+            func.lower(SkillSourceOwner.source_owner) == func.lower(source_owner),
             SkillSourceOwner.is_official.is_(True),
         )
     )
@@ -186,6 +221,199 @@ def apply_audit_status_filter(statement: Select, audit_status: str) -> Select:
         return statement.where(Skill.id.not_in(audited_skill_ids))
     return statement.where(
         Skill.id.in_(audited_skill_ids.where(current_audit_statuses.c.audit_status == audit_status))
+    )
+
+
+def audit_status_condition(skill_id, audit_status: str):
+    current_audit_statuses = current_skill_audit_status_subquery()
+    audited_skill_ids = select(current_audit_statuses.c.skill_id)
+    if audit_status == "unaudited":
+        return skill_id.not_in(audited_skill_ids)
+    return skill_id.in_(
+        audited_skill_ids.where(current_audit_statuses.c.audit_status == audit_status)
+    )
+
+
+def _search_after_condition(
+    cursor: SkillSearchCursor,
+    *,
+    match_tier,
+    text_rank,
+    trigram_rank,
+    name_order,
+    source_order,
+):
+    columns = (
+        (match_tier, cursor.match_tier, "asc"),
+        (text_rank, cursor.text_rank, "desc"),
+        (trigram_rank, cursor.trigram_rank, "desc"),
+        (SkillSearchDocument.installs, cursor.installs, "desc"),
+        (name_order, cursor.name, "asc"),
+        (source_order, cursor.source, "asc"),
+        (SkillSearchDocument.skill_id, cursor.skill_id, "asc"),
+    )
+    conditions = []
+    equal_prefix = []
+    for column, value, direction in columns:
+        comparison = column > value if direction == "asc" else column < value
+        conditions.append(and_(*equal_prefix, comparison))
+        equal_prefix.append(column == value)
+    return or_(*conditions)
+
+
+async def search_skill_documents(
+    session: AsyncSession,
+    *,
+    query: str,
+    limit: int,
+    owner: str | None = None,
+    official: bool | None = None,
+    audit_status: str | None = None,
+    cursor: SkillSearchCursor | None = None,
+) -> SkillSearchPage:
+    normalized_query = query.strip().casefold()
+    escaped_query = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    english_query = func.websearch_to_tsquery("english", query)
+    simple_query = func.websearch_to_tsquery("simple", query)
+    english_match = SkillSearchDocument.search_vector.op("@@")(english_query)
+    simple_match = SkillSearchDocument.search_vector.op("@@")(simple_query)
+    identifier_parts = skill_identifier_parts(normalized_query)
+    exact_full_id = (
+        and_(
+            func.lower(SkillSearchDocument.source) == identifier_parts[0].casefold(),
+            func.lower(SkillSearchDocument.slug) == identifier_parts[1].casefold(),
+        )
+        if identifier_parts is not None
+        else literal(False)
+    )
+    normalized_name = func.lower(SkillSearchDocument.name)
+    normalized_slug = func.lower(SkillSearchDocument.slug)
+    prefix_pattern = f"{escaped_query}%"
+    exact_name = normalized_name == normalized_query
+    exact_slug = normalized_slug == normalized_query
+    prefix_match = or_(
+        normalized_name.ilike(prefix_pattern, escape="\\"),
+        normalized_slug.ilike(prefix_pattern, escape="\\"),
+    )
+    trigram_match = SkillSearchDocument.identity_text.op("%")(normalized_query)
+    contains_match = SkillSearchDocument.identity_text.ilike(
+        f"%{escaped_query}%",
+        escape="\\",
+    )
+    text_match = or_(english_match, simple_match)
+    match_tier = case(
+        (exact_full_id, 0),
+        (or_(exact_name, exact_slug), 1),
+        (prefix_match, 2),
+        (text_match, 3),
+        else_=4,
+    ).label("match_tier")
+    text_rank = (
+        func.ts_rank_cd(SkillSearchDocument.search_vector, english_query, 32)
+        + func.ts_rank_cd(SkillSearchDocument.search_vector, simple_query, 32)
+    ).label("text_rank")
+    trigram_rank = func.greatest(
+        func.similarity(SkillSearchDocument.identity_text, normalized_query),
+        func.word_similarity(normalized_query, SkillSearchDocument.identity_text),
+    ).label("trigram_rank")
+    name_order = normalized_name.label("name_order")
+    source_order = func.lower(SkillSearchDocument.source).label("source_order")
+    statement = select(
+        SkillSearchDocument.skill_id,
+        match_tier,
+        text_rank,
+        trigram_rank,
+        SkillSearchDocument.installs,
+        name_order,
+        source_order,
+    ).where(
+        SkillSearchDocument.is_canonical.is_(True),
+        or_(
+            exact_full_id,
+            text_match,
+            trigram_match,
+            contains_match,
+        ),
+    )
+    if owner:
+        owner_value = owner.strip()
+        statement = statement.where(
+            or_(
+                func.lower(SkillSearchDocument.source_owner) == owner_value.casefold(),
+                SkillSearchDocument.source.ilike(f"{owner_value}/%"),
+            )
+        )
+    if official is not None:
+        condition = official_owner_condition(
+            SkillSearchDocument.source_type,
+            SkillSearchDocument.source_owner,
+        )
+        statement = statement.where(condition if official else ~condition)
+    if audit_status:
+        statement = statement.where(
+            audit_status_condition(SkillSearchDocument.skill_id, audit_status)
+        )
+    if cursor is not None:
+        statement = statement.where(
+            _search_after_condition(
+                cursor,
+                match_tier=match_tier,
+                text_rank=text_rank,
+                trigram_rank=trigram_rank,
+                name_order=name_order,
+                source_order=source_order,
+            )
+        )
+    statement = statement.order_by(
+        match_tier,
+        text_rank.desc(),
+        trigram_rank.desc(),
+        SkillSearchDocument.installs.desc(),
+        name_order,
+        source_order,
+        SkillSearchDocument.skill_id,
+    ).limit(limit + 1)
+    candidates = statement.subquery()
+    result = await session.execute(
+        select(
+            Skill,
+            candidates.c.match_tier,
+            candidates.c.text_rank,
+            candidates.c.trigram_rank,
+            candidates.c.installs,
+            candidates.c.name_order,
+            candidates.c.source_order,
+        )
+        .join(candidates, candidates.c.skill_id == Skill.id)
+        .order_by(
+            candidates.c.match_tier,
+            candidates.c.text_rank.desc(),
+            candidates.c.trigram_rank.desc(),
+            candidates.c.installs.desc(),
+            candidates.c.name_order,
+            candidates.c.source_order,
+            candidates.c.skill_id,
+        )
+    )
+    rows = result.all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = None
+    if has_more and rows:
+        last = rows[-1]
+        next_cursor = SkillSearchCursor(
+            match_tier=last.match_tier,
+            text_rank=float(last.text_rank),
+            trigram_rank=float(last.trigram_rank),
+            installs=last.installs,
+            name=last.name_order,
+            source=last.source_order,
+            skill_id=last[0].id,
+        )
+    return SkillSearchPage(
+        skills=[row[0] for row in rows],
+        has_more=has_more,
+        next_cursor=next_cursor,
     )
 
 

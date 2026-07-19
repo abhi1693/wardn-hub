@@ -78,7 +78,9 @@
       }
     ],
     "durationMs": 3,
+    "hasMore": false,
+    "nextCursor": null,
     "query": "code audit",
-    "searchType": "semantic"
+    "searchType": "lexical"
   }
 }

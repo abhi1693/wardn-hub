@@ -16,7 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -84,6 +84,72 @@ Index(
     Skill.repository_subfolder,
     unique=True,
     postgresql_where=Skill.repository_subfolder.is_not(None),
+)
+
+
+class SkillSearchDocument(Base):
+    __tablename__ = "skill_search_documents"
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skill_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(300), nullable=False)
+    source_owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    install_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)
+    file_paths: Mapped[str] = mapped_column(Text, nullable=False)
+    installs: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_canonical: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    identity_text: Mapped[str] = mapped_column(Text, nullable=False)
+    search_vector: Mapped[Any] = mapped_column(TSVECTOR, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+Index(
+    "ix_skill_search_documents_exact_id",
+    func.lower(SkillSearchDocument.source),
+    func.lower(SkillSearchDocument.slug),
+    postgresql_where=SkillSearchDocument.is_canonical.is_(True),
+)
+Index(
+    "ix_skill_search_documents_owner",
+    func.lower(SkillSearchDocument.source_owner),
+    postgresql_where=SkillSearchDocument.is_canonical.is_(True),
+)
+Index(
+    "ix_skill_search_documents_search_vector",
+    SkillSearchDocument.search_vector,
+    postgresql_using="gin",
+    postgresql_where=SkillSearchDocument.is_canonical.is_(True),
+)
+Index(
+    "ix_skill_search_documents_identity_trgm",
+    SkillSearchDocument.identity_text,
+    postgresql_using="gin",
+    postgresql_ops={"identity_text": "gin_trgm_ops"},
+    postgresql_where=SkillSearchDocument.is_canonical.is_(True),
+)
+Index(
+    "ix_skill_search_documents_canonical_installs",
+    SkillSearchDocument.is_canonical,
+    SkillSearchDocument.installs.desc(),
 )
 
 
