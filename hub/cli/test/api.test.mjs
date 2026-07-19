@@ -7,6 +7,23 @@ function skillMarkdown(name = 'weather') {
   return `---\nname: ${name}\ndescription: Check the weather.\n---\n\n# Weather\n`;
 }
 
+function fetchFailure(code) {
+  return new TypeError('fetch failed', {
+    cause: Object.assign(new Error(`request failed with ${code}`), { code }),
+  });
+}
+
+function emptySearchPayload(query) {
+  return {
+    query,
+    searchType: 'fuzzy',
+    auditEnabled: true,
+    count: 0,
+    durationMs: 1,
+    data: [],
+  };
+}
+
 function bundlePayload(overrides = {}) {
   return {
     id: 'acme/skills/weather',
@@ -119,6 +136,40 @@ test('install telemetry identifies the CLI and remains opt-out', async () => {
   assert.equal(telemetryDisabled({ WARDN_HUB_DISABLE_TELEMETRY: '1' }), true);
   assert.equal(telemetryDisabled({ DO_NOT_TRACK: '1' }), true);
   assert.equal(telemetryDisabled({}), false);
+});
+
+test('HubClient retries transient request failures before succeeding', async () => {
+  let attempts = 0;
+  const client = new HubClient({
+    version: '0.1.0',
+    fetchImplementation: async () => {
+      attempts += 1;
+      if (attempts < 3) throw fetchFailure('ECONNRESET');
+      return new Response(JSON.stringify(emptySearchPayload('network retry')), { status: 200 });
+    },
+  });
+
+  const result = await client.search('network retry');
+
+  assert.equal(attempts, 3);
+  assert.equal(result.count, 0);
+});
+
+test('HubClient reports transport error codes and does not retry permanent failures', async () => {
+  let attempts = 0;
+  const client = new HubClient({
+    version: '0.1.0',
+    fetchImplementation: async () => {
+      attempts += 1;
+      throw fetchFailure('CERT_HAS_EXPIRED');
+    },
+  });
+
+  await assert.rejects(
+    () => client.search('network failure'),
+    /Wardn skill search failed: fetch failed \(CERT_HAS_EXPIRED\)/,
+  );
+  assert.equal(attempts, 1);
 });
 
 test('HubClient validates compact skill search results', async () => {

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import type {
   SkillAuditResult,
@@ -25,9 +26,26 @@ const MAX_AUDIT_RESPONSE_BYTES = 128 * 1024;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 16 * 1024 * 1024;
 const MAX_BUNDLE_FILES = 256;
+const REQUEST_RETRY_DELAYS_MS = [200, 800] as const;
 const AUDIT_TIME_PATTERN = /^(?<whole>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.(?<fraction>[0-9]{1,9}))?(?:Z|\+00:00)$/;
 const PROVIDER_SLUG_PATTERN = /^[A-Za-z0-9._-]+$/;
 const SKILL_SLUG_PATTERN = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
+const TRANSIENT_REQUEST_ERROR_CODES = new Set([
+  'EAI_AGAIN',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTDOWN',
+  'EHOSTUNREACH',
+  'ENETDOWN',
+  'ENETRESET',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
 
 type FetchImplementation = typeof fetch;
 
@@ -52,6 +70,59 @@ function codePoints(value: string): string[] {
 
 function truncate(value: string, length: number): string {
   return codePoints(value).slice(0, length).join('');
+}
+
+function requestErrorChain(error: unknown): unknown[] {
+  const pending = [error];
+  const visited = new Set<unknown>();
+  const chain: unknown[] = [];
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (current === undefined || visited.has(current)) continue;
+    visited.add(current);
+    chain.push(current);
+    if (isRecord(current)) {
+      if (current.cause !== undefined) pending.push(current.cause);
+      if (Array.isArray(current.errors)) pending.push(...current.errors);
+    }
+  }
+  return chain;
+}
+
+function requestErrorCodes(error: unknown): string[] {
+  return [
+    ...new Set(
+      requestErrorChain(error)
+        .map((item) => (isRecord(item) && typeof item.code === 'string' ? item.code : null))
+        .filter((code): code is string => code !== null),
+    ),
+  ];
+}
+
+function isRetryableRequestError(error: unknown): boolean {
+  const chain = requestErrorChain(error);
+  if (
+    chain.some(
+      (item) =>
+        item instanceof Error && (item.name === 'AbortError' || item.name === 'TimeoutError'),
+    )
+  ) {
+    return false;
+  }
+  const codes = requestErrorCodes(error);
+  if (codes.length > 0) {
+    return codes.some((code) => TRANSIENT_REQUEST_ERROR_CODES.has(code));
+  }
+  if (chain.some((item) => item instanceof Error && /redirect/i.test(item.message))) {
+    return false;
+  }
+  return error instanceof TypeError && error.message === 'fetch failed';
+}
+
+function describeRequestError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const codes = requestErrorCodes(error);
+  return codes.length === 0 ? message : `${message} (${codes.join(', ')})`;
 }
 
 async function readBoundedJson(response: Response, maximumBytes: number): Promise<unknown> {
@@ -269,21 +340,37 @@ export class HubClient {
     maximumBytes: number,
     timeoutMs: number,
   ): Promise<{ response: Response; payload?: unknown }> {
-    let response: Response;
-    try {
-      response = await this.#fetch(url, {
-        headers: {
-          accept: 'application/json',
-          'user-agent': `@wardn-ai/skills/${this.version}`,
-        },
-        redirect: 'error',
-        signal: AbortSignal.timeout(Math.min(this.#timeoutMs, timeoutMs)),
-      });
-    } catch (error) {
-      throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+    const requestTimeoutMs = Math.min(this.#timeoutMs, timeoutMs);
+    const deadline = Date.now() + requestTimeoutMs;
+    let attempt = 0;
+    while (true) {
+      attempt += 1;
+      try {
+        const response = await this.#fetch(url, {
+          headers: {
+            accept: 'application/json',
+            'user-agent': `@wardn-ai/skills/${this.version}`,
+          },
+          redirect: 'error',
+          signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+        });
+        if (!response.ok) return { response };
+        return { response, payload: await readBoundedJson(response, maximumBytes) };
+      } catch (error) {
+        const retryDelay = REQUEST_RETRY_DELAYS_MS[attempt - 1];
+        const canRetry =
+          retryDelay !== undefined &&
+          isRetryableRequestError(error) &&
+          Date.now() + retryDelay < deadline;
+        if (!canRetry) {
+          const attempts = attempt === 1 ? '' : ` after ${attempt} attempts`;
+          throw new Error(`${label} failed${attempts}: ${describeRequestError(error)}`, {
+            cause: error,
+          });
+        }
+        await delay(retryDelay);
+      }
     }
-    if (!response.ok) return { response };
-    return { response, payload: await readBoundedJson(response, maximumBytes) };
   }
 
   async search(query: string, owner?: string, limit = 8): Promise<SkillSearchResult> {
