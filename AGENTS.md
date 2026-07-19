@@ -23,10 +23,25 @@ For every substantive task in this repo, search Wardn Hub for applicable skills
 using the `find-skills` skill before proceeding. If an applicable Wardn Hub skill
 is found, use it according to the `find-skills` workflow.
 
+- Do not run `npx @wardn-ai/skills` directly from this repo. The npm workspace
+  shadows the published package with the local `hub/cli`, which may expect an
+  unreleased Hub API schema.
+- Run every Wardn CLI discovery command through a neutral npm prefix so npm uses
+  the published package while the CLI keeps this repo as its working directory:
+
+```sh
+npm exec --yes --prefix /tmp --package=@wardn-ai/skills -- \
+  wardn-skills search "QUERY" --limit 8 --json
+```
+
+- Use the same `npm exec ... -- wardn-skills` prefix for `audit`, `inspect`,
+  `fetch-bundle`, and other `find-skills` workflow commands.
+
 If `find-skills` is not installed, install it first:
 
 ```sh
-npx -y @wardn-ai/skills install 'abhi1693/wardn-hub/find-skills' --global --agent codex
+npm exec --yes --prefix /tmp --package=@wardn-ai/skills -- \
+  wardn-skills install 'abhi1693/wardn-hub/find-skills' --global --agent codex
 ```
 
 ## Release Checklist
