@@ -8308,3 +8308,159 @@ button:disabled,
     padding: 14px;
   }
 }
+
+/* Mobile interaction and density fixes. Keep these overrides together so shared
+   controls retain consistent touch targets across public catalog journeys. */
+@media (max-width: 980px) {
+  .site-menu-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  .site-nav-cta,
+  .site-action-link,
+  .site-user-trigger {
+    min-height: 44px;
+  }
+
+  .site-footer-brand-link,
+  .site-footer-section a,
+  .home-section-link,
+  .home-evidence-links a,
+  .registry-quick-links a {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .site-footer-section a {
+    display: flex;
+  }
+
+  .site-footer-social a {
+    width: 44px;
+    height: 44px;
+  }
+
+  .registry-hero-search input,
+  .home-search input,
+  .category-directory-search input,
+  .skills-request-form input,
+  .server-version-picker select {
+    font-size: 16px;
+  }
+
+  .category-directory-search input,
+  .skills-request-form input {
+    min-height: 44px;
+  }
+
+  .skills-request-trigger,
+  .skills-request-close,
+  .skills-request-submit,
+  .skills-filter-options button,
+  .skills-view-tabs a,
+  .category-directory-search button {
+    min-height: 44px;
+  }
+
+  .skills-request-close,
+  .category-directory-search button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .server-grid-load-more {
+    height: 44px;
+  }
+
+  .server-version-picker select {
+    height: 44px;
+  }
+
+  .skills-index-page .skills-view-tabs a {
+    min-height: 44px;
+  }
+
+  .submit-page a.inline-flex {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  .skills-hero-search-row {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .skills-hero-search-row .registry-hero-search-form {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .skills-request-card {
+    flex: 0 0 auto;
+  }
+
+  .skills-request-trigger {
+    width: 44px;
+    padding: 0;
+  }
+
+  .skills-request-trigger > span {
+    display: none;
+  }
+
+  .skills-index-page .skills-results-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .skills-index-page .skills-view-tabs {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .skills-index-page .skills-view-tabs a {
+    min-height: 44px;
+    padding: 0 4px;
+    text-align: center;
+  }
+
+  .skills-index-page .skills-table-header,
+  .skills-index-page .skills-table-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .skills-index-page .skills-table-source,
+  .skills-index-page .skills-table-number {
+    display: none;
+  }
+
+  .server-detail-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .server-detail-tabs button {
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 360px) {
+  .home-search {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 8px;
+  }
+
+  .home-search button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+  }
+}

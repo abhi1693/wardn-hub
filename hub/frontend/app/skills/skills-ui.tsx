@@ -288,7 +288,7 @@ export function SkillLeaderboard({
               </span>
               <small>{skill.description || skill.slug}</small>
               <span className="skills-table-mobile-meta">
-                {skill.source}
+                {skill.source} · {skill.installs.toLocaleString("en-US")} installs
               </span>
             </span>
           </span>

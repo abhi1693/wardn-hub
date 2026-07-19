@@ -390,7 +390,7 @@ export function SkillDetailTabs({
     {
       icon: <Download aria-hidden="true" size={16} />,
       id: "install",
-      label: "Installation Method",
+      label: "Install",
     },
     {
       icon: <FolderTree aria-hidden="true" size={16} />,

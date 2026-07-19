@@ -529,7 +529,7 @@ function SubmitServerPageContent() {
   return (
     <>
       <PublicHeader />
-      <main className="min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
+      <main className="submit-page min-h-[calc(100dvh-64px)] bg-background px-5 py-6">
       <div className="mx-auto grid w-full max-w-[var(--content-max-width)] gap-5">
         <section className="grid gap-1 border-b border-border pb-4">
           <p className="eyebrow">MCP Registry</p>

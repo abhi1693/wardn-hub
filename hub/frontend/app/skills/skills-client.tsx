@@ -166,6 +166,7 @@ function RequestSkillDialog({ onImported }: { onImported: () => void }) {
         <Dialog.Trigger asChild>
           <button
             aria-describedby={tooltipId}
+            aria-label="Request a Skill"
             className="skills-request-trigger"
             type="button"
           >
