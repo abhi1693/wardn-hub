@@ -35,6 +35,7 @@ before(async () => {
         JSON.stringify({
           query: 'weather',
           searchType: 'fuzzy',
+          auditEnabled: true,
           count: 1,
           durationMs: 1,
           data: [
@@ -46,6 +47,8 @@ before(async () => {
               description: 'Check weather.',
               isOfficial: false,
               auditStatus: 'pass',
+              auditScore: 100,
+              auditRank: 'S',
               installs: 3,
               url: 'https://hub.wardnai.dev/skills/acme/skills/weather',
               sourceUrl: 'https://github.com/acme/skills',
@@ -61,17 +64,21 @@ before(async () => {
         JSON.stringify({
           id: 'acme/skills/weather',
           contentHash: currentHash,
-          audits: [
-            {
-              provider: 'Wardn Policy',
-              slug: 'policy',
-              status: 'pass',
-              summary: 'No policy findings.',
-              auditedAt: '2026-07-17T10:00:00Z',
-              riskLevel: 'low',
-              categories: [],
-            },
-          ],
+          audit: {
+            scannerName: 'Cisco AI Skill Scanner',
+            scannerVersion: '2.0.12',
+            policyName: 'balanced',
+            policyVersion: '1.0',
+            policyFingerprint: 'b'.repeat(64),
+            status: 'pass',
+            summary: 'No scanner findings.',
+            auditedAt: '2026-07-17T10:00:00Z',
+            riskLevel: 'low',
+            categories: [],
+            score: 100,
+            rank: 'S',
+            scoreDeductions: [],
+          },
         }),
       );
       return;
@@ -145,7 +152,9 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
     assert.equal(JSON.parse(output.pop()).data[0].id, 'acme/skills/weather');
 
     assert.equal(await runCli(['audit', 'acme/skills/weather', '--json'], runtime), 0);
-    assert.equal(JSON.parse(output.pop()).hardRejectCount, 0);
+    const audit = JSON.parse(output.pop());
+    assert.equal(audit.audit.status, 'pass');
+    assert.equal(audit.audit.score, 100);
 
     assert.equal(await runCli(['inspect', 'acme/skills/weather', '--json'], runtime), 0);
     assert.equal(JSON.parse(output.pop()).hash, currentHash);
@@ -242,7 +251,7 @@ test('CLI search is human-readable by default and JSON only when requested', asy
     assert.match(humanOutput, /Found 1 skill for "weather":/);
     assert.match(humanOutput, /1\. Weather/);
     assert.match(humanOutput, /ID: acme\/skills\/weather/);
-    assert.match(humanOutput, /community · 3 installs · pass/);
+    assert.match(humanOutput, /community · 3 installs · S 100\/100 \(pass\)/);
     assert.match(humanOutput, /https:\/\/hub\.wardnai\.dev\/skills\/acme\/skills\/weather/);
     assert.throws(() => JSON.parse(humanOutput), SyntaxError);
 

@@ -1,8 +1,7 @@
 import argparse
 import asyncio
 
-from app.cli.audit_skills import add_audit_arguments, audit_skills_from_args
-from app.cli.review_pending_submissions import UserFacingError
+from app.cli.audit_skills import UserFacingError, add_audit_arguments, audit_skills_from_args
 from app.cli.skills import (
     DEFAULT_IMPORT_TIMEOUT_SECONDS,
     GITHUB_TOKEN_ENV,
@@ -11,7 +10,8 @@ from app.cli.skills import (
     add_skill_from_args,
     import_github_from_args,
     mark_official_from_args,
-    refresh_github_from_args,
+    run_import_github_command,
+    run_refresh_github_command,
 )
 from app.core.logging import configure_logging
 from app.db.session import AsyncSessionLocal
@@ -117,12 +117,12 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "skills" and args.skills_command == "import-github":
         try:
             configure_logging()
-            return asyncio.run(import_github_from_args(args))
+            return run_import_github_command(args, importer=import_github_from_args)
         except SkillCliError as exc:
             parser.error(str(exc))
     elif args.command == "skills" and args.skills_command == "refresh":
         configure_logging()
-        return asyncio.run(refresh_github_from_args(args))
+        return run_refresh_github_command(args)
     elif args.command == "skills" and args.skills_command == "audit":
         try:
             configure_logging()

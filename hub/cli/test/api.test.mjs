@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { HubClient, telemetryDisabled } from '../dist/index.js';
+
+const contractFixture = JSON.parse(
+  readFileSync(new URL('./fixtures/skill-api-contract.json', import.meta.url), 'utf8'),
+);
 
 function skillMarkdown(name = 'weather') {
   return `---\nname: ${name}\ndescription: Check the weather.\n---\n\n# Weather\n`;
@@ -182,6 +187,7 @@ test('HubClient validates compact skill search results', async () => {
         JSON.stringify({
           query: 'code audit',
           searchType: 'semantic',
+          auditEnabled: true,
           count: 1,
           durationMs: 3,
           data: [
@@ -193,6 +199,8 @@ test('HubClient validates compact skill search results', async () => {
               description: 'Review source safely.',
               isOfficial: false,
               auditStatus: 'pass',
+              auditScore: 100,
+              auditRank: 'S',
               installs: 42,
               url: 'https://hub.wardnai.dev/skills/acme/skills/code-audit',
               sourceUrl: 'https://github.com/acme/skills',
@@ -209,6 +217,8 @@ test('HubClient validates compact skill search results', async () => {
   assert.equal(result.count, 1);
   assert.equal(result.data[0].id, 'acme/skills/code-audit');
   assert.equal(result.data[0].auditStatus, 'pass');
+  assert.equal(result.data[0].auditScore, 100);
+  assert.equal(result.data[0].auditRank, 'S');
   const url = new URL(requestedUrl);
   assert.equal(url.pathname, '/api/v1/skills/search');
   assert.equal(url.searchParams.get('q'), 'code audit');
@@ -216,7 +226,53 @@ test('HubClient validates compact skill search results', async () => {
   assert.equal(url.searchParams.get('limit'), '8');
 });
 
-test('HubClient normalizes current audits and treats 404 as unaudited', async () => {
+test('HubClient accepts backend-generated skill API contract fixtures', async () => {
+  const client = new HubClient({
+    version: '0.1.0',
+    fetchImplementation: async (input) => {
+      const pathname = new URL(String(input)).pathname;
+      const payload = pathname.endsWith('/search')
+        ? contractFixture.search
+        : contractFixture.audit;
+      return new Response(JSON.stringify(payload), { status: 200 });
+    },
+  });
+
+  const search = await client.search('code audit', undefined, 8);
+  const audit = await client.audit('acme/skills/code-audit');
+
+  assert.equal(search.data[0].auditScore, 79);
+  assert.equal(audit.audit.scannerName, 'Cisco AI Skill Scanner');
+  assert.equal(audit.audit.status, 'warn');
+  assert.equal(audit.audit.score, 79);
+  assert.equal(audit.audit.rank, 'A');
+});
+
+test('HubClient rejects legacy or internally inconsistent audit contracts', async () => {
+  const legacy = structuredClone(contractFixture.audit);
+  legacy.audits = [legacy.audit];
+  delete legacy.audit;
+  const inconsistent = structuredClone(contractFixture.audit);
+  inconsistent.audit.rank = 'S';
+  const statusMismatch = structuredClone(contractFixture.audit);
+  statusMismatch.audit.status = 'pass';
+  const capViolation = structuredClone(contractFixture.audit);
+  capViolation.audit.score = 80;
+
+  for (const payload of [legacy, inconsistent, statusMismatch, capViolation]) {
+    const client = new HubClient({
+      version: '0.1.0',
+      fetchImplementation: async () =>
+        new Response(JSON.stringify(payload), { status: 200 }),
+    });
+    await assert.rejects(
+      () => client.audit('acme/skills/code-audit'),
+      /audit response failed validation/,
+    );
+  }
+});
+
+test('HubClient normalizes the current audit and treats 404 as unaudited', async () => {
   const longSummary = `${'x'.repeat(239)}\ntrailing`;
   const client = new HubClient({
     version: '0.1.0',
@@ -225,44 +281,28 @@ test('HubClient normalizes current audits and treats 404 as unaudited', async ()
         JSON.stringify({
           id: 'acme/skills/weather',
           contentHash: 'a'.repeat(64),
-          audits: [
-            {
-              provider: 'Wardn Policy',
-              slug: 'policy',
-              status: 'pass',
-              summary: 'Initially accepted.',
-              auditedAt: '2026-07-17T10:00:00.1Z',
-              riskLevel: 'low',
-              categories: [],
-            },
-            {
-              provider: 'Wardn Policy',
-              slug: 'policy',
-              status: 'fail',
-              summary: longSummary,
-              auditedAt: '2026-07-17T10:00:00.100000000+00:00',
-              riskLevel: 'low',
-              categories: ['execution'],
-            },
-            {
-              provider: 'Wardn Review',
-              slug: 'review',
-              status: 'pass',
-              summary: 'Needs attention.',
-              auditedAt: '2026-07-17T11:00:00Z',
-              riskLevel: 'medium',
-              categories: null,
-            },
-            {
-              provider: 'Independent Review',
-              slug: 'policy',
-              status: 'pass',
-              summary: 'Independent policy check passed.',
-              auditedAt: '2026-07-17T12:00:00Z',
-              riskLevel: 'low',
-              categories: [],
-            },
-          ],
+          audit: {
+            scannerName: 'Cisco AI Skill Scanner',
+            scannerVersion: '2.0.12',
+            policyName: 'balanced',
+            policyVersion: '1.0',
+            policyFingerprint: 'b'.repeat(64),
+            status: 'fail',
+            summary: longSummary,
+            auditedAt: '2026-07-17T10:00:00.100000000+00:00',
+            riskLevel: 'high',
+            categories: ['command_execution'],
+            score: 49,
+            rank: 'B',
+            scoreDeductions: [
+              {
+                category: 'command_execution',
+                points: 51,
+                findingCount: 1,
+                maxSeverity: 'high',
+              },
+            ],
+          },
         }),
         { status: 200 },
       ),
@@ -270,17 +310,14 @@ test('HubClient normalizes current audits and treats 404 as unaudited', async ()
 
   const result = await client.audit('acme/skills/weather');
 
-  assert.equal(result.hardRejectCount, 1);
-  assert.equal(result.warningCount, 1);
-  assert.equal(result.failureCount, 1);
-  assert.equal(result.latestAudits.length, 3);
-  const policyAudit = result.latestAudits.find(
-    (audit) => audit.provider === 'Wardn Policy' && audit.slug === 'policy',
-  );
-  assert.equal(policyAudit.status, 'fail');
-  assert.equal(policyAudit.summaryTruncated, true);
-  assert.equal(policyAudit.summary.length, 240);
-  assert.doesNotMatch(policyAudit.summary, /[\r\n\t]/);
+  const scannerAudit = result.audit;
+  assert.equal(scannerAudit.scannerName, 'Cisco AI Skill Scanner');
+  assert.equal(scannerAudit.status, 'fail');
+  assert.equal(scannerAudit.score, 49);
+  assert.equal(scannerAudit.rank, 'B');
+  assert.equal(scannerAudit.summaryTruncated, true);
+  assert.equal(scannerAudit.summary.length, 240);
+  assert.doesNotMatch(scannerAudit.summary, /[\r\n\t]/);
 
   const unauditedClient = new HubClient({
     version: '0.1.0',

@@ -22,13 +22,13 @@ import {
 const DEFAULT_API_BASE_URL = 'https://hub.wardnai.dev/api/v1';
 const MAX_RESPONSE_BYTES = 48 * 1024 * 1024;
 const MAX_DETAIL_RESPONSE_BYTES = 512 * 1024;
-const MAX_AUDIT_RESPONSE_BYTES = 128 * 1024;
+const MAX_AUDIT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 16 * 1024 * 1024;
 const MAX_BUNDLE_FILES = 256;
 const REQUEST_RETRY_DELAYS_MS = [200, 800] as const;
 const AUDIT_TIME_PATTERN = /^(?<whole>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.(?<fraction>[0-9]{1,9}))?(?:Z|\+00:00)$/;
-const PROVIDER_SLUG_PATTERN = /^[A-Za-z0-9._-]+$/;
+const OWNER_PATTERN = /^[A-Za-z0-9._-]+$/;
 const SKILL_SLUG_PATTERN = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
 const TRANSIENT_REQUEST_ERROR_CODES = new Set([
   'EAI_AGAIN',
@@ -125,6 +125,18 @@ function describeRequestError(error: unknown): string {
   return codes.length === 0 ? message : `${message} (${codes.join(', ')})`;
 }
 
+function rankForScore(score: number): SkillAuditSummary['rank'] {
+  if (score >= 99) return 'S';
+  if (score >= 88) return 'A+';
+  if (score >= 75) return 'A';
+  if (score >= 63) return 'A-';
+  if (score >= 50) return 'B+';
+  if (score >= 38) return 'B';
+  if (score >= 25) return 'B-';
+  if (score >= 13) return 'C+';
+  return 'C';
+}
+
 async function readBoundedJson(response: Response, maximumBytes: number): Promise<unknown> {
   if (response.body === null) {
     throw new Error('Wardn Hub returned an empty response');
@@ -200,6 +212,8 @@ function validateSearchItem(value: unknown): SkillSearchItem {
     description,
     isOfficial,
     auditStatus,
+    auditScore,
+    auditRank,
     installs,
     url,
     sourceUrl,
@@ -223,12 +237,20 @@ function validateSearchItem(value: unknown): SkillSearchItem {
       auditStatus !== 'pass' &&
       auditStatus !== 'warn' &&
       auditStatus !== 'fail') ||
+    (auditScore !== null && (!isInteger(auditScore) || auditScore > 100)) ||
+    (auditRank !== null &&
+      !['S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C'].includes(String(auditRank))) ||
+    ((auditStatus === null) !== (auditScore === null)) ||
+    ((auditStatus === null) !== (auditRank === null)) ||
     !isInteger(installs) ||
     typeof url !== 'string' ||
     url.length > 2048 ||
     !/^https:\/\/[^\s]+$/.test(url) ||
     (sourceUrl !== null && (typeof sourceUrl !== 'string' || sourceUrl.length > 2048))
   ) {
+    throw new Error('Wardn skill search response failed validation');
+  }
+  if (auditScore !== null && auditRank !== rankForScore(auditScore)) {
     throw new Error('Wardn skill search response failed validation');
   }
   encodeSkillId(id);
@@ -239,72 +261,110 @@ function validateSearchItem(value: unknown): SkillSearchItem {
     source,
     isOfficial,
     auditStatus,
+    auditScore,
+    auditRank: auditRank as SkillSearchItem['auditRank'],
     installs,
     url,
     sourceUrl,
   };
 }
 
-function auditTimeKey(value: string): string {
-  const match = AUDIT_TIME_PATTERN.exec(value);
-  const groups = match?.groups;
-  const whole = groups?.whole;
-  if (whole === undefined) {
+function validateAuditTimestamp(value: string): void {
+  if (!AUDIT_TIME_PATTERN.test(value)) {
     throw new Error('Wardn skill audit response failed validation');
   }
-  return `${whole}.${(groups?.fraction ?? '').padEnd(9, '0')}`;
 }
 
 interface ValidatedAudit extends Omit<SkillAuditSummary, 'summaryTruncated'> {
-  timeKey: string;
   originalSummary: string;
-}
-
-function decisionSeverity(audit: Pick<ValidatedAudit, 'status' | 'riskLevel'>): number {
-  const risk = (audit.riskLevel ?? '').trim().toLowerCase();
-  if (!['', 'low', 'medium', 'high', 'critical'].includes(risk)) return 2;
-  if (audit.status === 'fail' || risk === 'high' || risk === 'critical') return 2;
-  if (audit.status === 'warn' || risk === 'medium') return 1;
-  return 0;
 }
 
 function validateAudit(value: unknown): ValidatedAudit {
   if (!isRecord(value)) {
     throw new Error('Wardn skill audit response failed validation');
   }
-  const { provider, slug, status, summary, auditedAt, riskLevel, categories } = value;
+  const {
+    scannerName,
+    scannerVersion,
+    policyName,
+    policyVersion,
+    policyFingerprint,
+    status,
+    summary,
+    auditedAt,
+    riskLevel,
+    categories,
+    score,
+    rank,
+    scoreDeductions,
+  } = value;
   if (
-    typeof provider !== 'string' ||
-    provider.length === 0 ||
-    provider.length > 80 ||
-    typeof slug !== 'string' ||
-    slug.length === 0 ||
-    slug.length > 120 ||
-    slug === '.' ||
-    slug === '..' ||
-    !PROVIDER_SLUG_PATTERN.test(slug) ||
+    typeof scannerName !== 'string' ||
+    scannerName.length === 0 ||
+    scannerName.length > 120 ||
+    typeof scannerVersion !== 'string' ||
+    scannerVersion.length === 0 ||
+    scannerVersion.length > 32 ||
+    typeof policyName !== 'string' ||
+    policyName.length === 0 ||
+    policyName.length > 120 ||
+    typeof policyVersion !== 'string' ||
+    policyVersion.length > 32 ||
+    typeof policyFingerprint !== 'string' ||
+    !/^(?:|[a-f0-9]{64})$/.test(policyFingerprint) ||
     (status !== 'pass' && status !== 'warn' && status !== 'fail') ||
     typeof summary !== 'string' ||
     typeof auditedAt !== 'string' ||
-    (riskLevel !== null && (typeof riskLevel !== 'string' || riskLevel.length > 32)) ||
+    !['low', 'medium', 'high', 'critical'].includes(String(riskLevel)) ||
     (categories !== null &&
       (!Array.isArray(categories) ||
-        categories.length > 8 ||
-        categories.some((category) => typeof category !== 'string' || category.length > 64)))
+        categories.length > 500 ||
+        categories.some((category) => typeof category !== 'string' || category.length > 256))) ||
+    !isInteger(score) ||
+    score > 100 ||
+    !['S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C'].includes(String(rank)) ||
+    rank !== rankForScore(score) ||
+    !Array.isArray(scoreDeductions) ||
+    scoreDeductions.length > 500 ||
+    scoreDeductions.some(
+      (deduction) =>
+        !isRecord(deduction) ||
+        typeof deduction.category !== 'string' ||
+        deduction.category.length > 256 ||
+        !isInteger(deduction.points) ||
+        deduction.points > 100 ||
+        !isInteger(deduction.findingCount) ||
+        typeof deduction.maxSeverity !== 'string' ||
+        !['safe', 'info', 'low', 'medium', 'high', 'critical'].includes(
+          deduction.maxSeverity,
+        ),
+    )
   ) {
     throw new Error('Wardn skill audit response failed validation');
   }
-  const timeKey = auditTimeKey(auditedAt);
+  const expectedStatus =
+    riskLevel === 'low' ? 'pass' : riskLevel === 'medium' ? 'warn' : 'fail';
+  const scoreCap =
+    riskLevel === 'medium' ? 79 : riskLevel === 'high' ? 49 : riskLevel === 'critical' ? 24 : 100;
+  if (status !== expectedStatus || score > scoreCap) {
+    throw new Error('Wardn skill audit response failed validation');
+  }
+  validateAuditTimestamp(auditedAt);
   return {
-    provider,
-    slug,
+    scannerName,
+    scannerVersion,
+    policyName,
+    policyVersion,
+    policyFingerprint,
     status,
     summary: truncate(summary.replace(/[\r\n\t]/g, ' '), 240),
     originalSummary: summary,
     auditedAt,
-    riskLevel,
+    riskLevel: riskLevel as SkillAuditSummary['riskLevel'],
     categories,
-    timeKey,
+    score,
+    rank: rank as SkillAuditSummary['rank'],
+    scoreDeductions: scoreDeductions as SkillAuditSummary['scoreDeductions'],
   };
 }
 
@@ -383,7 +443,7 @@ export class HubClient {
     }
     if (
       owner !== undefined &&
-      (owner.length === 0 || owner.length > 200 || !PROVIDER_SLUG_PATTERN.test(owner))
+      (owner.length === 0 || owner.length > 200 || !OWNER_PATTERN.test(owner))
     ) {
       throw new Error('search owner is invalid');
     }
@@ -404,6 +464,7 @@ export class HubClient {
       !isRecord(payload) ||
       typeof payload.query !== 'string' ||
       typeof payload.searchType !== 'string' ||
+      typeof payload.auditEnabled !== 'boolean' ||
       !isInteger(payload.count) ||
       typeof payload.durationMs !== 'number' ||
       !Number.isFinite(payload.durationMs) ||
@@ -414,7 +475,12 @@ export class HubClient {
       throw new Error('Wardn skill search response failed validation');
     }
     const data = payload.data.map(validateSearchItem);
-    return { query: payload.query, count: payload.count, data };
+    return {
+      auditEnabled: payload.auditEnabled,
+      query: payload.query,
+      count: payload.count,
+      data,
+    };
   }
 
   async audit(id: string): Promise<SkillAuditResult> {
@@ -434,50 +500,32 @@ export class HubClient {
       !isRecord(payload) ||
       payload.id !== id ||
       typeof payload.contentHash !== 'string' ||
-      !Array.isArray(payload.audits) ||
-      payload.audits.length === 0 ||
-      payload.audits.length > 32
+      !isRecord(payload.audit)
     ) {
       throw new Error('Wardn skill audit response failed validation');
     }
     const contentHash = validateHash(payload.contentHash);
-    const audits = payload.audits.map(validateAudit);
-    if (new Set(audits.map((audit) => audit.slug)).size > 8) {
-      throw new Error('Wardn skill audit response failed validation');
-    }
-
-    const latestByCheck = new Map<string, ValidatedAudit>();
-    for (const audit of audits) {
-      const checkKey = `${audit.provider}\u0000${audit.slug}`;
-      const selected = latestByCheck.get(checkKey);
-      if (
-        selected === undefined ||
-        audit.timeKey > selected.timeKey ||
-        (audit.timeKey === selected.timeKey && decisionSeverity(audit) >= decisionSeverity(selected))
-      ) {
-        latestByCheck.set(checkKey, audit);
-      }
-    }
-    const latest = [...latestByCheck.values()].sort(
-      (left, right) =>
-        left.provider.localeCompare(right.provider) || left.slug.localeCompare(right.slug),
-    );
+    const audit = validateAudit(payload.audit);
+    const currentAudit = {
+      scannerName: audit.scannerName,
+      scannerVersion: audit.scannerVersion,
+      policyName: audit.policyName,
+      policyVersion: audit.policyVersion,
+      policyFingerprint: audit.policyFingerprint,
+      status: audit.status,
+      riskLevel: audit.riskLevel,
+      auditedAt: audit.auditedAt,
+      categories: audit.categories,
+      summary: audit.summary,
+      summaryTruncated: codePoints(audit.originalSummary).length > 240,
+      score: audit.score,
+      rank: audit.rank,
+      scoreDeductions: audit.scoreDeductions,
+    };
     return {
       id,
       contentHash,
-      hardRejectCount: latest.filter((audit) => decisionSeverity(audit) === 2).length,
-      warningCount: latest.filter((audit) => decisionSeverity(audit) === 1).length,
-      failureCount: audits.filter((audit) => audit.status === 'fail').length,
-      latestAudits: latest.map((audit) => ({
-        slug: audit.slug,
-        provider: audit.provider,
-        status: audit.status,
-        riskLevel: audit.riskLevel,
-        auditedAt: audit.auditedAt,
-        categories: audit.categories,
-        summary: audit.summary,
-        summaryTruncated: codePoints(audit.originalSummary).length > 240,
-      })),
+      audit: currentAudit,
     };
   }
 

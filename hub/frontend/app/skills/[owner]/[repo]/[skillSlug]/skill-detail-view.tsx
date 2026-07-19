@@ -112,14 +112,14 @@ export async function SkillDetailView({
 }: SkillDetailViewProps) {
   const source = `${owner}/${repo}`;
   const id = `${source}/${skillSlug}`;
-  const [skill, sourceSkills, audit] = await Promise.all([
+  const [skill, sourceSkills] = await Promise.all([
     getPublicSkill(id, { includeBundle: true }).catch((error) => {
       if (isSkillsNotFoundError(error)) notFound();
       throw error;
     }),
     listPublicSkills({ limit: 100, source }).catch(() => []),
-    getPublicSkillAudit(id),
   ]);
+  const audit = skill.auditEnabled ? await getPublicSkillAudit(id) : null;
   const files = publishedSkillFiles(skill);
   const selectedFile =
     files.find((file) => file.path === selectedFilePath) ??
@@ -177,8 +177,12 @@ export async function SkillDetailView({
                 </div>
                 <div className="skill-detail-byline">
                   <Link href={skillSourcePath(source)}>{source}</Link>
-                  <span aria-hidden="true">·</span>
-                  <SkillAuditBadge audit={audit} />
+                  {skill.auditEnabled ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <SkillAuditBadge audit={audit} />
+                    </>
+                  ) : null}
                   {contentHash ? (
                     <>
                       <span aria-hidden="true">·</span>
@@ -242,6 +246,7 @@ export async function SkillDetailView({
           </div>
         }
         initialTab={viewingSkillMd ? (initialTab ?? "overview") : "files"}
+        auditEnabled={skill.auditEnabled}
         overview={
           <div className="skill-tab-overview-layout">
             <section className="skill-overview-summary" aria-labelledby="skill-summary-heading">
@@ -264,19 +269,19 @@ export async function SkillDetailView({
           </div>
         }
         overviewPath={skillDetailPath(id)}
-        security={
+        security={skill.auditEnabled ? (
           <div className="skill-tab-security-layout">
             <div className="skill-security-intro">
               <span className="registry-hero-eyebrow">Snapshot security</span>
               <h2>Audit evidence for this exact bundle</h2>
               <p>
-                Provider decisions apply to the content hash shown here. Review warnings and risk
-                categories before installation.
+                The local Cisco scanner result applies to the content hash shown here. Review its
+                score deductions and findings before installation.
               </p>
             </div>
             <SkillAuditPanel audit={audit} />
           </div>
-        }
+        ) : undefined}
         skillId={id}
         skillSlug={skill.slug}
       />

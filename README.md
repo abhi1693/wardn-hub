@@ -256,40 +256,77 @@ commit independently; the command returns a nonzero status when any recorded
 skill cannot be refreshed. Failed records keep their last snapshot and
 publication state so transient GitHub failures cannot silently unpublish catalog
 entries; review the structured failure logs. Changed snapshot hashes clear prior
-skill audit results and must be audited again. The command uses `GITHUB_TOKEN`
-when present. Rate-limit responses sleep and retry the same refresh request;
-authentication, non-rate-limit GitHub server, and transport failures stop the
-remaining refresh requests.
+skill audit results. When auditing is enabled, the refresh command immediately
+runs the pending-audit queue so changed snapshots are rescanned before it exits.
+The command uses `GITHUB_TOKEN` when present. Rate-limit responses sleep and retry
+the same refresh request; authentication, non-rate-limit GitHub server, and
+transport failures stop the remaining refresh requests.
 
-Audit every current public skill snapshot that does not yet have a completed
-audit:
+When skill auditing is enabled, every `skills import-github` and `skills refresh`
+command immediately runs the pending-audit queue after its GitHub phase finishes.
+Successfully committed skills are audited even when another repository or skill
+made the overall command return a failure. The command returns a nonzero status
+if either its GitHub phase or its audit phase fails.
+
+You can also manually audit every current public skill snapshot that does not
+yet have a completed audit:
 
 ```sh
 cd hub/backend
-uv run python -m app.manage skills audit
+WARDN_HUB_SKILL_AUDIT_ENABLED=true uv run python -m app.manage skills audit
 ```
 
-The command streams one skill bundle from PostgreSQL at a time. It first applies
-deterministic bundle-safety and resolver-compatibility checks, then sends bounded
-UTF-8 bundle evidence to the configured Codex app-server for a structured
-security review. Opaque executables and malformed or resolver-incompatible
-bundles fail without model execution. Oversized text that cannot fit in the
-bounded review prompt produces a warning rather than an unsafe pass.
+Skill auditing is disabled by default. Set `WARDN_HUB_SKILL_AUDIT_ENABLED=true`
+on the API and import/refresh worker to expose results, automatically audit after
+GitHub imports and refreshes, and allow the manual command to run. When disabled,
+imports continue without scanning, catalog responses omit audit statuses, the UI
+hides audit controls, and the audit endpoint does not expose stored results.
+Skill-install telemetry is independent of this gate and remains unchanged.
+
+The command streams one skill bundle from PostgreSQL at a time. It validates
+safe materialization, then runs the pinned Cisco AI Skill Scanner locally with
+its balanced policy, core static/YARA, bytecode, pipeline, and behavioral AST
+analyzers. It never enables the scanner's meta, Cisco AI Defense, or VirusTotal
+integrations. By default, the LLM analyzer is also disabled and bundle content
+is not sent to a model. Opaque executables and malformed or
+resolver-incompatible bundles fail before materialization.
+
+Set `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED=true` to add the scanner's semantic LLM
+analyzer while the main audit gate is enabled. Configure the provider with the
+scanner's standard `SKILL_SCANNER_LLM_PROVIDER`, `SKILL_SCANNER_LLM_MODEL`,
+`SKILL_SCANNER_LLM_API_KEY`, `SKILL_SCANNER_LLM_BASE_URL`, and
+`SKILL_SCANNER_LLM_API_VERSION` environment variables as required by the chosen
+backend. When enabled, skill instructions and bundled source are sent to that
+provider. The scanner result must report that `llm_analyzer` completed; missing
+or failed LLM coverage leaves the skill unaudited. The gate and non-secret LLM
+routing values are included in the audit configuration SHA-256, so changing the
+provider, model, endpoint, API version, or temperature makes earlier results
+stale. The API key is never included in that fingerprint.
+
+Every result includes a deterministic security score from 0 to 100. Findings
+are grouped by security category; every category deducts points based on its
+highest severity, and additional findings in the category continue to deduct at
+a reduced rate. Medium, high, and critical findings also enforce score ceilings
+of 79, 49, and 24 so a severe issue cannot be hidden by otherwise clean files.
+Scores use GitHub-profile-style ranks: `S` (99–100), `A+` (88–98), `A`
+(75–87), `A-` (63–74), `B+` (50–62), `B` (38–49), `B-` (25–37), `C+`
+(13–24), and `C` (0–12). Pass/warn/fail remains a separate compatibility and
+security floor.
 
 Each result is bound to the exact current snapshot ID and content hash, and each
 skill commits independently. A later import or refresh that changes the bundle
-invalidates its audits. Restarting the command skips completed current snapshots
-and retries skills whose review failed, so a long catalog audit is resumable
-without loading the catalog into memory. Codex rate-limit responses keep the
-current skill in place, sleep with bounded exponential backoff (honoring a
-reported retry-after delay), and retry until the limit clears or the operator
-interrupts the process.
+invalidates its audit. Scanner version, policy fingerprint, analyzer set, and
+normalizer version are persisted with the result. Changing the pinned audit
+configuration makes prior rows ineligible until those snapshots are rescanned.
+Restarting the command skips completed current snapshots and retries scanner
+errors, so a long catalog audit is resumable without loading the catalog into
+memory.
 
 Use `--skill-id owner/repository/slug` for one skill, `--max-skills` to bound a
-run, `--reaudit` to append fresh results for already audited current snapshots,
-and `--dry-run` for deterministic checks without Codex or database writes. Set
-`WARDN_HUB_CODEX_APP_SERVER_URL` and, when required,
-`WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN` for live audits.
+run, `--reaudit` to replace the current result for matching snapshots,
+`--scanner-timeout` to bound each local scanner subprocess, and `--dry-run` to
+run the complete scan without database writes. A dry run still calls the LLM
+provider when its gate is enabled.
 
 For example, import every skill under `skills` across an organization's active
 repositories:
@@ -329,7 +366,7 @@ npx @wardn-ai/skills remove skill-slug -g -a codex -y
 
 The repository's `find-skills` skill is declarative: it invokes the latest release
 of this npm package by default and contains no bundled resolver or self-installer
-scripts. Append an exact version, such as `@wardn-ai/skills@0.1.5`, when a pinned
+scripts. Append an exact version, such as `@wardn-ai/skills@0.1.6`, when a pinned
 release is preferred.
 Install or update that bootstrap skill through the same lifecycle command:
 
@@ -390,6 +427,8 @@ prefix. `hub/backend/.env.example` contains the local defaults.
 | `WARDN_HUB_API_PREFIX` | API prefix. Defaults to `/api/v1`. |
 | `WARDN_HUB_DATABASE_URL` | PostgreSQL SQLAlchemy URL, for example `postgresql+asyncpg://user:password@localhost:5432/wardn_hub`. |
 | `WARDN_HUB_DATABASE_CLIENT_POOL_ENABLED` | Enables the application-side SQLAlchemy connection pool. Defaults to `true`; set to `false` when the database URL targets an external session pooler such as PgBouncer. |
+| `WARDN_HUB_SKILL_AUDIT_ENABLED` | Enables Cisco-backed post-import and manual skill audits, audit filtering, and audit result exposure. Defaults to `false`. |
+| `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` | Adds the Cisco scanner's semantic LLM analyzer to enabled skill audits. Configure it with `SKILL_SCANNER_LLM_*` variables. Defaults to `false`. |
 | `WARDN_HUB_CORS_ORIGINS` | Comma-separated browser origins allowed by the backend. |
 | `WARDN_HUB_SESSION_SECRET` | Secret used for signed session cookies. Must be high entropy in production. |
 | `WARDN_HUB_API_TOKEN_SECRET` | Secret used for API token signing. Must be independent from the session secret in production. |

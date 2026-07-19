@@ -141,8 +141,8 @@ async def test_list_skills_filters_by_current_audit_status() -> None:
     )
     warned_sql = warned_session.statements[-1]
     assert "skill_audits" in warned_sql
-    assert "row_number() OVER" in warned_sql
-    assert "max(CASE" in warned_sql
+    assert "configuration_hash" in warned_sql
+    assert "row_number() OVER" not in warned_sql
     assert "audit_status" in warned_sql
     assert " IN (SELECT" in warned_sql
 
@@ -158,15 +158,15 @@ async def test_list_skills_filters_by_current_audit_status() -> None:
     assert "LEFT OUTER JOIN" not in unaudited_sql
 
 
-def test_audit_filter_materializes_ranked_statuses_on_postgresql() -> None:
+def test_audit_filter_uses_single_current_snapshot_result() -> None:
     statement = repository.apply_audit_status_filter(
         repository.published_skill_query(Skill),
         "unaudited",
     )
 
     compiled = str(statement.compile(dialect=postgresql.dialect()))
-    assert "ranked_current_skill_audits AS MATERIALIZED" in compiled
-    assert "current_skill_audit_weights AS MATERIALIZED" in compiled
+    assert "skill_audits.configuration_hash" in compiled
+    assert "MATERIALIZED" not in compiled
     assert "NOT IN (SELECT" in compiled
 
 
@@ -187,6 +187,53 @@ async def test_list_skills_rejects_unknown_audit_status() -> None:
             object(),  # type: ignore[arg-type]
             audit_status="unknown",
         )
+
+
+async def test_disabled_audit_gate_hides_statuses_and_ignores_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=False),
+    )
+    captured: list[object] = []
+
+    async def list_skills(*args: object, **kwargs: object):
+        captured.append(kwargs["audit_status"])
+        return [], 0
+
+    async def official_owner_keys(*args: object):
+        return set()
+
+    async def unexpected_status_lookup(*args: object):
+        raise AssertionError("audit statuses must not be queried while the gate is disabled")
+
+    monkeypatch.setattr(service.repository, "list_skills", list_skills)
+    monkeypatch.setattr(service.repository, "official_owner_keys", official_owner_keys)
+    monkeypatch.setattr(
+        service.repository,
+        "current_skill_audits",
+        unexpected_status_lookup,
+    )
+
+    response = await service.list_skills(object(), audit_status="fail")  # type: ignore[arg-type]
+
+    assert captured == [None]
+    assert response.audit_enabled is False
+
+
+async def test_disabled_audit_gate_hides_stored_audit_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=False),
+    )
+
+    with pytest.raises(service.SkillAuditNotFoundError, match="disabled"):
+        await service.get_skill_audit(object(), "acme/skills/weather")  # type: ignore[arg-type]
 
 
 def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:
@@ -321,18 +368,18 @@ async def test_get_skill_snapshot_can_defer_bundle_files() -> None:
     assert "skill_snapshots.files" not in selected_columns
 
 
-async def test_list_skill_audits_requires_current_snapshot_hash_and_is_bounded() -> None:
+async def test_get_current_skill_audit_requires_current_snapshot_hash_and_is_bounded() -> None:
     class FakeSession:
         statement = ""
 
         async def execute(self, statement: object) -> SimpleNamespace:
             self.statement = str(statement)
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=list))
+            return SimpleNamespace(scalar_one_or_none=lambda: None)
 
     session = FakeSession()
     skill = SimpleNamespace(id="skill-id", current_snapshot_id="snapshot-id")
 
-    await repository.list_skill_audits(session, skill)  # type: ignore[arg-type]
+    await repository.get_current_skill_audit(session, skill)  # type: ignore[arg-type]
 
     assert "skill_audits.snapshot_id" in session.statement
     assert "skill_audits.content_hash" in session.statement
@@ -340,7 +387,7 @@ async def test_list_skill_audits_requires_current_snapshot_hash_and_is_bounded()
     assert "LIMIT" in session.statement
 
 
-async def test_current_skill_audit_statuses_uses_latest_check_results() -> None:
+async def test_current_skill_audits_uses_unique_snapshot_results() -> None:
     class FakeSession:
         statement = ""
 
@@ -348,9 +395,8 @@ async def test_current_skill_audit_statuses_uses_latest_check_results() -> None:
             self.statement = str(statement)
             return SimpleNamespace(
                 all=lambda: [
-                    ("skill-one", "warn"),
-                    ("skill-one", "pass"),
-                    ("skill-two", "fail"),
+                    ("skill-one", "warn", 79, "A"),
+                    ("skill-two", "fail", 24, "C+"),
                 ]
             )
 
@@ -360,16 +406,20 @@ async def test_current_skill_audit_statuses_uses_latest_check_results() -> None:
         SimpleNamespace(id="skill-two", current_snapshot_id="snapshot-two"),
     ]
 
-    statuses = await repository.current_skill_audit_statuses(  # type: ignore[arg-type]
+    audits = await repository.current_skill_audits(  # type: ignore[arg-type]
         session,
         skills,
     )
 
-    assert statuses == {"skill-one": "warn", "skill-two": "fail"}
+    assert audits == {
+        "skill-one": repository.CurrentSkillAudit(status="warn", score=79, rank="A"),
+        "skill-two": repository.CurrentSkillAudit(status="fail", score=24, rank="C+"),
+    }
     assert "JOIN skill_snapshots" in session.statement
     assert "skill_snapshots.content_hash = skill_audits.content_hash" in session.statement
     assert "skill_snapshots.is_latest" in session.statement
-    assert "row_number() OVER" in session.statement
+    assert "skill_audits.configuration_hash" in session.statement
+    assert "row_number() OVER" not in session.statement
 
 
 async def test_get_skill_detail_only_expands_bundle_when_requested(

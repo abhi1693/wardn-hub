@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wardn-hub-api"
-version = "0.2.122"
+version = "0.2.123"
 description = "Wardn Hub backend API"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.14.0",
   "asyncpg>=0.30.0",
+  "cisco-ai-skill-scanner==2.0.12",
   "email-validator>=2.2.0",
   "fastapi>=0.115.0",
   "greenlet>=3.1.0",

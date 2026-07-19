@@ -1,7 +1,9 @@
 import base64
 import json
+import subprocess
 import uuid
 from io import StringIO
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -9,17 +11,12 @@ from sqlalchemy.dialects import postgresql
 
 from app import manage
 from app.cli import audit_skills as cli
-from app.cli.review_pending_submissions import UserFacingError
+from app.modules.skills import audit_policy
+from app.modules.skills.audit_policy import audit_configuration_hash
 
 
 def valid_skill_md(*, body: str = "# Weather\n\nUse the weather API carefully.") -> str:
-    return (
-        "---\n"
-        "name: weather\n"
-        "description: Provides a careful weather workflow.\n"
-        "---\n\n"
-        f"{body}\n"
-    )
+    return f"---\nname: weather\ndescription: Provides a careful weather workflow.\n---\n\n{body}\n"
 
 
 def audit_target(
@@ -43,89 +40,169 @@ def audit_target(
     )
 
 
-def codex_output(
+def scan_payload(
     *,
-    status: str = "pass",
-    risk_level: str = "low",
     findings: list[dict] | None = None,
-) -> str:
-    payload = {
-        "status": status,
-        "riskLevel": risk_level,
-        "summary": "No material safety issue found.",
-        "categories": ["instruction-safety"],
-        "findings": findings or [],
+    failed: list[dict] | None = None,
+    analyzers: list[str] | None = None,
+):
+    findings = findings or []
+    severity_order = ["critical", "high", "medium", "low", "info"]
+    maximum = next(
+        (level for level in severity_order if any(item["severity"] == level for item in findings)),
+        "safe",
+    )
+    return cli.CiscoScanPayload.model_validate(
+        {
+            "skill_name": "weather",
+            "is_safe": maximum not in {"critical", "high"},
+            "max_severity": maximum,
+            "findings_count": len(findings),
+            "findings": findings,
+            "duration_ms": 123,
+            "analyzers_used": analyzers
+            if analyzers is not None
+            else [
+                "static_analyzer",
+                "bytecode",
+                "pipeline",
+                "behavioral_analyzer",
+            ],
+            "analyzers_failed": failed or [],
+            "scan_metadata": {
+                "policy_name": "balanced",
+                "policy_version": "1.0",
+                "policy_fingerprint_sha256": "a" * 64,
+            },
+        }
+    )
+
+
+def scanner_finding(
+    severity: str,
+    *,
+    category: str = "prompt-injection",
+    identifier: str = "RULE-1",
+) -> dict:
+    return {
+        "id": identifier,
+        "rule_id": identifier,
+        "category": category,
+        "severity": severity,
+        "title": "Unsafe instruction",
+        "description": "The skill contains a risky instruction.",
+        "file_path": "SKILL.md",
+        "line_number": 8,
+        "remediation": "Remove the instruction.",
+        "analyzer": "static_analyzer",
     }
-    return "Skill audit result JSON\n```json\n" + json.dumps(payload) + "\n```"
-
-
-class FakeReviewer:
-    def __init__(self, output: str | None = None) -> None:
-        self.output = output or codex_output()
-        self.prompts: list[str] = []
-        self.environments: list[dict[str, str]] = []
-
-    def review(self, prompt: str, *, environment: dict[str, str]) -> str:
-        self.prompts.append(prompt)
-        self.environments.append(environment)
-        return self.output
 
 
 class FakeClient:
     def __init__(self, targets: list[cli.SkillAuditTarget]) -> None:
         self.targets = list(targets)
         self.next_calls: list[uuid.UUID | None] = []
-        self.saved: list[tuple[cli.SkillAuditTarget, list[cli.StoredAudit], bool]] = []
+        self.saved: list[tuple[cli.SkillAuditTarget, cli.StoredAudit, bool]] = []
 
-    def next_target(
-        self,
-        *,
-        after_skill_id: uuid.UUID | None,
-        skill_id: str | None,
-        re_audit: bool,
-    ) -> cli.SkillAuditTarget | None:
+    def next_target(self, *, after_skill_id, skill_id, re_audit):
         self.next_calls.append(after_skill_id)
-        if not self.targets:
-            return None
-        return self.targets.pop(0)
+        return self.targets.pop(0) if self.targets else None
 
-    def save_audits(
-        self,
-        target: cli.SkillAuditTarget,
-        audits: list[cli.StoredAudit],
-        *,
-        re_audit: bool,
-    ) -> str:
-        self.saved.append((target, audits, re_audit))
+    def save_audit(self, target, audit, *, re_audit):
+        self.saved.append((target, audit, re_audit))
         return "saved"
 
 
-def test_completed_audit_condition_for_snapshot_only_queries_audits() -> None:
+class FakeScanner:
+    def __init__(self, payload: cli.CiscoScanPayload | None = None) -> None:
+        self.payload = payload or scan_payload()
+        self.calls: list[cli.SkillAuditTarget] = []
+        self.configuration_hash = audit_configuration_hash(llm_enabled=False)
+
+    def scan(self, target, inspection):
+        self.calls.append(target)
+        return cli.stored_scanner_audit(
+            target,
+            self.payload,
+            llm_enabled=False,
+            configuration_hash=self.configuration_hash,
+        )
+
+
+def test_completed_audit_condition_is_snapshot_and_configuration_bound() -> None:
     target = audit_target()
+    configuration_hash = audit_configuration_hash(llm_enabled=False)
     statement = select(
         cli.completed_audit_condition(
+            configuration_hash=configuration_hash,
             skill_id=target.skill_id,
             snapshot_id=target.snapshot_id,
             content_hash=target.content_hash,
         )
     )
-
     sql = str(
         statement.compile(
             dialect=postgresql.dialect(),
             compile_kwargs={"literal_binds": True},
         )
     )
-
     assert "FROM skill_audits" in sql
-    assert "FROM skills" not in sql
-    assert "FROM skill_snapshots" not in sql
+    assert "configuration_hash" in sql
+    assert configuration_hash in sql
 
 
-def test_inspect_bundle_accepts_resolver_compatible_bundle() -> None:
+def test_llm_gate_changes_audit_configuration_hash() -> None:
+    assert audit_configuration_hash(llm_enabled=False) != audit_configuration_hash(llm_enabled=True)
+
+
+def test_llm_routing_changes_audit_configuration_hash_only_when_enabled() -> None:
+    assert audit_configuration_hash(
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="model-a",
+    ) != audit_configuration_hash(
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="model-b",
+    )
+    assert audit_configuration_hash(
+        llm_enabled=False,
+        llm_model="model-a",
+    ) == audit_configuration_hash(
+        llm_enabled=False,
+        llm_model="model-b",
+    )
+
+
+def test_current_audit_hash_reads_non_secret_llm_routing(monkeypatch) -> None:
+    monkeypatch.setattr(
+        audit_policy,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_llm_enabled=True),
+    )
+    monkeypatch.setenv("SKILL_SCANNER_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "test-model")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_BASE_URL", "https://llm.example.test/v1")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_API_VERSION", "2026-01-01")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_TEMPERATURE", "0")
+
+    assert audit_policy.current_audit_configuration_hash() == audit_configuration_hash(
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="test-model",
+        llm_base_url="https://llm.example.test/v1",
+        llm_api_version="2026-01-01",
+        llm_temperature="0",
+    )
+
+
+def test_inspect_bundle_accepts_safe_materializable_bundle() -> None:
+    skill_md = valid_skill_md(body="# Weather\n\nRead [the guide](references/guide.md).")
     target = audit_target(
+        skill_md=skill_md,
         files=[
-            {"path": "SKILL.md", "contents": valid_skill_md()},
+            {"path": "SKILL.md", "contents": skill_md},
+            {"path": "references/guide.md", "contents": "# Guide\n"},
             {
                 "path": "scripts/check.sh",
                 "contents": "#!/bin/sh\nset -eu\nprintf '%s\\n' safe\n",
@@ -136,23 +213,23 @@ def test_inspect_bundle_accepts_resolver_compatible_bundle() -> None:
                 "contents": base64.b64encode(b"png-data").decode(),
                 "encoding": "base64",
             },
-        ]
+        ],
     )
-
     inspection = cli.inspect_bundle(target)
-
     assert inspection.hard_findings == []
     assert inspection.total_bytes > 0
-    assert [item["path"] for item in inspection.decoded_files] == [
+    assert set(inspection.materialized_files) == {
         "SKILL.md",
+        "references/guide.md",
         "scripts/check.sh",
         "assets/icon.png",
-    ]
+    }
 
 
-def test_inspect_bundle_rejects_opaque_executable() -> None:
-    target = audit_target(
-        files=[
+@pytest.mark.parametrize(
+    "files",
+    [
+        [
             {"path": "SKILL.md", "contents": valid_skill_md()},
             {
                 "path": "bin/helper",
@@ -160,237 +237,248 @@ def test_inspect_bundle_rejects_opaque_executable() -> None:
                 "encoding": "base64",
                 "executable": True,
             },
-        ]
+        ],
+        [{"path": "SKILL.md", "contents": valid_skill_md(body="Read ../secret.md")}],
+    ],
+)
+def test_invalid_bundles_fail_before_scanner(files: list[dict]) -> None:
+    target = audit_target(files=files)
+    inspection = cli.inspect_bundle(target)
+    audit = cli.preflight_failure(
+        target,
+        inspection,
+        configuration_hash=audit_configuration_hash(llm_enabled=False),
     )
-
-    decision = cli.policy_decision(cli.inspect_bundle(target))
-
-    assert decision.status == "fail"
-    assert decision.risk_level == "high"
-    assert "opaque-executable" in decision.categories
-
-
-def test_inspect_bundle_rejects_snapshot_root_mismatch() -> None:
-    target = audit_target(
-        files=[{"path": "SKILL.md", "contents": valid_skill_md(body="# Changed")}]
-    )
-
-    decision = cli.policy_decision(cli.inspect_bundle(target))
-
-    assert decision.status == "fail"
-    assert "invalid-bundle" in decision.categories
+    assert inspection.hard_findings
+    assert audit.status == "fail"
+    assert audit.score == 0
+    assert audit.rank == "C"
+    assert audit.raw_result["scanCompleted"] is False
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("findings", "score", "rank"),
     [
-        "# Weather\n\nRead `../_shared/common.md` before continuing.",
-        "# Weather\n\nSee [the required guide](references/guide.md) before continuing.",
-        "# Weather\n\nRead references/guide.md before continuing.",
-        "# Weather\n\n[Required guide]: references/guide.md",
+        ([], 100, "S"),
+        ([scanner_finding("info")], 99, "S"),
+        ([scanner_finding("low")], 96, "A+"),
+        ([scanner_finding("medium")], 79, "A"),
+        ([scanner_finding("high")], 49, "B"),
+        ([scanner_finding("critical")], 24, "C+"),
     ],
 )
-def test_inspect_bundle_rejects_escaping_or_missing_required_references(body: str) -> None:
-    skill_md = valid_skill_md(body=body)
-    target = audit_target(
-        skill_md=skill_md,
-        files=[{"path": "SKILL.md", "contents": skill_md}],
-    )
-
-    decision = cli.policy_decision(cli.inspect_bundle(target))
-
-    assert decision.status == "fail"
-    assert "resolver-incompatible" in decision.categories
-
-
-def test_inspect_bundle_accepts_complete_transitive_references_and_ignores_examples() -> None:
-    skill_md = valid_skill_md(
-        body=(
-            "# Weather\n\n"
-            "Read [the guide](references/guide.md) before continuing.\n\n"
-            "Read https://example.com/external-guide.md only when the user requests it.\n\n"
-            "[External]: HTTPS://example.com/guide.md\n\n"
-            "```markdown\nRead `examples/not-bundled.md`.\n```"
-        )
-    )
-    files = [
-        {"path": "SKILL.md", "contents": skill_md},
-        {
-            "path": "references/guide.md",
-            "contents": "# Guide\n\nSee [the details](details.md).\n",
-        },
-        {"path": "references/details.md", "contents": "# Details\n"},
-    ]
-    target = audit_target(skill_md=skill_md, files=files)
-
-    decision = cli.policy_decision(cli.inspect_bundle(target))
-
-    assert decision.status == "pass"
-
-
-def test_resolver_frontmatter_validation_matches_supported_scalar_rules() -> None:
-    assert cli.resolver_frontmatter_valid(
-        "---\nname: 'weather'\ndescription: |\n  Safe workflow.\n---\n# Weather\n"
-    )
-    assert not cli.resolver_frontmatter_valid(
-        "---\nname: 123\ndescription: Safe workflow.\n---\n# Weather\n"
-    )
-    assert not cli.resolver_frontmatter_valid(
-        "---\nname: weather\nname: duplicate\ndescription: Safe workflow.\n---\n# Weather\n"
-    )
-
-
-def test_build_audit_prompt_omits_text_that_exceeds_prompt_budget(
-    monkeypatch: pytest.MonkeyPatch,
+def test_security_score_has_github_style_ranks_and_severity_floors(
+    findings: list[dict], score: int, rank: str
 ) -> None:
-    target = audit_target(
-        files=[
-            {"path": "SKILL.md", "contents": valid_skill_md()},
-            {"path": "references/large.txt", "contents": "x" * 20_000},
-        ]
+    audit = cli.stored_scanner_audit(
+        audit_target(),
+        scan_payload(findings=findings),
+        llm_enabled=False,
+        configuration_hash=audit_configuration_hash(llm_enabled=False),
     )
-    inspection = cli.inspect_bundle(target)
-    monkeypatch.setattr(cli, "MAX_AUDIT_PROMPT_CHARS", 15_000)
-
-    prompt = cli.build_audit_prompt(target, inspection)
-    decision = cli.policy_decision(inspection, omitted_paths=prompt.omitted_paths)
-
-    assert prompt.omitted_paths == ["references/large.txt"]
-    assert len(prompt.text) <= 15_000
-    assert decision.status == "warn"
-    assert "partial-content-review" in decision.categories
+    assert audit.score == score
+    assert audit.rank == rank
 
 
-def test_extract_skill_audit_result_requires_label_and_valid_risk() -> None:
-    assert cli.extract_skill_audit_result(codex_output()) is not None
-    assert cli.extract_skill_audit_result('{"status":"pass"}') is None
-    assert (
-        cli.extract_skill_audit_result(
-            codex_output(status="pass", risk_level="critical")
+def test_every_category_and_repeated_finding_deducts_score() -> None:
+    findings = [
+        scanner_finding("low", category="network", identifier="NETWORK-1"),
+        scanner_finding("low", category="network", identifier="NETWORK-2"),
+        scanner_finding("low", category="filesystem", identifier="FILESYSTEM-1"),
+    ]
+    score, _rank, deductions = cli.score_findings(
+        [cli.normalized_finding(cli.CiscoFinding.model_validate(item)) for item in findings]
+    )
+    assert score == 91
+    assert {item["category"] for item in deductions} == {"network", "filesystem"}
+    assert next(item for item in deductions if item["category"] == "network")["points"] == 5
+
+
+def test_analyzer_failure_forces_warning_and_incomplete_analysis_deduction() -> None:
+    audit = cli.stored_scanner_audit(
+        audit_target(),
+        scan_payload(failed=[{"analyzer": "pipeline_analyzer", "error": "failed"}]),
+        llm_enabled=False,
+        configuration_hash=audit_configuration_hash(llm_enabled=False),
+    )
+    assert audit.status == "warn"
+    assert audit.score == 79
+    assert "coverage is incomplete" in audit.summary
+    assert audit.policy_fingerprint == "a" * 64
+
+
+@pytest.mark.parametrize(
+    ("analyzers", "failed"),
+    [
+        ([*sorted(cli.REQUIRED_LOCAL_ANALYZERS)], []),
+        (
+            [*sorted(cli.REQUIRED_LOCAL_ANALYZERS), cli.LLM_ANALYZER],
+            [{"analyzer": cli.LLM_ANALYZER, "error": "failed"}],
+        ),
+    ],
+)
+def test_llm_gate_requires_analyzer_completion(
+    analyzers: list[str],
+    failed: list[dict],
+) -> None:
+    with pytest.raises(cli.UserFacingError, match="did not complete"):
+        cli.stored_scanner_audit(
+            audit_target(),
+            scan_payload(analyzers=analyzers, failed=failed),
+            llm_enabled=True,
+            configuration_hash=audit_configuration_hash(llm_enabled=True),
         )
-        is None
-    )
 
 
-def test_review_with_retries_waits_indefinitely_for_rate_limit() -> None:
-    attempts = 0
-    sleeps: list[float] = []
+def test_cisco_uppercase_severities_are_normalized() -> None:
+    payload = scan_payload(findings=[scanner_finding("high")]).model_dump(mode="json")
+    payload["max_severity"] = "HIGH"
+    payload["findings"][0]["severity"] = "HIGH"
 
-    class RateLimitedReviewer:
-        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
-            nonlocal attempts
-            attempts += 1
-            if attempts < 3:
-                raise UserFacingError("HTTP 429 rate limit; retry-after: 7")
-            return codex_output()
+    parsed = cli.CiscoScanPayload.model_validate(payload)
 
-    output, decision = cli.review_with_retries(
-        RateLimitedReviewer(),
-        "prompt",
-        environment={},
-        max_attempts=1,
-        rate_limit_base_seconds=60,
-        rate_limit_max_seconds=900,
-        stdout=StringIO(),
-        sleep=sleeps.append,
-    )
-
-    assert output == codex_output()
-    assert decision.status == "pass"
-    assert attempts == 3
-    assert sleeps == [7.0, 7.0]
+    assert parsed.max_severity == "high"
+    assert parsed.findings[0].severity == "high"
 
 
-def test_audit_skills_streams_and_stores_snapshot_bound_results() -> None:
+def test_audit_stream_stores_one_snapshot_result() -> None:
     target = audit_target()
     client = FakeClient([target])
-    reviewer = FakeReviewer()
+    scanner = FakeScanner()
     stdout = StringIO()
-
     result = cli.audit_skills(
         client=client,
-        reviewer=reviewer,
+        scanner=scanner,
         max_skills=None,
         skill_id=None,
         re_audit=False,
         dry_run=False,
-        max_attempts=3,
-        rate_limit_base_seconds=60,
-        rate_limit_max_seconds=900,
         stdout=stdout,
-        sleep=lambda _delay: None,
     )
-
     assert result == 0
+    assert scanner.calls == [target]
     assert len(client.saved) == 1
-    assert [audit.slug for audit in client.saved[0][1]] == [
-        cli.POLICY_PROVIDER_SLUG,
-        cli.CODEX_PROVIDER_SLUG,
-    ]
-    assert client.saved[0][1][1].raw_result["contentHash"] == target.content_hash
-    assert reviewer.environments[0]["WARDN_HUB_SKILL_AUDIT_ID"] == target.catalog_id
+    assert client.saved[0][1].scanner_name == cli.SCANNER_NAME
+    assert client.saved[0][1].score == 100
     assert client.next_calls == [None, target.skill_id]
     assert "pass=1" in stdout.getvalue()
 
 
-def test_audit_skills_stores_deterministic_failure_without_codex() -> None:
-    target = audit_target(
-        files=[
-            {"path": "SKILL.md", "contents": valid_skill_md()},
-            {
-                "path": "bin/helper",
-                "contents": base64.b64encode(b"opaque").decode(),
-                "encoding": "base64",
-                "executable": True,
-            },
-        ]
-    )
-    client = FakeClient([target])
-    reviewer = FakeReviewer()
-
-    result = cli.audit_skills(
-        client=client,
-        reviewer=reviewer,
-        max_skills=None,
-        skill_id=None,
-        re_audit=False,
-        dry_run=False,
-        max_attempts=3,
-        rate_limit_base_seconds=60,
-        rate_limit_max_seconds=900,
-        stdout=StringIO(),
-        sleep=lambda _delay: None,
-    )
-
-    assert result == 0
-    assert reviewer.prompts == []
-    assert len(client.saved[0][1]) == 1
-    assert client.saved[0][1][0].decision.status == "fail"
-
-
-def test_audit_skills_leaves_codex_errors_resumable() -> None:
-    class FailingReviewer:
-        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
-            raise UserFacingError("review unavailable")
+def test_audit_scanner_errors_remain_resumable() -> None:
+    class FailingScanner:
+        def scan(self, target, inspection):
+            raise cli.UserFacingError("scanner unavailable")
 
     client = FakeClient([audit_target()])
-
     result = cli.audit_skills(
         client=client,
-        reviewer=FailingReviewer(),
+        scanner=FailingScanner(),
         max_skills=None,
         skill_id=None,
         re_audit=False,
         dry_run=False,
-        max_attempts=2,
-        rate_limit_base_seconds=60,
-        rate_limit_max_seconds=900,
         stdout=StringIO(),
-        sleep=lambda _delay: None,
     )
-
     assert result == 1
     assert client.saved == []
+
+
+def test_cisco_scanner_invocation_enables_only_local_analyzers(monkeypatch) -> None:
+    target = audit_target()
+    inspection = cli.inspect_bundle(target)
+    captured: list[str] = []
+    payload = scan_payload().model_dump(mode="json")
+
+    def fake_run(command, **kwargs):
+        captured.extend(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(payload).encode(),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(cli, "version", lambda _name: cli.SCANNER_VERSION)
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    audit = cli.CiscoSkillScanner(
+        timeout_seconds=12,
+        llm_enabled=False,
+        configuration_hash=audit_configuration_hash(llm_enabled=False),
+    ).scan(target, inspection)
+
+    assert audit.status == "pass"
+    assert "--use-behavioral" in captured
+    assert "--policy" in captured
+    assert "--use-llm" not in captured
+    assert "--enable-meta" not in captured
+    assert "--use-aidefense" not in captured
+    assert "--use-virustotal" not in captured
+
+
+def test_cisco_scanner_invocation_enables_llm_when_gated_on(monkeypatch) -> None:
+    target = audit_target()
+    inspection = cli.inspect_bundle(target)
+    captured: list[str] = []
+    payload = scan_payload(
+        analyzers=[*sorted(cli.REQUIRED_LOCAL_ANALYZERS), cli.LLM_ANALYZER]
+    ).model_dump(mode="json")
+
+    def fake_run(command, **kwargs):
+        captured.extend(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(payload).encode(),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(cli, "version", lambda _name: cli.SCANNER_VERSION)
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    audit = cli.CiscoSkillScanner(
+        timeout_seconds=12,
+        llm_enabled=True,
+        configuration_hash=audit_configuration_hash(
+            llm_enabled=True,
+            llm_provider="openai",
+            llm_model="test-model",
+        ),
+    ).scan(target, inspection)
+
+    assert audit.status == "pass"
+    assert "--use-llm" in captured
+    assert "--use-aidefense" not in captured
+    assert audit.configuration_hash == audit_configuration_hash(
+        llm_enabled=True,
+        llm_provider="openai",
+        llm_model="test-model",
+    )
+
+
+def test_cisco_scanner_smoke_runs_pinned_distribution() -> None:
+    target = audit_target()
+    audit = cli.CiscoSkillScanner(
+        timeout_seconds=30,
+        llm_enabled=False,
+        configuration_hash=audit_configuration_hash(llm_enabled=False),
+    ).scan(
+        target,
+        cli.inspect_bundle(target),
+    )
+
+    assert audit.scanner_name == cli.SCANNER_NAME
+    assert audit.scanner_version == cli.SCANNER_VERSION
+    assert audit.configuration_hash == audit_configuration_hash(llm_enabled=False)
+    assert cli.REQUIRED_LOCAL_ANALYZERS.issubset(audit.analyzers)
+    assert audit.raw_result["scanCompleted"] is True
+    assert 0 <= audit.score <= 100
+
+
+def test_audit_command_is_blocked_when_feature_gate_is_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "get_settings", lambda: SimpleNamespace(skill_audit_enabled=False))
+    args = cli.build_parser().parse_args(["--dry-run", "--max-skills", "1"])
+    with pytest.raises(cli.UserFacingError, match="WARDN_HUB_SKILL_AUDIT_ENABLED"):
+        cli.audit_skills_from_args(args)
 
 
 def test_manage_dispatches_skills_audit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -401,7 +489,6 @@ def test_manage_dispatches_skills_audit(monkeypatch: pytest.MonkeyPatch) -> None
         return 0
 
     monkeypatch.setattr(manage, "audit_skills_from_args", fake_audit)
-
     assert manage.main(["skills", "audit", "--dry-run", "--max-skills", "2"]) == 0
     assert captured[0].dry_run is True
     assert captured[0].max_skills == 2

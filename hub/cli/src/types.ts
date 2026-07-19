@@ -25,35 +25,49 @@ export interface SkillSearchItem {
   source: string;
   isOfficial: boolean;
   auditStatus: 'pass' | 'warn' | 'fail' | null;
+  auditScore: number | null;
+  auditRank: 'S' | 'A+' | 'A' | 'A-' | 'B+' | 'B' | 'B-' | 'C+' | 'C' | null;
   installs: number;
   url: string;
   sourceUrl: string | null;
 }
 
 export interface SkillSearchResult {
+  auditEnabled: boolean;
   query: string;
   count: number;
   data: SkillSearchItem[];
 }
 
+export type SkillAuditSeverity = 'safe' | 'info' | 'low' | 'medium' | 'high' | 'critical';
+export type SkillAuditRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
 export interface SkillAuditSummary {
-  slug: string;
-  provider: string;
+  scannerName: string;
+  scannerVersion: string;
+  policyName: string;
+  policyVersion: string;
+  policyFingerprint: string;
   status: 'pass' | 'warn' | 'fail';
-  riskLevel: string | null;
+  riskLevel: SkillAuditRiskLevel;
   auditedAt: string;
   categories: string[] | null;
   summary: string;
   summaryTruncated: boolean;
+  score: number;
+  rank: Exclude<SkillSearchItem['auditRank'], null>;
+  scoreDeductions: Array<{
+    category: string;
+    points: number;
+    findingCount: number;
+    maxSeverity: SkillAuditSeverity;
+  }>;
 }
 
 export interface AuditedSkillResult {
   id: string;
   contentHash: string;
-  hardRejectCount: number;
-  warningCount: number;
-  failureCount: number;
-  latestAudits: SkillAuditSummary[];
+  audit: SkillAuditSummary;
 }
 
 export interface UnauditedSkillResult {

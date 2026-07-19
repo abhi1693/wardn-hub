@@ -11,7 +11,7 @@ import re
 import sys
 import time
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -22,8 +22,9 @@ import httpx
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, engine
 from app.modules.skills.models import Skill, SkillAudit, SkillSnapshot, SkillSourceOwner
 
 logger = logging.getLogger(__name__)
@@ -3456,6 +3457,49 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
     return finish_import()
 
 
+def run_import_github_command(
+    args: argparse.Namespace,
+    *,
+    importer: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
+) -> int:
+    return run_github_command_with_audit(args, operation=importer or import_github_from_args)
+
+
+def run_refresh_github_command(
+    args: argparse.Namespace,
+    *,
+    refresher: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
+) -> int:
+    return run_github_command_with_audit(args, operation=refresher or refresh_github_from_args)
+
+
+def run_github_command_with_audit(
+    args: argparse.Namespace,
+    *,
+    operation: Callable[[argparse.Namespace], Awaitable[int]],
+) -> int:
+    audit_enabled = get_settings().skill_audit_enabled
+
+    async def run_operation() -> int:
+        status = await operation(args)
+        if audit_enabled:
+            # GitHub operations use the process-wide async engine. Dispose its pool on
+            # this event loop before the synchronous audit client opens a fresh loop.
+            await engine.dispose()
+        return status
+
+    operation_status = asyncio.run(run_operation())
+    if not audit_enabled:
+        return operation_status
+
+    # Import lazily to avoid the audit module's dependency on this module while it
+    # validates bundle hashes.
+    from app.cli.audit_skills import audit_pending_skill_snapshots
+
+    audit_status = audit_pending_skill_snapshots()
+    return 1 if operation_status or audit_status else 0
+
+
 def log_github_refresh_failure(
     message: str,
     exc: Exception,
@@ -3987,13 +4031,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "import-github":
         try:
             configure_logging()
-            return asyncio.run(import_github_from_args(args))
+            return run_import_github_command(args)
         except SkillCliError as exc:
             parser.error(str(exc))
     if args.command == "refresh":
         try:
             configure_logging()
-            return asyncio.run(refresh_github_from_args(args))
+            return run_refresh_github_command(args)
         except SkillCliError as exc:
             parser.error(str(exc))
     if args.command == "mark-official":

@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -119,12 +120,33 @@ class SkillSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class SkillAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "skill_audits"
     __table_args__ = (
-        Index(
-            "ix_skill_audits_completion",
-            "skill_id",
-            "snapshot_id",
-            "slug",
-            "status",
+        Index("uq_skill_audits_snapshot_id", "snapshot_id", unique=True),
+        Index("ix_skill_audits_completion", "skill_id", "configuration_hash", "status"),
+        CheckConstraint("score BETWEEN 0 AND 100", name="ck_skill_audits_score_range"),
+        CheckConstraint(
+            "(status = 'pass' AND risk_level = 'low') OR "
+            "(status = 'warn' AND risk_level = 'medium') OR "
+            "(status = 'fail' AND risk_level IN ('high', 'critical'))",
+            name="ck_skill_audits_status_risk_consistency",
+        ),
+        CheckConstraint(
+            "(rank = 'S' AND score BETWEEN 99 AND 100) OR "
+            "(rank = 'A+' AND score BETWEEN 88 AND 98) OR "
+            "(rank = 'A' AND score BETWEEN 75 AND 87) OR "
+            "(rank = 'A-' AND score BETWEEN 63 AND 74) OR "
+            "(rank = 'B+' AND score BETWEEN 50 AND 62) OR "
+            "(rank = 'B' AND score BETWEEN 38 AND 49) OR "
+            "(rank = 'B-' AND score BETWEEN 25 AND 37) OR "
+            "(rank = 'C+' AND score BETWEEN 13 AND 24) OR "
+            "(rank = 'C' AND score BETWEEN 0 AND 12)",
+            name="ck_skill_audits_rank_score_consistency",
+        ),
+        CheckConstraint(
+            "risk_level = 'low' OR "
+            "(risk_level = 'medium' AND score <= 79) OR "
+            "(risk_level = 'high' AND score <= 49) OR "
+            "(risk_level = 'critical' AND score <= 24)",
+            name="ck_skill_audits_severity_score_cap",
         ),
     )
 
@@ -141,12 +163,23 @@ class SkillAudit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     content_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    provider: Mapped[str] = mapped_column(String(120), nullable=False)
-    slug: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    scanner_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    scanner_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    policy_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    policy_fingerprint: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    configuration_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
     risk_level: Mapped[str] = mapped_column(String(32), default="", nullable=False)
-    categories: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    score: Mapped[int] = mapped_column(default=0, nullable=False)
+    rank: Mapped[str] = mapped_column(String(8), default="C", nullable=False)
+    score_deductions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    analyzers: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    scan_duration_ms: Mapped[int] = mapped_column(default=0, nullable=False)
     raw_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     audited_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

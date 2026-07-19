@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 
 import { PublicHeader } from "@/components/site-header";
-import {
-  listPublicSkills,
-  skillOwnerPath,
-} from "@/lib/public-skills";
+import { listPublicSkillsPage, skillOwnerPath } from "@/lib/public-skills";
 import {
   OfficialBadge,
   SkillLeaderboard,
@@ -37,10 +34,11 @@ export default async function SkillSourcePage({ params }: SkillSourcePageProps) 
   const source = `${owner}/${repo}`;
   const state = await (async () => {
     try {
-      const skills = await listPublicSkills({ limit: 500, source });
-      return { error: "", skills };
+      const response = await listPublicSkillsPage({ limit: 500, source });
+      return { auditEnabled: response.auditEnabled, error: "", skills: response.skills };
     } catch (caught) {
       return {
+        auditEnabled: false,
         error: caught instanceof Error ? caught.message : "Unable to load skills.",
         skills: [],
       };
@@ -75,7 +73,11 @@ export default async function SkillSourcePage({ params }: SkillSourcePageProps) 
                 <div className="empty-detail">{state.error}</div>
               </div>
             ) : (
-              <SkillLeaderboard emptyLabel={`No imported skills for ${source}`} skills={state.skills} />
+              <SkillLeaderboard
+                auditEnabled={state.auditEnabled}
+                emptyLabel={`No imported skills for ${source}`}
+                skills={state.skills}
+              />
             )}
           </section>
           <aside className="skill-side-panel">

@@ -278,8 +278,12 @@ function printSearchResult(result: SkillSearchResult, json: boolean): void {
   );
   result.data.forEach((skill, index) => {
     const installs = `${skill.installs} ${pluralize(skill.installs, 'install')}`;
-    const audit = skill.auditStatus ?? 'unaudited';
-    const labels = [skill.isOfficial ? 'official' : 'community', installs, audit];
+    const audit = result.auditEnabled
+      ? skill.auditScore !== null && skill.auditRank
+        ? `${skill.auditRank} ${skill.auditScore}/100 (${skill.auditStatus})`
+        : 'unaudited'
+      : null;
+    const labels = [skill.isOfficial ? 'official' : 'community', installs, audit].filter(Boolean);
     console.log(`\n${index + 1}. ${skill.name}`);
     console.log(`   ${skill.description}`);
     console.log(`   ID: ${skill.id}`);
@@ -294,24 +298,18 @@ function printAuditResult(result: SkillAuditResult, json: boolean): void {
     return;
   }
   if ('auditStatus' in result) {
-    console.log(`No audits are available for ${result.id}.`);
+    console.log(`No current audit is available for ${result.id}.`);
     return;
   }
   console.log(`Audit for ${result.id}`);
   console.log(`Content hash: ${result.contentHash}`);
+  const audit = result.audit;
   console.log(
-    `Hard rejects: ${result.hardRejectCount} · Warnings: ${result.warningCount} · Historical failures: ${result.failureCount}`,
+    `\n${audit.scannerName}: ${audit.status.toUpperCase()} · ${audit.riskLevel} risk`,
   );
-  if (result.latestAudits.length === 0) {
-    console.log('No current provider decisions.');
-    return;
-  }
-  result.latestAudits.forEach((audit) => {
-    const risk = audit.riskLevel === null ? '' : ` · ${audit.riskLevel} risk`;
-    console.log(`\n${audit.provider}: ${audit.status.toUpperCase()}${risk}`);
-    console.log(`  ${audit.summary}`);
-    console.log(`  Audited: ${audit.auditedAt}`);
-  });
+  console.log(`  Security score: ${audit.score}/100 · Rank ${audit.rank}`);
+  console.log(`  ${audit.summary}`);
+  console.log(`  Audited: ${audit.auditedAt}`);
 }
 
 function printBundleManifest(manifest: TemporaryBundleManifest, json: boolean): void {

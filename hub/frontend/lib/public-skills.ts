@@ -241,7 +241,7 @@ export async function listPublicSkillsPage(params?: {
   query?: string;
   source?: string;
   view?: "all-time" | "hot" | "trending";
-}): Promise<{ pagination: SkillPagination; skills: SkillRead[] }> {
+}): Promise<{ auditEnabled: boolean; pagination: SkillPagination; skills: SkillRead[] }> {
   const query = params?.query?.trim();
   const listParams: Record<string, boolean | number | string> = {
     page: params?.page ?? 0,
@@ -255,7 +255,11 @@ export async function listPublicSkillsPage(params?: {
   if (params?.official !== undefined) listParams.official = params.official;
 
   const response = await skillsRequest<SkillListResponse>("/skills", listParams);
-  return { pagination: response.pagination, skills: response.data };
+  return {
+    auditEnabled: response.auditEnabled,
+    pagination: response.pagination,
+    skills: response.data,
+  };
 }
 
 export async function importPublicGitHubSkill(repositoryUrl: string) {

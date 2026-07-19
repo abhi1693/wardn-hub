@@ -1,0 +1,84 @@
+{
+  "audit": {
+    "audit": {
+      "analyzers": [
+        "static_analyzer",
+        "bytecode",
+        "pipeline",
+        "behavioral_analyzer"
+      ],
+      "auditedAt": "2026-07-19T12:00:00Z",
+      "categories": [
+        "prompt-injection"
+      ],
+      "findings": [
+        {
+          "analyzer": "static_analyzer",
+          "category": "prompt-injection",
+          "description": "The skill contains an instruction that requires review.",
+          "filePath": "SKILL.md",
+          "id": "RULE-1",
+          "lineNumber": 12,
+          "metadata": {},
+          "remediation": "Remove or constrain the instruction.",
+          "ruleId": "RULE-1",
+          "severity": "medium",
+          "snippet": null,
+          "title": "Prompt injection pattern"
+        }
+      ],
+      "policyFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "policyName": "balanced",
+      "policyVersion": "1.0",
+      "scannerName": "Cisco AI Skill Scanner",
+      "rank": "A",
+      "riskLevel": "medium",
+      "scanDurationMs": 123,
+      "scannerVersion": "2.0.12",
+      "score": 79,
+      "scoreDeductions": [
+        {
+          "category": "prompt-injection",
+          "findingCount": 1,
+          "maxSeverity": "medium",
+          "points": 21
+        }
+      ],
+      "status": "warn",
+      "summary": "One medium-risk finding requires review."
+    },
+    "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "id": "acme/skills/code-audit",
+    "slug": "code-audit",
+    "source": "acme/skills"
+  },
+  "search": {
+    "auditEnabled": true,
+    "count": 1,
+    "data": [
+      {
+        "auditRank": "A",
+        "auditScore": 79,
+        "auditStatus": "warn",
+        "description": "Review source safely.",
+        "id": "acme/skills/code-audit",
+        "installUrl": "https://github.com/acme/skills/tree/main/code-audit",
+        "installs": 42,
+        "isOfficial": false,
+        "name": "Code Audit",
+        "slug": "code-audit",
+        "source": "acme/skills",
+        "sourceName": "skills",
+        "sourceOwner": "acme",
+        "sourceOwnerIconUrl": "https://avatars.githubusercontent.com/u/1?v=4",
+        "sourceOwnerUrl": "https://github.com/acme",
+        "sourceType": "github",
+        "sourceUrl": "https://github.com/acme/skills/tree/main/code-audit",
+        "url": "https://hub.wardnai.dev/skills/acme/skills/code-audit"
+      }
+    ],
+    "durationMs": 3,
+    "query": "code audit",
+    "searchType": "semantic"
+  }
+}

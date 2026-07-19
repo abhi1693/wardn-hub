@@ -232,6 +232,7 @@ function RequestSkillDialog({ onImported }: { onImported: () => void }) {
 }
 
 export function SkillsClient({
+  auditEnabled,
   initialError,
   initialAuditStatus,
   initialOfficial,
@@ -240,6 +241,7 @@ export function SkillsClient({
   initialSkills,
   initialView,
 }: {
+  auditEnabled: boolean;
   initialError: string;
   initialAuditStatus?: SkillAuditFilter;
   initialOfficial?: boolean;
@@ -254,7 +256,9 @@ export function SkillsClient({
   const latestRequestId = useRef(0);
   const initialSearchQuery = initialQuery.trim();
   const [query, setQuery] = useState(initialSearchQuery);
-  const [auditStatus, setAuditStatus] = useState<SkillAuditFilter | "">(initialAuditStatus ?? "");
+  const [auditStatus, setAuditStatus] = useState<SkillAuditFilter | "">(
+    auditEnabled ? (initialAuditStatus ?? "") : "",
+  );
   const [official, setOfficial] = useState<SkillOfficialFilter>(
     initialOfficial === undefined ? "" : String(initialOfficial) as SkillOfficialFilter,
   );
@@ -277,7 +281,7 @@ export function SkillsClient({
     setLoading(true);
     try {
       const response = await listPublicSkillsPage({
-        auditStatus: auditStatus || undefined,
+        auditStatus: auditEnabled ? auditStatus || undefined : undefined,
         limit: SKILLS_PAGE_SIZE,
         official: official ? official === "true" : undefined,
         query: hasSearchQuery ? trimmedQuery : undefined,
@@ -292,7 +296,7 @@ export function SkillsClient({
     } finally {
       if (latestRequestId.current === requestId) setLoading(false);
     }
-  }, [auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
+  }, [auditEnabled, auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
 
   const updateQuery = useCallback((nextQuery: string) => {
     latestRequestId.current += 1;
@@ -334,7 +338,7 @@ export function SkillsClient({
     } else {
       url.searchParams.delete("q");
     }
-    if (auditStatus) {
+    if (auditEnabled && auditStatus) {
       url.searchParams.set("audit_status", auditStatus);
     } else {
       url.searchParams.delete("audit_status");
@@ -349,7 +353,7 @@ export function SkillsClient({
       "",
       `${url.pathname}${url.search}${url.hash}`,
     );
-  }, [auditStatus, hasSearchQuery, official, trimmedQuery]);
+  }, [auditEnabled, auditStatus, hasSearchQuery, official, trimmedQuery]);
 
   useEffect(() => {
     if (!didMountRef.current) {
@@ -367,7 +371,7 @@ export function SkillsClient({
       void (async () => {
         try {
           const response = await listPublicSkillsPage({
-            auditStatus: auditStatus || undefined,
+            auditStatus: auditEnabled ? auditStatus || undefined : undefined,
             limit: SKILLS_PAGE_SIZE,
             official: official ? official === "true" : undefined,
             query: hasSearchQuery ? trimmedQuery : undefined,
@@ -388,7 +392,7 @@ export function SkillsClient({
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
+  }, [auditEnabled, auditStatus, hasSearchQuery, initialView, official, trimmedQuery]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loading) return;
@@ -399,7 +403,7 @@ export function SkillsClient({
     setError("");
     try {
       const response = await listPublicSkillsPage({
-        auditStatus: auditStatus || undefined,
+        auditStatus: auditEnabled ? auditStatus || undefined : undefined,
         limit: SKILLS_PAGE_SIZE,
         official: official ? official === "true" : undefined,
         page: pagination.page + 1,
@@ -416,6 +420,7 @@ export function SkillsClient({
       if (latestRequestId.current === requestId) setLoading(false);
     }
   }, [
+    auditEnabled,
     auditStatus,
     hasMore,
     hasSearchQuery,
@@ -472,12 +477,14 @@ export function SkillsClient({
               options={SKILL_OFFICIAL_FILTER_OPTIONS}
               value={official}
             />
-            <SkillsFilterGroup<SkillAuditFilter | "">
-              label="Audit"
-              onChange={updateAuditStatus}
-              options={SKILL_AUDIT_FILTER_OPTIONS}
-              value={auditStatus}
-            />
+            {auditEnabled ? (
+              <SkillsFilterGroup<SkillAuditFilter | "">
+                label="Audit"
+                onChange={updateAuditStatus}
+                options={SKILL_AUDIT_FILTER_OPTIONS}
+                value={auditStatus}
+              />
+            ) : null}
           </aside>
           <div className="registry-results-shell">
             <div className="skills-results-toolbar">
@@ -498,7 +505,7 @@ export function SkillsClient({
                     href={{
                       pathname: SKILL_VIEW_PATHS[value],
                       query: {
-                        ...(auditStatus ? { audit_status: auditStatus } : {}),
+                        ...(auditEnabled && auditStatus ? { audit_status: auditStatus } : {}),
                         ...(official ? { official } : {}),
                         ...(hasSearchQuery ? { q: trimmedQuery } : {}),
                       },
@@ -522,7 +529,7 @@ export function SkillsClient({
             ) : null}
             {skills.length > 0 ? (
               <>
-                <SkillLeaderboard skills={skills} />
+                <SkillLeaderboard auditEnabled={auditEnabled} skills={skills} />
                 <InfiniteScrollTrigger
                   error={error}
                   hasMore={hasMore}

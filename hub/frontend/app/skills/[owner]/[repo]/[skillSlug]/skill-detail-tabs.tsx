@@ -170,13 +170,18 @@ function CommandBlock({ command, label }: { command: string; label: string }) {
   );
 }
 
-function AgentInstallation({ skillId }: { skillId: string }) {
+function AgentInstallation({ auditEnabled, skillId }: { auditEnabled: boolean; skillId: string }) {
   const prompt = [
     `Install the Wardn Hub skill ${skillId} with the first-party ${CLI_PACKAGE} CLI.`,
-    "First audit the current snapshot and stop if it has a hard reject:",
-    `npx -y ${CLI_PACKAGE} audit ${shellQuote(skillId)} --json`,
+    ...(auditEnabled
+      ? [
+          "First audit the current snapshot. Stop for fail, high, or critical risk; ask before continuing for warn or medium risk:",
+          `npx -y ${CLI_PACKAGE} audit ${shellQuote(skillId)} --json`,
+          "Copy contentHash from that result into AUDITED_CONTENT_HASH below.",
+        ]
+      : []),
     "Then identify the current agent target and install the reviewed snapshot globally:",
-    `npx -y ${CLI_PACKAGE} install ${shellQuote(skillId)} --global --agent AGENT_NAME`,
+    `npx -y ${CLI_PACKAGE} install ${shellQuote(skillId)}${auditEnabled ? " --hash AUDITED_CONTENT_HASH" : ""} --global --agent AGENT_NAME`,
     "Open the installed SKILL.md and follow its instructions. Ask before using credentials, configuring an external service, or taking an irreversible action.",
   ].join("\n\n");
 
@@ -312,9 +317,11 @@ function HumanInstallation({
 }
 
 function SkillInstallation({
+  auditEnabled,
   skillId,
   skillSlug,
 }: {
+  auditEnabled: boolean;
   skillId: string;
   skillSlug: string;
 }) {
@@ -341,7 +348,7 @@ function SkillInstallation({
         </button>
       </div>
       {audience === "agent" ? (
-        <AgentInstallation skillId={skillId} />
+        <AgentInstallation auditEnabled={auditEnabled} skillId={skillId} />
       ) : (
         <HumanInstallation skillId={skillId} skillSlug={skillSlug} />
       )}
@@ -361,6 +368,7 @@ function SkillOverviewUtilities({ onOpenInstallation }: { onOpenInstallation: ()
 }
 
 export function SkillDetailTabs({
+  auditEnabled,
   fileCount,
   files,
   initialTab,
@@ -370,17 +378,20 @@ export function SkillDetailTabs({
   skillId,
   skillSlug,
 }: {
+  auditEnabled: boolean;
   fileCount: number;
   files: ReactNode;
   initialTab: SkillDetailTab;
   overview: ReactNode;
   overviewPath: string;
-  security: ReactNode;
+  security?: ReactNode;
   skillId: string;
   skillSlug: string;
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<SkillDetailTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<SkillDetailTab>(
+    initialTab === "security" && !security ? "overview" : initialTab,
+  );
   const tabs: Array<{
     icon: ReactNode;
     id: SkillDetailTab;
@@ -397,7 +408,15 @@ export function SkillDetailTabs({
       id: "files",
       label: `Files ${fileCount}`,
     },
-    { icon: <ShieldCheck aria-hidden="true" size={16} />, id: "security", label: "Security" },
+    ...(security
+      ? [
+          {
+            icon: <ShieldCheck aria-hidden="true" size={16} />,
+            id: "security" as const,
+            label: "Security",
+          },
+        ]
+      : []),
   ];
 
   const panel =
@@ -407,7 +426,11 @@ export function SkillDetailTabs({
         <SkillOverviewUtilities onOpenInstallation={() => selectTab("install")} />
       </div>
     ) : activeTab === "install" ? (
-      <SkillInstallation skillId={skillId} skillSlug={skillSlug} />
+      <SkillInstallation
+        auditEnabled={auditEnabled}
+        skillId={skillId}
+        skillSlug={skillSlug}
+      />
     ) : activeTab === "files" ? (
       files
     ) : (

@@ -56,9 +56,15 @@ export async function SkillsPageView({
         query: searchQuery,
         view,
       });
-      return { error: "", pagination: response.pagination, skills: response.skills };
+      return {
+        auditEnabled: response.auditEnabled,
+        error: "",
+        pagination: response.pagination,
+        skills: response.skills,
+      };
     } catch (caught) {
       return {
+        auditEnabled: false,
         error: caught instanceof Error ? caught.message : "Unable to load skills.",
         pagination: emptyPagination(),
         skills: [] as SkillRead[],
@@ -70,6 +76,7 @@ export async function SkillsPageView({
     <main className="site-shell skills-index-page">
       <PublicHeader />
       <SkillsClient
+        auditEnabled={state.auditEnabled}
         initialError={state.error}
         initialPagination={state.pagination}
         initialAuditStatus={auditStatus}

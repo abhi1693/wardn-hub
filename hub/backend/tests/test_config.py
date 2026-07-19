@@ -50,6 +50,24 @@ def test_cors_origins_default_empty_without_env(monkeypatch) -> None:
     assert settings.cors_origins == []
 
 
+def test_skill_audit_gate_defaults_off_and_can_be_enabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_SKILL_AUDIT_ENABLED", raising=False)
+    assert Settings(_env_file=None).skill_audit_enabled is False
+
+    monkeypatch.setenv("WARDN_HUB_SKILL_AUDIT_ENABLED", "true")
+    assert Settings(_env_file=None).skill_audit_enabled is True
+
+
+def test_skill_audit_llm_gate_defaults_off_and_can_be_enabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_SKILL_AUDIT_LLM_ENABLED", raising=False)
+    assert Settings(_env_file=None).skill_audit_llm_enabled is False
+
+    monkeypatch.setenv("WARDN_HUB_SKILL_AUDIT_LLM_ENABLED", "true")
+    assert Settings(_env_file=None).skill_audit_llm_enabled is True
+
+
 def test_auth_providers_parse_comma_separated_env(monkeypatch) -> None:
     set_required_settings(
         monkeypatch,

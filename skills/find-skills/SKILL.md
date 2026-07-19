@@ -17,7 +17,7 @@ Use the official CLI package. The unversioned form resolves the latest release:
 npx -y @wardn-ai/skills --help
 ```
 
-An exact published version such as `@wardn-ai/skills@0.1.5` may be used when the user
+An exact published version such as `@wardn-ai/skills@0.1.6` may be used when the user
 asks to pin the CLI. Do not substitute an unscoped package, another registry, or a
 returned install command.
 The CLI talks only to Wardn Hub's public API, rejects redirects and unsafe bundles, validates IDs and
@@ -112,8 +112,9 @@ search metadata by:
 
 1. Direct fit between the task and returned name and description.
 2. `auditStatus`, preferring pass, then warn, then unaudited, and rejecting fail.
-3. Higher `installs` between otherwise comparable candidates, only as a weak popularity signal.
-4. Official publisher identity between otherwise comparable candidates.
+3. Higher `auditScore` between candidates with the same status when scores are available.
+4. Higher `installs` between otherwise comparable candidates, only as a weak popularity signal.
+5. Official publisher identity between otherwise comparable candidates.
 
 Use search-time `auditStatus` only for triage. It does not replace the exact audit call or establish
 that the returned audit belongs to the snapshot later inspected.
@@ -124,19 +125,20 @@ Audit at most the top three distinct IDs:
 npx -y @wardn-ai/skills audit "owner/repository/skill-slug" --json
 ```
 
-The result groups the latest records by provider and audit slug, retains the worst tied latest
-decision, and returns the audited `contentHash`. After auditing, rerank acceptable candidates by
-audit safety first and task fit second.
+An audited result returns the audited `contentHash` and one current `audit` object containing the
+Cisco scanner's `status`, `riskLevel`, `score`, `rank`, summary, categories, and score deductions.
+The CLI validates that the rank matches the 0–100 score. Treat status and risk as the security floor;
+never let a high score override a warning or failure. After auditing, rerank acceptable candidates
+by status first, score second, and task fit third.
 
-- Require `hardRejectCount` to equal zero. Reject a latest fail, high or critical risk, or an
-  unknown nonempty risk label.
-- Prefer another candidate when `warningCount` is nonzero. If no acceptable alternative exists,
-  summarize the warning and ask before applying the skill.
-- Treat a warning with `summaryTruncated: true` as incomplete audit context. Prefer another
-  candidate; if none exists, disclose that the warning detail is truncated and ask before applying.
+- Reject `audit.status: "fail"`, high or critical risk, or an unknown nonempty risk label.
+- Prefer another candidate for `audit.status: "warn"` or medium risk. If no acceptable alternative
+  exists, summarize the warning and its score deductions and ask before applying the skill.
+- For otherwise acceptable pass/low-risk candidates, prefer the higher score. Use the rank only as
+  the score's display grade, not as a separate security decision.
+- Treat `audit.summaryTruncated: true` as incomplete context for any warning or failure. Prefer
+  another candidate; if none exists for a warning, disclose the truncation and ask before applying.
 - Treat `auditStatus: "unaudited"` as unknown, not safe.
-- Disclose historical failures represented by `failureCount`; they are not an automatic rejection
-  when every provider has a newer acceptable result.
 
 Use candidates as a fallback ladder. If one is rejected or unaudited, audit the next ranked
 candidate while budget remains. Never select unaudited content autonomously. After exhausting the
@@ -146,8 +148,8 @@ user explicitly authorizes that exact risk; disclose its provenance and uncertai
 ### 4. Select One
 
 If the user asked only for discovery, present up to three concise options with purpose, source,
-displayed `installs` count as a weak retrieval signal, official status, audit status, and Wardn URL.
-Do not present an install command.
+displayed `installs` count as a weak retrieval signal, official status, audit status, score and rank
+when available, and Wardn URL. Do not present an install command.
 
 For an already-authorized task, select one clearly relevant candidate with acceptable audit signals
 and briefly announce the selected ID and why specialist guidance is useful. Ask the user only when

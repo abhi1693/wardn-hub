@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from app import manage
-from app.cli import skills
+from app.cli import audit_skills, skills
 
 RESOLVED_COMMIT_SHA = "a" * 40
 
@@ -1735,6 +1735,108 @@ def test_manage_dispatches_skills_import_github(monkeypatch: pytest.MonkeyPatch)
     }
 
 
+def test_manage_audits_pending_snapshots_immediately_after_github_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    async def fake_import_github_from_args(_args: Namespace) -> int:
+        events.append("import")
+        return 0
+
+    async def fake_dispose() -> None:
+        events.append("dispose")
+
+    def fake_audit_pending_skill_snapshots() -> int:
+        events.append("audit")
+        return 0
+
+    monkeypatch.setattr(manage, "import_github_from_args", fake_import_github_from_args)
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
+    monkeypatch.setattr(
+        audit_skills,
+        "audit_pending_skill_snapshots",
+        fake_audit_pending_skill_snapshots,
+    )
+
+    result = manage.main(["skills", "import-github", "acme"])
+
+    assert result == 0
+    assert events == ["import", "dispose", "audit"]
+
+
+def test_manage_does_not_run_post_import_audit_when_gate_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    async def fake_import_github_from_args(_args: Namespace) -> int:
+        events.append("import")
+        return 0
+
+    def unexpected_audit() -> int:
+        events.append("audit")
+        return 0
+
+    monkeypatch.setattr(manage, "import_github_from_args", fake_import_github_from_args)
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=False),
+    )
+    monkeypatch.setattr(
+        audit_skills,
+        "audit_pending_skill_snapshots",
+        unexpected_audit,
+    )
+
+    result = manage.main(["skills", "import-github", "acme"])
+
+    assert result == 0
+    assert events == ["import"]
+
+
+@pytest.mark.parametrize(
+    ("import_status", "audit_status", "expected_status"),
+    [(0, 0, 0), (1, 0, 1), (0, 1, 1), (1, 1, 1)],
+)
+def test_post_import_command_preserves_import_and_audit_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    import_status: int,
+    audit_status: int,
+    expected_status: int,
+) -> None:
+    async def fake_import_github_from_args(_args: Namespace) -> int:
+        return import_status
+
+    async def fake_dispose() -> None:
+        return None
+
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
+    monkeypatch.setattr(
+        audit_skills,
+        "audit_pending_skill_snapshots",
+        lambda: audit_status,
+    )
+
+    result = skills.run_import_github_command(
+        Namespace(),
+        importer=fake_import_github_from_args,
+    )
+
+    assert result == expected_status
+
+
 def test_manage_parses_filtered_multi_target_github_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1941,7 +2043,8 @@ def test_manage_dispatches_skills_refresh(monkeypatch: pytest.MonkeyPatch) -> No
         called["timeout_seconds"] = args.timeout_seconds
         return 0
 
-    monkeypatch.setattr(manage, "refresh_github_from_args", fake_refresh_github_from_args)
+    monkeypatch.setattr(skills, "get_settings", lambda: SimpleNamespace(skill_audit_enabled=False))
+    monkeypatch.setattr(skills, "refresh_github_from_args", fake_refresh_github_from_args)
 
     result = manage.main(
         [
@@ -1956,6 +2059,41 @@ def test_manage_dispatches_skills_refresh(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert result == 0
     assert called == {"github_token": "github-token", "timeout_seconds": 3.0}
+
+
+def test_manage_audits_pending_snapshots_immediately_after_github_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    async def fake_refresh_github_from_args(_args: Namespace) -> int:
+        events.append("refresh")
+        return 0
+
+    async def fake_dispose() -> None:
+        events.append("dispose")
+
+    def fake_audit_pending_skill_snapshots() -> int:
+        events.append("audit")
+        return 0
+
+    monkeypatch.setattr(skills, "refresh_github_from_args", fake_refresh_github_from_args)
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
+    monkeypatch.setattr(
+        audit_skills,
+        "audit_pending_skill_snapshots",
+        fake_audit_pending_skill_snapshots,
+    )
+
+    result = manage.main(["skills", "refresh"])
+
+    assert result == 0
+    assert events == ["refresh", "dispose", "audit"]
 
 
 def test_github_token_from_args_prefers_nonempty_override(

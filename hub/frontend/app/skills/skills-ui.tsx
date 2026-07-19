@@ -100,29 +100,14 @@ export function OfficialBadge() {
 
 type SkillAuditStatus = "fail" | "pending" | "pass" | "warn";
 
-const skillAuditStatusWeight: Record<SkillAuditStatus, number> = {
-  pending: -1,
-  pass: 0,
-  warn: 1,
-  fail: 2,
-};
-
-function currentSkillAudits(audit: SkillAuditResponse | null) {
-  if (!audit) return [];
-  const seen = new Set<string>();
-  return audit.audits.filter((entry) => {
-    if (seen.has(entry.slug)) return false;
-    seen.add(entry.slug);
-    return true;
-  });
+function currentSkillAudit(audit: SkillAuditResponse | null) {
+  return audit?.audit ?? null;
 }
 
-function skillAuditStatus(entries: SkillAuditRead[]): SkillAuditStatus {
-  return entries.reduce<SkillAuditStatus>((worst, entry) => {
-    const status = entry.status.toLowerCase();
-    if (status !== "pass" && status !== "warn" && status !== "fail") return worst;
-    return skillAuditStatusWeight[status] > skillAuditStatusWeight[worst] ? status : worst;
-  }, "pending");
+function skillAuditStatus(entry: SkillAuditRead | null): SkillAuditStatus {
+  if (!entry) return "pending";
+  const status = entry.status.toLowerCase();
+  return status === "pass" || status === "warn" || status === "fail" ? status : "pending";
 }
 
 function skillAuditLabel(status: SkillAuditStatus) {
@@ -150,12 +135,16 @@ export function SkillAuditBadge({
   audit,
   compact = false,
   status: listedStatus,
+  score,
+  rank,
 }: {
   audit?: SkillAuditResponse | null;
   compact?: boolean;
   status?: SkillRead["auditStatus"];
+  score?: SkillRead["auditScore"];
+  rank?: SkillRead["auditRank"];
 }) {
-  const status = listedStatus ?? skillAuditStatus(currentSkillAudits(audit ?? null));
+  const status = listedStatus ?? skillAuditStatus(currentSkillAudit(audit ?? null));
   const label = skillAuditLabel(status);
   return (
     <span
@@ -164,7 +153,11 @@ export function SkillAuditBadge({
       title={label}
     >
       <SkillAuditStatusIcon status={status} />
-      {compact ? skillAuditCompactLabel(status) : label}
+      {compact && score !== null && score !== undefined && rank
+        ? `${rank} · ${score}`
+        : compact
+          ? skillAuditCompactLabel(status)
+          : label}
     </span>
   );
 }
@@ -178,8 +171,9 @@ function formatSkillAuditDate(value: string) {
 }
 
 export function SkillAuditPanel({ audit }: { audit: SkillAuditResponse | null }) {
-  const entries = currentSkillAudits(audit);
-  const status = skillAuditStatus(entries);
+  const entry = currentSkillAudit(audit);
+  const status = skillAuditStatus(entry);
+  const findings = entry?.findings ?? [];
 
   return (
     <section className={`skill-audit-panel ${status}`} aria-labelledby="skill-audit-heading">
@@ -192,32 +186,64 @@ export function SkillAuditPanel({ audit }: { audit: SkillAuditResponse | null })
           <small>{skillAuditLabel(status)}</small>
         </span>
       </header>
-      {entries.length ? (
+      {entry ? (
         <>
           <div className="skill-audit-checks">
-            {entries.map((entry) => {
-              const entryStatus = skillAuditStatus([entry]);
-              return (
-                <article className="skill-audit-check" key={entry.slug}>
-                  <div className="skill-audit-check-heading">
-                    <strong>{entry.provider}</strong>
-                    <span className={`skill-audit-check-status ${entryStatus}`}>
-                      {entryStatus}
-                    </span>
+            <article className="skill-audit-check">
+              <div className="skill-audit-check-heading">
+                <strong>{entry.scannerName}</strong>
+                <span className="skill-audit-grade" title={`${entry.score} out of 100`}>
+                  <strong>{entry.rank}</strong>
+                  <span>{entry.score}/100</span>
+                </span>
+              </div>
+              <p>{entry.summary}</p>
+              {entry.riskLevel || entry.categories?.length ? (
+                <div className="skill-audit-tags">
+                  {entry.riskLevel ? <span>{entry.riskLevel} risk</span> : null}
+                  {entry.categories?.map((category) => (
+                    <span key={category}>{category}</span>
+                  ))}
+                </div>
+              ) : null}
+              {entry.scoreDeductions.length ? (
+                <details className="skill-audit-evidence">
+                  <summary>Score deductions</summary>
+                  <ul>
+                    {entry.scoreDeductions.map((deduction) => (
+                      <li key={`${deduction.category}-${deduction.maxSeverity}`}>
+                        <span>{deduction.category}</span>
+                        <strong>−{deduction.points}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              {findings.length ? (
+                <details className="skill-audit-evidence">
+                  <summary>Security findings ({findings.length})</summary>
+                  <div className="skill-audit-findings">
+                    {findings.slice(0, 20).map((finding) => (
+                      <article key={`${finding.id}-${finding.filePath ?? "bundle"}`}>
+                        <header>
+                          <strong>{finding.title}</strong>
+                          <span>{finding.severity}</span>
+                        </header>
+                        <p>{finding.description}</p>
+                        {finding.filePath ? (
+                          <code>
+                            {finding.filePath}
+                            {finding.lineNumber ? `:${finding.lineNumber}` : ""}
+                          </code>
+                        ) : null}
+                        {finding.remediation ? <small>{finding.remediation}</small> : null}
+                      </article>
+                    ))}
                   </div>
-                  <p>{entry.summary}</p>
-                  {entry.riskLevel || entry.categories?.length ? (
-                    <div className="skill-audit-tags">
-                      {entry.riskLevel ? <span>{entry.riskLevel} risk</span> : null}
-                      {entry.categories?.map((category) => (
-                        <span key={category}>{category}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <time dateTime={entry.auditedAt}>{formatSkillAuditDate(entry.auditedAt)} UTC</time>
-                </article>
-              );
-            })}
+                </details>
+              ) : null}
+              <time dateTime={entry.auditedAt}>{formatSkillAuditDate(entry.auditedAt)} UTC</time>
+            </article>
           </div>
           <div className="skill-audit-snapshot">
             <span>Snapshot</span>
@@ -226,7 +252,7 @@ export function SkillAuditPanel({ audit }: { audit: SkillAuditResponse | null })
         </>
       ) : (
         <p className="skill-audit-pending-copy">
-          This snapshot has not completed its bundle and Codex security checks yet.
+          This snapshot has not completed its local Cisco security scan yet.
         </p>
       )}
     </section>
@@ -234,9 +260,11 @@ export function SkillAuditPanel({ audit }: { audit: SkillAuditResponse | null })
 }
 
 export function SkillLeaderboard({
+  auditEnabled = true,
   emptyLabel = "No skills found",
   skills,
 }: {
+  auditEnabled?: boolean;
   emptyLabel?: string;
   skills: SkillRead[];
 }) {
@@ -284,7 +312,14 @@ export function SkillLeaderboard({
                   {skill.name}
                   {skill.isOfficial ? <OfficialBadge /> : null}
                 </strong>
-                <SkillAuditBadge compact status={skill.auditStatus} />
+                {auditEnabled ? (
+                  <SkillAuditBadge
+                    compact
+                    rank={skill.auditRank}
+                    score={skill.auditScore}
+                    status={skill.auditStatus}
+                  />
+                ) : null}
               </span>
               <small>{skill.description || skill.slug}</small>
               <span className="skills-table-mobile-meta">
@@ -301,9 +336,11 @@ export function SkillLeaderboard({
 }
 
 export function SkillCardGrid({
+  auditEnabled = true,
   emptyLabel = "No skills found",
   skills,
 }: {
+  auditEnabled?: boolean;
   emptyLabel?: string;
   skills: SkillRead[];
 }) {
@@ -344,9 +381,16 @@ export function SkillCardGrid({
             </span>
           </span>
           <span className="skill-card-description">{skill.description || skill.slug}</span>
-          <span className="skill-card-audit">
-            <SkillAuditBadge compact status={skill.auditStatus} />
-          </span>
+          {auditEnabled ? (
+            <span className="skill-card-audit">
+              <SkillAuditBadge
+                compact
+                rank={skill.auditRank}
+                score={skill.auditScore}
+                status={skill.auditStatus}
+              />
+            </span>
+          ) : null}
           <span className="skill-card-footer">
             <span>{skill.sourceOwner || skill.source}</span>
             <span>{skill.installs.toLocaleString("en-US")} installs</span>

@@ -4682,38 +4682,94 @@ button:disabled,
   line-height: 17px;
 }
 
-.skill-audit-check-status {
+.skill-audit-grade {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
   border: 1px solid var(--border);
   border-radius: 999px;
+  background: var(--neutral-bg);
+  color: var(--on-surface-variant);
+  padding: 2px 7px;
+}
+
+.skill-audit-grade strong {
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.skill-audit-grade span {
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 15px;
-  padding: 1px 6px;
+}
+
+.skill-audit-evidence {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container-low);
+}
+
+.skill-audit-evidence > summary {
+  cursor: pointer;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 9px;
+}
+
+.skill-audit-evidence ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding: 7px 9px;
+}
+
+.skill-audit-evidence li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  list-style: none;
+}
+
+.skill-audit-findings {
+  display: grid;
+  border-top: 1px solid var(--border);
+}
+
+.skill-audit-findings article {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+}
+
+.skill-audit-findings article + article {
+  border-top: 1px solid var(--border);
+}
+
+.skill-audit-findings header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.skill-audit-findings header span {
+  color: var(--muted-foreground);
+  font-weight: 700;
   text-transform: uppercase;
 }
 
-.skill-audit-check-status.pass {
-  border-color: color-mix(in srgb, var(--success) 24%, transparent);
-  background: var(--success-bg);
-  color: var(--success);
-}
-
-.skill-audit-check-status.warn {
-  border-color: color-mix(in srgb, var(--pending) 24%, transparent);
-  background: var(--pending-bg);
-  color: var(--pending);
-}
-
-.skill-audit-check-status.fail {
-  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
-  background: var(--danger-bg);
-  color: var(--danger);
-}
-
-.skill-audit-check-status.pending {
-  background: var(--neutral-bg);
+.skill-audit-findings code,
+.skill-audit-findings small {
   color: var(--muted-foreground);
+  font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
 .skill-audit-check p,

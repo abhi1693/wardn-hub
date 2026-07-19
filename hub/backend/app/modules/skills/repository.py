@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import Select, String, and_, case, cast, exists, func, or_, select, tuple_, update
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.modules.skills.audit_policy import current_audit_configuration_hash
 from app.modules.skills.models import (
     Skill,
     SkillAudit,
@@ -13,6 +15,13 @@ from app.modules.skills.models import (
     SkillSnapshot,
     SkillSourceOwner,
 )
+
+
+@dataclass(frozen=True)
+class CurrentSkillAudit:
+    status: str
+    score: int
+    rank: str
 
 
 def published_skill_query(*entities) -> Select:
@@ -145,19 +154,10 @@ def skill_identifier_order(search: str) -> ColumnElement[int] | None:
 
 
 def current_skill_audit_status_subquery():
-    ranked_audits = (
+    return (
         select(
             SkillAudit.skill_id.label("skill_id"),
-            SkillAudit.slug.label("slug"),
-            SkillAudit.status.label("status"),
-        )
-        .add_columns(
-            func.row_number()
-            .over(
-                partition_by=(SkillAudit.skill_id, SkillAudit.slug),
-                order_by=(SkillAudit.audited_at.desc(), SkillAudit.id.desc()),
-            )
-            .label("audit_rank")
+            SkillAudit.status.label("audit_status"),
         )
         .join(
             SkillSnapshot,
@@ -170,34 +170,8 @@ def current_skill_audit_status_subquery():
         .where(
             SkillSnapshot.status == "active",
             SkillSnapshot.is_latest.is_(True),
-        )
-        .cte("ranked_current_skill_audits")
-        .prefix_with("MATERIALIZED", dialect="postgresql")
-    )
-    status_weight = case(
-        (ranked_audits.c.status == "fail", 2),
-        (ranked_audits.c.status == "warn", 1),
-        (ranked_audits.c.status == "pass", 0),
-    )
-    worst_statuses = (
-        select(
-            ranked_audits.c.skill_id.label("skill_id"),
-            func.max(status_weight).label("status_weight"),
-        )
-        .where(ranked_audits.c.audit_rank == 1)
-        .where(ranked_audits.c.status.in_(("pass", "warn", "fail")))
-        .group_by(ranked_audits.c.skill_id)
-        .cte("current_skill_audit_weights")
-        .prefix_with("MATERIALIZED", dialect="postgresql")
-    )
-    return (
-        select(
-            worst_statuses.c.skill_id.label("skill_id"),
-            case(
-                (worst_statuses.c.status_weight == 2, "fail"),
-                (worst_statuses.c.status_weight == 1, "warn"),
-                else_="pass",
-            ).label("audit_status"),
+            SkillAudit.configuration_hash == current_audit_configuration_hash(),
+            SkillAudit.status.in_(("pass", "warn", "fail")),
         )
         .subquery()
     )
@@ -209,11 +183,7 @@ def apply_audit_status_filter(statement: Select, audit_status: str) -> Select:
     if audit_status == "unaudited":
         return statement.where(Skill.id.not_in(audited_skill_ids))
     return statement.where(
-        Skill.id.in_(
-            audited_skill_ids.where(
-                current_audit_statuses.c.audit_status == audit_status
-            )
-        )
+        Skill.id.in_(audited_skill_ids.where(current_audit_statuses.c.audit_status == audit_status))
     )
 
 
@@ -333,8 +303,7 @@ async def official_owner_keys(session: AsyncSession, skills: list[Skill]) -> set
         return set()
 
     result = await session.execute(
-        select(SkillSourceOwner.source_type, func.lower(SkillSourceOwner.source_owner))
-        .where(
+        select(SkillSourceOwner.source_type, func.lower(SkillSourceOwner.source_owner)).where(
             tuple_(
                 SkillSourceOwner.source_type,
                 func.lower(SkillSourceOwner.source_owner),
@@ -345,10 +314,10 @@ async def official_owner_keys(session: AsyncSession, skills: list[Skill]) -> set
     return {(source_type, source_owner) for source_type, source_owner in result.all()}
 
 
-async def current_skill_audit_statuses(
+async def current_skill_audits(
     session: AsyncSession,
     skills: list[Skill],
-) -> dict[uuid.UUID, str]:
+) -> dict[uuid.UUID, CurrentSkillAudit]:
     snapshot_keys = [
         (skill.id, skill.current_snapshot_id)
         for skill in skills
@@ -357,16 +326,8 @@ async def current_skill_audit_statuses(
     if not snapshot_keys:
         return {}
 
-    ranked_audits = (
-        select(SkillAudit.skill_id, SkillAudit.slug, SkillAudit.status)
-        .add_columns(
-            func.row_number()
-            .over(
-                partition_by=(SkillAudit.skill_id, SkillAudit.slug),
-                order_by=(SkillAudit.audited_at.desc(), SkillAudit.id.desc()),
-            )
-            .label("audit_rank")
-        )
+    result = await session.execute(
+        select(SkillAudit.skill_id, SkillAudit.status, SkillAudit.score, SkillAudit.rank)
         .join(
             SkillSnapshot,
             and_(
@@ -379,24 +340,14 @@ async def current_skill_audit_statuses(
             tuple_(SkillAudit.skill_id, SkillAudit.snapshot_id).in_(snapshot_keys),
             SkillSnapshot.status == "active",
             SkillSnapshot.is_latest.is_(True),
-        )
-        .subquery()
-    )
-    result = await session.execute(
-        select(ranked_audits.c.skill_id, ranked_audits.c.status).where(
-            ranked_audits.c.audit_rank == 1
+            SkillAudit.configuration_hash == current_audit_configuration_hash(),
+            SkillAudit.status.in_(("pass", "warn", "fail")),
         )
     )
-
-    status_weight = {"pass": 0, "warn": 1, "fail": 2}
-    statuses: dict[uuid.UUID, str] = {}
-    for skill_id, status in result.all():
-        if status not in status_weight:
-            continue
-        current = statuses.get(skill_id)
-        if current is None or status_weight[status] > status_weight[current]:
-            statuses[skill_id] = status
-    return statuses
+    return {
+        skill_id: CurrentSkillAudit(status=status, score=score, rank=rank)
+        for skill_id, status, score, rank in result.all()
+    }
 
 
 async def get_skill(session: AsyncSession, source: str, slug: str) -> Skill | None:
@@ -447,14 +398,15 @@ async def record_install_event(
         )
     )
     await session.execute(
-        update(Skill)
-        .where(Skill.id == skill.id)
-        .values(installs=Skill.installs + 1)
+        update(Skill).where(Skill.id == skill.id).values(installs=Skill.installs + 1)
     )
     await session.commit()
 
 
-async def list_skill_audits(session: AsyncSession, skill: Skill) -> list[SkillAudit]:
+async def get_current_skill_audit(
+    session: AsyncSession,
+    skill: Skill,
+) -> SkillAudit | None:
     result = await session.execute(
         select(SkillAudit)
         .where(
@@ -465,7 +417,7 @@ async def list_skill_audits(session: AsyncSession, skill: Skill) -> list[SkillAu
             .where(SkillSnapshot.id == skill.current_snapshot_id)
             .scalar_subquery(),
         )
-        .order_by(SkillAudit.audited_at.desc(), SkillAudit.provider.asc())
-        .limit(32)
+        .where(SkillAudit.configuration_hash == current_audit_configuration_hash())
+        .limit(1)
     )
-    return list(result.scalars().all())
+    return result.scalar_one_or_none()

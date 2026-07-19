@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.main import create_app
 from app.modules.skills import router
@@ -38,6 +40,8 @@ def skill_read(slug: str = "find-skills") -> SkillRead:
         installs=42,
         isOfficial=True,
         auditStatus="warn",
+        auditScore=79,
+        auditRank="A",
     )
 
 
@@ -74,6 +78,15 @@ def test_skills_openapi_exposes_public_paths() -> None:
     skill_properties = schema["components"]["schemas"]["SkillRead"]["properties"]
     assert "auditStatus" in skill_properties
     assert "isDuplicate" not in skill_properties
+    audit_response_properties = schema["components"]["schemas"]["SkillAuditResponse"][
+        "properties"
+    ]
+    assert "audit" in audit_response_properties
+    assert "audits" not in audit_response_properties
+    audit_properties = schema["components"]["schemas"]["SkillAuditRead"]["properties"]
+    assert "scannerName" in audit_properties
+    assert "provider" not in audit_properties
+    assert "slug" not in audit_properties
 
 
 def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
@@ -91,6 +104,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
         return SkillListResponse(
             data=[skill_read()],
             pagination=SkillPagination(page=0, perPage=10, total=1, hasMore=False),
+            auditEnabled=True,
         )
 
     monkeypatch.setattr(router, "list_skills", list_skills)
@@ -126,9 +140,12 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
                 "installs": 42,
                 "isOfficial": True,
                 "auditStatus": "warn",
+                "auditScore": 79,
+                "auditRank": "A",
             }
         ],
         "pagination": {"page": 0, "perPage": 10, "total": 1, "hasMore": False},
+        "auditEnabled": True,
     }
 
 
@@ -141,6 +158,7 @@ def test_search_skills_returns_search_metadata(monkeypatch) -> None:
             searchType="semantic",
             count=1,
             durationMs=3,
+            auditEnabled=True,
         )
 
     monkeypatch.setattr(router, "search_skills", search_skills)
@@ -173,6 +191,7 @@ def test_official_skills_groups_by_owner(monkeypatch) -> None:
             totalOwners=1,
             totalSkills=1,
             generatedAt=generated_at,
+            auditEnabled=True,
         )
 
     monkeypatch.setattr(router, "list_official_skills", list_official_skills)
@@ -245,6 +264,7 @@ def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:
             sourceUrl="https://github.com/vercel-labs/skills",
             hash="abc123",
             files=[SkillFileRead(path="SKILL.md", contents="# Find skills")],
+            auditEnabled=True,
         )
 
     monkeypatch.setattr(router, "get_skill_detail", get_skill_detail)
@@ -264,6 +284,7 @@ def test_get_skill_detail_can_return_complete_bundle(monkeypatch) -> None:
             source="vercel-labs/skills",
             slug="find-skills",
             hash="abc123",
+            auditEnabled=True,
             files=[
                 SkillFileRead(path="SKILL.md", contents="# Find skills"),
                 SkillFileRead(path="references/api.md", contents="# API"),
@@ -374,7 +395,7 @@ def test_record_skill_install_telemetry_defaults_legacy_client(monkeypatch) -> N
     ]
 
 
-def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:
+def test_get_skill_audit_returns_current_cisco_result(monkeypatch) -> None:
     audited_at = datetime(2026, 7, 10, tzinfo=UTC)
 
     async def get_skill_audit(*args, **kwargs):
@@ -384,17 +405,24 @@ def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:
             source="vercel-labs/skills",
             slug="find-skills",
             contentHash="a" * 64,
-            audits=[
-                SkillAuditRead(
-                    provider="Wardn",
-                    slug="wardn",
-                    status="pass",
-                    summary="No risks detected",
-                    auditedAt=audited_at,
-                    riskLevel="LOW",
-                    categories=["SAFE"],
-                )
-            ],
+            audit=SkillAuditRead(
+                scannerName="Cisco AI Skill Scanner",
+                scannerVersion="2.0.12",
+                policyName="balanced",
+                policyVersion="1.0",
+                policyFingerprint="b" * 64,
+                status="pass",
+                summary="No risks detected",
+                auditedAt=audited_at,
+                riskLevel="low",
+                score=100,
+                rank="S",
+                scoreDeductions=[],
+                categories=None,
+                findings=[],
+                analyzers=["static_analyzer"],
+                scanDurationMs=123,
+            ),
         )
 
     monkeypatch.setattr(router, "get_skill_audit", get_skill_audit)
@@ -403,11 +431,41 @@ def test_get_skill_audit_returns_partner_results(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["contentHash"] == "a" * 64
-    assert response.json()["audits"][0]["provider"] == "Wardn"
-    assert response.json()["audits"][0]["riskLevel"] == "LOW"
+    assert response.json()["audit"]["scannerName"] == "Cisco AI Skill Scanner"
+    assert response.json()["audit"]["riskLevel"] == "low"
+    assert response.json()["audit"]["score"] == 100
+    assert response.json()["audit"]["rank"] == "S"
 
 
-def test_get_skill_audit_returns_404_when_no_audits(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"status": "pass", "riskLevel": "medium", "score": 79, "rank": "A"},
+        {"status": "warn", "riskLevel": "medium", "score": 80, "rank": "A"},
+        {"status": "pass", "riskLevel": "low", "score": 98, "rank": "S"},
+    ],
+)
+def test_skill_audit_read_rejects_inconsistent_decisions(overrides) -> None:
+    values = {
+        "scannerName": "Cisco AI Skill Scanner",
+        "scannerVersion": "2.0.12",
+        "policyName": "balanced",
+        "policyVersion": "1.0",
+        "policyFingerprint": "b" * 64,
+        "status": "pass",
+        "summary": "No risks detected",
+        "auditedAt": datetime(2026, 7, 10, tzinfo=UTC),
+        "riskLevel": "low",
+        "score": 100,
+        "rank": "S",
+        "scoreDeductions": [],
+        "scanDurationMs": 123,
+    }
+    with pytest.raises(ValidationError):
+        SkillAuditRead.model_validate(values | overrides)
+
+
+def test_get_skill_audit_returns_404_when_no_current_audit(monkeypatch) -> None:
     async def get_skill_audit(*args, **kwargs):
         raise SkillAuditNotFoundError("skill audits not found")
 

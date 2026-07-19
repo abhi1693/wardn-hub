@@ -141,9 +141,10 @@ def official_owner_key(skill: Skill) -> tuple[str, str]:
 def skill_read(
     skill: Skill,
     *,
-    audit_statuses: dict[uuid.UUID, str] | None = None,
+    audit_results: dict[uuid.UUID, repository.CurrentSkillAudit] | None = None,
     official_owner_keys: set[tuple[str, str]] | None = None,
 ) -> SkillRead:
+    audit = (audit_results or {}).get(skill.id)
     return SkillRead(
         id=f"{skill.source}/{skill.slug}",
         slug=skill.slug,
@@ -160,7 +161,9 @@ def skill_read(
         description=skill.description,
         installs=skill.installs,
         isOfficial=official_owner_key(skill) in (official_owner_keys or set()),
-        auditStatus=(audit_statuses or {}).get(skill.id),
+        auditStatus=audit.status if audit else None,
+        auditScore=audit.score if audit else None,
+        auditRank=audit.rank if audit else None,
     )
 
 
@@ -176,11 +179,14 @@ async def list_skills(
     source: str | None = None,
     official: bool | None = None,
 ) -> SkillListResponse:
+    audit_enabled = get_settings().skill_audit_enabled
     if view not in VALID_SKILL_VIEWS:
         raise ValueError("view must be one of all-time, trending, or hot")
     normalized_audit_status = audit_status.strip().lower() if audit_status else None
     if normalized_audit_status and normalized_audit_status not in VALID_SKILL_AUDIT_FILTERS:
         raise ValueError("audit_status must be one of pass, warn, fail, or unaudited")
+    if not audit_enabled:
+        normalized_audit_status = None
     offset = page * per_page
     search_query = query.strip() if query else None
     skills, total = await repository.list_skills(
@@ -195,12 +201,16 @@ async def list_skills(
         official=official,
     )
     official_keys = await repository.official_owner_keys(session, skills)
-    audit_statuses = await repository.current_skill_audit_statuses(session, skills)
+    audit_results = (
+        await repository.current_skill_audits(session, skills)
+        if audit_enabled
+        else {}
+    )
     return SkillListResponse(
         data=[
             skill_read(
                 skill,
-                audit_statuses=audit_statuses,
+                audit_results=audit_results,
                 official_owner_keys=official_keys,
             )
             for skill in skills
@@ -211,6 +221,7 @@ async def list_skills(
             total=total,
             hasMore=offset + len(skills) < total,
         ),
+        auditEnabled=audit_enabled,
     )
 
 
@@ -221,6 +232,7 @@ async def search_skills(
     limit: int = 50,
     owner: str | None = None,
 ) -> SkillSearchResponse:
+    audit_enabled = get_settings().skill_audit_enabled
     search_query = query.strip()
     started_at = perf_counter()
     skills, _total = await repository.list_skills(
@@ -232,12 +244,16 @@ async def search_skills(
         owner=owner,
     )
     official_keys = await repository.official_owner_keys(session, skills)
-    audit_statuses = await repository.current_skill_audit_statuses(session, skills)
+    audit_results = (
+        await repository.current_skill_audits(session, skills)
+        if audit_enabled
+        else {}
+    )
     return SkillSearchResponse(
         data=[
             skill_read(
                 skill,
-                audit_statuses=audit_statuses,
+                audit_results=audit_results,
                 official_owner_keys=official_keys,
             )
             for skill in skills
@@ -246,6 +262,7 @@ async def search_skills(
         searchType="semantic" if " " in search_query else "fuzzy",
         count=len(skills),
         durationMs=max(0, int((perf_counter() - started_at) * 1000)),
+        auditEnabled=audit_enabled,
     )
 
 
@@ -255,6 +272,7 @@ async def get_skill_detail(
     *,
     include_bundle: bool = False,
 ) -> SkillDetailResponse:
+    audit_enabled = get_settings().skill_audit_enabled
     source, slug = split_skill_id(skill_id)
     skill = await repository.get_skill(session, source, slug)
     if skill is None:
@@ -276,6 +294,7 @@ async def get_skill_detail(
             sourceUrl=skill.source_url or None,
             hash=None,
             files=None,
+            auditEnabled=audit_enabled,
         )
     snapshot_files = (
         snapshot.files or []
@@ -293,6 +312,7 @@ async def get_skill_detail(
         sourceUrl=skill.source_url or None,
         hash=snapshot.content_hash,
         files=[SkillFileRead.model_validate(file) for file in snapshot_files],
+        auditEnabled=audit_enabled,
     )
 
 
@@ -321,35 +341,54 @@ async def record_skill_install(
 
 
 def audit_read(audit: SkillAudit) -> SkillAuditRead:
+    categories = list(
+        dict.fromkeys(
+            str(finding.get("category", ""))
+            for finding in (audit.findings or [])
+            if finding.get("category")
+        )
+    )
     return SkillAuditRead(
-        provider=audit.provider,
-        slug=audit.slug,
+        scannerName=audit.scanner_name,
+        scannerVersion=audit.scanner_version,
+        policyName=audit.policy_name,
+        policyVersion=audit.policy_version,
+        policyFingerprint=audit.policy_fingerprint,
         status=audit.status,
         summary=audit.summary,
         auditedAt=audit.audited_at,
-        riskLevel=audit.risk_level or None,
-        categories=audit.categories or None,
+        riskLevel=audit.risk_level,
+        score=audit.score,
+        rank=audit.rank,
+        scoreDeductions=audit.score_deductions or [],
+        categories=categories or None,
+        findings=audit.findings or [],
+        analyzers=audit.analyzers or [],
+        scanDurationMs=audit.scan_duration_ms,
     )
 
 
 async def get_skill_audit(session: AsyncSession, skill_id: str) -> SkillAuditResponse:
+    if not get_settings().skill_audit_enabled:
+        raise SkillAuditNotFoundError("skill audits are disabled")
     source, slug = split_skill_id(skill_id)
     skill = await repository.get_skill(session, source, slug)
     if skill is None:
         raise SkillNotFoundError("skill not found")
-    audits = await repository.list_skill_audits(session, skill)
-    if not audits:
+    audit = await repository.get_current_skill_audit(session, skill)
+    if audit is None:
         raise SkillAuditNotFoundError("skill audits not found")
     return SkillAuditResponse(
         id=f"{skill.source}/{skill.slug}",
         source=skill.source,
         slug=skill.slug,
-        contentHash=audits[0].content_hash,
-        audits=[audit_read(audit) for audit in audits],
+        contentHash=audit.content_hash,
+        audit=audit_read(audit),
     )
 
 
 async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
+    audit_enabled = get_settings().skill_audit_enabled
     skills, _total = await repository.list_skills(
         session,
         offset=0,
@@ -358,7 +397,11 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
         official=True,
     )
     official_keys = await repository.official_owner_keys(session, skills)
-    audit_statuses = await repository.current_skill_audit_statuses(session, skills)
+    audit_results = (
+        await repository.current_skill_audits(session, skills)
+        if audit_enabled
+        else {}
+    )
     groups: dict[str, list[Skill]] = defaultdict(list)
     for skill in skills:
         groups[owner_from_skill(skill)].append(skill)
@@ -376,7 +419,7 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
                 skills=[
                     skill_read(
                         skill,
-                        audit_statuses=audit_statuses,
+                        audit_results=audit_results,
                         official_owner_keys=official_keys,
                     )
                     for skill in owner_skills
@@ -388,4 +431,5 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
         totalOwners=len(owners),
         totalSkills=sum(len(owner.skills) for owner in owners),
         generatedAt=datetime.now(UTC),
+        auditEnabled=audit_enabled,
     )

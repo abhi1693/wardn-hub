@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     skill_telemetry_rate_limit_requests: int = 20
     skill_telemetry_rate_limit_window_seconds: int = 60
     skill_telemetry_rate_limit_key_prefix: str = "wardn-hub:skill-telemetry-rate-limit"
+    skill_audit_enabled: bool = False
+    skill_audit_llm_enabled: bool = False
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -256,9 +258,7 @@ class Settings(BaseSettings):
                 if not getattr(self, field_name).strip()
             ]
             if missing_fields:
-                raise ValueError(
-                    f"{', '.join(missing_fields)} required when OIDC auth is enabled"
-                )
+                raise ValueError(f"{', '.join(missing_fields)} required when OIDC auth is enabled")
         if "oidc" in self.auth_providers and self.oidc_issuer_url:
             if not is_absolute_http_url(
                 self.oidc_issuer_url,
@@ -272,9 +272,7 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(f"oidc_issuer_url must be {requirement}")
         if "oidc" in self.auth_providers:
-            callback_urls = [
-                ("registry_public_base_url", self.registry_public_base_url, False)
-            ]
+            callback_urls = [("registry_public_base_url", self.registry_public_base_url, False)]
             if self.oidc_redirect_uri:
                 callback_urls.append(("oidc_redirect_uri", self.oidc_redirect_uri, True))
             for field_name, value, allow_query in callback_urls:

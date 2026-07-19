@@ -5492,8 +5492,115 @@
         "title": "ServerSourceImportSubmissionPayload",
         "type": "object"
       },
+      "SkillAuditFindingRead": {
+        "properties": {
+          "analyzer": {
+            "title": "Analyzer",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "filePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filepath"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lineNumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linenumber"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "ruleId": {
+            "title": "Ruleid",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "safe",
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ruleId",
+          "category",
+          "severity",
+          "title",
+          "description",
+          "analyzer"
+        ],
+        "title": "SkillAuditFindingRead",
+        "type": "object"
+      },
       "SkillAuditRead": {
         "properties": {
+          "analyzers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Analyzers",
+            "type": "array"
+          },
           "auditedAt": {
             "format": "date-time",
             "title": "Auditedat",
@@ -5513,26 +5620,83 @@
             ],
             "title": "Categories"
           },
-          "provider": {
-            "title": "Provider",
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAuditFindingRead"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "policyFingerprint": {
+            "pattern": "^(?:|[a-f0-9]{64})$",
+            "title": "Policyfingerprint",
+            "type": "string"
+          },
+          "policyName": {
+            "title": "Policyname",
+            "type": "string"
+          },
+          "policyVersion": {
+            "title": "Policyversion",
+            "type": "string"
+          },
+          "rank": {
+            "enum": [
+              "S",
+              "A+",
+              "A",
+              "A-",
+              "B+",
+              "B",
+              "B-",
+              "C+",
+              "C"
+            ],
+            "title": "Rank",
             "type": "string"
           },
           "riskLevel": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
             ],
-            "title": "Risklevel"
-          },
-          "slug": {
-            "title": "Slug",
+            "title": "Risklevel",
             "type": "string"
           },
+          "scanDurationMs": {
+            "minimum": 0.0,
+            "title": "Scandurationms",
+            "type": "integer"
+          },
+          "scannerName": {
+            "title": "Scannername",
+            "type": "string"
+          },
+          "scannerVersion": {
+            "title": "Scannerversion",
+            "type": "string"
+          },
+          "score": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "scoreDeductions": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAuditScoreDeductionRead"
+            },
+            "title": "Scoredeductions",
+            "type": "array"
+          },
           "status": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -5542,23 +5706,27 @@
           }
         },
         "required": [
-          "provider",
-          "slug",
+          "scannerName",
+          "scannerVersion",
+          "policyName",
+          "policyVersion",
+          "policyFingerprint",
           "status",
           "summary",
-          "auditedAt"
+          "auditedAt",
+          "riskLevel",
+          "score",
+          "rank",
+          "scoreDeductions",
+          "scanDurationMs"
         ],
         "title": "SkillAuditRead",
         "type": "object"
       },
       "SkillAuditResponse": {
         "properties": {
-          "audits": {
-            "items": {
-              "$ref": "#/components/schemas/SkillAuditRead"
-            },
-            "title": "Audits",
-            "type": "array"
+          "audit": {
+            "$ref": "#/components/schemas/SkillAuditRead"
           },
           "contentHash": {
             "pattern": "^[a-f0-9]{64}$",
@@ -5583,13 +5751,56 @@
           "source",
           "slug",
           "contentHash",
-          "audits"
+          "audit"
         ],
         "title": "SkillAuditResponse",
         "type": "object"
       },
+      "SkillAuditScoreDeductionRead": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "findingCount": {
+            "minimum": 0.0,
+            "title": "Findingcount",
+            "type": "integer"
+          },
+          "maxSeverity": {
+            "enum": [
+              "safe",
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Maxseverity",
+            "type": "string"
+          },
+          "points": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Points",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "points",
+          "findingCount",
+          "maxSeverity"
+        ],
+        "title": "SkillAuditScoreDeductionRead",
+        "type": "object"
+      },
       "SkillDetailResponse": {
         "properties": {
+          "auditEnabled": {
+            "title": "Auditenabled",
+            "type": "boolean"
+          },
           "files": {
             "anyOf": [
               {
@@ -5674,7 +5885,8 @@
         "required": [
           "id",
           "source",
-          "slug"
+          "slug",
+          "auditEnabled"
         ],
         "title": "SkillDetailResponse",
         "type": "object"
@@ -5756,6 +5968,10 @@
       },
       "SkillListResponse": {
         "properties": {
+          "auditEnabled": {
+            "title": "Auditenabled",
+            "type": "boolean"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/SkillRead"
@@ -5769,13 +5985,18 @@
         },
         "required": [
           "data",
-          "pagination"
+          "pagination",
+          "auditEnabled"
         ],
         "title": "SkillListResponse",
         "type": "object"
       },
       "SkillOfficialResponse": {
         "properties": {
+          "auditEnabled": {
+            "title": "Auditenabled",
+            "type": "boolean"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/OfficialSkillOwner"
@@ -5801,7 +6022,8 @@
           "data",
           "totalOwners",
           "totalSkills",
-          "generatedAt"
+          "generatedAt",
+          "auditEnabled"
         ],
         "title": "SkillOfficialResponse",
         "type": "object"
@@ -5836,6 +6058,41 @@
       },
       "SkillRead": {
         "properties": {
+          "auditRank": {
+            "anyOf": [
+              {
+                "enum": [
+                  "S",
+                  "A+",
+                  "A",
+                  "A-",
+                  "B+",
+                  "B",
+                  "B-",
+                  "C+",
+                  "C"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auditrank"
+          },
+          "auditScore": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auditscore"
+          },
           "auditStatus": {
             "anyOf": [
               {
@@ -5960,6 +6217,10 @@
       },
       "SkillSearchResponse": {
         "properties": {
+          "auditEnabled": {
+            "title": "Auditenabled",
+            "type": "boolean"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -5989,7 +6250,8 @@
           "query",
           "searchType",
           "count",
-          "durationMs"
+          "durationMs",
+          "auditEnabled"
         ],
         "title": "SkillSearchResponse",
         "type": "object"
@@ -7180,7 +7442,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.122"
+    "version": "0.2.123"
   },
   "openapi": "3.1.0",
   "paths": {
