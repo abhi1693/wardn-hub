@@ -92,6 +92,27 @@ def refresh_target(
     )
 
 
+def fetched_bundle(
+    files: list[skills.SkillSnapshotFile],
+    *,
+    skill_md: str | None = None,
+    source_entrypoint: str = "context/skills/weather/SKILL.md",
+) -> skills.FetchedSkillBundle:
+    root = skill_md or str(files[0]["contents"])
+    return skills.FetchedSkillBundle(
+        source_skill_md=root,
+        skill_md=root,
+        files=files,
+        bundle_size=sum(len(str(item["contents"]).encode()) for item in files),
+        bundle_format_version=2,
+        source_commit_sha=RESOLVED_COMMIT_SHA,
+        source_entrypoint=source_entrypoint,
+        resolution_status="complete",
+        resolution_issues=[],
+        dependency_manifest=[],
+    )
+
+
 def test_parse_frontmatter_extracts_name_and_description() -> None:
     assert skills.parse_frontmatter(
         """---
@@ -307,8 +328,7 @@ async def test_load_skill_refresh_targets_counts_invalid_current_snapshots(
     [
         (
             b"first\nsecond\x00",
-            "GitHub file contains a NUL byte at offset 12 (line 2): "
-            "skills/binary/SKILL.md",
+            "GitHub file contains a NUL byte at offset 12 (line 2): skills/binary/SKILL.md",
         ),
         (
             b"\xff",
@@ -384,9 +404,7 @@ async def test_github_raw_file_encodes_ref_and_path_segments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_get(url: str, *, follow_redirects: bool) -> SimpleNamespace:
-        assert url.endswith(
-            "/feature/api%23v2/skills/weather/references/a%23b%3F%25%20file.txt"
-        )
+        assert url.endswith("/feature/api%23v2/skills/weather/references/a%23b%3F%25%20file.txt")
         assert follow_redirects is False
         return SimpleNamespace(status_code=200, content=b"reference", text="")
 
@@ -1071,8 +1089,7 @@ def test_github_response_error_message_includes_http_diagnostics() -> None:
     )
 
     assert skills.github_response_error_message(response, "GitHub tree lookup failed") == (
-        "GitHub tree lookup failed (HTTP 502, request ID REQUEST-502): "
-        "empty response body"
+        "GitHub tree lookup failed (HTTP 502, request ID REQUEST-502): empty response body"
     )
 
 
@@ -1523,7 +1540,7 @@ async def test_fetch_skill_bundle_preserves_text_binary_and_executable_files() -
     ]
     repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
 
-    skill_md, files, bundle_size = await skills.fetch_skill_bundle(
+    bundle = await skills.fetch_skill_bundle(
         client=FakeGitHubClient(),  # type: ignore[arg-type]
         repo=repo,
         ref="main",
@@ -1531,21 +1548,268 @@ async def test_fetch_skill_bundle_preserves_text_binary_and_executable_files() -
         skill_path="skills/weather/SKILL.md",
     )
 
-    assert skill_md.startswith("---\nname: Weather")
-    assert files == [
-        {"path": "SKILL.md", "contents": skill_md},
-        {"path": "assets/logo.bin", "contents": "AP8=", "encoding": "base64"},
-        {"path": "references/guide.md", "contents": "# Guide\n"},
+    assert bundle.source_skill_md.startswith("---\nname: Weather")
+    assert bundle.source_entrypoint == "context/skills/weather/SKILL.md"
+    assert bundle.resolution_status == "complete"
+    assert bundle.files == [
+        {"path": "SKILL.md", "contents": bundle.skill_md},
         {
-            "path": "scripts/run.sh",
+            "path": "context/skills/weather/SKILL.md",
+            "contents": bundle.source_skill_md,
+        },
+        {
+            "path": "context/skills/weather/assets/logo.bin",
+            "contents": "AP8=",
+            "encoding": "base64",
+        },
+        {"path": "context/skills/weather/references/guide.md", "contents": "# Guide\n"},
+        {
+            "path": "context/skills/weather/scripts/run.sh",
             "contents": "#!/bin/sh\necho weather\n",
             "executable": True,
         },
     ]
-    assert bundle_size == len(skill_md.encode()) + 2 + 8 + 23
-    assert skills.content_hash(files) != skills.content_hash(
-        [file for file in files if file["path"] != "scripts/run.sh"]
+    assert bundle.bundle_size == (
+        len(bundle.skill_md.encode()) + len(bundle.source_skill_md.encode()) + 2 + 8 + 23
     )
+    assert skills.content_hash(bundle.files) != skills.content_hash(
+        [file for file in bundle.files if file["path"] != "context/skills/weather/scripts/run.sh"]
+    )
+
+
+async def test_fetch_skill_bundle_resolves_repository_dependencies_and_sibling_skill() -> None:
+    source = """---
+name: primary
+description: Primary workflow.
+---
+
+Read [the shared protocol](../../common/PROTOCOL.md).
+Before continuing, read [the helper skill](../helper/SKILL.md).
+"""
+    contents = {
+        "common/PROTOCOL.md": b"Read [the template](../templates/base.yaml).\n",
+        "templates/base.yaml": b"enabled: true\n",
+        "skills/helper/SKILL.md": (
+            b"---\nname: helper\ndescription: Helper workflow.\n---\n\nRun scripts/help.sh.\n"
+        ),
+        "skills/helper/scripts/help.sh": b"#!/bin/sh\n",
+    }
+
+    class FakeGitHubClient:
+        async def raw_file(self, *args: object) -> str:
+            return source
+
+        async def raw_file_bytes(self, repo: object, ref: str, path: str) -> bytes:
+            return contents[path]
+
+    tree = [
+        skills.GitHubTreeItem(path="skills/primary/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="common/PROTOCOL.md", type="blob"),
+        skills.GitHubTreeItem(path="templates/base.yaml", type="blob"),
+        skills.GitHubTreeItem(path="skills/helper/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/helper/scripts/help.sh", type="blob", mode="100755"),
+    ]
+    bundle = await skills.fetch_skill_bundle(
+        client=FakeGitHubClient(),  # type: ignore[arg-type]
+        repo=skills.parse_github_repository_url("https://github.com/acme/skills"),
+        ref=RESOLVED_COMMIT_SHA,
+        tree=tree,
+        skill_path="skills/primary/SKILL.md",
+    )
+
+    assert bundle.resolution_status == "complete"
+    assert bundle.resolution_issues == []
+    assert {item["path"] for item in bundle.files} == {
+        "SKILL.md",
+        "context/skills/primary/SKILL.md",
+        "context/common/PROTOCOL.md",
+        "context/templates/base.yaml",
+        "context/skills/helper/SKILL.md",
+        "context/skills/helper/scripts/help.sh",
+    }
+    assert any(
+        item["target"] == "../helper/SKILL.md"
+        and item["kind"] == "skill"
+        and item["required"] is True
+        for item in bundle.dependency_manifest
+    )
+
+
+async def test_fetch_skill_bundle_marks_only_missing_required_references_incomplete() -> None:
+    source = """---
+name: primary
+description: Primary workflow.
+---
+
+[Optional examples](examples/)
+Read `../../shared/REQUIRED.md` before continuing.
+Create output at `reports/result.json`.
+"""
+
+    class FakeGitHubClient:
+        async def raw_file(self, *args: object) -> str:
+            return source
+
+    bundle = await skills.fetch_skill_bundle(
+        client=FakeGitHubClient(),  # type: ignore[arg-type]
+        repo=skills.parse_github_repository_url("https://github.com/acme/skills"),
+        ref=RESOLVED_COMMIT_SHA,
+        tree=[skills.GitHubTreeItem(path="skills/primary/SKILL.md", type="blob")],
+        skill_path="skills/primary/SKILL.md",
+    )
+
+    assert bundle.resolution_status == "incomplete"
+    assert any(
+        issue["target"] == "../../shared/REQUIRED.md" and issue["required"] is True
+        for issue in bundle.resolution_issues
+    )
+    assert any(
+        issue["target"] == "examples/" and issue["required"] is False
+        for issue in bundle.resolution_issues
+    )
+    assert all(issue["target"] != "reports/result.json" for issue in bundle.resolution_issues)
+
+
+def test_dependency_parser_uses_markdown_destination_not_link_label() -> None:
+    references = skills.local_dependency_references(
+        "Read [SKILL.md](../shared/actual-instructions.md).\n```md\nRead `../../secret.md`.\n```\n"
+    )
+
+    assert [item.target for item in references] == ["../shared/actual-instructions.md"]
+    assert references[0].required is True
+
+
+def test_dependency_parser_ignores_slash_delimited_prose() -> None:
+    references = skills.local_dependency_references(
+        "Open at `Context Q2/6` when the first question was answered.\n"
+        "Use inline assumption/open-question tagging.\n"
+        "Build/don't-build guidance is useful. Use it for major initiatives (e.g., launch).\n"
+        "Use `skills/problem-statement/SKILL.md` as the component.\n"
+    )
+
+    assert [item.target for item in references] == ["skills/problem-statement/SKILL.md"]
+
+
+def test_dependency_matches_falls_back_to_repository_root() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="skills/primary/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/shared/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/shared/reference.md", type="blob"),
+    ]
+
+    kind, matches = skills.dependency_matches(
+        tree,
+        source_path="skills/primary/SKILL.md",
+        reference=skills.LocalDependencyReference(
+            target="skills/shared/SKILL.md",
+            required=True,
+            kind="directive",
+        ),
+    )
+
+    assert kind == "skill"
+    assert [item.path for item in matches] == [
+        "skills/shared/SKILL.md",
+        "skills/shared/reference.md",
+    ]
+
+
+def test_dependency_matches_resolves_unique_skill_shorthand() -> None:
+    tree = [
+        skills.GitHubTreeItem(path="skills/primary/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/problem-statement/SKILL.md", type="blob"),
+        skills.GitHubTreeItem(path="skills/problem-statement/template.md", type="blob"),
+    ]
+
+    kind, matches = skills.dependency_matches(
+        tree,
+        source_path="skills/primary/SKILL.md",
+        reference=skills.LocalDependencyReference(
+            target="problem-statement.md",
+            required=True,
+            kind="directive",
+        ),
+    )
+
+    assert kind == "skill-alias"
+    assert [item.path for item in matches] == [
+        "skills/problem-statement/SKILL.md",
+        "skills/problem-statement/template.md",
+    ]
+
+
+async def test_fetch_skill_bundle_closes_sibling_and_repository_root_dependencies() -> None:
+    contents = {
+        "skills/primary/SKILL.md": b"""---
+name: primary
+description: Primary workflow.
+---
+
+Follow [the workshop](../workshop/SKILL.md).
+Use `skills/shared/SKILL.md` as a supporting component.
+""",
+        "skills/workshop/SKILL.md": b"""---
+name: workshop
+description: Workshop workflow.
+---
+
+Read [the prompts](references/prompts.md).
+""",
+        "skills/workshop/references/prompts.md": b"# Prompts\n",
+        "skills/shared/SKILL.md": b"""---
+name: shared
+description: Shared workflow.
+---
+
+# Shared instructions
+""",
+    }
+
+    class FakeGitHubClient:
+        async def raw_file(self, repo: object, ref: str, path: str) -> str:
+            return contents[path].decode()
+
+        async def raw_file_bytes(self, repo: object, ref: str, path: str) -> bytes:
+            return contents[path]
+
+    tree = [
+        skills.GitHubTreeItem(path=path, type="blob", size=len(value))
+        for path, value in contents.items()
+    ]
+    bundle = await skills.fetch_skill_bundle(
+        client=FakeGitHubClient(),  # type: ignore[arg-type]
+        repo=skills.parse_github_repository_url("https://github.com/acme/skills"),
+        ref=RESOLVED_COMMIT_SHA,
+        tree=tree,
+        skill_path="skills/primary/SKILL.md",
+    )
+
+    assert bundle.resolution_status == "complete"
+    assert bundle.resolution_issues == []
+    assert {item["path"] for item in bundle.files} == {
+        "SKILL.md",
+        "context/skills/primary/SKILL.md",
+        "context/skills/shared/SKILL.md",
+        "context/skills/workshop/SKILL.md",
+        "context/skills/workshop/references/prompts.md",
+    }
+
+
+def test_parse_frontmatter_accepts_multiline_yaml_description() -> None:
+    assert skills.parse_frontmatter(
+        """---
+name: workflow
+description: >-
+  A complete workflow
+  with multiline metadata.
+---
+
+# Workflow
+"""
+    ) == {
+        "name": "workflow",
+        "description": "A complete workflow with multiline metadata.",
+    }
 
 
 def test_skill_bundle_tree_items_rejects_oversized_file_count() -> None:
@@ -1624,9 +1888,7 @@ def test_github_import_text_formatter_outputs_compact_tsv() -> None:
     record.msecs = 889
 
     assert skills.GitHubImportTextFormatter().format(record) == (
-        "2026-07-18 19:31:07,889\t"
-        "WARNING\t"
-        "github request rate limited; waiting before retry"
+        "2026-07-18 19:31:07,889\tWARNING\tgithub request rate limited; waiting before retry"
     )
 
     saved_record = logging.LogRecord(
@@ -1940,9 +2202,7 @@ async def test_load_existing_github_skill_owners_is_distinct_and_case_insensitiv
 
     monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
 
-    assert await skills.load_existing_github_skill_owners() == frozenset(
-        {"acme", "octocat"}
-    )
+    assert await skills.load_existing_github_skill_owners() == frozenset({"acme", "octocat"})
     assert "SELECT DISTINCT lower(skills.source_owner)" in statements[0]
     assert "skills.source_type" in statements[0]
 
@@ -1951,9 +2211,7 @@ def test_manage_import_github_rejects_missing_or_conflicting_targets() -> None:
     with pytest.raises(SystemExit):
         manage.main(["skills", "import-github"])
     with pytest.raises(SystemExit):
-        manage.main(
-            ["skills", "import-github", "--all-github", "--org", "anthropics"]
-        )
+        manage.main(["skills", "import-github", "--all-github", "--org", "anthropics"])
 
 
 @pytest.mark.parametrize(
@@ -1992,9 +2250,7 @@ def test_manage_import_github_scans_repository_root_when_subfolder_is_omitted(
 @pytest.mark.parametrize("subfolder", ["/skills", "skills/", "../skills", "skills//nested"])
 def test_import_github_parsers_reject_unsafe_subfolder(subfolder: str) -> None:
     with pytest.raises(SystemExit):
-        manage.main(
-            ["skills", "import-github", "acme", "--subfolder", subfolder]
-        )
+        manage.main(["skills", "import-github", "acme", "--subfolder", subfolder])
     with pytest.raises(SystemExit):
         skills.main(["import-github", "acme", "--subfolder", subfolder])
 
@@ -2206,10 +2462,9 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
     async def fake_save(
         target: skills.SkillRefreshTarget,
         *,
-        skill_md: str,
-        files: list[skills.SkillSnapshotFile],
+        bundle: skills.FetchedSkillBundle,
     ) -> tuple[str, bool]:
-        saved.append((target.slug, files))
+        saved.append((target.slug, bundle.files))
         return f"hash-{target.slug}", target.slug == "one"
 
     monkeypatch.setenv(skills.GITHUB_TOKEN_ENV, "environment-token")
@@ -2218,9 +2473,7 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
     monkeypatch.setattr(skills, "save_refreshed_skill", fake_save)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.refresh_github_from_args(
-        Namespace(github_token="", timeout_seconds=3.0)
-    )
+    result = await skills.refresh_github_from_args(Namespace(github_token="", timeout_seconds=3.0))
 
     assert result == 0
     assert calls == {"metadata": 1, "resolve": 2, "tree": 2}
@@ -2228,7 +2481,11 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
     assert fetched_skill_paths == ["skills/one/SKILL.md", "skills/two/SKILL.md"]
     assert [slug for slug, _files in saved] == ["one", "two"]
     assert saved[0][1][1] == {
-        "path": "scripts/run.sh",
+        "path": "context/skills/one/SKILL.md",
+        "contents": "---\nname: one\ndescription: refreshed\n---\n",
+    }
+    assert saved[0][1][2] == {
+        "path": "context/skills/one/scripts/run.sh",
         "contents": "#!/bin/sh\necho refreshed\n",
         "executable": True,
     }
@@ -2236,9 +2493,7 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
         "refreshed 2 of 2 GitHub skill(s): 1 updated, 1 unchanged, 0 failed"
     )
     start_record = next(
-        record
-        for record in caplog.records
-        if record.message == "github skills refresh started"
+        record for record in caplog.records if record.message == "github skills refresh started"
     )
     assert start_record.github_token_configured is True
     assert not hasattr(start_record, "github_token")
@@ -2306,8 +2561,7 @@ async def test_refresh_github_does_not_substitute_nested_skill_for_missing_root(
     async def fake_save(
         target: skills.SkillRefreshTarget,
         *,
-        skill_md: str,
-        files: list[skills.SkillSnapshotFile],
+        bundle: skills.FetchedSkillBundle,
     ) -> tuple[str, bool]:
         saved.append(target.slug)
         return "valid-hash", True
@@ -2316,9 +2570,7 @@ async def test_refresh_github_does_not_substitute_nested_skill_for_missing_root(
     monkeypatch.setattr(skills, "load_skill_refresh_targets", fake_load_targets)
     monkeypatch.setattr(skills, "save_refreshed_skill", fake_save)
 
-    result = await skills.refresh_github_from_args(
-        Namespace(github_token="", timeout_seconds=3.0)
-    )
+    result = await skills.refresh_github_from_args(Namespace(github_token="", timeout_seconds=3.0))
 
     assert result == 1
     assert saved == ["valid"]
@@ -2361,9 +2613,7 @@ async def test_refresh_github_aborts_on_systemic_github_failure(
     monkeypatch.setattr(skills, "GitHubClient", FakeGitHubClient)
     monkeypatch.setattr(skills, "load_skill_refresh_targets", fake_load_targets)
 
-    result = await skills.refresh_github_from_args(
-        Namespace(github_token="", timeout_seconds=3.0)
-    )
+    result = await skills.refresh_github_from_args(Namespace(github_token="", timeout_seconds=3.0))
 
     assert result == 1
     assert metadata_calls == 1
@@ -2385,9 +2635,7 @@ async def test_refresh_github_with_no_skills_is_successful_noop(
     monkeypatch.setattr(skills, "load_skill_refresh_targets", fake_load_targets)
     monkeypatch.setattr(skills, "GitHubClient", fail_if_client_is_created)
 
-    result = await skills.refresh_github_from_args(
-        Namespace(github_token="", timeout_seconds=3.0)
-    )
+    result = await skills.refresh_github_from_args(Namespace(github_token="", timeout_seconds=3.0))
 
     assert result == 0
     assert capsys.readouterr().out.strip() == (
@@ -2420,6 +2668,12 @@ async def test_refresh_existing_skill_snapshot_preserves_catalog_fields(
         status="active",
         is_latest=True,
         content_hash=target.current_hash,
+        bundle_format_version=1,
+        source_commit_sha="",
+        source_entrypoint="SKILL.md",
+        resolution_status="pending",
+        resolution_issues=[],
+        dependency_manifest=[],
     )
 
     class FakeSession:
@@ -2437,6 +2691,7 @@ async def test_refresh_existing_skill_snapshot_preserves_catalog_fields(
         *,
         skill_md: str,
         files: list[skills.SkillSnapshotFile],
+        **metadata: object,
     ) -> SimpleNamespace:
         assert selected_skill is skill
         skill.current_snapshot_id = "new-snapshot-id"
@@ -2450,8 +2705,7 @@ async def test_refresh_existing_skill_snapshot_preserves_catalog_fields(
     snapshot_hash, changed = await skills.refresh_existing_skill_snapshot(
         FakeSession(),  # type: ignore[arg-type]
         target,
-        skill_md="# Refreshed weather",
-        files=files,
+        bundle=fetched_bundle(files, skill_md="# Refreshed weather"),
     )
 
     assert (snapshot_hash, changed) == ("new-hash", True)
@@ -2467,9 +2721,7 @@ async def test_refresh_existing_skill_snapshot_preserves_catalog_fields(
 async def test_refresh_existing_skill_snapshot_skips_unchanged_hash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    files: list[skills.SkillSnapshotFile] = [
-        {"path": "SKILL.md", "contents": "# Unchanged"}
-    ]
+    files: list[skills.SkillSnapshotFile] = [{"path": "SKILL.md", "contents": "# Unchanged"}]
     target = refresh_target(
         "weather",
         "skills/weather",
@@ -2490,6 +2742,12 @@ async def test_refresh_existing_skill_snapshot_skips_unchanged_hash(
         status="active",
         is_latest=True,
         content_hash=target.current_hash,
+        bundle_format_version=2,
+        source_commit_sha=RESOLVED_COMMIT_SHA,
+        source_entrypoint="context/skills/weather/SKILL.md",
+        resolution_status="complete",
+        resolution_issues=[],
+        dependency_manifest=[],
     )
 
     class FakeSession:
@@ -2509,8 +2767,7 @@ async def test_refresh_existing_skill_snapshot_skips_unchanged_hash(
     result = await skills.refresh_existing_skill_snapshot(
         FakeSession(),  # type: ignore[arg-type]
         target,
-        skill_md="# Unchanged",
-        files=files,
+        bundle=fetched_bundle(files, skill_md="# Unchanged"),
     )
 
     assert result == (target.current_hash, False)
@@ -2555,8 +2812,10 @@ async def test_refresh_existing_skill_snapshot_revalidates_snapshot_state(
         await skills.refresh_existing_skill_snapshot(
             FakeSession(),  # type: ignore[arg-type]
             target,
-            skill_md="# Refreshed",
-            files=[{"path": "SKILL.md", "contents": "# Refreshed"}],
+            bundle=fetched_bundle(
+                [{"path": "SKILL.md", "contents": "# Refreshed"}],
+                skill_md="# Refreshed",
+            ),
         )
 
 
@@ -2568,6 +2827,12 @@ async def test_upsert_skill_snapshot_locks_skill_before_snapshot_flags() -> None
         skill_md="",
         metadata_={},
         files=[],
+        bundle_format_version=1,
+        source_commit_sha="",
+        source_entrypoint="SKILL.md",
+        resolution_status="pending",
+        resolution_issues=[],
+        dependency_manifest=[],
         status="inactive",
         is_latest=False,
     )
@@ -2583,9 +2848,7 @@ async def test_upsert_skill_snapshot_locks_skill_before_snapshot_flags() -> None
             return SimpleNamespace()
 
     session = FakeSession()
-    files: list[skills.SkillSnapshotFile] = [
-        {"path": "SKILL.md", "contents": "# Refreshed"}
-    ]
+    files: list[skills.SkillSnapshotFile] = [{"path": "SKILL.md", "contents": "# Refreshed"}]
 
     result = await skills.upsert_skill_snapshot(
         session,  # type: ignore[arg-type]
@@ -2625,9 +2888,7 @@ async def test_upsert_skill_snapshot_refuses_quarantined_content() -> None:
             return SimpleNamespace()
 
     session = FakeSession()
-    files: list[skills.SkillSnapshotFile] = [
-        {"path": "SKILL.md", "contents": "# Refreshed"}
-    ]
+    files: list[skills.SkillSnapshotFile] = [{"path": "SKILL.md", "contents": "# Refreshed"}]
 
     with pytest.raises(skills.SkillCliError, match="quarantined"):
         await skills.upsert_skill_snapshot(
@@ -2683,9 +2944,7 @@ async def test_import_github_merges_auto_detected_existing_owner_exclusions(
     args.exclude_existing_owners = True
 
     assert await skills.import_github_from_args(args) == 1
-    assert discovered_filters[0].excluded_existing_owners == frozenset(
-        {"acme", "octocat"}
-    )
+    assert discovered_filters[0].excluded_existing_owners == frozenset({"acme", "octocat"})
 
 
 async def test_import_github_logs_progress(
@@ -2753,7 +3012,7 @@ async def test_import_github_logs_progress(
             assert repo.source == "acme/agent-skills"
             assert ref == RESOLVED_COMMIT_SHA
             assert path == "skills/weather/SKILL.md"
-            return "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n"
+            return "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n\n# Weather\n"
 
         async def raw_file_bytes(
             self,
@@ -2787,7 +3046,13 @@ async def test_import_github_logs_progress(
         assert payload.files == [
             {"path": "SKILL.md", "contents": payload.skill_md},
             {
-                "path": "scripts/weather.sh",
+                "path": "context/skills/weather/SKILL.md",
+                "contents": (
+                    "---\nname: Weather Skill\ndescription: Weather APIs.\n---\n\n# Weather\n"
+                ),
+            },
+            {
+                "path": "context/skills/weather/scripts/weather.sh",
                 "contents": "#!/bin/sh\necho weather\n",
                 "executable": True,
             },
@@ -2802,9 +3067,7 @@ async def test_import_github_logs_progress(
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(
-        github_import_args(subfolder="skills/weather")
-    )
+    result = await skills.import_github_from_args(github_import_args(subfolder="skills/weather"))
 
     assert result == 0
     records = [record for record in caplog.records if record.name == skills.logger.name]
@@ -2825,7 +3088,8 @@ async def test_import_github_logs_progress(
     assert discovered_record.skill_count == 1
     assert discovered_record.skill_paths == ["skills/weather/SKILL.md"]
     assert records[4].skill_id == "acme/agent-skills/weather"
-    assert records[4].skill_file_count == 2
+    assert records[4].skill_file_count == 3
+    assert records[4].skill_resolution_status == "complete"
     saved_record = records[5]
     assert saved_record.skill_id == "acme/agent-skills/weather"
     assert saved_record.source_path == "skills/weather/SKILL.md"
@@ -2996,9 +3260,7 @@ async def test_import_github_scans_same_subfolder_across_repositories(
     monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
 
-    result = await skills.import_github_from_args(
-        github_import_args(subfolder="skills/shared")
-    )
+    result = await skills.import_github_from_args(github_import_args(subfolder="skills/shared"))
 
     assert result == 0
     assert requested_refs == [
@@ -3166,9 +3428,7 @@ async def test_import_github_continues_after_repository_specific_failure(
     monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
 
-    result = await skills.import_github_from_args(
-        github_import_args(subfolder="skills/working")
-    )
+    result = await skills.import_github_from_args(github_import_args(subfolder="skills/working"))
 
     assert result == 1
     assert calls == ["broken", "working"]
@@ -3264,9 +3524,7 @@ async def test_import_github_skips_truncated_tree_without_failing_successful_imp
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(
-        github_import_args(subfolder="skills/working")
-    )
+    result = await skills.import_github_from_args(github_import_args(subfolder="skills/working"))
 
     assert result == 0
     assert tree_calls == ["large-repository", "working"]
@@ -3280,9 +3538,7 @@ async def test_import_github_skips_truncated_tree_without_failing_successful_imp
         if record.message == "github skills import repository skipped"
     )
     assert skipped_record.source == "acme/large-repository"
-    assert skipped_record.skip_reason == (
-        "GitHub tree is truncated; repository scan skipped"
-    )
+    assert skipped_record.skip_reason == ("GitHub tree is truncated; repository scan skipped")
 
 
 async def test_import_github_aborts_remaining_repositories_on_systemic_failure(
@@ -3405,9 +3661,7 @@ def test_repository_slug_collisions_are_disambiguated_deterministically() -> Non
     ]
 
     resolved, collisions = skills.disambiguate_planned_skill_slugs(planned)
-    reversed_resolved, _ = skills.disambiguate_planned_skill_slugs(
-        list(reversed(planned))
-    )
+    reversed_resolved, _ = skills.disambiguate_planned_skill_slugs(list(reversed(planned)))
 
     slugs_by_path = {item.skill_path: item.slug for item in resolved}
     reversed_slugs_by_path = {item.skill_path: item.slug for item in reversed_resolved}
@@ -3420,9 +3674,7 @@ def test_repository_slug_collisions_are_disambiguated_deterministically() -> Non
     assert slugs_by_path == reversed_slugs_by_path
     assert slugs_by_path["skills/weather/SKILL.md"] == "skills-weather"
     collision_slugs = {
-        slug
-        for path, slug in slugs_by_path.items()
-        if path.startswith("composio-skills/")
+        slug for path, slug in slugs_by_path.items() if path.startswith("composio-skills/")
     }
     assert len(collision_slugs) == 2
     assert all(len(slug) <= skills.MAX_SKILL_SLUG_LENGTH for slug in collision_slugs)
@@ -3470,6 +3722,7 @@ async def test_owner_import_matches_github_source_case_insensitively_and_preserv
         *,
         skill_md: str,
         files: list[skills.SkillSnapshotFile],
+        **metadata: object,
     ) -> SimpleNamespace:
         assert selected_skill is skill
         return SimpleNamespace(content_hash="new-hash")
@@ -3538,6 +3791,7 @@ async def test_owner_import_disambiguates_slug_occupied_by_another_source_path(
         *,
         skill_md: str,
         files: list[skills.SkillSnapshotFile],
+        **metadata: object,
     ) -> SimpleNamespace:
         assert selected_skill is created[0]
         return SimpleNamespace(content_hash="new-hash")
@@ -3857,10 +4111,7 @@ async def test_import_github_imports_same_repository_slug_collisions(
             repo: skills.GitHubRepository,
             ref: str,
         ) -> list[skills.GitHubTreeItem]:
-            return [
-                skills.GitHubTreeItem(path=path, type="blob")
-                for path in skill_paths
-            ]
+            return [skills.GitHubTreeItem(path=path, type="blob") for path in skill_paths]
 
         async def raw_file(
             self,
@@ -3906,9 +4157,7 @@ async def test_import_github_imports_same_repository_slug_collisions(
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(
-        github_import_args(recursive=True, subfolder="")
-    )
+    result = await skills.import_github_from_args(github_import_args(recursive=True, subfolder=""))
 
     assert result == 0
     assert [subfolder for subfolder, _slug in saved] == [
@@ -3985,25 +4234,24 @@ async def test_import_github_fails_when_all_discovered_skills_are_invalid(
     monkeypatch.setattr(skills, "AsyncSessionLocal", fail_if_session_is_opened)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(
-        github_import_args(subfolder="skills/binary")
-    )
+    result = await skills.import_github_from_args(github_import_args(subfolder="skills/binary"))
 
     assert result == 1
     records = [record for record in caplog.records if record.name == skills.logger.name]
-    assert sum(
-        record.message == "github skill import skipped invalid skill" for record in records
-    ) == 1
+    assert (
+        sum(record.message == "github skill import skipped invalid skill" for record in records)
+        == 1
+    )
     assert records[-1].message == "github skills import completed"
     assert records[-1].failed_skill_count == 1
 
 
 @pytest.mark.parametrize(
     ("skill_paths", "failure_kind"),
-        [
-            (["skills/binary/SKILL.md"], "invalid-text"),
-            (["skills/unavailable/SKILL.md"], "http"),
-        ],
+    [
+        (["skills/binary/SKILL.md"], "invalid-text"),
+        (["skills/unavailable/SKILL.md"], "http"),
+    ],
 )
 async def test_import_github_isolates_invalid_skill_and_repository_fetch_errors(
     caplog: pytest.LogCaptureFixture,

@@ -1,4 +1,4 @@
-import { Download, FileArchive, FileCode2, FileText, Sparkles } from "lucide-react";
+import { Download, FileArchive, FileCode2, FileText, ShieldAlert, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -137,6 +137,8 @@ export async function SkillDetailView({
   const sourceOwnerIconUrl = skill.sourceOwnerIconUrl ?? listing?.sourceOwnerIconUrl;
   const viewingSkillMd = selectedFile.path === "SKILL.md";
   const contentHash = audit?.contentHash ?? skill.hash ?? undefined;
+  const packageReady = skill.bundleFormatVersion === 2 && skill.resolutionStatus === "complete";
+  const packageIssue = (skill.resolutionIssues ?? [])[0]?.reason;
 
   return (
     <main className="site-shell">
@@ -216,6 +218,20 @@ export async function SkillDetailView({
           </dl>
         </div>
       </section>
+
+      {!packageReady ? (
+        <section className="skill-package-notice" role="status">
+          <ShieldAlert aria-hidden="true" size={20} />
+          <div>
+            <strong>Package resolution {skill.resolutionStatus ?? "pending"}</strong>
+            <p>
+              This snapshot cannot be installed or security-scored until its repository
+              dependencies are resolved into package format 2.
+              {packageIssue ? ` ${packageIssue}` : " Refresh the GitHub source to rebuild it."}
+            </p>
+          </div>
+        </section>
+      ) : null}
 
       <SkillDetailTabs
         fileCount={files.length}

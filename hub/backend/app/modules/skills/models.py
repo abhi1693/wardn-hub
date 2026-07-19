@@ -106,6 +106,18 @@ class SkillSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     files: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    bundle_format_version: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    source_commit_sha: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    source_entrypoint: Mapped[str] = mapped_column(String(2048), default="SKILL.md", nullable=False)
+    resolution_status: Mapped[str] = mapped_column(
+        String(32), default="complete", nullable=False, index=True
+    )
+    resolution_issues: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    dependency_manifest: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     is_latest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     publisher_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

@@ -11,6 +11,7 @@ SkillAuditSeverity = Literal["safe", "info", "low", "medium", "high", "critical"
 SkillAuditRiskLevel = Literal["low", "medium", "high", "critical"]
 SkillAuditRank = Literal["S", "A+", "A", "A-", "B+", "B", "B-", "C+", "C"]
 SkillFileEncoding = Literal["utf-8", "base64"]
+SkillResolutionStatus = Literal["complete", "incomplete", "pending"]
 
 
 class SkillRead(BaseModel):
@@ -74,6 +75,15 @@ class SkillFileRead(BaseModel):
     executable: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
+class SkillResolutionIssueRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    source_path: str = Field(alias="sourcePath")
+    target: str
+    reason: str
+    required: bool
+
+
 class SkillDetailResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -87,6 +97,15 @@ class SkillDetailResponse(BaseModel):
     source_url: str | None = Field(default=None, alias="sourceUrl")
     hash: str | None = None
     files: list[SkillFileRead] | None = None
+    bundle_format_version: int | None = Field(default=None, alias="bundleFormatVersion")
+    source_commit_sha: str | None = Field(default=None, alias="sourceCommitSha")
+    source_entrypoint: str | None = Field(default=None, alias="sourceEntrypoint")
+    resolution_status: SkillResolutionStatus | None = Field(
+        default=None, alias="resolutionStatus"
+    )
+    resolution_issues: list[SkillResolutionIssueRead] = Field(
+        default_factory=list, alias="resolutionIssues"
+    )
     audit_enabled: bool = Field(alias="auditEnabled")
 
 

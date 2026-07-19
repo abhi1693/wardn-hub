@@ -169,6 +169,30 @@
   min-height: 560px;
 }
 
+.skill-package-notice {
+  align-items: flex-start;
+  background: var(--pending-bg);
+  border: 1px solid color-mix(in srgb, var(--pending) 42%, var(--border));
+  border-radius: 14px;
+  color: var(--foreground);
+  display: flex;
+  gap: 0.75rem;
+  margin: 1.25rem auto 0;
+  max-width: calc(var(--content-max-width) - (var(--content-gutter) * 2));
+  padding: 1rem 1.1rem;
+}
+
+.skill-package-notice svg {
+  color: var(--pending);
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.skill-package-notice p {
+  color: var(--muted-foreground);
+  margin: 0.25rem 0 0;
+}
+
 .skill-detail-tab-rail {
   position: sticky;
   top: 64px;

@@ -200,6 +200,27 @@ function decodeBundleFile(value: unknown): WardnBundleFile {
   return { path, contents: decoded, encoding, executable };
 }
 
+function validateRepositoryPackage(payload: Record<string, unknown>): string {
+  if (payload.bundleFormatVersion !== 2) {
+    throw new Error('Wardn skill package must be refreshed to bundle format 2');
+  }
+  if (payload.resolutionStatus !== 'complete') {
+    const issues = Array.isArray(payload.resolutionIssues) ? payload.resolutionIssues : [];
+    const first = issues.find(isRecord);
+    const reason = first && typeof first.reason === 'string' ? `: ${truncate(first.reason, 240)}` : '';
+    throw new Error(`Wardn skill package is ${String(payload.resolutionStatus ?? 'unresolved')}${reason}`);
+  }
+  if (
+    typeof payload.sourceEntrypoint !== 'string' ||
+    payload.sourceEntrypoint.length === 0 ||
+    payload.sourceEntrypoint.length > 2048
+  ) {
+    throw new Error('Wardn skill package has an invalid source entrypoint');
+  }
+  validateBundlePath(payload.sourceEntrypoint);
+  return payload.sourceEntrypoint;
+}
+
 function validateSearchItem(value: unknown): SkillSearchItem {
   if (!isRecord(value)) {
     throw new Error('Wardn skill search response failed validation');
@@ -550,6 +571,7 @@ export class HubClient {
     ) {
       throw new Error('Wardn skill detail failed validation');
     }
+    const sourceEntrypoint = validateRepositoryPackage(payload);
     const fileValue = payload.files[0];
     if (!isRecord(fileValue) || fileValue.path !== 'SKILL.md' || typeof fileValue.contents !== 'string') {
       throw new Error('Wardn skill detail failed validation');
@@ -564,6 +586,7 @@ export class HubClient {
       hash: validateHash(payload.hash),
       characters: codePoints(contents).length,
       contents,
+      sourceEntrypoint,
     };
   }
 
@@ -584,6 +607,7 @@ export class HubClient {
     if (!isRecord(payload) || payload.id !== id || typeof payload.hash !== 'string') {
       throw new Error('Wardn Hub returned an invalid bundle identity');
     }
+    const sourceEntrypoint = validateRepositoryPackage(payload);
     const hash = validateHash(payload.hash);
     if (expectedHash !== undefined && hash !== expectedHash) {
       throw new Error('Wardn skill changed since the expected hash was selected');
@@ -616,7 +640,10 @@ export class HubClient {
     if (!paths.has('SKILL.md')) {
       throw new Error('Wardn bundle does not contain a root SKILL.md');
     }
-    return { id, hash, files };
+    if (!paths.has(sourceEntrypoint)) {
+      throw new Error('Wardn bundle does not contain its source entrypoint');
+    }
+    return { id, hash, sourceEntrypoint, files };
   }
 
   async recordInstall(id: string, contentHash: string): Promise<void> {

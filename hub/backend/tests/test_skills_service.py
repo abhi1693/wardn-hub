@@ -437,6 +437,11 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     snapshot = SimpleNamespace(
         content_hash="abc123",
         skill_md="# Weather",
+        bundle_format_version=2,
+        source_commit_sha="a" * 40,
+        source_entrypoint="context/skills/weather/SKILL.md",
+        resolution_status="complete",
+        resolution_issues=[],
         files=[
             {"path": "SKILL.md", "contents": "# Weather"},
             {"path": "references/api.md", "contents": "# API"},
@@ -483,13 +488,21 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     assert (bundle_detail.files or [])[0].encoding == "utf-8"
     assert (bundle_detail.files or [])[2].encoding == "base64"
     assert (bundle_detail.files or [])[3].executable is True
+    assert bundle_detail.bundle_format_version == 2
+    assert bundle_detail.source_entrypoint == "context/skills/weather/SKILL.md"
+    assert bundle_detail.resolution_status == "complete"
 
 
 async def test_record_skill_install_requires_current_snapshot_hash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     skill = SimpleNamespace(id="skill-id", current_snapshot_id="snapshot-id")
-    snapshot = SimpleNamespace(id="snapshot-id", content_hash="a" * 64)
+    snapshot = SimpleNamespace(
+        id="snapshot-id",
+        content_hash="a" * 64,
+        bundle_format_version=2,
+        resolution_status="complete",
+    )
 
     async def get_skill(*args: object) -> SimpleNamespace:
         return skill
@@ -528,5 +541,14 @@ async def test_record_skill_install_requires_current_snapshot_hash(
             object(),
             "acme/skills/weather",
             content_hash="b" * 64,
+            resolver_version="1",
+        )
+
+    snapshot.resolution_status = "incomplete"
+    with pytest.raises(service.SkillNotFoundError, match="snapshot"):
+        await service.record_skill_install(
+            object(),
+            "acme/skills/weather",
+            content_hash="a" * 64,
             resolver_version="1",
         )

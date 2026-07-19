@@ -17,8 +17,8 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, Protocol, TextIO
-from urllib.parse import unquote
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import and_, exists, select
 from sqlalchemy.exc import DBAPIError
@@ -55,21 +55,9 @@ REQUIRED_LOCAL_ANALYZERS = {
 LLM_ANALYZER = "llm_analyzer"
 SEVERITY_DEDUCTIONS = {"safe": 0, "info": 1, "low": 4, "medium": 12, "high": 35, "critical": 60}
 SEVERITY_SCORE_CAPS = {"medium": 79, "high": 49, "critical": 24}
-MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]\n]*\]\(([^)\n]+)\)")
-MARKDOWN_REFERENCE_PATTERN = re.compile(r"^\s*\[[^\]\n]+\]:\s*(\S+)")
-INLINE_CODE_PATTERN = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
-REFERENCE_DIRECTIVE_PATTERN = re.compile(
-    r"^\s*(?:(?:[-*+]|[0-9]+[.)])\s+)?"
-    r"(?:(?:for|when)\b[^:,.]*[:,]\s*)?"
-    r"(?:read|see|open|load|follow|consult)\b",
-    re.IGNORECASE,
+WINDOWS_RESERVED_PATH_PATTERN = re.compile(
+    r"^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.IGNORECASE
 )
-LOCAL_PATH_PATTERN = re.compile(r"^(?:\.\.?/)?[^\s`]+(?:/[^\s`]+)*\.[A-Za-z0-9]{1,16}(?:[?#].*)?$")
-LOCAL_PATH_TOKEN_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_])(?:\.\.?/)?(?:[A-Za-z0-9._-]+/)*"
-    r"[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,16}(?:[?#][^\s`),;]*)?"
-)
-EXTERNAL_TARGET_PATTERN = re.compile(r"(?:https?://|mailto:|data:|//)\S+", re.IGNORECASE)
 
 
 class UserFacingError(Exception):
@@ -294,6 +282,8 @@ class WardnHubDatabaseSkillAuditClient:
                     SkillSnapshot.status == "active",
                     SkillSnapshot.is_latest.is_(True),
                     SkillSnapshot.content_hash.is_not(None),
+                    SkillSnapshot.bundle_format_version == 2,
+                    SkillSnapshot.resolution_status == "complete",
                 )
             )
             if after_skill_id is not None:
@@ -346,6 +336,8 @@ class WardnHubDatabaseSkillAuditClient:
                         SkillSnapshot.skill_id == target.skill_id,
                         SkillSnapshot.status == "active",
                         SkillSnapshot.is_latest.is_(True),
+                        SkillSnapshot.bundle_format_version == 2,
+                        SkillSnapshot.resolution_status == "complete",
                     )
                 )
             ).scalar_one_or_none()
@@ -419,130 +411,41 @@ def safe_bundle_path(path: str) -> bool:
     parts = path.split("/")
     return (
         len(parts) <= MAX_PATH_PARTS
-        and all(part not in {"", ".", ".."} and len(part) <= 255 for part in parts)
+        and all(
+            part not in {"", ".", ".."}
+            and ":" not in part
+            and not part.endswith((".", " "))
+            and len(part.encode("utf-8")) <= 255
+            and not WINDOWS_RESERVED_PATH_PATTERN.match(part)
+            for part in parts
+        )
         and PurePosixPath(path).as_posix() == path
     )
 
 
-def valid_frontmatter_scalar(value: str) -> bool:
-    value = value.strip()
-    double_quoted = re.fullmatch(
-        r'"(?P<inner>(?:[^"\\]|\\(?:[0abtnvfre "/\\N_LP]|x[0-9A-Fa-f]{2}|'
-        r'u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}))*)"(?:\s+#.*)?',
-        value,
-    )
-    if double_quoted is not None:
-        return bool(double_quoted.group("inner").strip())
-    single_quoted = re.fullmatch(r"'(?P<inner>(?:[^']|'')*)'(?:\s+#.*)?", value)
-    if single_quoted is not None:
-        return bool(single_quoted.group("inner").strip())
-
-    value = re.sub(r"\s+#.*$", "", value).strip()
-    lowered = value.lower()
-    if not value or value in {"~", "-", ":"} or re.fullmatch(r"[>|][+-]?", value):
-        return False
-    if lowered in {"null", "true", "false", "yes", "no", "on", "off"}:
-        return False
-    if re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?", value):
-        return False
-    if value[0] in "!&*[{@`%]},|>?":
-        return False
-    if re.match(r"-\s", value) or re.search(r":\s", value):
-        return False
-    return True
-
-
 def resolver_frontmatter_valid(contents: str) -> bool:
     lines = contents.splitlines()
-    if not lines or lines[0] != "---":
+    if not lines or lines[0].strip() != "---":
         return False
     try:
-        closing_index = lines.index("---", 1)
-    except ValueError:
+        closing_index = next(
+            index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---"
+        )
+    except StopIteration:
         return False
-    frontmatter = lines[1:closing_index]
     if not any(line.strip() for line in lines[closing_index + 1 :]):
         return False
-    names = [line.removeprefix("name:") for line in frontmatter if line.startswith("name:")]
-    descriptions = [
-        index for index, line in enumerate(frontmatter) if line.startswith("description:")
-    ]
-    if len(names) != 1 or len(descriptions) != 1 or not valid_frontmatter_scalar(names[0]):
+    try:
+        metadata = yaml.safe_load("\n".join(lines[1:closing_index]))
+    except yaml.YAMLError:
         return False
-    index = descriptions[0]
-    value = frontmatter[index].removeprefix("description:").strip()
-    if re.fullmatch(r"[>|][+-]?(?:\s+#.*)?", value):
-        for line in frontmatter[index + 1 :]:
-            if not line or line.startswith("#"):
-                continue
-            if line[0].isspace():
-                if line.strip():
-                    return True
-                continue
-            break
-        return False
-    return valid_frontmatter_scalar(value)
-
-
-def markdown_instruction_lines(contents: str) -> list[str]:
-    lines: list[str] = []
-    fence: str | None = None
-    for line in contents.splitlines():
-        match = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
-        if match:
-            marker = match.group(1)
-            if fence is None:
-                fence = marker
-            elif marker[0] == fence[0] and len(marker) >= len(fence):
-                fence = None
-            continue
-        if fence is None:
-            lines.append(line)
-    return lines
-
-
-def local_reference_targets(contents: str) -> set[str]:
-    targets: set[str] = set()
-    for line in markdown_instruction_lines(contents):
-        reference = MARKDOWN_REFERENCE_PATTERN.match(line)
-        if reference:
-            targets.add(reference.group(1).strip("<>"))
-        for match in MARKDOWN_LINK_PATTERN.finditer(line):
-            targets.add(match.group(1).strip().strip("<>").split(maxsplit=1)[0])
-        if not REFERENCE_DIRECTIVE_PATTERN.search(line):
-            continue
-        targets.update(
-            match.group(1).strip()
-            for match in INLINE_CODE_PATTERN.finditer(line)
-            if LOCAL_PATH_PATTERN.fullmatch(match.group(1).strip())
-        )
-        plain = EXTERNAL_TARGET_PATTERN.sub("", INLINE_CODE_PATTERN.sub("", line))
-        targets.update(match.group(0) for match in LOCAL_PATH_TOKEN_PATTERN.finditer(plain))
-    return targets
-
-
-def resolve_bundle_reference(source_path: str, target: str) -> str | None:
-    stripped = target.strip()
-    if stripped.startswith("//") or stripped.lower().startswith(
-        ("http://", "https://", "mailto:", "data:")
-    ):
-        return ""
-    path = unquote(stripped.split("#", 1)[0].split("?", 1)[0].strip())
-    if not path:
-        return ""
-    if path.startswith("/") or "\\" in path:
-        return None
-    parts = list(PurePosixPath(source_path).parent.parts)
-    for part in path.split("/"):
-        if part in {"", "."}:
-            continue
-        if part == "..":
-            if not parts:
-                return None
-            parts.pop()
-        else:
-            parts.append(part)
-    return "/".join(parts)
+    return bool(
+        isinstance(metadata, dict)
+        and isinstance(metadata.get("name"), str)
+        and metadata["name"].strip()
+        and isinstance(metadata.get("description"), str)
+        and metadata["description"].strip()
+    )
 
 
 def validation_finding(category: str, description: str, path: str | None = None) -> dict[str, Any]:
@@ -666,70 +569,7 @@ def inspect_bundle(target: SkillAuditTarget) -> BundleInspection:
         inspection.hard_findings.append(
             validation_finding("invalid-bundle", "Stored bundle does not match its content hash.")
         )
-    paths = set(inspection.materialized_files)
-    for item in inspection.decoded_files:
-        contents = item.get("contents")
-        if not isinstance(contents, str) or not item["path"].lower().endswith((".md", ".mdx")):
-            continue
-        for reference in local_reference_targets(contents):
-            resolved = resolve_bundle_reference(item["path"], reference)
-            if resolved == "":
-                continue
-            if resolved is None or not (
-                resolved in paths
-                or any(path.startswith(f"{resolved.rstrip('/')}/") for path in paths)
-            ):
-                inspection.hard_findings.append(
-                    validation_finding(
-                        "resolver-incompatible",
-                        "Required local reference is missing or escapes the bundle: "
-                        f"{reference[:512]}",
-                        item["path"],
-                    )
-                )
     return inspection
-
-
-def preflight_failure(
-    target: SkillAuditTarget,
-    inspection: BundleInspection,
-    *,
-    configuration_hash: str,
-) -> StoredAudit:
-    return StoredAudit(
-        scanner_name=SCANNER_NAME,
-        scanner_version=SCANNER_VERSION,
-        policy_name=SCANNER_POLICY,
-        policy_version="",
-        policy_fingerprint="",
-        configuration_hash=configuration_hash,
-        status="fail",
-        summary=(
-            "Cisco scan was blocked because the stored bundle failed safe materialization checks."
-        ),
-        risk_level="high",
-        score=0,
-        rank="C",
-        score_deductions=[
-            {
-                "category": "bundle-preflight",
-                "points": 100,
-                "findingCount": len(inspection.hard_findings),
-                "maxSeverity": "high",
-            }
-        ],
-        findings=inspection.hard_findings[:MAX_STORED_FINDINGS],
-        analyzers=["wardn_bundle_preflight"],
-        scan_duration_ms=0,
-        raw_result={
-            "version": 1,
-            "snapshotId": str(target.snapshot_id),
-            "contentHash": target.content_hash,
-            "configurationHash": configuration_hash,
-            "scanCompleted": False,
-            "reason": "bundle-preflight-failed",
-        },
-    )
 
 
 def normalized_finding(finding: CiscoFinding) -> dict[str, Any]:
@@ -981,7 +821,9 @@ class CiscoSkillScanner:
                 f"expected {SCANNER_DISTRIBUTION} {SCANNER_VERSION}, found {installed_version}"
             )
         with tempfile.TemporaryDirectory(prefix="wardn-skill-audit-") as directory:
-            root = Path(directory)
+            root = Path(directory) / "bundle"
+            root.mkdir()
+            report_path = Path(directory) / "scan.json"
             executable_paths = {
                 item["path"] for item in inspection.decoded_files if item["executable"]
             }
@@ -1002,6 +844,8 @@ class CiscoSkillScanner:
                 "--format",
                 "json",
                 "--compact",
+                "--output-json",
+                str(report_path),
             ]
             if SCANNER_BEHAVIORAL_ENABLED:
                 command.append("--use-behavioral")
@@ -1018,16 +862,26 @@ class CiscoSkillScanner:
                 raise UserFacingError(
                     f"Cisco scanner timed out after {self.timeout_seconds} seconds"
                 ) from exc
-        stderr = result.stderr.decode("utf-8", errors="replace").strip()
-        if result.returncode != 0:
-            detail = stderr[-2_000:]
-            raise UserFacingError(f"Cisco scanner failed: {detail or f'exit {result.returncode}'}")
-        if len(result.stdout) > MAX_SCANNER_OUTPUT_BYTES:
-            raise UserFacingError("Cisco scanner JSON exceeds the 10 MiB output limit")
-        try:
-            payload = CiscoScanPayload.model_validate_json(result.stdout)
-        except ValidationError as exc:
-            raise UserFacingError("Cisco scanner returned invalid JSON") from exc
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            if result.returncode != 0:
+                detail = stderr[-2_000:]
+                raise UserFacingError(
+                    f"Cisco scanner failed: {detail or f'exit {result.returncode}'}"
+                )
+            try:
+                report_size = report_path.stat().st_size
+            except FileNotFoundError as exc:
+                raise UserFacingError("Cisco scanner did not produce its JSON report") from exc
+            if report_size > MAX_SCANNER_OUTPUT_BYTES:
+                raise UserFacingError("Cisco scanner JSON exceeds the 10 MiB output limit")
+            try:
+                report = report_path.read_bytes()
+                payload = CiscoScanPayload.model_validate_json(report)
+            except (OSError, ValidationError) as exc:
+                detail = str(exc).splitlines()[0][:500]
+                raise UserFacingError(
+                    f"Cisco scanner returned invalid JSON report: {detail}"
+                ) from exc
         return stored_scanner_audit(
             target,
             payload,
@@ -1074,15 +928,11 @@ def audit_skills(
         )
         inspection = inspect_bundle(target)
         try:
-            audit = (
-                preflight_failure(
-                    target,
-                    inspection,
-                    configuration_hash=scanner.configuration_hash,
+            if inspection.hard_findings:
+                raise UserFacingError(
+                    "stored package failed safe materialization; refresh its source package"
                 )
-                if inspection.hard_findings
-                else scanner.scan(target, inspection)
-            )
+            audit = scanner.scan(target, inspection)
         except UserFacingError as exc:
             stats.errors += 1
             print(

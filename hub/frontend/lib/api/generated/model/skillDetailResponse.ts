@@ -4,15 +4,22 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.2.123
  */
+import type { SkillDetailResponseResolutionStatus } from './skillDetailResponseResolutionStatus';
 import type { SkillFileRead } from './skillFileRead';
+import type { SkillResolutionIssueRead } from './skillResolutionIssueRead';
 
 export interface SkillDetailResponse {
   auditEnabled: boolean;
+  bundleFormatVersion?: number | null;
   files?: SkillFileRead[] | null;
   hash?: string | null;
   id: string;
+  resolutionIssues?: SkillResolutionIssueRead[];
+  resolutionStatus?: SkillDetailResponseResolutionStatus;
   slug: string;
   source: string;
+  sourceCommitSha?: string | null;
+  sourceEntrypoint?: string | null;
   sourceName?: string;
   sourceOwner?: string;
   sourceOwnerIconUrl?: string | null;

@@ -177,11 +177,13 @@ npx -y @wardn-ai/skills fetch-bundle \
   --json
 ```
 
-The compact manifest contains `directory`, `fileCount`, `decodedBytes`, and each file's path,
-encoding, and executable flag. The CLI permits at most 256 safe relative paths, 8 MiB decoded per
-file, and 16 MiB total. It rejects malformed identity, hash drift, duplicate or escaping paths,
-invalid encodings, unsafe root content, and reserved installation markers. Files are written with
-private permissions in a newly created temporary directory.
+The compact manifest contains `directory`, `sourceEntrypoint`, `fileCount`, `decodedBytes`, and each
+file's path, encoding, and executable flag. The CLI accepts only complete repository-aware package
+format 2 snapshots. It rejects pending or incomplete dependency resolution, malformed identity,
+hash drift, duplicate or escaping paths, invalid encodings, unsafe root content, missing source
+entrypoints, and reserved installation markers. The CLI permits at most 256 safe relative paths,
+8 MiB decoded per file, and 16 MiB total. Files are written with private permissions in a newly
+created temporary directory.
 
 Treat truncated JSON, a missing file or directory, unexpected identity or hash, a mismatch between
 `fileCount` and the manifest paths, a missing root `SKILL.md`, or any nonzero exit as a failed fetch.
@@ -190,11 +192,11 @@ compatibility tools for bounded root inspection, not substitutes for the complet
 
 ### 6. Apply It For This Task
 
-Read the local `SKILL.md` fully. As each required local reference is encountered, resolve it relative
-to the file containing it and require the resolved path to stay inside the downloaded directory and
-exist in the manifest. Apply the same check transitively to required bundled instructions. Never
-read a parent or sibling path outside the temporary bundle. Avoid loading unrelated files or binary
-assets into context.
+Read the local root `SKILL.md` fully, then read the manifest's `sourceEntrypoint` as it directs. The
+package preserves original repository paths below `context/`; resolve subsequent relative paths
+from the file containing each instruction and require them to stay inside the downloaded directory
+and exist in the manifest. Never read a parent or sibling path outside the temporary bundle. Avoid
+loading unrelated files or binary assets into context.
 
 Treat an escaping or missing required reference as an unusable bundle even when its audits passed.
 Do not fetch a second remote bundle after materializing one: remove the temporary directory,

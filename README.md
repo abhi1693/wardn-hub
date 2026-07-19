@@ -244,10 +244,20 @@ WARDN_HUB_SKILL_AUDIT_ENABLED=true \
 uv run python -m app.manage skills audit
 ```
 
-The importer isolates repository failures, bounds files and decoded bytes,
-ignores symlinks and build directories, and uses deterministic SHA-256 suffixes
-only when normalized slugs collide within a repository. Re-importing the same
-source path updates the existing skill rather than creating another record.
+The importer resolves each `SKILL.md` against the repository's full recursive
+tree. It preserves the original layout under `context/`, follows explicit local
+file, directory, glob, and sibling-skill references transitively, and emits a
+small root wrapper that points agents to the original source entrypoint. Closure
+resolution remains bounded to 256 files, 8 MiB per file, and 16 MiB total;
+symlinks, submodules, build directories, unsafe paths, and external URLs are not
+included. Optional missing references are recorded without blocking the package,
+while unresolved required references mark it incomplete and prevent installation
+or auditing. Existing GitHub snapshots are marked pending by the migration and
+become format 2 packages on their next refresh.
+
+Slug identity remains repository-local. Deterministic SHA-256 suffixes are used
+only when normalized slugs collide within the same repository, and re-importing
+the same source path updates its existing record.
 
 When `WARDN_HUB_SKILL_AUDIT_ENABLED=true`, imports and refreshes drain the
 pending-audit queue after their GitHub phase. The pinned Cisco AI Skill Scanner
@@ -255,7 +265,9 @@ runs static/YARA, bytecode, pipeline, and behavioral analysis. Its optional LLM
 analyzer has a separate `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` gate; Cisco AI
 Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
 
-Audit results are attached to the exact snapshot and include findings,
+Package compatibility is independent from security analysis: an incomplete or
+malformed package remains unaudited instead of receiving a security score of
+zero. Audit results are attached to the exact snapshot and include findings,
 analyzers, policy fingerprint, configuration hash, score deductions, a score
 from 0 to 100, and ranks from `S` through `C`. A content or scanner-configuration
 change makes the previous result ineligible until the snapshot is scanned again.

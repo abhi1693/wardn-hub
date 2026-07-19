@@ -294,6 +294,11 @@ async def get_skill_detail(
             sourceUrl=skill.source_url or None,
             hash=None,
             files=None,
+            bundleFormatVersion=None,
+            sourceCommitSha=None,
+            sourceEntrypoint=None,
+            resolutionStatus=None,
+            resolutionIssues=[],
             auditEnabled=audit_enabled,
         )
     snapshot_files = (
@@ -312,6 +317,11 @@ async def get_skill_detail(
         sourceUrl=skill.source_url or None,
         hash=snapshot.content_hash,
         files=[SkillFileRead.model_validate(file) for file in snapshot_files],
+        bundleFormatVersion=snapshot.bundle_format_version,
+        sourceCommitSha=snapshot.source_commit_sha or None,
+        sourceEntrypoint=snapshot.source_entrypoint,
+        resolutionStatus=snapshot.resolution_status,
+        resolutionIssues=snapshot.resolution_issues or [],
         auditEnabled=audit_enabled,
     )
 
@@ -329,7 +339,12 @@ async def record_skill_install(
     if skill is None:
         raise SkillNotFoundError("skill not found")
     snapshot = await repository.get_skill_snapshot(session, skill, include_files=False)
-    if snapshot is None or snapshot.content_hash != content_hash:
+    if (
+        snapshot is None
+        or snapshot.content_hash != content_hash
+        or snapshot.bundle_format_version != 2
+        or snapshot.resolution_status != "complete"
+    ):
         raise SkillNotFoundError("skill snapshot not found")
     await repository.record_install_event(
         session,

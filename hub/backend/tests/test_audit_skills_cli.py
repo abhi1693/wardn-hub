@@ -3,6 +3,7 @@ import json
 import subprocess
 import uuid
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -226,6 +227,16 @@ def test_inspect_bundle_accepts_safe_materializable_bundle() -> None:
     }
 
 
+def test_security_preflight_does_not_grade_dependency_compatibility() -> None:
+    skill_md = valid_skill_md(body="# Weather\n\nRead ../missing-required.md.")
+    target = audit_target(
+        skill_md=skill_md,
+        files=[{"path": "SKILL.md", "contents": skill_md}],
+    )
+
+    assert cli.inspect_bundle(target).hard_findings == []
+
+
 @pytest.mark.parametrize(
     "files",
     [
@@ -244,16 +255,21 @@ def test_inspect_bundle_accepts_safe_materializable_bundle() -> None:
 def test_invalid_bundles_fail_before_scanner(files: list[dict]) -> None:
     target = audit_target(files=files)
     inspection = cli.inspect_bundle(target)
-    audit = cli.preflight_failure(
-        target,
-        inspection,
-        configuration_hash=audit_configuration_hash(llm_enabled=False),
+    scanner = FakeScanner()
+    client = FakeClient([target])
+    result = cli.audit_skills(
+        client=client,
+        scanner=scanner,
+        max_skills=None,
+        skill_id=None,
+        re_audit=False,
+        dry_run=False,
+        stdout=StringIO(),
     )
     assert inspection.hard_findings
-    assert audit.status == "fail"
-    assert audit.score == 0
-    assert audit.rank == "C"
-    assert audit.raw_result["scanCompleted"] is False
+    assert result == 1
+    assert scanner.calls == []
+    assert client.saved == []
 
 
 @pytest.mark.parametrize(
@@ -391,10 +407,12 @@ def test_cisco_scanner_invocation_enables_only_local_analyzers(monkeypatch) -> N
 
     def fake_run(command, **kwargs):
         captured.extend(command)
+        report_path = Path(command[command.index("--output-json") + 1])
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
         return subprocess.CompletedProcess(
             command,
             0,
-            stdout=json.dumps(payload).encode(),
+            stdout=b"scanner progress that is not JSON\n",
             stderr=b"",
         )
 
@@ -425,10 +443,12 @@ def test_cisco_scanner_invocation_enables_llm_when_gated_on(monkeypatch) -> None
 
     def fake_run(command, **kwargs):
         captured.extend(command)
+        report_path = Path(command[command.index("--output-json") + 1])
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
         return subprocess.CompletedProcess(
             command,
             0,
-            stdout=json.dumps(payload).encode(),
+            stdout=b"scanner progress that is not JSON\n",
             stderr=b"",
         )
 

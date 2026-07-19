@@ -210,6 +210,7 @@ export async function materializeTemporaryBundle(
     return {
       id: bundle.id,
       hash: bundle.hash,
+      sourceEntrypoint: bundle.sourceEntrypoint,
       directory,
       fileCount: bundle.files.length,
       decodedBytes: bundle.files.reduce(

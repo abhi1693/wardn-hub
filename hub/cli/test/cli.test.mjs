@@ -17,9 +17,17 @@ function payload() {
   return {
     id: 'acme/skills/weather',
     hash: currentHash,
+    bundleFormatVersion: 2,
+    sourceEntrypoint: 'context/skills/weather/SKILL.md',
+    resolutionStatus: 'complete',
+    resolutionIssues: [],
     files: [
       {
         path: 'SKILL.md',
+        contents: `---\nname: weather\ndescription: Check weather.\n---\n\n# ${currentHash[0]}\n`,
+      },
+      {
+        path: 'context/skills/weather/SKILL.md',
         contents: `---\nname: weather\ndescription: Check weather.\n---\n\n# ${currentHash[0]}\n`,
       },
     ],
@@ -84,8 +92,12 @@ before(async () => {
       return;
     }
     if (request.method === 'GET' && request.url?.startsWith('/api/v1/skills/')) {
+      const result = payload();
+      if (!new URL(request.url, 'http://localhost').searchParams.has('include_bundle')) {
+        result.files = [result.files[0]];
+      }
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify(payload()));
+      response.end(JSON.stringify(result));
       return;
     }
     if (request.method === 'POST' && request.url?.startsWith('/api/v1/skills/telemetry/')) {
@@ -209,7 +221,8 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
     );
     const manifest = JSON.parse(output.pop());
     bundleDirectories.push(manifest.directory);
-    assert.equal(manifest.fileCount, 1);
+    assert.equal(manifest.fileCount, 2);
+    assert.equal(manifest.sourceEntrypoint, 'context/skills/weather/SKILL.md');
     assert.match(await readFile(join(manifest.directory, 'SKILL.md'), 'utf8'), /name: weather/);
     assert.equal(telemetryRequests, 2);
 
@@ -223,7 +236,7 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
     const latestManifest = JSON.parse(output.pop());
     bundleDirectories.push(latestManifest.directory);
     assert.equal(latestManifest.hash, currentHash);
-    assert.equal(latestManifest.fileCount, 1);
+    assert.equal(latestManifest.fileCount, 2);
     assert.match(
       await readFile(join(latestManifest.directory, 'SKILL.md'), 'utf8'),
       /name: weather/,

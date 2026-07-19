@@ -33,7 +33,14 @@ function bundlePayload(overrides = {}) {
   return {
     id: 'acme/skills/weather',
     hash: 'a'.repeat(64),
-    files: [{ path: 'SKILL.md', contents: skillMarkdown() }],
+    bundleFormatVersion: 2,
+    sourceEntrypoint: 'context/skills/weather/SKILL.md',
+    resolutionStatus: 'complete',
+    resolutionIssues: [],
+    files: [
+      { path: 'SKILL.md', contents: skillMarkdown() },
+      { path: 'context/skills/weather/SKILL.md', contents: skillMarkdown() },
+    ],
     ...overrides,
   };
 }
@@ -47,6 +54,7 @@ test('HubClient validates and decodes a complete bundle', async () => {
           bundlePayload({
             files: [
               { path: 'SKILL.md', contents: skillMarkdown() },
+              { path: 'context/skills/weather/SKILL.md', contents: skillMarkdown() },
               {
                 path: 'assets/icon.bin',
                 contents: Buffer.from([0, 1, 2]).toString('base64'),
@@ -62,8 +70,8 @@ test('HubClient validates and decodes a complete bundle', async () => {
   const bundle = await client.fetchBundle('acme/skills/weather', 'a'.repeat(64));
 
   assert.equal(bundle.id, 'acme/skills/weather');
-  assert.equal(bundle.files.length, 2);
-  assert.deepEqual(bundle.files[1].contents, Buffer.from([0, 1, 2]));
+  assert.equal(bundle.files.length, 3);
+  assert.deepEqual(bundle.files[2].contents, Buffer.from([0, 1, 2]));
 });
 
 test('HubClient rejects traversal paths and duplicate paths', async () => {
@@ -100,7 +108,12 @@ test('HubClient rejects invalid root skill metadata and hash drift', async () =>
     fetchImplementation: async () =>
       new Response(
         JSON.stringify(
-          bundlePayload({ files: [{ path: 'SKILL.md', contents: '# Missing frontmatter' }] }),
+          bundlePayload({
+            files: [
+              { path: 'SKILL.md', contents: '# Missing frontmatter' },
+              { path: 'context/skills/weather/SKILL.md', contents: skillMarkdown() },
+            ],
+          }),
         ),
         { status: 200 },
       ),
@@ -120,6 +133,35 @@ test('HubClient rejects invalid root skill metadata and hash drift', async () =>
     () => validClient.fetchBundle('acme/skills/weather', 'b'.repeat(64)),
     /changed since the expected hash/,
   );
+});
+
+test('HubClient refuses pending and incomplete repository packages', async () => {
+  for (const resolutionStatus of ['pending', 'incomplete']) {
+    const client = new HubClient({
+      version: '0.1.0',
+      fetchImplementation: async () =>
+        new Response(
+          JSON.stringify(
+            bundlePayload({
+              resolutionStatus,
+              resolutionIssues: [
+                {
+                  sourcePath: 'skills/weather/SKILL.md',
+                  target: '../../shared/REQUIRED.md',
+                  reason: 'repository reference did not resolve',
+                  required: true,
+                },
+              ],
+            }),
+          ),
+          { status: 200 },
+        ),
+    });
+    await assert.rejects(
+      () => client.fetchBundle('acme/skills/weather'),
+      new RegExp(`package is ${resolutionStatus}`),
+    );
+  }
 });
 
 test('install telemetry identifies the CLI and remains opt-out', async () => {

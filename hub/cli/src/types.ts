@@ -8,6 +8,7 @@ export interface WardnBundleFile {
 export interface WardnBundle {
   id: string;
   hash: string;
+  sourceEntrypoint: string;
   files: WardnBundleFile[];
 }
 
@@ -16,6 +17,7 @@ export interface WardnSkillRoot {
   hash: string;
   characters: number;
   contents: string;
+  sourceEntrypoint: string;
 }
 
 export interface SkillSearchItem {
@@ -80,6 +82,7 @@ export type SkillAuditResult = AuditedSkillResult | UnauditedSkillResult;
 export interface TemporaryBundleManifest {
   id: string;
   hash: string;
+  sourceEntrypoint: string;
   directory: string;
   fileCount: number;
   decodedBytes: number;

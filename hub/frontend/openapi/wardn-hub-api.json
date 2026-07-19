@@ -5801,6 +5801,17 @@
             "title": "Auditenabled",
             "type": "boolean"
           },
+          "bundleFormatVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundleformatversion"
+          },
           "files": {
             "anyOf": [
               {
@@ -5830,6 +5841,29 @@
             "title": "Id",
             "type": "string"
           },
+          "resolutionIssues": {
+            "items": {
+              "$ref": "#/components/schemas/SkillResolutionIssueRead"
+            },
+            "title": "Resolutionissues",
+            "type": "array"
+          },
+          "resolutionStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "incomplete",
+                  "pending"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolutionstatus"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -5837,6 +5871,28 @@
           "source": {
             "title": "Source",
             "type": "string"
+          },
+          "sourceCommitSha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcecommitsha"
+          },
+          "sourceEntrypoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceentrypoint"
           },
           "sourceName": {
             "default": "",
@@ -6213,6 +6269,34 @@
           "installs"
         ],
         "title": "SkillRead",
+        "type": "object"
+      },
+      "SkillResolutionIssueRead": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "sourcePath": {
+            "title": "Sourcepath",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourcePath",
+          "target",
+          "reason",
+          "required"
+        ],
+        "title": "SkillResolutionIssueRead",
         "type": "object"
       },
       "SkillSearchResponse": {

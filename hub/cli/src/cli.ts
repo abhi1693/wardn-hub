@@ -319,6 +319,7 @@ function printBundleManifest(manifest: TemporaryBundleManifest, json: boolean): 
   }
   console.log(`Materialized ${manifest.id} at ${manifest.directory}`);
   console.log(`Hash: ${manifest.hash}`);
+  console.log(`Source entrypoint: ${manifest.sourceEntrypoint}`);
   console.log(
     `${manifest.fileCount} ${pluralize(manifest.fileCount, 'file')} · ${manifest.decodedBytes} decoded bytes`,
   );

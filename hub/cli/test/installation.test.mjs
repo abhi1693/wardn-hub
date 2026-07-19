@@ -32,6 +32,7 @@ function bundle(hashCharacter, body = '# Weather\n') {
   return {
     id: 'acme/skills/weather',
     hash: hashCharacter.repeat(64),
+    sourceEntrypoint: 'SKILL.md',
     files: [
       {
         path: 'SKILL.md',
@@ -53,6 +54,7 @@ function findSkillsBundle(hashCharacter, body = '# Find skills\n') {
   return {
     id: 'abhi1693/wardn-hub/find-skills',
     hash: hashCharacter.repeat(64),
+    sourceEntrypoint: 'SKILL.md',
     files: [
       {
         path: 'SKILL.md',

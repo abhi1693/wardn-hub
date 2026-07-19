@@ -170,6 +170,8 @@ def current_skill_audit_status_subquery():
         .where(
             SkillSnapshot.status == "active",
             SkillSnapshot.is_latest.is_(True),
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
             SkillAudit.configuration_hash == current_audit_configuration_hash(),
             SkillAudit.status.in_(("pass", "warn", "fail")),
         )
@@ -340,6 +342,8 @@ async def current_skill_audits(
             tuple_(SkillAudit.skill_id, SkillAudit.snapshot_id).in_(snapshot_keys),
             SkillSnapshot.status == "active",
             SkillSnapshot.is_latest.is_(True),
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
             SkillAudit.configuration_hash == current_audit_configuration_hash(),
             SkillAudit.status.in_(("pass", "warn", "fail")),
         )
@@ -374,6 +378,11 @@ async def get_skill_snapshot(
             load_only(
                 SkillSnapshot.content_hash,
                 SkillSnapshot.skill_md,
+                SkillSnapshot.bundle_format_version,
+                SkillSnapshot.source_commit_sha,
+                SkillSnapshot.source_entrypoint,
+                SkillSnapshot.resolution_status,
+                SkillSnapshot.resolution_issues,
             )
         )
     result = await session.execute(query)
@@ -409,13 +418,22 @@ async def get_current_skill_audit(
 ) -> SkillAudit | None:
     result = await session.execute(
         select(SkillAudit)
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == SkillAudit.snapshot_id,
+                SkillSnapshot.skill_id == SkillAudit.skill_id,
+                SkillSnapshot.content_hash == SkillAudit.content_hash,
+            ),
+        )
         .where(
             SkillAudit.skill_id == skill.id,
             SkillAudit.snapshot_id == skill.current_snapshot_id,
-            SkillAudit.content_hash
-            == select(SkillSnapshot.content_hash)
-            .where(SkillSnapshot.id == skill.current_snapshot_id)
-            .scalar_subquery(),
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+            SkillAudit.status.in_(("pass", "warn", "fail")),
         )
         .where(SkillAudit.configuration_hash == current_audit_configuration_hash())
         .limit(1)
