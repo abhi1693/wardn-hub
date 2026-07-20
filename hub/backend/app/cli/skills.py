@@ -87,8 +87,8 @@ MAX_SKILL_PATH_CHARS = 1024
 MAX_SKILL_PATH_PARTS = 64
 MAX_BUNDLE_FETCH_CONCURRENCY = 8
 MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
-IMPORT_AUDIT_QUEUE_ATTRIBUTE = "_wardn_import_audit_queue"
-IMPORT_AUDIT_QUEUE_MAX_SIZE = 128
+GITHUB_AUDIT_QUEUE_ATTRIBUTE = "_wardn_github_audit_queue"
+GITHUB_AUDIT_QUEUE_MAX_SIZE = 128
 WINDOWS_1252_EM_DASH_BYTE = b"\x97"
 WINDOWS_1252_EM_DASH_SENTINEL = "\udc97"
 GITHUB_TEXT_DECODE_ERRORS = "wardn_github_text_decode"
@@ -4407,7 +4407,7 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         "snapshot_hash": saved_record.content_hash,
                     },
                 )
-                audit_queue = getattr(args, IMPORT_AUDIT_QUEUE_ATTRIBUTE, None)
+                audit_queue = getattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE, None)
                 if audit_queue is not None:
                     await audit_queue.put(saved_record.skill_id)
                     logger.info(
@@ -4448,7 +4448,35 @@ def run_import_github_command(
     importer: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
     auditor: Callable[[str], Awaitable[int]] | None = None,
 ) -> int:
-    operation = importer or import_github_from_args
+    return run_github_command_with_concurrent_audit(
+        args,
+        operation=importer or import_github_from_args,
+        auditor=auditor,
+        operation_name="import",
+    )
+
+
+def run_refresh_github_command(
+    args: argparse.Namespace,
+    *,
+    refresher: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
+    auditor: Callable[[str], Awaitable[int]] | None = None,
+) -> int:
+    return run_github_command_with_concurrent_audit(
+        args,
+        operation=refresher or refresh_github_from_args,
+        auditor=auditor,
+        operation_name="refresh",
+    )
+
+
+def run_github_command_with_concurrent_audit(
+    args: argparse.Namespace,
+    *,
+    operation: Callable[[argparse.Namespace], Awaitable[int]],
+    auditor: Callable[[str], Awaitable[int]] | None,
+    operation_name: str,
+) -> int:
     audit_enabled = get_settings().skill_audit_enabled
 
     async def run_operation() -> int:
@@ -4463,9 +4491,9 @@ def run_import_github_command(
             audit_one = auditor
 
         audit_queue: asyncio.Queue[str | None] = asyncio.Queue(
-            maxsize=IMPORT_AUDIT_QUEUE_MAX_SIZE
+            maxsize=GITHUB_AUDIT_QUEUE_MAX_SIZE
         )
-        setattr(args, IMPORT_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+        setattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
 
         async def consume_audits() -> int:
             failed = False
@@ -4479,8 +4507,11 @@ def run_import_github_command(
                     except Exception:
                         failed = True
                         logger.exception(
-                            "github skill import audit worker failed",
-                            extra={"skill_id": skill_id},
+                            "github skill audit worker failed",
+                            extra={
+                                "skill_id": skill_id,
+                                "github_operation": operation_name,
+                            },
                         )
                 finally:
                     audit_queue.task_done()
@@ -4489,50 +4520,13 @@ def run_import_github_command(
         try:
             operation_status = await operation(args)
         finally:
-            delattr(args, IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+            delattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE)
             await audit_queue.put(None)
             audit_status = await audit_task
             await engine.dispose()
         return 1 if operation_status or audit_status else 0
 
     return asyncio.run(run_operation())
-
-
-def run_refresh_github_command(
-    args: argparse.Namespace,
-    *,
-    refresher: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
-) -> int:
-    return run_github_command_with_audit(args, operation=refresher or refresh_github_from_args)
-
-
-def run_github_command_with_audit(
-    args: argparse.Namespace,
-    *,
-    operation: Callable[[argparse.Namespace], Awaitable[int]],
-) -> int:
-    audit_enabled = get_settings().skill_audit_enabled
-
-    async def run_operation() -> int:
-        status = await operation(args)
-        if audit_enabled:
-            # GitHub operations use the process-wide async engine. Dispose its pool on
-            # this event loop before the synchronous audit client opens a fresh loop.
-            await engine.dispose()
-        return status
-
-    operation_status = asyncio.run(run_operation())
-    if not audit_enabled:
-        return operation_status
-
-    # Import lazily to avoid the audit module's dependency on this module while it
-    # validates bundle hashes.
-    from app.cli.audit_skills import audit_pending_skill_snapshots
-
-    audit_status = audit_pending_skill_snapshots()
-    return 1 if operation_status or audit_status else 0
-
-
 def log_github_refresh_failure(
     message: str,
     exc: Exception,
@@ -4776,6 +4770,21 @@ async def refresh_github_from_args(args: argparse.Namespace) -> int:
                                 "skill_resolution_status": bundle.resolution_status,
                             },
                         )
+                        audit_queue = getattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE, None)
+                        if audit_queue is not None:
+                            await audit_queue.put(target.id)
+                            logger.info(
+                                "github skill refresh queued audit",
+                                extra={
+                                    "skill_id": target.id,
+                                    "source": target.source,
+                                    "source_path": target.skill_path,
+                                    "requested_ref": requested_ref,
+                                    "resolved_ref": resolved_ref,
+                                    "snapshot_hash": snapshot_hash,
+                                    "snapshot_changed": changed,
+                                },
+                            )
 
     return finish_refresh()
 

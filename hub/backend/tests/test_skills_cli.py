@@ -2541,7 +2541,7 @@ def test_manage_audits_pending_snapshots_immediately_after_github_import(
 
     async def fake_import_github_from_args(args: Namespace) -> int:
         events.append("import-started")
-        audit_queue = getattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+        audit_queue = getattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE)
         await audit_queue.put("acme/skills/weather")
         await asyncio.sleep(0)
         events.append("import-completed")
@@ -2620,7 +2620,7 @@ def test_post_import_command_preserves_import_and_audit_failures(
     expected_status: int,
 ) -> None:
     async def fake_import_github_from_args(args: Namespace) -> int:
-        audit_queue = getattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+        audit_queue = getattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE)
         await audit_queue.put("acme/skills/weather")
         return import_status
 
@@ -2652,7 +2652,7 @@ def test_import_audit_worker_continues_after_one_skill_errors(
     audited: list[str] = []
 
     async def fake_import_github_from_args(args: Namespace) -> int:
-        audit_queue = getattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+        audit_queue = getattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE)
         await audit_queue.put("acme/skills/broken")
         await audit_queue.put("acme/skills/working")
         return 0
@@ -2906,15 +2906,19 @@ def test_manage_audits_pending_snapshots_immediately_after_github_refresh(
 ) -> None:
     events: list[str] = []
 
-    async def fake_refresh_github_from_args(_args: Namespace) -> int:
-        events.append("refresh")
+    async def fake_refresh_github_from_args(args: Namespace) -> int:
+        events.append("refresh-started")
+        audit_queue = getattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE)
+        await audit_queue.put("acme/skills/weather")
+        await asyncio.sleep(0)
+        events.append("refresh-completed")
         return 0
 
     async def fake_dispose() -> None:
         events.append("dispose")
 
-    def fake_audit_pending_skill_snapshots() -> int:
-        events.append("audit")
+    async def fake_audit_pending_skill_snapshot_async(skill_id: str) -> int:
+        events.append(f"audit:{skill_id}")
         return 0
 
     monkeypatch.setattr(skills, "refresh_github_from_args", fake_refresh_github_from_args)
@@ -2926,14 +2930,19 @@ def test_manage_audits_pending_snapshots_immediately_after_github_refresh(
     monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
     monkeypatch.setattr(
         audit_skills,
-        "audit_pending_skill_snapshots",
-        fake_audit_pending_skill_snapshots,
+        "audit_pending_skill_snapshot_async",
+        fake_audit_pending_skill_snapshot_async,
     )
 
     result = manage.main(["skills", "refresh"])
 
     assert result == 0
-    assert events == ["refresh", "dispose", "audit"]
+    assert events == [
+        "refresh-started",
+        "audit:acme/skills/weather",
+        "refresh-completed",
+        "dispose",
+    ]
 
 
 def test_github_token_from_args_prefers_nonempty_override(
@@ -3059,9 +3068,16 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
     monkeypatch.setattr(skills, "save_refreshed_skill", fake_save)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.refresh_github_from_args(Namespace(github_token="", timeout_seconds=3.0))
+    args = Namespace(github_token="", timeout_seconds=3.0)
+    audit_queue: asyncio.Queue[str] = asyncio.Queue()
+    setattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+    result = await skills.refresh_github_from_args(args)
 
     assert result == 0
+    assert [await audit_queue.get(), await audit_queue.get()] == [
+        "acme/agent-skills/one",
+        "acme/agent-skills/two",
+    ]
     assert calls == {"metadata": 1, "resolve": 2, "tree": 2}
     assert requested_refs == ["main", "stable"]
     assert fetched_skill_paths == ["skills/one/SKILL.md", "skills/two/SKILL.md"]
@@ -3083,6 +3099,15 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
     )
     assert start_record.github_token_configured is True
     assert not hasattr(start_record, "github_token")
+    queued_records = [
+        record
+        for record in caplog.records
+        if record.message == "github skill refresh queued audit"
+    ]
+    assert [record.skill_id for record in queued_records] == [
+        "acme/agent-skills/one",
+        "acme/agent-skills/two",
+    ]
 
 
 async def test_refresh_github_removes_skill_when_bundle_is_incomplete(
@@ -3732,7 +3757,7 @@ async def test_import_github_logs_progress(
 
     args = github_import_args(subfolder="skills/weather")
     audit_queue: asyncio.Queue[str] = asyncio.Queue()
-    setattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+    setattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
     result = await skills.import_github_from_args(args)
 
     assert result == 0
