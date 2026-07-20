@@ -46,6 +46,9 @@ MAX_PATH_PARTS = 64
 MAX_SCANNER_OUTPUT_BYTES = 10 * 1024 * 1024
 MAX_STORED_FINDINGS = 500
 DEFAULT_SCANNER_TIMEOUT_SECONDS = 300
+DATABASE_RETRY_BASE_SECONDS = 1.0
+DATABASE_RETRY_MAX_SECONDS = 8.0
+DATABASE_MAX_RETRIES = 5
 REQUIRED_LOCAL_ANALYZERS = {
     "static_analyzer",
     "bytecode",
@@ -215,6 +218,10 @@ def completed_audit_condition(
 def is_transient_database_disconnect(exc: BaseException) -> bool:
     if isinstance(exc, DBAPIError) and exc.connection_invalidated:
         return True
+    if not isinstance(exc, (DBAPIError, OSError)) and not type(exc).__module__.startswith(
+        "asyncpg."
+    ):
+        return False
     message = str(exc).lower()
     return any(
         marker in message
@@ -223,6 +230,9 @@ def is_transient_database_disconnect(exc: BaseException) -> bool:
             "connection was closed",
             "connection reset",
             "connection terminated",
+            "connect failed",
+            "connection refused",
+            "server_login_retry",
             "server closed the connection",
         )
     )
@@ -248,13 +258,21 @@ class WardnHubDatabaseSkillAuditClient:
                     await session.rollback()
                     raise
 
-        for attempt in range(2):
+        for attempt in range(DATABASE_MAX_RETRIES + 1):
             try:
                 return self._loop.run_until_complete(run())
             except Exception as exc:
-                if commit or attempt == 1 or not is_transient_database_disconnect(exc):
+                if (
+                    attempt >= DATABASE_MAX_RETRIES
+                    or not is_transient_database_disconnect(exc)
+                ):
                     raise
-                time.sleep(1)
+                time.sleep(
+                    min(
+                        DATABASE_RETRY_BASE_SECONDS * (2**attempt),
+                        DATABASE_RETRY_MAX_SECONDS,
+                    )
+                )
         raise RuntimeError("unreachable database retry state")
 
     def next_target(

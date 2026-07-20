@@ -131,7 +131,7 @@ async def import_github_skill_request(
         detail = str(exc).strip() or type(exc).__name__
         raise SkillGitHubImportError(f"GitHub request failed: {detail}") from exc
 
-    skill_ids = [f"{skill.source}/{skill.slug}" for skill, _snapshot, _source_path in results]
+    skill_ids = [saved.skill_id for saved in results]
     return SkillGitHubImportResponse(
         source=repo.source,
         importedSkillCount=len(skill_ids),

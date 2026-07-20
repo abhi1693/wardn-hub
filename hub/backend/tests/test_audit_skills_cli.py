@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from asyncpg.exceptions import ProtocolViolationError
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
@@ -193,6 +194,68 @@ def test_current_audit_hash_reads_non_secret_llm_routing(monkeypatch) -> None:
         llm_base_url="https://llm.example.test/v1",
         llm_api_version="2026-01-01",
         llm_temperature="0",
+    )
+
+
+def test_audit_database_client_retries_server_login_failure_with_fresh_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    commits = 0
+    rollbacks = 0
+    sessions = 0
+    sleeps: list[float] = []
+
+    class FakeSession:
+        def __init__(self) -> None:
+            nonlocal sessions
+            sessions += 1
+
+        async def __aenter__(self) -> "FakeSession":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            nonlocal commits
+            commits += 1
+
+        async def rollback(self) -> None:
+            nonlocal rollbacks
+            rollbacks += 1
+
+    async def operation(_session: object) -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ProtocolViolationError(
+                "server login has been failing, cached error: "
+                "connect failed (server_login_retry)"
+            )
+        return "saved"
+
+    monkeypatch.setattr(cli, "AsyncSessionLocal", FakeSession)
+    monkeypatch.setattr(cli.time, "sleep", sleeps.append)
+    client = cli.WardnHubDatabaseSkillAuditClient()
+    try:
+        assert client._run(operation, commit=True) == "saved"
+    finally:
+        client.close()
+
+    assert attempts == 2
+    assert sessions == 2
+    assert rollbacks == 1
+    assert commits == 1
+    assert sleeps == [1.0]
+
+
+def test_audit_database_disconnect_detection_rejects_unrelated_errors() -> None:
+    assert cli.is_transient_database_disconnect(
+        ProtocolViolationError("connect failed (server_login_retry)")
+    )
+    assert not cli.is_transient_database_disconnect(
+        ValueError("connect failed (server_login_retry)")
     )
 
 

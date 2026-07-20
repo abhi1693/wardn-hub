@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from sqlalchemy.exc import DBAPIError
 
 from app import manage
 from app.cli import audit_skills, skills
@@ -4596,7 +4597,7 @@ async def test_import_github_ignores_nested_invalid_skill_and_commits_exact_subf
     assert completed_record.matched_repository_count == 1
 
 
-async def test_import_github_commits_recursive_skills_once_per_repository(
+async def test_import_github_commits_recursive_skills_independently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeGitHubClient:
@@ -4654,10 +4655,14 @@ async def test_import_github_commits_recursive_skills_once_per_repository(
 
     commits = 0
     rollbacks = 0
-    expunges = 0
+    sessions = 0
     saved_paths: list[str] = []
 
     class FakeSessionContext:
+        def __init__(self) -> None:
+            nonlocal sessions
+            sessions += 1
+
         async def __aenter__(self) -> "FakeSessionContext":
             return self
 
@@ -4671,10 +4676,6 @@ async def test_import_github_commits_recursive_skills_once_per_repository(
         async def rollback(self) -> None:
             nonlocal rollbacks
             rollbacks += 1
-
-        def expunge_all(self) -> None:
-            nonlocal expunges
-            expunges += 1
 
     async def fake_add_skill(
         session: object,
@@ -4696,10 +4697,98 @@ async def test_import_github_commits_recursive_skills_once_per_repository(
     result = await skills.import_github_from_args(github_import_args(recursive=True))
 
     assert result == 0
-    assert commits == 1
+    assert commits == 2
     assert rollbacks == 0
-    assert expunges == 2
+    assert sessions == 2
     assert saved_paths == ["skills/one", "skills/two"]
+
+
+async def test_save_imported_skill_retries_disconnect_with_fresh_transaction(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    commits = 0
+    rollbacks = 0
+    sessions = 0
+
+    class FakeSessionContext:
+        def __init__(self) -> None:
+            nonlocal sessions
+            sessions += 1
+
+        async def __aenter__(self) -> "FakeSessionContext":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            nonlocal commits
+            commits += 1
+
+        async def rollback(self) -> None:
+            nonlocal rollbacks
+            rollbacks += 1
+
+    async def fake_add_skill(
+        session: object,
+        payload: skills.SkillAddInput,
+        *,
+        preserve_catalog_state: bool,
+    ):
+        nonlocal attempts
+        attempts += 1
+        assert preserve_catalog_state is True
+        if attempts == 1:
+            raise DBAPIError(
+                "insert skill",
+                {},
+                Exception("the underlying connection is closed"),
+            )
+        return (
+            SimpleNamespace(source=payload.source, slug=payload.slug),
+            SimpleNamespace(content_hash="hash-weather"),
+        )
+
+    payload = skills.SkillAddInput(
+        source="acme/agent-skills",
+        source_owner="acme",
+        source_name="agent-skills",
+        source_owner_url="https://github.com/acme",
+        source_owner_icon_url="",
+        source_url="https://github.com/acme/agent-skills",
+        slug="weather",
+        name="Weather",
+        description="Weather workflow",
+        skill_md="# Weather",
+        files=[{"path": "SKILL.md", "contents": "# Weather"}],
+    )
+    imported_skill = skills.ImportedSkill(
+        payload=payload,
+        source_path="skills/weather/SKILL.md",
+        bundle_size=9,
+    )
+    monkeypatch.setattr(skills, "AsyncSessionLocal", FakeSessionContext)
+    monkeypatch.setattr(skills, "add_skill", fake_add_skill)
+    monkeypatch.setattr(skills, "GITHUB_DATABASE_RETRY_BASE_SECONDS", 0)
+    caplog.set_level(logging.WARNING, logger=skills.logger.name)
+
+    saved = await skills.save_imported_skill(imported_skill)
+
+    assert saved.skill_id == "acme/agent-skills/weather"
+    assert saved.content_hash == "hash-weather"
+    assert attempts == 2
+    assert sessions == 2
+    assert rollbacks == 1
+    assert commits == 1
+    retry_record = next(
+        record
+        for record in caplog.records
+        if record.message == "github skill import database connection lost; retrying skill"
+    )
+    assert retry_record.source_path == "skills/weather/SKILL.md"
+    assert retry_record.retry_attempt == 1
 
 
 async def test_import_github_imports_same_repository_slug_collisions(
