@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -238,6 +239,152 @@ def is_transient_database_disconnect(exc: BaseException) -> bool:
     )
 
 
+async def load_audit_target(
+    session: Any,
+    *,
+    after_skill_id: uuid.UUID | None,
+    skill_id: str | None,
+    re_audit: bool,
+) -> SkillAuditTarget | None:
+    statement = (
+        select(Skill, SkillSnapshot)
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == Skill.current_snapshot_id,
+                SkillSnapshot.skill_id == Skill.id,
+            ),
+        )
+        .where(
+            Skill.status == "active",
+            Skill.visibility == "public",
+            Skill.current_snapshot_id.is_not(None),
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+            SkillSnapshot.content_hash.is_not(None),
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+        )
+    )
+    if after_skill_id is not None:
+        statement = statement.where(Skill.id > after_skill_id)
+    if skill_id:
+        source, slug = split_skill_id(skill_id)
+        statement = statement.where(Skill.source == source, Skill.slug == slug)
+    if not re_audit:
+        statement = statement.where(~completed_audit_condition())
+    row = (await session.execute(statement.order_by(Skill.id.asc()).limit(1))).first()
+    if row is None:
+        return None
+    skill, snapshot = row
+    return SkillAuditTarget(
+        skill_id=skill.id,
+        snapshot_id=snapshot.id,
+        content_hash=str(snapshot.content_hash),
+        source=skill.source,
+        slug=skill.slug,
+        name=skill.name,
+        description=skill.description,
+        source_url=skill.source_url,
+        skill_md=snapshot.skill_md,
+        files=[dict(item) for item in (snapshot.files or [])],
+    )
+
+
+async def store_audit_result(
+    session: Any,
+    target: SkillAuditTarget,
+    audit: StoredAudit,
+    *,
+    re_audit: bool,
+) -> Literal["saved", "stale", "already-audited"]:
+    skill = (
+        await session.execute(select(Skill).where(Skill.id == target.skill_id).with_for_update())
+    ).scalar_one_or_none()
+    if skill is None or skill.current_snapshot_id != target.snapshot_id:
+        return "stale"
+    snapshot = (
+        await session.execute(
+            select(SkillSnapshot).where(
+                SkillSnapshot.id == target.snapshot_id,
+                SkillSnapshot.skill_id == target.skill_id,
+                SkillSnapshot.status == "active",
+                SkillSnapshot.is_latest.is_(True),
+                SkillSnapshot.bundle_format_version == 2,
+                SkillSnapshot.resolution_status == "complete",
+            )
+        )
+    ).scalar_one_or_none()
+    if snapshot is None or snapshot.content_hash != target.content_hash:
+        return "stale"
+
+    stored = (
+        await session.execute(
+            select(SkillAudit)
+            .where(SkillAudit.snapshot_id == target.snapshot_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if stored is not None and not re_audit:
+        return "already-audited"
+    values = {
+        "skill_id": target.skill_id,
+        "snapshot_id": target.snapshot_id,
+        "content_hash": target.content_hash,
+        "scanner_name": audit.scanner_name,
+        "scanner_version": audit.scanner_version,
+        "policy_name": audit.policy_name,
+        "policy_version": audit.policy_version,
+        "policy_fingerprint": audit.policy_fingerprint,
+        "configuration_hash": audit.configuration_hash,
+        "status": audit.status,
+        "summary": audit.summary,
+        "risk_level": audit.risk_level,
+        "score": audit.score,
+        "rank": audit.rank,
+        "score_deductions": audit.score_deductions,
+        "findings": audit.findings,
+        "analyzers": audit.analyzers,
+        "scan_duration_ms": audit.scan_duration_ms,
+        "raw_result": audit.raw_result,
+        "audited_at": datetime.now(UTC),
+    }
+    if stored is None:
+        session.add(SkillAudit(**values))
+    else:
+        for key, value in values.items():
+            setattr(stored, key, value)
+    return "saved"
+
+
+async def run_async_database_operation(
+    operation: Callable[[Any], Awaitable[Any]],
+    *,
+    commit: bool = False,
+) -> Any:
+    for attempt in range(DATABASE_MAX_RETRIES + 1):
+        async with AsyncSessionLocal() as session:
+            try:
+                result = await operation(session)
+                if commit:
+                    await session.commit()
+                return result
+            except Exception as exc:
+                await session.rollback()
+                if (
+                    attempt >= DATABASE_MAX_RETRIES
+                    or not is_transient_database_disconnect(exc)
+                ):
+                    raise
+        await asyncio.sleep(
+            min(
+                DATABASE_RETRY_BASE_SECONDS * (2**attempt),
+                DATABASE_RETRY_MAX_SECONDS,
+            )
+        )
+    raise RuntimeError("unreachable database retry state")
+
+
 class WardnHubDatabaseSkillAuditClient:
     def __init__(self) -> None:
         self._loop = asyncio.new_event_loop()
@@ -283,48 +430,11 @@ class WardnHubDatabaseSkillAuditClient:
         re_audit: bool,
     ) -> SkillAuditTarget | None:
         async def operation(session: Any) -> SkillAuditTarget | None:
-            statement = (
-                select(Skill, SkillSnapshot)
-                .join(
-                    SkillSnapshot,
-                    and_(
-                        SkillSnapshot.id == Skill.current_snapshot_id,
-                        SkillSnapshot.skill_id == Skill.id,
-                    ),
-                )
-                .where(
-                    Skill.status == "active",
-                    Skill.visibility == "public",
-                    Skill.current_snapshot_id.is_not(None),
-                    SkillSnapshot.status == "active",
-                    SkillSnapshot.is_latest.is_(True),
-                    SkillSnapshot.content_hash.is_not(None),
-                    SkillSnapshot.bundle_format_version == 2,
-                    SkillSnapshot.resolution_status == "complete",
-                )
-            )
-            if after_skill_id is not None:
-                statement = statement.where(Skill.id > after_skill_id)
-            if skill_id:
-                source, slug = split_skill_id(skill_id)
-                statement = statement.where(Skill.source == source, Skill.slug == slug)
-            if not re_audit:
-                statement = statement.where(~completed_audit_condition())
-            row = (await session.execute(statement.order_by(Skill.id.asc()).limit(1))).first()
-            if row is None:
-                return None
-            skill, snapshot = row
-            return SkillAuditTarget(
-                skill_id=skill.id,
-                snapshot_id=snapshot.id,
-                content_hash=str(snapshot.content_hash),
-                source=skill.source,
-                slug=skill.slug,
-                name=skill.name,
-                description=skill.description,
-                source_url=skill.source_url,
-                skill_md=snapshot.skill_md,
-                files=[dict(item) for item in (snapshot.files or [])],
+            return await load_audit_target(
+                session,
+                after_skill_id=after_skill_id,
+                skill_id=skill_id,
+                re_audit=re_audit,
             )
 
         return self._run(operation)
@@ -337,65 +447,12 @@ class WardnHubDatabaseSkillAuditClient:
         re_audit: bool,
     ) -> Literal["saved", "stale", "already-audited"]:
         async def operation(session: Any) -> str:
-            skill = (
-                await session.execute(
-                    select(Skill).where(Skill.id == target.skill_id).with_for_update()
-                )
-            ).scalar_one_or_none()
-            if skill is None or skill.current_snapshot_id != target.snapshot_id:
-                return "stale"
-            snapshot = (
-                await session.execute(
-                    select(SkillSnapshot).where(
-                        SkillSnapshot.id == target.snapshot_id,
-                        SkillSnapshot.skill_id == target.skill_id,
-                        SkillSnapshot.status == "active",
-                        SkillSnapshot.is_latest.is_(True),
-                        SkillSnapshot.bundle_format_version == 2,
-                        SkillSnapshot.resolution_status == "complete",
-                    )
-                )
-            ).scalar_one_or_none()
-            if snapshot is None or snapshot.content_hash != target.content_hash:
-                return "stale"
-
-            stored = (
-                await session.execute(
-                    select(SkillAudit)
-                    .where(SkillAudit.snapshot_id == target.snapshot_id)
-                    .with_for_update()
-                )
-            ).scalar_one_or_none()
-            if stored is not None and not re_audit:
-                return "already-audited"
-            values = {
-                "skill_id": target.skill_id,
-                "snapshot_id": target.snapshot_id,
-                "content_hash": target.content_hash,
-                "scanner_name": audit.scanner_name,
-                "scanner_version": audit.scanner_version,
-                "policy_name": audit.policy_name,
-                "policy_version": audit.policy_version,
-                "policy_fingerprint": audit.policy_fingerprint,
-                "configuration_hash": audit.configuration_hash,
-                "status": audit.status,
-                "summary": audit.summary,
-                "risk_level": audit.risk_level,
-                "score": audit.score,
-                "rank": audit.rank,
-                "score_deductions": audit.score_deductions,
-                "findings": audit.findings,
-                "analyzers": audit.analyzers,
-                "scan_duration_ms": audit.scan_duration_ms,
-                "raw_result": audit.raw_result,
-                "audited_at": datetime.now(UTC),
-            }
-            if stored is None:
-                session.add(SkillAudit(**values))
-            else:
-                for key, value in values.items():
-                    setattr(stored, key, value)
-            return "saved"
+            return await store_audit_result(
+                session,
+                target,
+                audit,
+                re_audit=re_audit,
+            )
 
         return self._run(operation, commit=True)
 
@@ -986,6 +1043,76 @@ def audit_skills(
         print("No unaudited current skill snapshots remain.", file=stdout)
     print_stats(stats, stdout)
     return 1 if stats.errors or stats.stale else 0
+
+
+async def audit_pending_skill_snapshot_async(
+    skill_id: str,
+    *,
+    scanner: SkillScanner | None = None,
+    scanner_timeout: int = DEFAULT_SCANNER_TIMEOUT_SECONDS,
+    stdout: TextIO = sys.stdout,
+) -> int:
+    settings = get_settings()
+    if not settings.skill_audit_enabled:
+        raise UserFacingError(
+            "skill audits are disabled; set WARDN_HUB_SKILL_AUDIT_ENABLED=true to enable them"
+        )
+    selected_scanner = scanner or CiscoSkillScanner(
+        timeout_seconds=scanner_timeout,
+        llm_enabled=settings.skill_audit_llm_enabled,
+        configuration_hash=current_audit_configuration_hash(),
+    )
+    target = await run_async_database_operation(
+        lambda session: load_audit_target(
+            session,
+            after_skill_id=None,
+            skill_id=skill_id.strip(),
+            re_audit=False,
+        )
+    )
+    if target is None:
+        print(f"Skipped {skill_id}; its current snapshot is already audited.", file=stdout)
+        return 0
+
+    print(
+        f"Auditing {target.catalog_id} at {target.content_hash} ({len(target.files)} files).",
+        file=stdout,
+        flush=True,
+    )
+    inspection = inspect_bundle(target)
+    try:
+        if inspection.hard_findings:
+            raise UserFacingError(
+                "stored package failed safe materialization; refresh its source package"
+            )
+        audit = await asyncio.to_thread(selected_scanner.scan, target, inspection)
+    except UserFacingError as exc:
+        print(
+            f"Audit failed for {target.catalog_id}; leaving it unaudited: {exc}",
+            file=stdout,
+        )
+        return 1
+
+    save_status = await run_async_database_operation(
+        lambda session: store_audit_result(
+            session,
+            target,
+            audit,
+            re_audit=False,
+        ),
+        commit=True,
+    )
+    if save_status == "stale":
+        print(
+            f"Skipped stale audit for {target.catalog_id}; its snapshot changed during scan.",
+            file=stdout,
+        )
+        return 1
+    if save_status == "already-audited":
+        print(f"Skipped {target.catalog_id}; another worker audited it.", file=stdout)
+        return 0
+    print(f"Stored {audit.status} audit for {target.catalog_id}.", file=stdout)
+    return 0
 
 
 def positive_int(value: str) -> int:

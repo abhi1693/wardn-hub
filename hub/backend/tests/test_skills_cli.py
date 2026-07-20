@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from argparse import Namespace
 from collections.abc import AsyncIterator
@@ -2538,15 +2539,19 @@ def test_manage_audits_pending_snapshots_immediately_after_github_import(
 ) -> None:
     events: list[str] = []
 
-    async def fake_import_github_from_args(_args: Namespace) -> int:
-        events.append("import")
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        events.append("import-started")
+        audit_queue = getattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+        await audit_queue.put("acme/skills/weather")
+        await asyncio.sleep(0)
+        events.append("import-completed")
         return 0
 
     async def fake_dispose() -> None:
         events.append("dispose")
 
-    def fake_audit_pending_skill_snapshots() -> int:
-        events.append("audit")
+    async def fake_audit_pending_skill_snapshot_async(skill_id: str) -> int:
+        events.append(f"audit:{skill_id}")
         return 0
 
     monkeypatch.setattr(manage, "import_github_from_args", fake_import_github_from_args)
@@ -2558,14 +2563,19 @@ def test_manage_audits_pending_snapshots_immediately_after_github_import(
     monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
     monkeypatch.setattr(
         audit_skills,
-        "audit_pending_skill_snapshots",
-        fake_audit_pending_skill_snapshots,
+        "audit_pending_skill_snapshot_async",
+        fake_audit_pending_skill_snapshot_async,
     )
 
     result = manage.main(["skills", "import-github", "acme"])
 
     assert result == 0
-    assert events == ["import", "dispose", "audit"]
+    assert events == [
+        "import-started",
+        "audit:acme/skills/weather",
+        "import-completed",
+        "dispose",
+    ]
 
 
 def test_manage_does_not_run_post_import_audit_when_gate_is_disabled(
@@ -2577,7 +2587,7 @@ def test_manage_does_not_run_post_import_audit_when_gate_is_disabled(
         events.append("import")
         return 0
 
-    def unexpected_audit() -> int:
+    async def unexpected_audit(_skill_id: str) -> int:
         events.append("audit")
         return 0
 
@@ -2589,7 +2599,7 @@ def test_manage_does_not_run_post_import_audit_when_gate_is_disabled(
     )
     monkeypatch.setattr(
         audit_skills,
-        "audit_pending_skill_snapshots",
+        "audit_pending_skill_snapshot_async",
         unexpected_audit,
     )
 
@@ -2609,8 +2619,14 @@ def test_post_import_command_preserves_import_and_audit_failures(
     audit_status: int,
     expected_status: int,
 ) -> None:
-    async def fake_import_github_from_args(_args: Namespace) -> int:
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        audit_queue = getattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+        await audit_queue.put("acme/skills/weather")
         return import_status
+
+    async def fake_auditor(skill_id: str) -> int:
+        assert skill_id == "acme/skills/weather"
+        return audit_status
 
     async def fake_dispose() -> None:
         return None
@@ -2621,18 +2637,50 @@ def test_post_import_command_preserves_import_and_audit_failures(
         lambda: SimpleNamespace(skill_audit_enabled=True),
     )
     monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
-    monkeypatch.setattr(
-        audit_skills,
-        "audit_pending_skill_snapshots",
-        lambda: audit_status,
+    result = skills.run_import_github_command(
+        Namespace(),
+        importer=fake_import_github_from_args,
+        auditor=fake_auditor,
     )
+
+    assert result == expected_status
+
+
+def test_import_audit_worker_continues_after_one_skill_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audited: list[str] = []
+
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        audit_queue = getattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+        await audit_queue.put("acme/skills/broken")
+        await audit_queue.put("acme/skills/working")
+        return 0
+
+    async def fake_auditor(skill_id: str) -> int:
+        audited.append(skill_id)
+        if skill_id.endswith("/broken"):
+            raise RuntimeError("scanner unavailable")
+        return 0
+
+    async def fake_dispose() -> None:
+        return None
+
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
 
     result = skills.run_import_github_command(
         Namespace(),
         importer=fake_import_github_from_args,
+        auditor=fake_auditor,
     )
 
-    assert result == expected_status
+    assert result == 1
+    assert audited == ["acme/skills/broken", "acme/skills/working"]
 
 
 def test_manage_parses_filtered_multi_target_github_import(
@@ -3682,9 +3730,13 @@ async def test_import_github_logs_progress(
     monkeypatch.setattr(skills, "add_skill", fake_add_skill)
     caplog.set_level(logging.INFO, logger=skills.logger.name)
 
-    result = await skills.import_github_from_args(github_import_args(subfolder="skills/weather"))
+    args = github_import_args(subfolder="skills/weather")
+    audit_queue: asyncio.Queue[str] = asyncio.Queue()
+    setattr(args, skills.IMPORT_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+    result = await skills.import_github_from_args(args)
 
     assert result == 0
+    assert await audit_queue.get() == "acme/agent-skills/weather"
     records = [record for record in caplog.records if record.name == skills.logger.name]
     assert [record.message for record in records] == [
         "github skills import started",
@@ -3693,6 +3745,7 @@ async def test_import_github_logs_progress(
         "github skills import discovered skills",
         "github skill import fetched skill file",
         "github skill import saved skill",
+        "github skill import queued audit",
         "github skills import completed",
     ]
     start_record = records[0]
@@ -3708,9 +3761,13 @@ async def test_import_github_logs_progress(
     saved_record = records[5]
     assert saved_record.skill_id == "acme/agent-skills/weather"
     assert saved_record.source_path == "skills/weather/SKILL.md"
-    assert records[6].skill_count == 1
-    assert records[6].active_repository_count == 1
-    assert records[6].imported_repository_count == 1
+    queued_record = records[6]
+    assert queued_record.skill_id == "acme/agent-skills/weather"
+    assert queued_record.snapshot_hash == "sha256:abc123"
+    completed_record = records[7]
+    assert completed_record.skill_count == 1
+    assert completed_record.active_repository_count == 1
+    assert completed_record.imported_repository_count == 1
 
 
 async def test_imported_skill_slug_is_stable_across_frontmatter_changes() -> None:

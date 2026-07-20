@@ -442,6 +442,76 @@ def test_audit_stream_stores_one_snapshot_result() -> None:
     assert "pass=1" in stdout.getvalue()
 
 
+async def test_async_single_snapshot_audit_loads_scans_and_commits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = audit_target()
+    scanner = FakeScanner()
+    stored: list[tuple[cli.SkillAuditTarget, cli.StoredAudit, bool]] = []
+    commits = 0
+
+    class FakeSession:
+        async def __aenter__(self) -> "FakeSession":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            nonlocal commits
+            commits += 1
+
+        async def rollback(self) -> None:
+            return None
+
+    async def fake_load_audit_target(
+        _session: object,
+        *,
+        after_skill_id: object,
+        skill_id: str,
+        re_audit: bool,
+    ) -> cli.SkillAuditTarget:
+        assert after_skill_id is None
+        assert skill_id == target.catalog_id
+        assert re_audit is False
+        return target
+
+    async def fake_store_audit_result(
+        _session: object,
+        saved_target: cli.SkillAuditTarget,
+        audit: cli.StoredAudit,
+        *,
+        re_audit: bool,
+    ) -> str:
+        stored.append((saved_target, audit, re_audit))
+        return "saved"
+
+    monkeypatch.setattr(cli, "AsyncSessionLocal", FakeSession)
+    monkeypatch.setattr(
+        cli,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    monkeypatch.setattr(cli, "load_audit_target", fake_load_audit_target)
+    monkeypatch.setattr(cli, "store_audit_result", fake_store_audit_result)
+    stdout = StringIO()
+
+    result = await cli.audit_pending_skill_snapshot_async(
+        target.catalog_id,
+        scanner=scanner,
+        stdout=stdout,
+    )
+
+    assert result == 0
+    assert scanner.calls == [target]
+    assert len(stored) == 1
+    assert stored[0][0] == target
+    assert stored[0][1].status == "pass"
+    assert stored[0][2] is False
+    assert commits == 1
+    assert f"Stored pass audit for {target.catalog_id}." in stdout.getvalue()
+
+
 def test_audit_scanner_errors_remain_resumable() -> None:
     class FailingScanner:
         def scan(self, target, inspection):

@@ -87,6 +87,8 @@ MAX_SKILL_PATH_CHARS = 1024
 MAX_SKILL_PATH_PARTS = 64
 MAX_BUNDLE_FETCH_CONCURRENCY = 8
 MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
+IMPORT_AUDIT_QUEUE_ATTRIBUTE = "_wardn_import_audit_queue"
+IMPORT_AUDIT_QUEUE_MAX_SIZE = 128
 WINDOWS_1252_EM_DASH_BYTE = b"\x97"
 WINDOWS_1252_EM_DASH_SENTINEL = "\udc97"
 GITHUB_TEXT_DECODE_ERRORS = "wardn_github_text_decode"
@@ -4405,6 +4407,19 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                         "snapshot_hash": saved_record.content_hash,
                     },
                 )
+                audit_queue = getattr(args, IMPORT_AUDIT_QUEUE_ATTRIBUTE, None)
+                if audit_queue is not None:
+                    await audit_queue.put(saved_record.skill_id)
+                    logger.info(
+                        "github skill import queued audit",
+                        extra={
+                            **repo_context,
+                            "resolved_ref": resolved_ref,
+                            "skill_id": saved_record.skill_id,
+                            "source_path": saved_record.source_path,
+                            "snapshot_hash": saved_record.content_hash,
+                        },
+                    )
 
             if repository_failed or not saved_records:
                 continue
@@ -4431,8 +4446,56 @@ def run_import_github_command(
     args: argparse.Namespace,
     *,
     importer: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
+    auditor: Callable[[str], Awaitable[int]] | None = None,
 ) -> int:
-    return run_github_command_with_audit(args, operation=importer or import_github_from_args)
+    operation = importer or import_github_from_args
+    audit_enabled = get_settings().skill_audit_enabled
+
+    async def run_operation() -> int:
+        if not audit_enabled:
+            return await operation(args)
+
+        if auditor is None:
+            from app.cli.audit_skills import audit_pending_skill_snapshot_async
+
+            audit_one = audit_pending_skill_snapshot_async
+        else:
+            audit_one = auditor
+
+        audit_queue: asyncio.Queue[str | None] = asyncio.Queue(
+            maxsize=IMPORT_AUDIT_QUEUE_MAX_SIZE
+        )
+        setattr(args, IMPORT_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+
+        async def consume_audits() -> int:
+            failed = False
+            while True:
+                skill_id = await audit_queue.get()
+                try:
+                    if skill_id is None:
+                        return 1 if failed else 0
+                    try:
+                        failed = bool(await audit_one(skill_id)) or failed
+                    except Exception:
+                        failed = True
+                        logger.exception(
+                            "github skill import audit worker failed",
+                            extra={"skill_id": skill_id},
+                        )
+                finally:
+                    audit_queue.task_done()
+
+        audit_task = asyncio.create_task(consume_audits())
+        try:
+            operation_status = await operation(args)
+        finally:
+            delattr(args, IMPORT_AUDIT_QUEUE_ATTRIBUTE)
+            await audit_queue.put(None)
+            audit_status = await audit_task
+            await engine.dispose()
+        return 1 if operation_status or audit_status else 0
+
+    return asyncio.run(run_operation())
 
 
 def run_refresh_github_command(
