@@ -341,6 +341,11 @@ async def test_load_skill_refresh_targets_counts_invalid_current_snapshots(
             "GitHub file contains unsupported control character U+001B at "
             "character offset 8: skills/binary/SKILL.md",
         ),
+        (
+            b"# Skill\n\xc2\x8f",
+            "GitHub file contains unsupported control character U+008F at "
+            "character offset 8: skills/binary/SKILL.md",
+        ),
     ],
 )
 async def test_github_raw_file_rejects_invalid_text(
@@ -419,6 +424,82 @@ async def test_github_raw_file_rejects_other_invalid_bytes_after_legacy_em_dash(
             await client.raw_file(repo, "main", "skills/writing/SKILL.md")
 
     assert "github file normalized Windows-1252 em dash bytes" not in [
+        record.message for record in caplog.records
+    ]
+
+
+async def test_github_raw_file_normalizes_mojibake_with_c1_controls(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = (
+        "# Skill\n"
+        "\u00f0\u0178\u00c2\u008f\u20ac\u00ba\u00ef\u00b8\u008f System Status\n"
+        "\u00f0\u0178\u00c2\u008f\u2014\u00ef\u00b8\u008f Construction Permits\n"
+        "\u00f0\u0178\u00c2\u008f\u00a6 Greek Banking\n"
+        "\u00e2\u0153\u00c2\u008d\u00ef\u00b8\u008f Handwritten Text\n"
+        "\u201e\u00b9\u00ef\u00b8\u008f Planned Maintenance\n"
+        "\u26a0\u00ef\u00b8\u008f System maintenance scheduled\n"
+        "\u0391\u03b3\u03b1\u03c0\u03b7\u03c4\u03bf\u03af "
+        "\u03ba\u00cf\u008d\u00cf\u0081\u03b9\u03bf\u03b9\n"
+    )
+    content = source.encode()
+
+    async def fake_get(url: str, *, follow_redirects: bool) -> SimpleNamespace:
+        assert url.endswith("/acme/agent-skills/main/skills/aade/SKILL.md")
+        assert follow_redirects is False
+        return SimpleNamespace(status_code=200, content=content, text="")
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    caplog.set_level(logging.WARNING, logger=skills.logger.name)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        first = await client.raw_file(repo, "main", "skills/aade/SKILL.md")
+        second = await client.raw_file(repo, "main", "skills/aade/SKILL.md")
+
+    expected = (
+        "# Skill\n\N{AMPHORA}\ufe0f System Status\n"
+        "\N{BUILDING CONSTRUCTION}\ufe0f Construction Permits\n"
+        "\N{BANK} Greek Banking\n"
+        "\N{WRITING HAND}\ufe0f Handwritten Text\n"
+        "\N{INFORMATION SOURCE}\ufe0f Planned Maintenance\n"
+        "\u26a0\ufe0f System maintenance scheduled\n"
+        "\u0391\u03b3\u03b1\u03c0\u03b7\u03c4\u03bf\u03af \u03ba\u03cd\u03c1\u03b9\u03bf\u03b9\n"
+    )
+    assert first == second == expected
+    records = [
+        record
+        for record in caplog.records
+        if record.message == "github file normalized mojibake"
+    ]
+    assert len(records) == 1
+    assert records[0].source == "acme/agent-skills"
+    assert records[0].source_path == "skills/aade/SKILL.md"
+    assert records[0].normalized_control_count == sum(
+        127 <= ord(character) <= 159 for character in source
+    )
+
+
+async def test_github_raw_file_rejects_partial_mojibake_repair(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    content = (
+        "# Skill\n\u039a\u03b1\u03bb\u03ce\u03c2 "
+        "\u03ba\u00cf\u008d\u00cf\u0081\u03b9\u03bf\u03b9\nUnknown \u008f\n"
+    ).encode()
+
+    async def fake_get(url: str, *, follow_redirects: bool) -> SimpleNamespace:
+        return SimpleNamespace(status_code=200, content=content, text="")
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    caplog.set_level(logging.WARNING, logger=skills.logger.name)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        with pytest.raises(skills.InvalidSkillTextError, match=r"U\+008D"):
+            await client.raw_file(repo, "main", "skills/greek/SKILL.md")
+
+    assert "github file normalized mojibake" not in [
         record.message for record in caplog.records
     ]
 
@@ -2343,6 +2424,28 @@ def test_github_import_text_formatter_outputs_compact_tsv() -> None:
         "2026-07-18 19:33:05,217\tWARNING\t"
         "github file normalized Windows-1252 em dash bytes\t"
         "acme/agent-skills\tpath=skills/writing/SKILL.md\tnormalized_bytes=2"
+    )
+
+    mojibake_record = logging.LogRecord(
+        name=skills.logger.name,
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="github file normalized mojibake",
+        args=(),
+        exc_info=None,
+    )
+    mojibake_record.created = datetime(2026, 7, 20, 16, 53, 45).timestamp()
+    mojibake_record.msecs = 22
+    mojibake_record.source = "LeoYeAI/openclaw-master-skills"
+    mojibake_record.source_path = "skills/aade-api-monitor/SKILL.md"
+    mojibake_record.normalized_control_count = 107
+
+    assert skills.GitHubImportTextFormatter().format(mojibake_record) == (
+        "2026-07-20 16:53:45,022\tWARNING\t"
+        "github file normalized mojibake\t"
+        "LeoYeAI/openclaw-master-skills\tpath=skills/aade-api-monitor/SKILL.md\t"
+        "normalized_controls=107"
     )
 
 

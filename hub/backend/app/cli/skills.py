@@ -23,6 +23,7 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 import yaml
+from ftfy import fix_encoding
 from markdown_it import MarkdownIt
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
@@ -85,6 +86,16 @@ MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
 WINDOWS_1252_EM_DASH_BYTE = b"\x97"
 WINDOWS_1252_EM_DASH_SENTINEL = "\udc97"
 GITHUB_TEXT_DECODE_ERRORS = "wardn_github_text_decode"
+KNOWN_GITHUB_TEXT_MOJIBAKE_REPLACEMENTS = (
+    (
+        "\u00f0\u0178\u00c2\u008f\u20ac\u00ba\u00ef\u00b8\u008f",
+        "\N{AMPHORA}\N{VARIATION SELECTOR-16}",
+    ),
+    (
+        "\u201e\u00b9\u00ef\u00b8\u008f",
+        "\N{INFORMATION SOURCE}\N{VARIATION SELECTOR-16}",
+    ),
+)
 SKILL_BUNDLE_FORMAT_VERSION = 2
 MAX_SKILL_RESOLUTION_ISSUES = 128
 MAX_SKILL_DEPENDENCY_MANIFEST_ENTRIES = 512
@@ -163,6 +174,7 @@ class GitHubImportTextFormatter(logging.Formatter):
         "skill_id",
         "source_path",
         "normalized_byte_count",
+        "normalized_control_count",
         "reason",
         "response_status_code",
         "github_request_id",
@@ -191,6 +203,7 @@ class GitHubImportTextFormatter(logging.Formatter):
         "retry_wait_seconds": "wait_seconds",
         "source_path": "path",
         "normalized_byte_count": "normalized_bytes",
+        "normalized_control_count": "normalized_controls",
     }
 
     def formatTime(
@@ -799,6 +812,26 @@ def github_text_decode_error(error: UnicodeError) -> tuple[str, int]:
 
 
 codecs.register_error(GITHUB_TEXT_DECODE_ERRORS, github_text_decode_error)
+
+
+def normalize_github_text_mojibake(contents: str) -> tuple[str, int]:
+    c1_control_count = sum(127 <= ord(character) <= 159 for character in contents)
+    if not c1_control_count:
+        return contents, 0
+
+    normalized = contents
+    for corrupted, replacement in KNOWN_GITHUB_TEXT_MOJIBAKE_REPLACEMENTS:
+        normalized = normalized.replace(corrupted, replacement)
+    normalized = fix_encoding(normalized)
+    normalized = re.sub(
+        "\u00c2([\u0080-\u009f])",
+        lambda match: match.group(1),
+        normalized,
+    )
+    normalized = fix_encoding(normalized)
+    if normalized == contents or unsupported_text_control(normalized) is not None:
+        return contents, 0
+    return normalized, c1_control_count
 
 
 def checked_github_import_size(current_size: int, bundle_size: int) -> int:
@@ -1727,7 +1760,7 @@ class GitHubClient:
         self._etag_cache_bytes = 0
         self._etag_cache_dirty: set[str] = set()
         self._rate_limit_budgets: dict[str, GitHubRateLimitBudget] = {}
-        self._normalized_text_warnings: set[tuple[str, str, str]] = set()
+        self._normalized_text_warnings: set[tuple[str, str, str, str]] = set()
 
     async def __aenter__(self) -> GitHubClient:
         if self._etag_cache_enabled:
@@ -2754,7 +2787,7 @@ class GitHubClient:
         normalized_byte_count = decoded.count(WINDOWS_1252_EM_DASH_SENTINEL)
         if normalized_byte_count:
             decoded = decoded.replace(WINDOWS_1252_EM_DASH_SENTINEL, "\N{EM DASH}")
-            warning_key = (repo.source, ref, path)
+            warning_key = (repo.source, ref, path, "windows-1252-em-dash")
             if warning_key not in self._normalized_text_warnings:
                 self._normalized_text_warnings.add(warning_key)
                 logger.warning(
@@ -2763,6 +2796,19 @@ class GitHubClient:
                         "source": repo.source,
                         "source_path": path,
                         "normalized_byte_count": normalized_byte_count,
+                    },
+                )
+        decoded, normalized_control_count = normalize_github_text_mojibake(decoded)
+        if normalized_control_count:
+            warning_key = (repo.source, ref, path, "mojibake")
+            if warning_key not in self._normalized_text_warnings:
+                self._normalized_text_warnings.add(warning_key)
+                logger.warning(
+                    "github file normalized mojibake",
+                    extra={
+                        "source": repo.source,
+                        "source_path": path,
+                        "normalized_control_count": normalized_control_count,
                     },
                 )
         control = unsupported_text_control(decoded)
