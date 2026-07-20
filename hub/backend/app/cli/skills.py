@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import codecs
 import fnmatch
 import hashlib
 import json
@@ -81,6 +82,9 @@ MAX_SKILL_PATH_CHARS = 1024
 MAX_SKILL_PATH_PARTS = 64
 MAX_BUNDLE_FETCH_CONCURRENCY = 8
 MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
+WINDOWS_1252_EM_DASH_BYTE = b"\x97"
+WINDOWS_1252_EM_DASH_SENTINEL = "\udc97"
+GITHUB_TEXT_DECODE_ERRORS = "wardn_github_text_decode"
 SKILL_BUNDLE_FORMAT_VERSION = 2
 MAX_SKILL_RESOLUTION_ISSUES = 128
 MAX_SKILL_DEPENDENCY_MANIFEST_ENTRIES = 512
@@ -157,6 +161,8 @@ class GitHubImportTextFormatter(logging.Formatter):
     fields = (
         "source",
         "skill_id",
+        "source_path",
+        "normalized_byte_count",
         "reason",
         "response_status_code",
         "github_request_id",
@@ -183,6 +189,8 @@ class GitHubImportTextFormatter(logging.Formatter):
         "rate_limit_reset": "reset_epoch",
         "retry_attempt": "attempt",
         "retry_wait_seconds": "wait_seconds",
+        "source_path": "path",
+        "normalized_byte_count": "normalized_bytes",
     }
 
     def formatTime(
@@ -778,6 +786,19 @@ def unsupported_text_control(contents: str) -> tuple[int, str] | None:
         if (codepoint < 32 and character not in "\t\n\r") or 127 <= codepoint <= 159:
             return offset, character
     return None
+
+
+def github_text_decode_error(error: UnicodeError) -> tuple[str, int]:
+    if (
+        not isinstance(error, UnicodeDecodeError)
+        or error.encoding != "utf-8"
+        or error.object[error.start : error.end] != WINDOWS_1252_EM_DASH_BYTE
+    ):
+        raise error
+    return WINDOWS_1252_EM_DASH_SENTINEL, error.end
+
+
+codecs.register_error(GITHUB_TEXT_DECODE_ERRORS, github_text_decode_error)
 
 
 def checked_github_import_size(current_size: int, bundle_size: int) -> int:
@@ -1706,6 +1727,7 @@ class GitHubClient:
         self._etag_cache_bytes = 0
         self._etag_cache_dirty: set[str] = set()
         self._rate_limit_budgets: dict[str, GitHubRateLimitBudget] = {}
+        self._normalized_text_warnings: set[tuple[str, str, str]] = set()
 
     async def __aenter__(self) -> GitHubClient:
         if self._etag_cache_enabled:
@@ -2726,9 +2748,23 @@ class GitHubClient:
                 f"GitHub file contains a NUL byte at offset {nul_offset} (line {line_number})",
             )
         try:
-            decoded = content.decode("utf-8")
+            decoded = content.decode("utf-8", errors=GITHUB_TEXT_DECODE_ERRORS)
         except UnicodeDecodeError as exc:
             raise InvalidSkillTextError(path, "GitHub file is not UTF-8 text") from exc
+        normalized_byte_count = decoded.count(WINDOWS_1252_EM_DASH_SENTINEL)
+        if normalized_byte_count:
+            decoded = decoded.replace(WINDOWS_1252_EM_DASH_SENTINEL, "\N{EM DASH}")
+            warning_key = (repo.source, ref, path)
+            if warning_key not in self._normalized_text_warnings:
+                self._normalized_text_warnings.add(warning_key)
+                logger.warning(
+                    "github file normalized Windows-1252 em dash bytes",
+                    extra={
+                        "source": repo.source,
+                        "source_path": path,
+                        "normalized_byte_count": normalized_byte_count,
+                    },
+                )
         control = unsupported_text_control(decoded)
         if control is not None:
             offset, character = control

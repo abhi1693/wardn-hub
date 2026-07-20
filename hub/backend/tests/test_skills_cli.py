@@ -366,6 +366,63 @@ async def test_github_raw_file_rejects_invalid_text(
     assert str(exc_info.value) == expected_error
 
 
+async def test_github_raw_file_normalizes_standalone_windows_1252_em_dashes(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    content = b"# Skill\nValid UTF-8 \xe2\x97\x97; legacy dashes \x97 one \x97 two.\n"
+
+    async def fake_get(url: str, *, follow_redirects: bool) -> SimpleNamespace:
+        assert url.endswith("/acme/agent-skills/main/skills/writing/SKILL.md")
+        assert follow_redirects is False
+        return SimpleNamespace(
+            status_code=200,
+            content=content,
+            text="",
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    caplog.set_level(logging.WARNING, logger=skills.logger.name)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        first = await client.raw_file(repo, "main", "skills/writing/SKILL.md")
+        second = await client.raw_file(repo, "main", "skills/writing/SKILL.md")
+
+    assert first == second == "# Skill\nValid UTF-8 ◗; legacy dashes — one — two.\n"
+    records = [
+        record
+        for record in caplog.records
+        if record.message == "github file normalized Windows-1252 em dash bytes"
+    ]
+    assert len(records) == 1
+    assert records[0].source == "acme/agent-skills"
+    assert records[0].source_path == "skills/writing/SKILL.md"
+    assert records[0].normalized_byte_count == 2
+
+
+async def test_github_raw_file_rejects_other_invalid_bytes_after_legacy_em_dash(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def fake_get(url: str, *, follow_redirects: bool) -> SimpleNamespace:
+        return SimpleNamespace(
+            status_code=200,
+            content=b"# Skill\nLegacy dash \x97 then invalid \xff.\n",
+            text="",
+        )
+
+    repo = skills.parse_github_repository_url("https://github.com/acme/agent-skills")
+    caplog.set_level(logging.WARNING, logger=skills.logger.name)
+    async with skills.GitHubClient() as client:
+        monkeypatch.setattr(client._client, "get", fake_get)
+        with pytest.raises(skills.InvalidSkillTextError, match="not UTF-8 text"):
+            await client.raw_file(repo, "main", "skills/writing/SKILL.md")
+
+    assert "github file normalized Windows-1252 em dash bytes" not in [
+        record.message for record in caplog.records
+    ]
+
+
 async def test_github_raw_file_http_error_is_not_invalid_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2265,6 +2322,27 @@ def test_github_import_text_formatter_outputs_compact_tsv() -> None:
         "github skill import saved skill\t"
         "android/skills\t"
         "android/skills/camera-camerax"
+    )
+
+    normalized_record = logging.LogRecord(
+        name=skills.logger.name,
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="github file normalized Windows-1252 em dash bytes",
+        args=(),
+        exc_info=None,
+    )
+    normalized_record.created = datetime(2026, 7, 18, 19, 33, 5).timestamp()
+    normalized_record.msecs = 217
+    normalized_record.source = "acme/agent-skills"
+    normalized_record.source_path = "skills/writing/SKILL.md"
+    normalized_record.normalized_byte_count = 2
+
+    assert skills.GitHubImportTextFormatter().format(normalized_record) == (
+        "2026-07-18 19:33:05,217\tWARNING\t"
+        "github file normalized Windows-1252 em dash bytes\t"
+        "acme/agent-skills\tpath=skills/writing/SKILL.md\tnormalized_bytes=2"
     )
 
 
