@@ -44,8 +44,9 @@ path through the `@wardn-ai/skills` CLI.
   transports, environment variables, versions, namespaces, documentation, and
   support information in a consistent model.
 - **Trust that follows the artifact.** Skill audits are bound to an exact
-  snapshot and configuration hash, so an updated bundle cannot inherit an old
-  result.
+  snapshot, so an updated bundle cannot inherit an old result. Scanner and LLM
+  configuration remains attached as provenance without invalidating an
+  unchanged snapshot.
 - **A publication workflow built for maintainers.** Draft, validate, review,
   approve, reject, withdraw, and publish MCP server submissions without losing
   provenance or audit history.
@@ -298,8 +299,11 @@ Package compatibility is independent from security analysis: an incomplete or
 malformed import is rejected instead of receiving a security score of zero.
 Audit results are attached to the exact snapshot and include findings,
 analyzers, policy fingerprint, configuration hash, score deductions, a score
-from 0 to 100, and ranks from `S` through `C`. A content or scanner-configuration
-change makes the previous result ineligible until the snapshot is scanned again.
+from 0 to 100, and ranks from `S` through `C`. A content change makes the
+previous result ineligible until the new snapshot is scanned. Scanner and LLM
+configuration changes are retained as audit provenance and do not enqueue
+unchanged snapshots for another paid scan; use `--reaudit` when a deliberate
+policy change requires replacement results.
 
 ## Configuration
 

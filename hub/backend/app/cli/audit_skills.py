@@ -194,18 +194,18 @@ class SkillScanner(Protocol):
 
 def completed_audit_condition(
     *,
-    configuration_hash: str,
     skill_id: Any = Skill.id,
     snapshot_id: Any = SkillSnapshot.id,
     content_hash: Any = SkillSnapshot.content_hash,
 ) -> Any:
+    # The configuration hash is provenance, not audit validity. An unchanged
+    # snapshot remains audited when its LLM provider or model is replaced.
     return exists(
         select(SkillAudit.id)
         .where(
             SkillAudit.skill_id == skill_id,
             SkillAudit.snapshot_id == snapshot_id,
             SkillAudit.content_hash == content_hash,
-            SkillAudit.configuration_hash == configuration_hash,
             SkillAudit.status.in_(("pass", "warn", "fail")),
         )
         .correlate(Skill, SkillSnapshot)
@@ -229,9 +229,8 @@ def is_transient_database_disconnect(exc: BaseException) -> bool:
 
 
 class WardnHubDatabaseSkillAuditClient:
-    def __init__(self, *, configuration_hash: str) -> None:
+    def __init__(self) -> None:
         self._loop = asyncio.new_event_loop()
-        self.configuration_hash = configuration_hash
 
     def close(self) -> None:
         if not self._loop.is_closed():
@@ -292,9 +291,7 @@ class WardnHubDatabaseSkillAuditClient:
                 source, slug = split_skill_id(skill_id)
                 statement = statement.where(Skill.source == source, Skill.slug == slug)
             if not re_audit:
-                statement = statement.where(
-                    ~completed_audit_condition(configuration_hash=self.configuration_hash)
-                )
+                statement = statement.where(~completed_audit_condition())
             row = (await session.execute(statement.order_by(Skill.id.asc()).limit(1))).first()
             if row is None:
                 return None
@@ -351,11 +348,7 @@ class WardnHubDatabaseSkillAuditClient:
                     .with_for_update()
                 )
             ).scalar_one_or_none()
-            if (
-                stored is not None
-                and not re_audit
-                and stored.configuration_hash == self.configuration_hash
-            ):
+            if stored is not None and not re_audit:
                 return "already-audited"
             values = {
                 "skill_id": target.skill_id,
@@ -1041,7 +1034,7 @@ def audit_pending_skill_snapshots(
             "skill audits are disabled; set WARDN_HUB_SKILL_AUDIT_ENABLED=true to enable them"
         )
     configuration_hash = current_audit_configuration_hash()
-    client = WardnHubDatabaseSkillAuditClient(configuration_hash=configuration_hash)
+    client = WardnHubDatabaseSkillAuditClient()
     try:
         return audit_skills(
             client=client,

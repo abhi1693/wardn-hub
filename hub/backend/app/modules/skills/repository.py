@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.modules.skills.audit_policy import current_audit_configuration_hash
 from app.modules.skills.models import (
     Skill,
     SkillAudit,
@@ -189,6 +188,8 @@ def skill_identifier_order(search: str) -> ColumnElement[int] | None:
 
 
 def current_skill_audit_status_subquery():
+    # Audit configuration is retained as provenance. Public eligibility follows
+    # the current immutable snapshot so provider/model changes do not hide results.
     return (
         select(
             SkillAudit.skill_id.label("skill_id"),
@@ -207,7 +208,6 @@ def current_skill_audit_status_subquery():
             SkillSnapshot.is_latest.is_(True),
             SkillSnapshot.bundle_format_version == 2,
             SkillSnapshot.resolution_status == "complete",
-            SkillAudit.configuration_hash == current_audit_configuration_hash(),
             SkillAudit.status.in_(("pass", "warn", "fail")),
         )
         .subquery()
@@ -572,7 +572,6 @@ async def current_skill_audits(
             SkillSnapshot.is_latest.is_(True),
             SkillSnapshot.bundle_format_version == 2,
             SkillSnapshot.resolution_status == "complete",
-            SkillAudit.configuration_hash == current_audit_configuration_hash(),
             SkillAudit.status.in_(("pass", "warn", "fail")),
         )
     )
@@ -663,7 +662,6 @@ async def get_current_skill_audit(
             SkillSnapshot.resolution_status == "complete",
             SkillAudit.status.in_(("pass", "warn", "fail")),
         )
-        .where(SkillAudit.configuration_hash == current_audit_configuration_hash())
         .limit(1)
     )
     return result.scalar_one_or_none()

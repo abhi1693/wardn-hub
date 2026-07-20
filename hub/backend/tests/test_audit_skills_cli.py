@@ -130,12 +130,10 @@ class FakeScanner:
         )
 
 
-def test_completed_audit_condition_is_snapshot_and_configuration_bound() -> None:
+def test_completed_audit_condition_is_snapshot_bound_across_configurations() -> None:
     target = audit_target()
-    configuration_hash = audit_configuration_hash(llm_enabled=False)
     statement = select(
         cli.completed_audit_condition(
-            configuration_hash=configuration_hash,
             skill_id=target.skill_id,
             snapshot_id=target.snapshot_id,
             content_hash=target.content_hash,
@@ -148,8 +146,9 @@ def test_completed_audit_condition_is_snapshot_and_configuration_bound() -> None
         )
     )
     assert "FROM skill_audits" in sql
-    assert "configuration_hash" in sql
-    assert configuration_hash in sql
+    assert "configuration_hash" not in sql
+    assert str(target.snapshot_id) in sql
+    assert target.content_hash in sql
 
 
 def test_llm_gate_changes_audit_configuration_hash() -> None:

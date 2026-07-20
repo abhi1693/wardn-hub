@@ -284,7 +284,7 @@ async def test_list_skills_filters_by_current_audit_status() -> None:
     )
     warned_sql = warned_session.statements[-1]
     assert "skill_audits" in warned_sql
-    assert "configuration_hash" in warned_sql
+    assert "configuration_hash" not in warned_sql
     assert "row_number() OVER" not in warned_sql
     assert "audit_status" in warned_sql
     assert " IN (SELECT" in warned_sql
@@ -308,7 +308,7 @@ def test_audit_filter_uses_single_current_snapshot_result() -> None:
     )
 
     compiled = str(statement.compile(dialect=postgresql.dialect()))
-    assert "skill_audits.configuration_hash" in compiled
+    assert "skill_audits.configuration_hash" not in compiled
     assert "MATERIALIZED" not in compiled
     assert "NOT IN (SELECT" in compiled
 
@@ -561,7 +561,7 @@ async def test_current_skill_audits_uses_unique_snapshot_results() -> None:
     assert "JOIN skill_snapshots" in session.statement
     assert "skill_snapshots.content_hash = skill_audits.content_hash" in session.statement
     assert "skill_snapshots.is_latest" in session.statement
-    assert "skill_audits.configuration_hash" in session.statement
+    assert "skill_audits.configuration_hash" not in session.statement
     assert "row_number() OVER" not in session.statement
 
 
