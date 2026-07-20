@@ -201,6 +201,27 @@ class SkillAuditResponse(BaseModel):
     audit: SkillAuditRead
 
 
+class SkillAuditHistoryEntryRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    content_hash: str = Field(alias="contentHash", pattern=r"^[a-f0-9]{64}$")
+    source_commit_sha: str | None = Field(default=None, alias="sourceCommitSha")
+    published_at: datetime = Field(alias="publishedAt")
+    audited_at: datetime = Field(alias="auditedAt")
+    status: SkillAuditStatus
+    risk_level: SkillAuditRiskLevel = Field(alias="riskLevel")
+    score: int = Field(ge=0, le=100)
+    rank: SkillAuditRank
+    current: bool
+
+
+class SkillAuditHistoryResponse(BaseModel):
+    id: str
+    source: str
+    slug: str
+    data: list[SkillAuditHistoryEntryRead]
+
+
 class OfficialSkillOwner(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

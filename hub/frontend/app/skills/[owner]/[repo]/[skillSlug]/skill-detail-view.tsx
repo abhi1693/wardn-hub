@@ -7,11 +7,12 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { PublicHeader } from "@/components/site-header";
-import type { SkillFileRead } from "@/lib/api/generated/model";
+import type { SkillAuditHistoryResponse, SkillFileRead } from "@/lib/api/generated/model";
 import {
   displaySkillName,
   getPublicSkill,
   getPublicSkillAudit,
+  getPublicSkillAuditHistory,
   isSkillsNotFoundError,
   listPublicSkills,
   publishedSkillFiles,
@@ -30,6 +31,7 @@ import {
   SkillsBreadcrumbs,
 } from "../../../skills-ui";
 import { SkillDetailTabs, type SkillDetailTab } from "./skill-detail-tabs";
+import { SkillAuditHistory } from "./skill-audit-history";
 
 type SkillDetailViewProps = {
   initialTab?: SkillDetailTab;
@@ -119,7 +121,31 @@ export async function SkillDetailView({
     }),
     listPublicSkills({ limit: 100, source }).catch(() => []),
   ]);
-  const audit = skill.auditEnabled ? await getPublicSkillAudit(id) : null;
+  const [audit, auditHistory] = skill.auditEnabled
+    ? await Promise.all([getPublicSkillAudit(id), getPublicSkillAuditHistory(id)])
+    : [null, null];
+  const displayedAuditHistory =
+    auditHistory ??
+    (audit
+      ? ({
+          data: [
+            {
+              auditedAt: audit.audit.auditedAt,
+              contentHash: audit.contentHash,
+              current: true,
+              publishedAt: audit.audit.auditedAt,
+              rank: audit.audit.rank,
+              riskLevel: audit.audit.riskLevel,
+              score: audit.audit.score,
+              sourceCommitSha: skill.sourceCommitSha,
+              status: audit.audit.status,
+            },
+          ],
+          id,
+          slug: skill.slug,
+          source,
+        } satisfies SkillAuditHistoryResponse)
+      : null);
   const files = publishedSkillFiles(skill);
   const selectedFile =
     files.find((file) => file.path === selectedFilePath) ??
@@ -297,6 +323,7 @@ export async function SkillDetailView({
               </p>
             </div>
             <SkillAuditPanel audit={audit} />
+            <SkillAuditHistory history={displayedAuditHistory} />
           </div>
         ) : undefined}
         skillId={id}

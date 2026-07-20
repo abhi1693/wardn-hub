@@ -1,4 +1,5 @@
 import type {
+  SkillAuditHistoryResponse,
   SkillAuditResponse,
   SkillDetailResponse,
   SkillFileRead,
@@ -319,6 +320,18 @@ export async function getPublicSkillAudit(skillId: string) {
   try {
     return await skillsRequest<SkillAuditResponse>(
       `/skills/audit/${skillId.split("/").map(encodeURIComponent).join("/")}`,
+    );
+  } catch (error) {
+    if (isSkillsNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+export async function getPublicSkillAuditHistory(skillId: string, limit = 50) {
+  try {
+    return await skillsRequest<SkillAuditHistoryResponse>(
+      `/skills/-/audit-history/${skillId.split("/").map(encodeURIComponent).join("/")}`,
+      { limit },
     );
   } catch (error) {
     if (isSkillsNotFoundError(error)) return null;

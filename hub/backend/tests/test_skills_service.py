@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -377,6 +378,88 @@ async def test_disabled_audit_gate_hides_stored_audit_results(
 
     with pytest.raises(service.SkillAuditNotFoundError, match="disabled"):
         await service.get_skill_audit(object(), "acme/skills/weather")  # type: ignore[arg-type]
+    with pytest.raises(service.SkillAuditNotFoundError, match="disabled"):
+        await service.get_skill_audit_history(  # type: ignore[arg-type]
+            object(), "acme/skills/weather", limit=50
+        )
+
+
+async def test_skill_audit_history_returns_snapshot_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    skill_id = uuid.uuid4()
+    current_snapshot_id = uuid.uuid4()
+    skill = SimpleNamespace(
+        id=skill_id,
+        source="acme/skills",
+        slug="weather",
+        current_snapshot_id=current_snapshot_id,
+    )
+    entry = repository.SkillAuditHistoryItem(
+        content_hash="a" * 64,
+        source_commit_sha="b" * 40,
+        published_at=datetime(2026, 7, 9, tzinfo=UTC),
+        audited_at=datetime(2026, 7, 10, tzinfo=UTC),
+        status="pass",
+        risk_level="low",
+        score=100,
+        rank="S",
+        snapshot_id=current_snapshot_id,
+    )
+
+    async def get_skill(*args: object):
+        return skill
+
+    async def list_history(*args: object, **kwargs: object):
+        assert kwargs == {"limit": 20}
+        return [entry]
+
+    monkeypatch.setattr(service.repository, "get_skill", get_skill)
+    monkeypatch.setattr(service.repository, "list_skill_audit_history", list_history)
+
+    response = await service.get_skill_audit_history(
+        object(),  # type: ignore[arg-type]
+        "acme/skills/weather",
+        limit=20,
+    )
+
+    assert response.id == "acme/skills/weather"
+    assert response.data[0].content_hash == "a" * 64
+    assert response.data[0].source_commit_sha == "b" * 40
+    assert response.data[0].current is True
+
+
+async def test_skill_audit_history_query_includes_noncurrent_snapshots() -> None:
+    class FakeSession:
+        statement = ""
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statement = str(statement.compile(dialect=postgresql.dialect()))
+            return SimpleNamespace(
+                tuples=lambda: SimpleNamespace(all=lambda: []),
+            )
+
+    session = FakeSession()
+    current_snapshot_id = uuid.uuid4()
+    result = await repository.list_skill_audit_history(  # type: ignore[arg-type]
+        session,
+        SimpleNamespace(id=uuid.uuid4(), current_snapshot_id=current_snapshot_id),  # type: ignore[arg-type]
+        limit=25,
+    )
+
+    assert result == []
+    assert "skill_snapshots.is_latest IS true" not in session.statement
+    assert "skill_snapshots.id = skill_audits.snapshot_id" in session.statement
+    assert "CASE WHEN (skill_snapshots.id =" in session.statement
+    assert session.statement.index("CASE WHEN (skill_snapshots.id =") < session.statement.index(
+        "skill_snapshots.published_at DESC"
+    )
+    assert "LIMIT" in session.statement
 
 
 def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:

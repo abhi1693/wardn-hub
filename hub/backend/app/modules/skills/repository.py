@@ -38,6 +38,19 @@ class CurrentSkillAudit:
 
 
 @dataclass(frozen=True)
+class SkillAuditHistoryItem:
+    content_hash: str
+    source_commit_sha: str
+    published_at: datetime
+    audited_at: datetime
+    status: str
+    risk_level: str
+    score: int
+    rank: str
+    snapshot_id: uuid.UUID
+
+
+@dataclass(frozen=True)
 class SkillSearchCursor:
     match_tier: int
     text_rank: float
@@ -665,3 +678,46 @@ async def get_current_skill_audit(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def list_skill_audit_history(
+    session: AsyncSession,
+    skill: Skill,
+    *,
+    limit: int,
+) -> list[SkillAuditHistoryItem]:
+    result = await session.execute(
+        select(
+            SkillAudit.content_hash,
+            SkillSnapshot.source_commit_sha,
+            SkillSnapshot.published_at,
+            SkillAudit.audited_at,
+            SkillAudit.status,
+            SkillAudit.risk_level,
+            SkillAudit.score,
+            SkillAudit.rank,
+            SkillSnapshot.id,
+        )
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == SkillAudit.snapshot_id,
+                SkillSnapshot.skill_id == SkillAudit.skill_id,
+                SkillSnapshot.content_hash == SkillAudit.content_hash,
+            ),
+        )
+        .where(
+            SkillAudit.skill_id == skill.id,
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+            SkillAudit.status.in_(("pass", "warn", "fail")),
+        )
+        .order_by(
+            case((SkillSnapshot.id == skill.current_snapshot_id, 0), else_=1),
+            SkillSnapshot.published_at.desc(),
+            SkillAudit.audited_at.desc(),
+            SkillAudit.id.desc(),
+        )
+        .limit(limit)
+    )
+    return [SkillAuditHistoryItem(*row) for row in result.tuples().all()]

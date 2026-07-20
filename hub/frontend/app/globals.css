@@ -500,6 +500,370 @@
   font-size: 12px;
 }
 
+.skill-audit-history {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--shadow-card);
+}
+
+.skill-audit-history > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 22px 18px;
+}
+
+.skill-audit-history > header > div {
+  display: grid;
+  max-width: 660px;
+  gap: 6px;
+}
+
+.skill-audit-history h2,
+.skill-audit-history p {
+  margin: 0;
+}
+
+.skill-audit-history h2 {
+  font-size: 19px;
+  line-height: 26px;
+}
+
+.skill-audit-history > header p {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.skill-audit-history-chart {
+  position: relative;
+  border-top: 1px solid var(--border);
+  background-color: var(--surface-container-low);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--outline) 24%, transparent) 0.75px,
+    transparent 0.8px
+  );
+  background-size: 14px 14px;
+  color: var(--electric-blue);
+  padding: 14px 18px 4px;
+}
+
+.skill-audit-history-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.skill-audit-history-chart-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skill-audit-history-chart-canvas {
+  position: relative;
+  z-index: 2;
+}
+
+.skill-audit-history-chart .recharts-surface:focus-visible {
+  border-radius: var(--radius-md);
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.skill-audit-history-dot-target {
+  cursor: help;
+  outline: none;
+}
+
+.skill-audit-history-dot-hit-area {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.skill-audit-history-dot-target:focus-visible .skill-audit-history-score-dot {
+  stroke: var(--ring);
+  stroke-width: 5;
+}
+
+.skill-audit-history-score-dot {
+  stroke: var(--surface-container-lowest);
+  stroke-width: 3;
+}
+
+.skill-audit-history-score-dot.pass {
+  fill: var(--success);
+}
+
+.skill-audit-history-score-dot.warn {
+  fill: var(--pending);
+}
+
+.skill-audit-history-score-dot.fail {
+  fill: var(--danger);
+}
+
+.skill-audit-history-current-ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--electric-blue) 36%, transparent);
+  stroke-width: 4;
+}
+
+.skill-audit-history-tooltip-anchor {
+  position: absolute;
+  z-index: 10;
+  width: max-content;
+  max-width: 220px;
+  pointer-events: none;
+}
+
+.skill-audit-history-tooltip-anchor.center.above {
+  transform: translate(-50%, calc(-100% - 14px));
+}
+
+.skill-audit-history-tooltip-anchor.start.above {
+  transform: translate(0, calc(-100% - 14px));
+}
+
+.skill-audit-history-tooltip-anchor.end.above {
+  transform: translate(-100%, calc(-100% - 14px));
+}
+
+.skill-audit-history-tooltip-anchor.center.below {
+  transform: translate(-50%, 14px);
+}
+
+.skill-audit-history-tooltip-anchor.start.below {
+  transform: translate(0, 14px);
+}
+
+.skill-audit-history-tooltip-anchor.end.below {
+  transform: translate(-100%, 14px);
+}
+
+.skill-audit-history-tooltip {
+  display: grid;
+  min-width: 190px;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-container-lowest) 96%, transparent);
+  color: var(--foreground);
+  box-shadow: var(--shadow-float);
+  padding: 12px;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+}
+
+.skill-audit-history-tooltip.pass {
+  border-left-color: var(--success);
+}
+
+.skill-audit-history-tooltip.warn {
+  border-left-color: var(--pending);
+}
+
+.skill-audit-history-tooltip.fail {
+  border-left-color: var(--danger);
+}
+
+.skill-audit-history-tooltip header,
+.skill-audit-history-tooltip-score,
+.skill-audit-history-tooltip dl div {
+  display: flex;
+  align-items: center;
+}
+
+.skill-audit-history-tooltip header {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill-audit-history-tooltip header .skill-audit-history-current {
+  margin-left: 0;
+}
+
+.skill-audit-history-tooltip time {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.skill-audit-history-tooltip-score {
+  align-items: baseline;
+  gap: 4px;
+}
+
+.skill-audit-history-tooltip-score strong {
+  font-size: 26px;
+  line-height: 30px;
+}
+
+.skill-audit-history-tooltip-score > span:not(.skill-audit-history-grade) {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.skill-audit-history-tooltip-score .skill-audit-history-grade {
+  margin-left: auto;
+}
+
+.skill-audit-history-tooltip dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.skill-audit-history-tooltip dl div {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.skill-audit-history-tooltip dt,
+.skill-audit-history-tooltip dd {
+  margin: 0;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.skill-audit-history-tooltip dt {
+  color: var(--muted-foreground);
+}
+
+.skill-audit-history-tooltip dd {
+  color: var(--on-surface-variant);
+  font-weight: 750;
+}
+
+.skill-audit-history-tooltip code {
+  font-size: 10px;
+}
+
+.skill-audit-history-table-shell {
+  border-top: 1px solid var(--border);
+}
+
+.skill-audit-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.skill-audit-history-table th,
+.skill-audit-history-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 11px 14px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.skill-audit-history-table th {
+  background: var(--surface-container-low);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skill-audit-history-table tbody tr:first-child {
+  background: color-mix(in srgb, var(--electric-blue) 5%, transparent);
+}
+
+.skill-audit-history-table tbody tr:hover {
+  background: var(--surface-container-low);
+}
+
+.skill-audit-history-table code {
+  color: var(--on-surface-variant);
+  font-size: 11px;
+}
+
+.skill-audit-history-table time,
+.skill-audit-history-score-total {
+  color: var(--muted-foreground);
+}
+
+.skill-audit-history-current,
+.skill-audit-history-decision,
+.skill-audit-history-grade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 16px;
+}
+
+.skill-audit-history-current {
+  margin-left: 7px;
+  background: var(--primary-fixed);
+  color: var(--electric-blue);
+  padding: 1px 7px;
+}
+
+.skill-audit-history-decision {
+  min-width: 48px;
+  text-transform: capitalize;
+}
+
+.skill-audit-history-decision.pass,
+.skill-audit-history-grade.pass {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.skill-audit-history-decision.warn,
+.skill-audit-history-grade.warn {
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
+.skill-audit-history-decision.fail,
+.skill-audit-history-grade.fail {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.skill-audit-history-grade {
+  min-width: 28px;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-size: 11px;
+  padding: 1px 6px;
+}
+
+.skill-audit-history-change-up {
+  color: var(--success);
+  font-weight: 750;
+}
+
+.skill-audit-history-change-down {
+  color: var(--danger);
+  font-weight: 750;
+}
+
+.skill-audit-history-footnote {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 17px;
+  padding: 11px 14px 13px;
+}
+
 .skill-installation-panel {
   display: grid;
   max-width: 1000px;
@@ -962,6 +1326,65 @@
 
   .skill-detail-tab-panel {
     padding: 20px 14px 46px;
+  }
+
+  .skill-audit-history > header {
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .skill-audit-history-chart {
+    padding: 8px 6px 0;
+  }
+
+  .skill-audit-history-grid text,
+  .skill-audit-history-date,
+  .skill-audit-history-threshold text {
+    font-size: 9px;
+  }
+
+  .skill-audit-history-table,
+  .skill-audit-history-table tbody,
+  .skill-audit-history-table tr,
+  .skill-audit-history-table td {
+    display: block;
+  }
+
+  .skill-audit-history-table thead {
+    display: none;
+  }
+
+  .skill-audit-history-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px 14px;
+  }
+
+  .skill-audit-history-table td {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 0;
+    padding: 6px 0;
+  }
+
+  .skill-audit-history-table td:first-child {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+    padding-bottom: 10px;
+  }
+
+  .skill-audit-history-table td::before {
+    color: var(--muted-foreground);
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .skill-overview-summary {

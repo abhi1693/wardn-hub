@@ -75,6 +75,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
         "/api/v1/skills/telemetry/{skill_id}",
         "/api/v1/skills/{skill_id}",
         "/api/v1/skills/audit/{skill_id}",
+        "/api/v1/skills/-/audit-history/{skill_id}",
         "/api/v1/submissions",
         "/api/v1/submissions/submit",
         "/api/v1/submissions/{submission_id}",

@@ -31,6 +31,8 @@ from app.modules.skills.exceptions import SkillAuditNotFoundError, SkillNotFound
 from app.modules.skills.models import Skill, SkillAudit
 from app.modules.skills.schemas import (
     OfficialSkillOwner,
+    SkillAuditHistoryEntryRead,
+    SkillAuditHistoryResponse,
     SkillAuditRead,
     SkillAuditResponse,
     SkillDetailResponse,
@@ -498,6 +500,40 @@ async def get_skill_audit(session: AsyncSession, skill_id: str) -> SkillAuditRes
         slug=skill.slug,
         contentHash=audit.content_hash,
         audit=audit_read(audit),
+    )
+
+
+async def get_skill_audit_history(
+    session: AsyncSession,
+    skill_id: str,
+    *,
+    limit: int,
+) -> SkillAuditHistoryResponse:
+    if not get_settings().skill_audit_enabled:
+        raise SkillAuditNotFoundError("skill audits are disabled")
+    source, slug = split_skill_id(skill_id)
+    skill = await repository.get_skill(session, source, slug)
+    if skill is None:
+        raise SkillNotFoundError("skill not found")
+    entries = await repository.list_skill_audit_history(session, skill, limit=limit)
+    return SkillAuditHistoryResponse(
+        id=f"{skill.source}/{skill.slug}",
+        source=skill.source,
+        slug=skill.slug,
+        data=[
+            SkillAuditHistoryEntryRead(
+                contentHash=entry.content_hash,
+                sourceCommitSha=entry.source_commit_sha or None,
+                publishedAt=entry.published_at,
+                auditedAt=entry.audited_at,
+                status=entry.status,
+                riskLevel=entry.risk_level,
+                score=entry.score,
+                rank=entry.rank,
+                current=entry.snapshot_id == skill.current_snapshot_id,
+            )
+            for entry in entries
+        ],
     )
 
 

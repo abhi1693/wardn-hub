@@ -9,6 +9,8 @@ from app.modules.skills import router
 from app.modules.skills.exceptions import SkillAuditNotFoundError, SkillNotFoundError
 from app.modules.skills.schemas import (
     OfficialSkillOwner,
+    SkillAuditHistoryEntryRead,
+    SkillAuditHistoryResponse,
     SkillAuditRead,
     SkillAuditResponse,
     SkillDetailResponse,
@@ -55,6 +57,7 @@ def test_skills_openapi_exposes_public_paths() -> None:
         "/api/v1/skills/import-github",
         "/api/v1/skills/{skill_id}",
         "/api/v1/skills/audit/{skill_id}",
+        "/api/v1/skills/-/audit-history/{skill_id}",
         "/api/v1/skills/telemetry/{skill_id}",
     }.issubset(set(schema["paths"]))
     assert schema["paths"]["/api/v1/skills"]["get"]["operationId"] == "skills_list"
@@ -74,6 +77,12 @@ def test_skills_openapi_exposes_public_paths() -> None:
     assert (
         schema["paths"]["/api/v1/skills/audit/{skill_id}"]["get"]["operationId"]
         == "skills_audit_get"
+    )
+    assert (
+        schema["paths"]["/api/v1/skills/-/audit-history/{skill_id}"]["get"][
+            "operationId"
+        ]
+        == "skills_audit_history_get"
     )
     skill_properties = schema["components"]["schemas"]["SkillRead"]["properties"]
     assert "auditStatus" in skill_properties
@@ -351,6 +360,26 @@ def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:
     assert response.json()["files"] == [{"path": "SKILL.md", "contents": "# Find skills"}]
 
 
+def test_get_skill_detail_does_not_shadow_audit_history_owner(monkeypatch) -> None:
+    async def get_skill_detail(*args, **kwargs):
+        assert args[1] == "audit-history/acme/widget"
+        assert kwargs == {"include_bundle": False}
+        return SkillDetailResponse(
+            id="audit-history/acme/widget",
+            source="audit-history/acme",
+            slug="widget",
+            hash="abc123",
+            auditEnabled=True,
+        )
+
+    monkeypatch.setattr(router, "get_skill_detail", get_skill_detail)
+
+    response = TestClient(create_app()).get("/api/v1/skills/audit-history/acme/widget")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "audit-history/acme/widget"
+
+
 def test_get_skill_detail_can_return_complete_bundle(monkeypatch) -> None:
     async def get_skill_detail(*args, **kwargs):
         assert kwargs == {"include_bundle": True}
@@ -550,3 +579,51 @@ def test_get_skill_audit_returns_404_when_no_current_audit(monkeypatch) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "skill audits not found"
+
+
+def test_get_skill_audit_history_returns_bounded_snapshot_scores(monkeypatch) -> None:
+    published_at = datetime(2026, 7, 9, tzinfo=UTC)
+    audited_at = datetime(2026, 7, 10, tzinfo=UTC)
+
+    async def get_skill_audit_history(*args, **kwargs):
+        assert args[1] == "vercel-labs/skills/find-skills"
+        assert kwargs == {"limit": 12}
+        return SkillAuditHistoryResponse(
+            id="vercel-labs/skills/find-skills",
+            source="vercel-labs/skills",
+            slug="find-skills",
+            data=[
+                SkillAuditHistoryEntryRead(
+                    contentHash="a" * 64,
+                    sourceCommitSha="b" * 40,
+                    publishedAt=published_at,
+                    auditedAt=audited_at,
+                    status="pass",
+                    riskLevel="low",
+                    score=100,
+                    rank="S",
+                    current=True,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(router, "get_skill_audit_history", get_skill_audit_history)
+
+    response = TestClient(create_app()).get(
+        "/api/v1/skills/-/audit-history/vercel-labs/skills/find-skills?limit=12"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == [
+        {
+            "contentHash": "a" * 64,
+            "sourceCommitSha": "b" * 40,
+            "publishedAt": "2026-07-09T00:00:00Z",
+            "auditedAt": "2026-07-10T00:00:00Z",
+            "status": "pass",
+            "riskLevel": "low",
+            "score": 100,
+            "rank": "S",
+            "current": True,
+        }
+    ]

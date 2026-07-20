@@ -1240,7 +1240,6 @@ async def upsert_skill_snapshot(
 ) -> SkillSnapshot:
     hash_value = content_hash(files)
     frontmatter = parse_frontmatter(skill_md)
-    previous_snapshot_id = skill.current_snapshot_id
     await session.execute(select(Skill.id).where(Skill.id == skill.id).with_for_update())
     await session.execute(
         update(SkillSnapshot).where(SkillSnapshot.skill_id == skill.id).values(is_latest=False)
@@ -1293,10 +1292,8 @@ async def upsert_skill_snapshot(
         snapshot.status = "active"
         snapshot.is_latest = True
 
-    if (previous_snapshot_id is not None and previous_snapshot_id != snapshot.id) or (
-        resolution_changed
-    ):
-        await session.execute(delete(SkillAudit).where(SkillAudit.skill_id == skill.id))
+    if resolution_changed:
+        await session.execute(delete(SkillAudit).where(SkillAudit.snapshot_id == snapshot.id))
     skill.current_snapshot_id = snapshot.id
     return snapshot
 

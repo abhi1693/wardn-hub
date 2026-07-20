@@ -3550,8 +3550,45 @@ async def test_upsert_skill_snapshot_locks_skill_before_snapshot_flags() -> None
     assert "FOR UPDATE" in session.statements[0]
     assert session.statements[1].startswith("UPDATE skill_snapshots")
     assert session.statements[3].startswith("DELETE FROM skill_audits")
+    assert "skill_audits.snapshot_id" in session.statements[3]
     assert skill.current_snapshot_id == "snapshot-id"
     assert snapshot.is_latest is True
+
+
+async def test_upsert_skill_snapshot_preserves_prior_snapshot_audits() -> None:
+    skill = SimpleNamespace(id="skill-id", current_snapshot_id="old-snapshot-id")
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statements.append(str(statement))
+            if len(self.statements) == 3:
+                return SimpleNamespace(scalar_one_or_none=lambda: None)
+            return SimpleNamespace()
+
+        def add(self, snapshot: object) -> None:
+            snapshot.id = "new-snapshot-id"
+
+        async def flush(self) -> None:
+            return None
+
+    session = FakeSession()
+    files: list[skills.SkillSnapshotFile] = [{"path": "SKILL.md", "contents": "# New"}]
+
+    snapshot = await skills.upsert_skill_snapshot(
+        session,  # type: ignore[arg-type]
+        skill,  # type: ignore[arg-type]
+        skill_md="# New",
+        files=files,
+    )
+
+    assert snapshot.id == "new-snapshot-id"
+    assert skill.current_snapshot_id == "new-snapshot-id"
+    assert not any(
+        statement.startswith("DELETE FROM skill_audits") for statement in session.statements
+    )
 
 
 async def test_upsert_skill_snapshot_refuses_quarantined_content() -> None:

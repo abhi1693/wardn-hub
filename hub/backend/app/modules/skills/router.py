@@ -9,6 +9,7 @@ from app.core.schemas import ErrorResponse
 from app.db.session import get_db_session
 from app.modules.skills.exceptions import SkillAuditNotFoundError, SkillNotFoundError
 from app.modules.skills.schemas import (
+    SkillAuditHistoryResponse,
     SkillAuditResponse,
     SkillDetailResponse,
     SkillGitHubImportRequest,
@@ -19,6 +20,7 @@ from app.modules.skills.schemas import (
 )
 from app.modules.skills.service import (
     get_skill_audit,
+    get_skill_audit_history,
     get_skill_detail,
     import_github_skill_request,
     list_official_skills,
@@ -156,6 +158,23 @@ async def get_skill_catalog_audit(
 ) -> SkillAuditResponse:
     try:
         return await get_skill_audit(session, skill_id)
+    except (SkillNotFoundError, SkillAuditNotFoundError) as exc:
+        raise not_found(exc, detail=str(exc)) from exc
+
+
+@router.get(
+    "/-/audit-history/{skill_id:path}",
+    response_model=SkillAuditHistoryResponse,
+    operation_id="skills_audit_history_get",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def get_skill_catalog_audit_history(
+    skill_id: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> SkillAuditHistoryResponse:
+    try:
+        return await get_skill_audit_history(session, skill_id, limit=limit)
     except (SkillNotFoundError, SkillAuditNotFoundError) as exc:
         raise not_found(exc, detail=str(exc)) from exc
 

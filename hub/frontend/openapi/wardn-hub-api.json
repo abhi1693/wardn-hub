@@ -5592,6 +5592,123 @@
         "title": "SkillAuditFindingRead",
         "type": "object"
       },
+      "SkillAuditHistoryEntryRead": {
+        "properties": {
+          "auditedAt": {
+            "format": "date-time",
+            "title": "Auditedat",
+            "type": "string"
+          },
+          "contentHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "title": "Publishedat",
+            "type": "string"
+          },
+          "rank": {
+            "enum": [
+              "S",
+              "A+",
+              "A",
+              "A-",
+              "B+",
+              "B",
+              "B-",
+              "C+",
+              "C"
+            ],
+            "title": "Rank",
+            "type": "string"
+          },
+          "riskLevel": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Risklevel",
+            "type": "string"
+          },
+          "score": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "sourceCommitSha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcecommitsha"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentHash",
+          "publishedAt",
+          "auditedAt",
+          "status",
+          "riskLevel",
+          "score",
+          "rank",
+          "current"
+        ],
+        "title": "SkillAuditHistoryEntryRead",
+        "type": "object"
+      },
+      "SkillAuditHistoryResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SkillAuditHistoryEntryRead"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "slug",
+          "data"
+        ],
+        "title": "SkillAuditHistoryResponse",
+        "type": "object"
+      },
       "SkillAuditRead": {
         "properties": {
           "analyzers": {
@@ -7543,7 +7660,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.128"
+    "version": "0.2.129"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12322,6 +12439,70 @@
           }
         },
         "summary": "List Skill Catalog",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/v1/skills/-/audit-history/{skill_id}": {
+      "get": {
+        "operationId": "skills_audit_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillAuditHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Skill Catalog Audit History",
         "tags": [
           "skills"
         ]
