@@ -100,7 +100,7 @@ export default async function Home() {
   ]);
   const servers = serverResult.servers;
   const categories = categoryResult.slice(0, 12);
-  const serverCount = registryFacts.publishedServerCount ?? servers.length;
+  const serverCount = registryFacts.publishedServerCount;
 
   return (
     <main className="site-shell">
@@ -116,7 +116,9 @@ export default async function Home() {
           </p>
           <CatalogSearchForm id="home-catalog-search" />
           <p className="home-registry-facts">
-            <span>{serverCount.toLocaleString("en-US")} MCP servers</span>
+            {serverCount === null ? null : (
+              <span>{serverCount.toLocaleString("en-US")} MCP servers</span>
+            )}
             {skillCount === null ? null : (
               <span>
                 {skillCount.toLocaleString("en-US")} agent{" "}
