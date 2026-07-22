@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateIndex
 
 from app.modules.events import security, service
 from app.modules.events.actions import WebhookActionHandler
@@ -10,6 +12,27 @@ from app.modules.events.exceptions import EventValidationError
 from app.modules.events.models import EventDelivery, EventRecord, EventRule
 from app.modules.events.schemas import EventRuleCreate
 from app.modules.users.models import User
+
+
+def test_event_metric_indexes_match_query_filters_and_grouping() -> None:
+    record_indexes = {index.name: index for index in EventRecord.__table__.indexes}
+    delivery_indexes = {index.name: index for index in EventDelivery.__table__.indexes}
+
+    record_ddl = str(
+        CreateIndex(record_indexes["ix_event_records_event_type_created_at"]).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+    delivery_ddl = str(
+        CreateIndex(delivery_indexes["ix_event_deliveries_status_updated_at"]).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+
+    assert record_ddl.endswith("ON event_records (event_type, created_at)")
+    assert delivery_ddl.endswith(
+        "ON event_deliveries (status, updated_at) INCLUDE (destination_type)"
+    )
 
 
 class FakeSession:

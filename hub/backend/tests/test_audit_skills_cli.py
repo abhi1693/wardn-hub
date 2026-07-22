@@ -152,6 +152,85 @@ def test_completed_audit_condition_is_snapshot_bound_across_configurations() -> 
     assert target.content_hash in sql
 
 
+def test_audit_candidate_statement_selects_only_ids_and_hash() -> None:
+    statement = cli.audit_candidate_statement(
+        after_skill_id=None,
+        skill_id=None,
+        re_audit=False,
+    )
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    selected_columns = sql.partition("FROM")[0]
+
+    assert "skills.id" in selected_columns
+    assert "skill_snapshots.id" in selected_columns
+    assert "skill_snapshots.content_hash" in selected_columns
+    assert "skill_snapshots.skill_md" not in selected_columns
+    assert "skill_snapshots.metadata" not in selected_columns
+    assert "skill_snapshots.files" not in selected_columns
+    assert "skill_snapshots.dependency_manifest" not in selected_columns
+    assert "ORDER BY skills.id ASC" in sql
+    assert "LIMIT" in sql
+
+
+def test_audit_target_statement_selects_only_scanner_payload() -> None:
+    candidate = cli.SkillAuditCandidate(
+        skill_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        snapshot_id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        content_hash="a" * 64,
+    )
+    statement = cli.audit_target_statement(candidate)
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    selected_columns = sql.partition("FROM")[0]
+
+    assert "skill_snapshots.skill_md" in selected_columns
+    assert "skill_snapshots.files" in selected_columns
+    assert "skill_snapshots.metadata" not in selected_columns
+    assert "skill_snapshots.dependency_manifest" not in selected_columns
+    assert "skill_snapshots.resolution_issues" not in selected_columns
+    assert "ORDER BY" not in sql
+
+
+async def test_load_audit_target_fetches_candidate_before_snapshot_payload() -> None:
+    target = audit_target()
+    statements: list[str] = []
+    rows = [
+        (target.skill_id, target.snapshot_id, target.content_hash),
+        (
+            target.source,
+            target.slug,
+            target.name,
+            target.description,
+            target.source_url,
+            target.skill_md,
+            target.files,
+        ),
+    ]
+
+    class FakeResult:
+        def __init__(self, row: tuple[object, ...]) -> None:
+            self.row = row
+
+        def first(self) -> tuple[object, ...]:
+            return self.row
+
+    class FakeSession:
+        async def execute(self, statement: object) -> FakeResult:
+            statements.append(str(statement.compile(dialect=postgresql.dialect())))
+            return FakeResult(rows.pop(0))
+
+    loaded = await cli.load_audit_target(
+        FakeSession(),
+        after_skill_id=None,
+        skill_id=None,
+        re_audit=False,
+    )
+
+    assert loaded == target
+    assert len(statements) == 2
+    assert "skill_snapshots.skill_md" not in statements[0].partition("FROM")[0]
+    assert "skill_snapshots.skill_md" in statements[1].partition("FROM")[0]
+
+
 def test_llm_gate_changes_audit_configuration_hash() -> None:
     assert audit_configuration_hash(llm_enabled=False) != audit_configuration_hash(llm_enabled=True)
 

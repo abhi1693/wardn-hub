@@ -14,6 +14,11 @@ class EventRecord(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "event_records"
     __table_args__ = (
         Index(
+            "ix_event_records_event_type_created_at",
+            "event_type",
+            "created_at",
+        ),
+        Index(
             "ix_event_records_unprocessed_created_at_id",
             "created_at",
             "id",
@@ -97,6 +102,14 @@ class EventRule(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class EventDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "event_deliveries"
+    __table_args__ = (
+        Index(
+            "ix_event_deliveries_status_updated_at",
+            "status",
+            "updated_at",
+            postgresql_include=["destination_type"],
+        ),
+    )
 
     event_record_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

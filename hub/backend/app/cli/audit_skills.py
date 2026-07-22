@@ -142,6 +142,13 @@ class SkillAuditTarget:
         return f"{self.source}/{self.slug}"
 
 
+@dataclass(frozen=True)
+class SkillAuditCandidate:
+    skill_id: uuid.UUID
+    snapshot_id: uuid.UUID
+    content_hash: str
+
+
 @dataclass
 class BundleInspection:
     hard_findings: list[dict[str, Any]] = field(default_factory=list)
@@ -254,8 +261,54 @@ async def load_audit_target(
     skill_id: str | None,
     re_audit: bool,
 ) -> SkillAuditTarget | None:
+    cursor = after_skill_id
+    while True:
+        candidate_row = (
+            await session.execute(
+                audit_candidate_statement(
+                    after_skill_id=cursor,
+                    skill_id=skill_id,
+                    re_audit=re_audit,
+                )
+            )
+        ).first()
+        if candidate_row is None:
+            return None
+        candidate = SkillAuditCandidate(
+            skill_id=candidate_row[0],
+            snapshot_id=candidate_row[1],
+            content_hash=str(candidate_row[2]),
+        )
+        target_row = (await session.execute(audit_target_statement(candidate))).first()
+        if target_row is not None:
+            return SkillAuditTarget(
+                skill_id=candidate.skill_id,
+                snapshot_id=candidate.snapshot_id,
+                content_hash=candidate.content_hash,
+                source=target_row[0],
+                slug=target_row[1],
+                name=target_row[2],
+                description=target_row[3],
+                source_url=target_row[4],
+                skill_md=target_row[5],
+                files=[dict(item) for item in (target_row[6] or [])],
+            )
+
+        # The current snapshot can change between the candidate and payload
+        # lookups. Skip that stale candidate without ending a full audit run.
+        if skill_id:
+            return None
+        cursor = candidate.skill_id
+
+
+def audit_candidate_statement(
+    *,
+    after_skill_id: uuid.UUID | None,
+    skill_id: str | None,
+    re_audit: bool,
+) -> Any:
     statement = (
-        select(Skill, SkillSnapshot)
+        select(Skill.id, SkillSnapshot.id, SkillSnapshot.content_hash)
         .join(
             SkillSnapshot,
             and_(
@@ -281,21 +334,39 @@ async def load_audit_target(
         statement = statement.where(Skill.source == source, Skill.slug == slug)
     if not re_audit:
         statement = statement.where(~completed_audit_condition())
-    row = (await session.execute(statement.order_by(Skill.id.asc()).limit(1))).first()
-    if row is None:
-        return None
-    skill, snapshot = row
-    return SkillAuditTarget(
-        skill_id=skill.id,
-        snapshot_id=snapshot.id,
-        content_hash=str(snapshot.content_hash),
-        source=skill.source,
-        slug=skill.slug,
-        name=skill.name,
-        description=skill.description,
-        source_url=skill.source_url,
-        skill_md=snapshot.skill_md,
-        files=[dict(item) for item in (snapshot.files or [])],
+    return statement.order_by(Skill.id.asc()).limit(1)
+
+
+def audit_target_statement(candidate: SkillAuditCandidate) -> Any:
+    return (
+        select(
+            Skill.source,
+            Skill.slug,
+            Skill.name,
+            Skill.description,
+            Skill.source_url,
+            SkillSnapshot.skill_md,
+            SkillSnapshot.files,
+        )
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == candidate.snapshot_id,
+                SkillSnapshot.skill_id == Skill.id,
+            ),
+        )
+        .where(
+            Skill.id == candidate.skill_id,
+            Skill.status == "active",
+            Skill.visibility == "public",
+            Skill.current_snapshot_id == candidate.snapshot_id,
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+            SkillSnapshot.content_hash == candidate.content_hash,
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+        )
+        .limit(1)
     )
 
 
