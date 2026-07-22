@@ -2,6 +2,12 @@ import hashlib
 import json
 import os
 
+from app.core.codex import (
+    CODEX_APP_SERVER_URL_ENV,
+    CODEX_CHAT_COMPLETIONS_BRIDGE_VERSION,
+    CODEX_LLM_MODEL,
+    CODEX_LLM_PROVIDER,
+)
 from app.core.config import get_settings
 
 SCANNER_DISTRIBUTION = "cisco-ai-skill-scanner"
@@ -45,12 +51,12 @@ def audit_configuration_hash(
     ).hexdigest()
 
 
-def current_audit_configuration_hash() -> str:
+def current_audit_configuration_hash(*, codex_app_server_url: str | None = None) -> str:
+    llm_enabled = get_settings().skill_audit_llm_enabled
     return audit_configuration_hash(
-        llm_enabled=get_settings().skill_audit_llm_enabled,
-        llm_provider=os.getenv("SKILL_SCANNER_LLM_PROVIDER", ""),
-        llm_model=os.getenv("SKILL_SCANNER_LLM_MODEL", ""),
-        llm_base_url=os.getenv("SKILL_SCANNER_LLM_BASE_URL", ""),
-        llm_api_version=os.getenv("SKILL_SCANNER_LLM_API_VERSION", ""),
-        llm_temperature=os.getenv("SKILL_SCANNER_LLM_TEMPERATURE", ""),
+        llm_enabled=llm_enabled,
+        llm_provider=CODEX_LLM_PROVIDER,
+        llm_model=CODEX_LLM_MODEL,
+        llm_base_url=(codex_app_server_url or os.getenv(CODEX_APP_SERVER_URL_ENV, "")),
+        llm_api_version=CODEX_CHAT_COMPLETIONS_BRIDGE_VERSION,
     )

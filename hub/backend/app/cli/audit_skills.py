@@ -5,6 +5,7 @@ import asyncio
 import base64
 import binascii
 import hashlib
+import os
 import re
 import stat
 import subprocess
@@ -24,7 +25,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from sqlalchemy import and_, exists, select
 from sqlalchemy.exc import DBAPIError
 
+from app.cli.codex_chat_completions_bridge import CodexChatCompletionsBridge
 from app.cli.skills import content_hash as bundle_content_hash
+from app.core.codex import (
+    CISCO_LLM_PROVIDER,
+    CODEX_APP_SERVER_AUTH_TOKEN_ENV,
+    CODEX_APP_SERVER_URL_ENV,
+    CODEX_CHAT_COMPLETIONS_MODEL,
+)
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.modules.skills.audit_policy import (
@@ -874,10 +882,14 @@ class CiscoSkillScanner:
         timeout_seconds: int = 300,
         llm_enabled: bool,
         configuration_hash: str,
+        codex_app_server_url: str | None = None,
+        codex_app_server_auth_token: str | None = None,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.llm_enabled = llm_enabled
         self.configuration_hash = configuration_hash
+        self.codex_app_server_url = codex_app_server_url
+        self.codex_app_server_auth_token = codex_app_server_auth_token
 
     def scan(self, target: SkillAuditTarget, inspection: BundleInspection) -> StoredAudit:
         try:
@@ -919,17 +931,65 @@ class CiscoSkillScanner:
                 command.append("--use-behavioral")
             if self.llm_enabled:
                 command.append("--use-llm")
-            try:
-                result = subprocess.run(
-                    command,
-                    check=False,
-                    capture_output=True,
-                    timeout=self.timeout_seconds,
+            if self.llm_enabled:
+                app_server_url = (
+                    self.codex_app_server_url
+                    or os.getenv(CODEX_APP_SERVER_URL_ENV, "").strip()
                 )
-            except subprocess.TimeoutExpired as exc:
-                raise UserFacingError(
-                    f"Cisco scanner timed out after {self.timeout_seconds} seconds"
-                ) from exc
+                if not app_server_url:
+                    raise UserFacingError(
+                        "Cisco LLM analysis requires Codex app-server; set "
+                        f"${CODEX_APP_SERVER_URL_ENV} or pass --codex-app-server-url"
+                    )
+                auth_token = self.codex_app_server_auth_token
+                if auth_token is None:
+                    auth_token = os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip()
+                try:
+                    bridge_context = CodexChatCompletionsBridge(
+                        app_server_url=app_server_url,
+                        timeout_seconds=self.timeout_seconds,
+                        cwd=root,
+                        app_server_auth_token=auth_token,
+                    )
+                    with bridge_context as bridge:
+                        scanner_environment = os.environ.copy()
+                        scanner_environment.update(
+                            {
+                                "SKILL_SCANNER_LLM_PROVIDER": CISCO_LLM_PROVIDER,
+                                "SKILL_SCANNER_LLM_MODEL": CODEX_CHAT_COMPLETIONS_MODEL,
+                                "SKILL_SCANNER_LLM_BASE_URL": bridge.base_url,
+                                "SKILL_SCANNER_LLM_API_KEY": bridge.api_key,
+                                "SKILL_SCANNER_LLM_TEMPERATURE": "none",
+                            }
+                        )
+                        scanner_environment.pop("SKILL_SCANNER_LLM_API_VERSION", None)
+                        result = subprocess.run(
+                            command,
+                            check=False,
+                            capture_output=True,
+                            timeout=self.timeout_seconds,
+                            env=scanner_environment,
+                        )
+                except subprocess.TimeoutExpired as exc:
+                    raise UserFacingError(
+                        f"Cisco scanner timed out after {self.timeout_seconds} seconds"
+                    ) from exc
+                except OSError as exc:
+                    raise UserFacingError(
+                        f"could not start the local Codex LLM bridge: {exc}"
+                    ) from exc
+            else:
+                try:
+                    result = subprocess.run(
+                        command,
+                        check=False,
+                        capture_output=True,
+                        timeout=self.timeout_seconds,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    raise UserFacingError(
+                        f"Cisco scanner timed out after {self.timeout_seconds} seconds"
+                    ) from exc
             stderr = result.stderr.decode("utf-8", errors="replace").strip()
             if result.returncode != 0:
                 detail = stderr[-2_000:]
@@ -1162,11 +1222,20 @@ def add_audit_arguments(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_SCANNER_TIMEOUT_SECONDS,
         help="Seconds to wait for each Cisco scan.",
     )
+    parser.add_argument(
+        "--codex-app-server-url",
+        default=os.getenv(CODEX_APP_SERVER_URL_ENV, ""),
+        help=(
+            "Codex app-server WebSocket URL used by the optional LLM analyzer. "
+            f"Defaults to ${CODEX_APP_SERVER_URL_ENV}."
+        ),
+    )
 
 
 def audit_pending_skill_snapshots(
     *,
     scanner_timeout: int = DEFAULT_SCANNER_TIMEOUT_SECONDS,
+    codex_app_server_url: str | None = None,
     max_skills: int | None = None,
     skill_id: str | None = None,
     re_audit: bool = False,
@@ -1178,7 +1247,9 @@ def audit_pending_skill_snapshots(
         raise UserFacingError(
             "skill audits are disabled; set WARDN_HUB_SKILL_AUDIT_ENABLED=true to enable them"
         )
-    configuration_hash = current_audit_configuration_hash()
+    configuration_hash = current_audit_configuration_hash(
+        codex_app_server_url=codex_app_server_url,
+    )
     client = WardnHubDatabaseSkillAuditClient()
     try:
         return audit_skills(
@@ -1187,6 +1258,7 @@ def audit_pending_skill_snapshots(
                 timeout_seconds=scanner_timeout,
                 llm_enabled=settings.skill_audit_llm_enabled,
                 configuration_hash=configuration_hash,
+                codex_app_server_url=codex_app_server_url,
             ),
             max_skills=max_skills,
             skill_id=skill_id.strip() if skill_id else None,
@@ -1201,6 +1273,7 @@ def audit_pending_skill_snapshots(
 def audit_skills_from_args(args: argparse.Namespace) -> int:
     return audit_pending_skill_snapshots(
         scanner_timeout=args.scanner_timeout,
+        codex_app_server_url=args.codex_app_server_url.strip() or None,
         max_skills=args.max_skills,
         skill_id=args.skill_id,
         re_audit=args.reaudit,

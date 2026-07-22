@@ -292,8 +292,11 @@ the same source path updates its existing record.
 When `WARDN_HUB_SKILL_AUDIT_ENABLED=true`, imports and refreshes drain the
 pending-audit queue after their GitHub phase. The pinned Cisco AI Skill Scanner
 runs static/YARA, bytecode, pipeline, and behavioral analysis. Its optional LLM
-analyzer has a separate `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` gate; Cisco AI
-Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
+analyzer has a separate `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` gate. When enabled,
+Wardn Hub routes Cisco's OpenAI-compatible requests through an ephemeral
+loopback bridge to the Codex app-server configured by
+`WARDN_HUB_CODEX_APP_SERVER_URL`; no scanner LLM provider API key is used.
+Cisco AI Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
 
 Package compatibility is independent from security analysis: an incomplete or
 malformed import is rejected instead of receiving a security score of zero.
@@ -323,7 +326,8 @@ high-entropy session and API-token keys.
 | `WARDN_HUB_OIDC_*` | Issuer, client, callback, scope, domain, and account-provisioning settings |
 | `WARDN_HUB_SKILL_AUDIT_ENABLED` | Master gate for skill auditing and audit exposure |
 | `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` | Separate gate for the scanner's semantic LLM analyzer |
-| `SKILL_SCANNER_LLM_*` | LLM provider, model, key, endpoint, API version, and temperature |
+| `WARDN_HUB_CODEX_APP_SERVER_URL` | Codex app-server WebSocket URL used by review, repair, and skill-audit LLM analysis |
+| `WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN` | Optional bearer token for the Codex app-server WebSocket handshake |
 | `WARDN_HUB_VALKEY_*` | Shared direct or Sentinel Valkey connection used by bounded remote state clients |
 | `WARDN_HUB_PUBLIC_RATE_LIMIT_*` | Valkey-backed public API and telemetry rate limiting |
 | `WARDN_HUB_CACHE_*` | Stateless Valkey response caching, including DB, TTL, value, timeout, and connection bounds |

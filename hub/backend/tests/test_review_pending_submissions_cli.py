@@ -289,19 +289,24 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
     sent_json = json.dumps(websocket.sent)
     assert "wardn_hub_test_token" not in sent_json
     assert "system-secret" not in sent_json
-    assert websocket.sent[1]["method"] == "thread/start"
-    assert websocket.sent[1]["params"]["ephemeral"] is True
-    assert websocket.sent[1]["params"]["approvalPolicy"] == "never"
-    assert websocket.sent[1]["params"]["config"]["web_search"] == "live"
-    assert "cwd" not in websocket.sent[1]["params"]
-    assert "runtimeWorkspaceRoots" not in websocket.sent[1]["params"]
-    assert "model" not in websocket.sent[1]["params"]
-    assert websocket.sent[2]["method"] == "turn/start"
-    assert websocket.sent[2]["params"]["threadId"] == "thread-1"
-    assert websocket.sent[2]["params"]["input"][0]["text"] == "review prompt"
+    assert websocket.sent[1] == {
+        "jsonrpc": "2.0",
+        "method": "initialized",
+        "params": {},
+    }
+    assert websocket.sent[2]["method"] == "thread/start"
+    assert websocket.sent[2]["params"]["ephemeral"] is True
+    assert websocket.sent[2]["params"]["approvalPolicy"] == "never"
+    assert websocket.sent[2]["params"]["config"]["web_search"] == "live"
+    assert "cwd" not in websocket.sent[2]["params"]
+    assert "runtimeWorkspaceRoots" not in websocket.sent[2]["params"]
     assert "model" not in websocket.sent[2]["params"]
-    assert "effort" not in websocket.sent[2]["params"]
-    assert websocket.sent[2]["params"]["sandboxPolicy"] == {
+    assert websocket.sent[3]["method"] == "turn/start"
+    assert websocket.sent[3]["params"]["threadId"] == "thread-1"
+    assert websocket.sent[3]["params"]["input"][0]["text"] == "review prompt"
+    assert "model" not in websocket.sent[3]["params"]
+    assert "effort" not in websocket.sent[3]["params"]
+    assert websocket.sent[3]["params"]["sandboxPolicy"] == {
         "type": "readOnly",
         "networkAccess": True,
     }
@@ -369,6 +374,26 @@ def test_codex_app_server_reviewer_uses_capability_token_header_only() -> None:
         "additional_headers": {"Authorization": "Bearer codex-test-token"},
     }
     assert "codex-test-token" not in json.dumps(websocket.sent)
+
+
+def test_codex_app_server_reviewer_forwards_structured_output_schema() -> None:
+    reviewer = cli.CodexAppServerReviewer(
+        url="ws://127.0.0.1:41237",
+        timeout_seconds=5,
+    )
+    schema = {
+        "type": "object",
+        "properties": {"findings": {"type": "array"}},
+        "required": ["findings"],
+    }
+
+    params = reviewer._turn_start_params(
+        "thread-1",
+        "review prompt",
+        output_schema=schema,
+    )
+
+    assert params["outputSchema"] == schema
 
 
 def test_main_uses_codex_app_server_without_login(

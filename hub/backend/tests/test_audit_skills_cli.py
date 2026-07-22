@@ -175,25 +175,23 @@ def test_llm_routing_changes_audit_configuration_hash_only_when_enabled() -> Non
     )
 
 
-def test_current_audit_hash_reads_non_secret_llm_routing(monkeypatch) -> None:
+def test_current_audit_hash_records_codex_bridge_routing(monkeypatch) -> None:
     monkeypatch.setattr(
         audit_policy,
         "get_settings",
         lambda: SimpleNamespace(skill_audit_llm_enabled=True),
     )
-    monkeypatch.setenv("SKILL_SCANNER_LLM_PROVIDER", "openai")
-    monkeypatch.setenv("SKILL_SCANNER_LLM_MODEL", "test-model")
-    monkeypatch.setenv("SKILL_SCANNER_LLM_BASE_URL", "https://llm.example.test/v1")
-    monkeypatch.setenv("SKILL_SCANNER_LLM_API_VERSION", "2026-01-01")
-    monkeypatch.setenv("SKILL_SCANNER_LLM_TEMPERATURE", "0")
+    monkeypatch.setenv(
+        audit_policy.CODEX_APP_SERVER_URL_ENV,
+        "ws://127.0.0.1:41237",
+    )
 
     assert audit_policy.current_audit_configuration_hash() == audit_configuration_hash(
         llm_enabled=True,
-        llm_provider="openai",
-        llm_model="test-model",
-        llm_base_url="https://llm.example.test/v1",
-        llm_api_version="2026-01-01",
-        llm_temperature="0",
+        llm_provider=audit_policy.CODEX_LLM_PROVIDER,
+        llm_model=audit_policy.CODEX_LLM_MODEL,
+        llm_base_url="ws://127.0.0.1:41237",
+        llm_api_version=audit_policy.CODEX_CHAT_COMPLETIONS_BRIDGE_VERSION,
     )
 
 
@@ -569,12 +567,15 @@ def test_cisco_scanner_invocation_enables_llm_when_gated_on(monkeypatch) -> None
     target = audit_target()
     inspection = cli.inspect_bundle(target)
     captured: list[str] = []
+    captured_environment: dict[str, str] = {}
+    captured_bridge_args: dict[str, object] = {}
     payload = scan_payload(
         analyzers=[*sorted(cli.REQUIRED_LOCAL_ANALYZERS), cli.LLM_ANALYZER]
     ).model_dump(mode="json")
 
     def fake_run(command, **kwargs):
         captured.extend(command)
+        captured_environment.update(kwargs["env"])
         report_path = Path(command[command.index("--output-json") + 1])
         report_path.write_text(json.dumps(payload), encoding="utf-8")
         return subprocess.CompletedProcess(
@@ -584,27 +585,78 @@ def test_cisco_scanner_invocation_enables_llm_when_gated_on(monkeypatch) -> None
             stderr=b"",
         )
 
+    class FakeBridge:
+        base_url = "http://127.0.0.1:45678/v1"
+        api_key = "ephemeral-bridge-token"
+
+        def __init__(self, **kwargs) -> None:
+            captured_bridge_args.update(kwargs)
+
+        def __enter__(self) -> "FakeBridge":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
     monkeypatch.setattr(cli, "version", lambda _name: cli.SCANNER_VERSION)
     monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(cli, "CodexChatCompletionsBridge", FakeBridge)
+    monkeypatch.setenv(cli.CODEX_APP_SERVER_AUTH_TOKEN_ENV, "app-server-token")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_API_KEY", "paid-provider-key")
+    monkeypatch.setenv("SKILL_SCANNER_LLM_API_VERSION", "paid-api-version")
 
     audit = cli.CiscoSkillScanner(
         timeout_seconds=12,
         llm_enabled=True,
         configuration_hash=audit_configuration_hash(
             llm_enabled=True,
-            llm_provider="openai",
-            llm_model="test-model",
+            llm_provider=audit_policy.CODEX_LLM_PROVIDER,
+            llm_model=cli.CODEX_CHAT_COMPLETIONS_MODEL,
         ),
+        codex_app_server_url="ws://127.0.0.1:41237",
     ).scan(target, inspection)
 
     assert audit.status == "pass"
     assert "--use-llm" in captured
     assert "--use-aidefense" not in captured
+    assert captured_bridge_args["app_server_url"] == "ws://127.0.0.1:41237"
+    assert captured_bridge_args["app_server_auth_token"] == "app-server-token"
+    assert captured_environment["SKILL_SCANNER_LLM_PROVIDER"] == cli.CISCO_LLM_PROVIDER
+    assert captured_environment["SKILL_SCANNER_LLM_MODEL"] == cli.CODEX_CHAT_COMPLETIONS_MODEL
+    assert captured_environment["SKILL_SCANNER_LLM_BASE_URL"] == FakeBridge.base_url
+    assert captured_environment["SKILL_SCANNER_LLM_API_KEY"] == FakeBridge.api_key
+    assert captured_environment["SKILL_SCANNER_LLM_TEMPERATURE"] == "none"
+    assert "SKILL_SCANNER_LLM_API_VERSION" not in captured_environment
     assert audit.configuration_hash == audit_configuration_hash(
         llm_enabled=True,
-        llm_provider="openai",
-        llm_model="test-model",
+        llm_provider=audit_policy.CODEX_LLM_PROVIDER,
+        llm_model=cli.CODEX_CHAT_COMPLETIONS_MODEL,
     )
+
+
+def test_cisco_llm_scanner_requires_codex_app_server_url(monkeypatch) -> None:
+    monkeypatch.delenv(cli.CODEX_APP_SERVER_URL_ENV, raising=False)
+    monkeypatch.setattr(cli, "version", lambda _name: cli.SCANNER_VERSION)
+    scanner = cli.CiscoSkillScanner(
+        timeout_seconds=12,
+        llm_enabled=True,
+        configuration_hash=audit_configuration_hash(llm_enabled=True),
+    )
+
+    with pytest.raises(cli.UserFacingError, match=cli.CODEX_APP_SERVER_URL_ENV):
+        scanner.scan(audit_target(), cli.inspect_bundle(audit_target()))
+
+
+def test_audit_parser_reads_and_overrides_codex_app_server_url(monkeypatch) -> None:
+    monkeypatch.setenv(cli.CODEX_APP_SERVER_URL_ENV, "ws://127.0.0.1:41237")
+
+    default_args = cli.build_parser().parse_args([])
+    override_args = cli.build_parser().parse_args(
+        ["--codex-app-server-url", "ws://127.0.0.1:5000"]
+    )
+
+    assert default_args.codex_app_server_url == "ws://127.0.0.1:41237"
+    assert override_args.codex_app_server_url == "ws://127.0.0.1:5000"
 
 
 def test_cisco_scanner_smoke_runs_pinned_distribution() -> None:
@@ -624,6 +676,48 @@ def test_cisco_scanner_smoke_runs_pinned_distribution() -> None:
     assert cli.REQUIRED_LOCAL_ANALYZERS.issubset(audit.analyzers)
     assert audit.raw_result["scanCompleted"] is True
     assert 0 <= audit.score <= 100
+
+
+def test_cisco_llm_scanner_smoke_routes_through_codex_bridge(monkeypatch) -> None:
+    real_bridge = cli.CodexChatCompletionsBridge
+
+    class FakeCodexCompletionClient:
+        def complete(self, prompt, *, output_schema=None) -> str:
+            assert "SYSTEM MESSAGE:" in prompt
+            assert output_schema is not None
+            return json.dumps(
+                {
+                    "findings": [],
+                    "overall_assessment": "No semantic threats found.",
+                    "primary_threats": [],
+                }
+            )
+
+    class StubbedCodexBridge(real_bridge):
+        def __init__(self, **kwargs) -> None:
+            super().__init__(
+                **kwargs,
+                completion_client=FakeCodexCompletionClient(),
+            )
+
+    monkeypatch.setattr(cli, "CodexChatCompletionsBridge", StubbedCodexBridge)
+    target = audit_target()
+    audit = cli.CiscoSkillScanner(
+        timeout_seconds=30,
+        llm_enabled=True,
+        configuration_hash=audit_configuration_hash(
+            llm_enabled=True,
+            llm_provider=audit_policy.CODEX_LLM_PROVIDER,
+            llm_model=cli.CODEX_CHAT_COMPLETIONS_MODEL,
+        ),
+        codex_app_server_url="ws://127.0.0.1:41237",
+    ).scan(
+        target,
+        cli.inspect_bundle(target),
+    )
+
+    assert cli.LLM_ANALYZER in audit.analyzers
+    assert audit.raw_result["analyzersFailed"] == []
 
 
 def test_audit_command_is_blocked_when_feature_gate_is_disabled(monkeypatch) -> None:
