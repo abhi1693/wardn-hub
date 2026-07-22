@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   Archive,
@@ -15,6 +15,7 @@ import {
   FileCheck2,
   FileText,
   GitBranch,
+  LoaderCircle,
   Pencil,
   Plus,
   Search,
@@ -158,6 +159,10 @@ function canUseReviewActions(user: UserRead | null) {
 
 function canPublishSubmissions(user: UserRead | null) {
   return Boolean(user?.is_superuser);
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function statusFilterFromQuery(value: string | null): StatusFilter {
@@ -681,14 +686,16 @@ function SubmissionGroupCard({
 
 function SubmissionsPageContent() {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const filter = statusFilterFromQuery(searchParams.get("status"));
-  const ownerScope = ownerScopeFromQuery(searchParams.get("ownerScope"));
-  const searchQuery = searchFromQuery(searchParams.get("q"));
-  const selectedUserId = userIdFromQuery(searchParams.get("userId"));
-  const page = pageFromQuery(searchParams.get("page"));
+  const [viewQuery, setViewQuery] = useState(() => searchParams.toString());
+  const viewParams = useMemo(() => new URLSearchParams(viewQuery), [viewQuery]);
+  const filter = statusFilterFromQuery(viewParams.get("status"));
+  const ownerScope = ownerScopeFromQuery(viewParams.get("ownerScope"));
+  const searchQuery = searchFromQuery(viewParams.get("q"));
+  const selectedUserId = userIdFromQuery(viewParams.get("userId"));
+  const page = pageFromQuery(viewParams.get("page"));
   const [state, setState] = useState<LoadState>("loading");
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [archivingName, setArchivingName] = useState("");
@@ -704,45 +711,87 @@ function SubmissionsPageContent() {
   const [statusCounts, setStatusCounts] =
     useState<Required<SubmissionStatusCounts>>(emptyStatusCounts);
   const [searchDraft, setSearchDraft] = useState({ query: searchQuery, value: searchQuery });
+  const hasLoadedSubmissions = useRef(false);
 
   useEffect(() => {
     let active = true;
+    currentUser()
+      .then((current) => {
+        if (!active) return;
+        setUser(current);
+        if (canReviewSubmissions(current)) {
+          void listUsers()
+            .then((response) => {
+              if (active) setUserDirectory(sortUsers(response.users));
+            })
+            .catch(() => {
+              if (active) setUserDirectory([]);
+            });
+        }
+      })
+      .catch((caught) => {
+        if (!active) return;
+        setError(caught instanceof Error ? caught.message : "Unable to load submissions.");
+        setState(caught instanceof HubApiError && caught.status === 401 ? "auth" : "error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const controller = new AbortController();
+    const isRefresh = hasLoadedSubmissions.current;
     const timeoutId = window.setTimeout(() => {
-      setState("loading");
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setState("loading");
+      }
       setError("");
+
       const effectiveOwnerScope = selectedUserId ? "all" : ownerScope;
-      Promise.all([
-        currentUser(),
-        listSubmissions({
+      listSubmissions(
+        {
           page,
           perPage: SUBMISSIONS_PAGE_SIZE,
           ownerScope: effectiveOwnerScope,
           q: searchQuery || undefined,
           status: filter === "all" ? undefined : filter,
           userId: selectedUserId || undefined,
-        }),
-        listUsers().catch(() => ({ users: [] })),
-      ])
-        .then(([current, response, usersResponse]) => {
-          if (!active) return;
-          setUser(current);
-          setUserDirectory(sortUsers(usersResponse.users));
+        },
+        { signal: controller.signal },
+      )
+        .then((response) => {
+          if (controller.signal.aborted) return;
           setSubmissions(sortSubmissions(response.submissions));
           setMetadata(response.metadata);
           setStatusCounts({ ...emptyStatusCounts, ...response.statusCounts });
+          hasLoadedSubmissions.current = true;
           setState("ready");
         })
         .catch((caught) => {
-          if (!active) return;
+          if (isAbortError(caught)) return;
           setError(caught instanceof Error ? caught.message : "Unable to load submissions.");
-          setState(caught instanceof HubApiError && caught.status === 401 ? "auth" : "error");
+          if (caught instanceof HubApiError && caught.status === 401) {
+            setState("auth");
+          } else if (!hasLoadedSubmissions.current) {
+            setState("error");
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setRefreshing(false);
         });
     }, 0);
+
     return () => {
-      active = false;
       window.clearTimeout(timeoutId);
+      controller.abort();
     };
-  }, [filter, ownerScope, page, searchQuery, selectedUserId]);
+  }, [filter, ownerScope, page, searchQuery, selectedUserId, user]);
 
   const counts = statusCounts;
   const searchInput = searchDraft.query === searchQuery ? searchDraft.value : searchQuery;
@@ -765,7 +814,7 @@ function SubmissionsPageContent() {
     : null;
 
   function filterHref(nextFilter: StatusFilter) {
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(viewParams.toString());
     if (nextFilter === "all") {
       nextParams.delete("status");
     } else {
@@ -777,7 +826,7 @@ function SubmissionsPageContent() {
   }
 
   function userFilterHref(nextValue: UserFilterValue) {
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(viewParams.toString());
     nextParams.delete("userId");
     if (nextValue === "mine") {
       nextParams.delete("ownerScope");
@@ -793,7 +842,7 @@ function SubmissionsPageContent() {
   }
 
   function pageHref(nextPage: number) {
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(viewParams.toString());
     if (nextPage <= 1) {
       nextParams.delete("page");
     } else {
@@ -804,7 +853,7 @@ function SubmissionsPageContent() {
   }
 
   function searchHref(nextSearch: string) {
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const nextParams = new URLSearchParams(viewParams.toString());
     const trimmedSearch = nextSearch.trim();
     if (trimmedSearch) {
       nextParams.set("q", trimmedSearch);
@@ -816,9 +865,29 @@ function SubmissionsPageContent() {
     return queryString ? `${pathname}?${queryString}` : pathname;
   }
 
+  function replaceView(nextHref: string) {
+    const nextUrl = new URL(nextHref, window.location.href);
+    setViewQuery(nextUrl.searchParams.toString());
+    window.history.replaceState(window.history.state, "", nextHref);
+  }
+
+  function handleViewLinkClick(event: React.MouseEvent<HTMLAnchorElement>, nextHref: string) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    replaceView(nextHref);
+  }
+
   function applySearch(nextSearch: string) {
     const nextHref = searchHref(nextSearch);
-    router.replace(nextHref, { scroll: false });
+    replaceView(nextHref);
   }
 
   function handleSearchSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -832,7 +901,7 @@ function SubmissionsPageContent() {
   }
 
   function handleUserFilterChange(nextValue: UserFilterValue) {
-    router.replace(userFilterHref(nextValue), { scroll: false });
+    replaceView(userFilterHref(nextValue));
   }
 
   async function handleDeleteSubmission(submission: SubmissionRead) {
@@ -943,8 +1012,16 @@ function SubmissionsPageContent() {
                 {actionError}
               </div>
             ) : null}
+            {state === "ready" && error ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
             {state === "ready" ? (
-              <div className="grid gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)]">
+              <div
+                aria-busy={refreshing}
+                className="grid gap-3 rounded-lg border border-border bg-white px-3 py-3 shadow-[var(--shadow-card)]"
+              >
                 <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <form
                     className="flex min-w-0 flex-1 items-center gap-2"
@@ -989,11 +1066,23 @@ function SubmissionsPageContent() {
                         {totalSubmissions === 1 ? "submission" : "submissions"}
                       </span>
                     </span>
-                    <span className="inline-flex items-center gap-2 text-muted-foreground">
-                      <CalendarClock className="size-4" />
-                      {metadata && metadata.total > 0
-                        ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
-                        : "Sorted by latest update"}
+                    <span
+                      aria-live="polite"
+                      className="inline-flex min-w-[190px] items-center gap-2 text-muted-foreground"
+                    >
+                      {refreshing ? (
+                        <>
+                          <LoaderCircle className="size-4 animate-spin" />
+                          Updating submissions
+                        </>
+                      ) : (
+                        <>
+                          <CalendarClock className="size-4" />
+                          {metadata && metadata.total > 0
+                            ? `Showing ${firstVisibleSubmission}-${lastVisibleSubmission} of ${metadata.total}`
+                            : "Sorted by latest update"}
+                        </>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1033,6 +1122,8 @@ function SubmissionsPageContent() {
                         : "border-border bg-white text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                     href={filterHref("all")}
+                    onClick={(event) => handleViewLinkClick(event, filterHref("all"))}
+                    prefetch={false}
                     replace
                     scroll={false}
                   >
@@ -1049,6 +1140,8 @@ function SubmissionsPageContent() {
                       )}
                       href={filterHref(status)}
                       key={status}
+                      onClick={(event) => handleViewLinkClick(event, filterHref(status))}
+                      prefetch={false}
                       replace
                       scroll={false}
                     >
@@ -1132,6 +1225,10 @@ function SubmissionsPageContent() {
                             : "border-border bg-white text-foreground hover:bg-muted",
                         )}
                         href={pageHref(metadata.page - 1)}
+                        onClick={(event) =>
+                          handleViewLinkClick(event, pageHref(metadata.page - 1))
+                        }
+                        prefetch={false}
                         replace
                         scroll={false}
                       >
@@ -1147,6 +1244,10 @@ function SubmissionsPageContent() {
                             : "border-border bg-white text-foreground hover:bg-muted",
                         )}
                         href={pageHref(metadata.page + 1)}
+                        onClick={(event) =>
+                          handleViewLinkClick(event, pageHref(metadata.page + 1))
+                        }
+                        prefetch={false}
                         replace
                         scroll={false}
                       >

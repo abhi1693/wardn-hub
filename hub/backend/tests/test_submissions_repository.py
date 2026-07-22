@@ -25,12 +25,23 @@ class EmptyExecuteResult:
         return EmptyScalarResult()
 
 
+class StatusCountsExecuteResult(EmptyExecuteResult):
+    def __init__(self, rows: list[tuple[str, int]]) -> None:
+        self.rows = rows
+
+    def all(self) -> list[tuple[str, int]]:
+        return self.rows
+
+
 class CaptureSession:
-    def __init__(self) -> None:
+    def __init__(self, *, status_counts: list[tuple[str, int]] | None = None) -> None:
         self.statements: list[object] = []
+        self.status_counts = status_counts or []
 
     async def execute(self, statement) -> EmptyExecuteResult:
         self.statements.append(statement)
+        if len(self.statements) == 1:
+            return StatusCountsExecuteResult(self.status_counts)
         return EmptyExecuteResult()
 
 
@@ -54,7 +65,7 @@ async def test_list_submissions_includes_owned_organization_memberships() -> Non
         include_all=False,
     )
 
-    statement = sql(session.statements[2])
+    statement = sql(session.statements[1])
     assert submissions == []
     assert total == 0
     assert status_counts == {}
@@ -76,10 +87,9 @@ async def test_list_submissions_applies_search_to_status_counts_and_results() ->
     )
 
     status_counts_statement = sql(session.statements[0])
-    total_statement = sql(session.statements[1])
-    list_statement = sql(session.statements[2])
+    list_statement = sql(session.statements[1])
 
-    for statement in (status_counts_statement, total_statement, list_statement):
+    for statement in (status_counts_statement, list_statement):
         assert "server_submissions.name ILIKE '%%weather%%'" in statement
         assert "server_submissions.version ILIKE '%%weather%%'" in statement
         assert "server_submissions.server_json ->> 'title'" in statement
@@ -98,12 +108,37 @@ async def test_list_submissions_applies_user_filter_to_status_counts_and_results
     )
 
     status_counts_statement = sql(session.statements[0])
-    total_statement = sql(session.statements[1])
-    list_statement = sql(session.statements[2])
+    list_statement = sql(session.statements[1])
 
-    for statement in (status_counts_statement, total_statement, list_statement):
+    for statement in (status_counts_statement, list_statement):
         assert f"server_submissions.submitter_user_id = '{user_id}'" in statement
         assert f"server_submissions.owner_user_id = '{user_id}'" in statement
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected_total"),
+    [
+        (None, 8),
+        ("submitted", 5),
+        ("approved", 0),
+    ],
+)
+async def test_list_submissions_derives_total_from_status_counts(
+    status: str | None,
+    expected_total: int,
+) -> None:
+    session = CaptureSession(status_counts=[("draft", 3), ("submitted", 5)])
+
+    _, total, status_counts = await repository.list_submissions(
+        session,
+        include_all=True,
+        status=status,
+    )
+
+    assert total == expected_total
+    assert status_counts == {"draft": 3, "submitted": 5}
+    assert len(session.statements) == 2
 
 
 @pytest.mark.asyncio

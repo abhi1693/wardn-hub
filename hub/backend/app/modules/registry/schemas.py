@@ -729,6 +729,15 @@ class RegistryPageMetadata(BaseModel):
     pages: int
 
 
+class RegistryStatsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    published_server_count: int = Field(alias="publishedServerCount")
+    category_count: int = Field(alias="categoryCount")
+    last_registry_update: datetime | None = Field(alias="lastRegistryUpdate")
+    generated_at: datetime = Field(alias="generatedAt")
+
+
 class RegistryServerListResponse(BaseModel):
     servers: list[RegistryServerRead]
     metadata: RegistryListMetadata

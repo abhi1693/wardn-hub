@@ -2,8 +2,18 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import (
+    Boolean,
+    Computed,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,6 +40,18 @@ class RegistryServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     documentation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    search_vector: Mapped[Any] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('simple'::regconfig, coalesce(name, '')), 'A') || "
+            "setweight(to_tsvector('simple'::regconfig, coalesce(title, '')), 'A') || "
+            "setweight(to_tsvector('english'::regconfig, coalesce(description, '')), 'B') || "
+            "setweight(to_tsvector('english'::regconfig, left(coalesce(documentation, ''), "
+            "32768)), 'C')",
+            persisted=True,
+        ),
+        nullable=False,
+    )
     registry_namespace: Mapped[str] = mapped_column(
         String(200),
         default="",

@@ -24,6 +24,7 @@ from app.modules.registry.schemas import (
     RegistryListMetadata,
     RegistryServerListResponse,
     RegistryServerVersionCreate,
+    RegistryServerVersionUpdate,
 )
 from app.modules.users.models import User
 
@@ -1346,6 +1347,7 @@ async def test_delete_latest_promotes_replacement(monkeypatch) -> None:
     server = server_model()
     latest = version_model(server.id, "2.0.0", is_latest=True)
     replacement = version_model(server.id, "1.0.0", is_latest=False)
+    replacement.documentation = "# Replacement documentation"
 
     async def get_version(*args, **kwargs):
         return latest
@@ -1367,6 +1369,80 @@ async def test_delete_latest_promotes_replacement(monkeypatch) -> None:
     assert replacement.is_latest is True
     assert server.current_version_id == replacement.id
     assert server.title == replacement.title
+    assert server.documentation == "# Replacement documentation"
+
+
+@pytest.mark.asyncio
+async def test_update_latest_version_syncs_searchable_server_fields(monkeypatch) -> None:
+    server = server_model()
+    version = version_model(server.id, "1.0.0", is_latest=True)
+    server.current_version_id = version.id
+    payload = RegistryServerVersionUpdate(
+        **{
+            **registry_payload().model_dump(by_alias=True),
+            "description": "Current weather documentation and tools.",
+            "documentation": "# Current searchable documentation",
+        }
+    )
+
+    async def get_version(*args, **kwargs):
+        return version
+
+    async def get_server_by_id(*args, **kwargs):
+        return server
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def empty_trust(*args, **kwargs):
+        return service.EMPTY_TRUST_CONTEXT
+
+    monkeypatch.setattr(service.repository, "get_server_version", get_version)
+    monkeypatch.setattr(service.repository, "get_server_by_id", get_server_by_id)
+    monkeypatch.setattr(service.repository, "sync_server_categories", noop)
+    monkeypatch.setattr(service, "build_trust_context", empty_trust)
+
+    await service.update_server_version(
+        FakeSession(),
+        server.name,
+        version.version,
+        payload,
+    )
+
+    assert version.documentation == "# Current searchable documentation"
+    assert server.documentation == version.documentation
+    assert server.description == version.description
+
+
+@pytest.mark.asyncio
+async def test_set_latest_version_syncs_searchable_server_fields(monkeypatch) -> None:
+    server = server_model()
+    version = version_model(server.id, "1.0.0", is_latest=False)
+    version.documentation = "# Selected latest documentation"
+
+    async def get_version(*args, **kwargs):
+        return version
+
+    async def get_server_by_id(*args, **kwargs):
+        return server
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def empty_trust(*args, **kwargs):
+        return service.EMPTY_TRUST_CONTEXT
+
+    monkeypatch.setattr(service.repository, "get_server_version", get_version)
+    monkeypatch.setattr(service.repository, "get_server_by_id", get_server_by_id)
+    monkeypatch.setattr(service.repository, "clear_latest_for_server", noop)
+    monkeypatch.setattr(service.repository, "sync_server_categories", noop)
+    monkeypatch.setattr(service, "build_trust_context", empty_trust)
+
+    await service.set_latest_version(FakeSession(), server.name, version.version)
+
+    assert version.is_latest is True
+    assert server.current_version_id == version.id
+    assert server.documentation == "# Selected latest documentation"
 
 
 @pytest.mark.asyncio

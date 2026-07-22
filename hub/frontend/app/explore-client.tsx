@@ -9,11 +9,17 @@ import { ServerCard } from "@/components/server-card";
 import { listPublishedServers } from "@/lib/api/hub";
 import type { RegistryServerRead } from "@/lib/api/generated/model";
 import { EXPLORE_PAGE_SIZE } from "@/lib/public-listing-limits";
+import { mergePublishedServers } from "@/lib/published-registry-page";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
 import type { RegistryFacts } from "@/lib/registry-facts-shared";
 import { formatFactDate } from "@/lib/registry-facts-shared";
 
 const SEARCH_DEBOUNCE_MS = 250;
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 const homepageFaqs = [
   {
     answer:
@@ -83,6 +89,7 @@ export function ExploreHomeClient({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const didMountRef = useRef(false);
   const latestRequestId = useRef(0);
+  const activeRequestRef = useRef<AbortController | null>(null);
   const initialSearchQuery = initialQuery.trim();
   const hasInitialSearchQuery = initialSearchQuery.length > 0;
   const hasBaseServersRef = useRef(!hasInitialSearchQuery);
@@ -120,6 +127,7 @@ export function ExploreHomeClient({
   }`;
 
   const updateQuery = useCallback((nextQuery: string) => {
+    activeRequestRef.current?.abort();
     latestRequestId.current += 1;
     setQuery(nextQuery);
     setError("");
@@ -167,16 +175,22 @@ export function ExploreHomeClient({
     latestRequestId.current = requestId;
 
     const timeoutId = window.setTimeout(() => {
+      activeRequestRef.current?.abort();
+      const controller = new AbortController();
+      activeRequestRef.current = controller;
       setError("");
       setLoading(true);
 
       void (async () => {
         try {
-          const response = await listPublishedServers({
-            fields: PUBLIC_CARD_FIELDS,
-            limit: EXPLORE_PAGE_SIZE,
-            search: hasSearchQuery ? trimmedQuery : undefined,
-          });
+          const response = await listPublishedServers(
+            {
+              fields: PUBLIC_CARD_FIELDS,
+              limit: EXPLORE_PAGE_SIZE,
+              search: hasSearchQuery ? trimmedQuery : undefined,
+            },
+            { signal: controller.signal },
+          );
           if (latestRequestId.current !== requestId) return;
           if (hasSearchQuery) {
             setSearchServers(response.servers);
@@ -187,6 +201,7 @@ export function ExploreHomeClient({
             hasBaseServersRef.current = true;
           }
         } catch (caught) {
+          if (isAbortError(caught)) return;
           if (latestRequestId.current !== requestId) return;
           setError(caught instanceof Error ? caught.message : "Unable to search servers.");
           if (hasSearchQuery) {
@@ -197,12 +212,16 @@ export function ExploreHomeClient({
             setBaseNextCursor("");
           }
         } finally {
+          if (activeRequestRef.current === controller) activeRequestRef.current = null;
           if (latestRequestId.current === requestId) setLoading(false);
         }
       })();
     }, SEARCH_DEBOUNCE_MS);
 
-    return () => window.clearTimeout(timeoutId);
+    return () => {
+      window.clearTimeout(timeoutId);
+      activeRequestRef.current?.abort();
+    };
   }, [hasSearchQuery, initialError, trimmedQuery]);
 
   const loadMore = useCallback(async () => {
@@ -210,27 +229,35 @@ export function ExploreHomeClient({
 
     const requestId = latestRequestId.current + 1;
     latestRequestId.current = requestId;
+    activeRequestRef.current?.abort();
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
     setLoading(true);
     setError("");
     try {
-      const response = await listPublishedServers({
-        cursor: nextCursor,
-        fields: PUBLIC_CARD_FIELDS,
-        limit: EXPLORE_PAGE_SIZE,
-        search: hasSearchQuery ? trimmedQuery : undefined,
-      });
+      const response = await listPublishedServers(
+        {
+          cursor: nextCursor,
+          fields: PUBLIC_CARD_FIELDS,
+          limit: EXPLORE_PAGE_SIZE,
+          search: hasSearchQuery ? trimmedQuery : undefined,
+        },
+        { signal: controller.signal },
+      );
       if (latestRequestId.current !== requestId) return;
       if (hasSearchQuery) {
-        setSearchServers((current) => [...current, ...response.servers]);
+        setSearchServers((current) => mergePublishedServers(current, response.servers));
         setSearchNextCursor(response.metadata.nextCursor ?? "");
       } else {
-        setBaseServers((current) => [...current, ...response.servers]);
+        setBaseServers((current) => mergePublishedServers(current, response.servers));
         setBaseNextCursor(response.metadata.nextCursor ?? "");
       }
     } catch (caught) {
+      if (isAbortError(caught)) return;
       if (latestRequestId.current !== requestId) return;
       setError(caught instanceof Error ? caught.message : "Unable to load more servers.");
     } finally {
+      if (activeRequestRef.current === controller) activeRequestRef.current = null;
       if (latestRequestId.current === requestId) setLoading(false);
     }
   }, [hasSearchQuery, loading, nextCursor, trimmedQuery]);

@@ -102,10 +102,7 @@ async def list_submissions(
     if status is not None:
         filters.append(ServerSubmission.status == status)
 
-    total_result = await session.execute(
-        select(func.count()).select_from(ServerSubmission).where(*filters)
-    )
-    total = int(total_result.scalar_one())
+    total = status_counts.get(status, 0) if status is not None else sum(status_counts.values())
 
     statement = select(ServerSubmission).order_by(
         ServerSubmission.updated_at.desc(),

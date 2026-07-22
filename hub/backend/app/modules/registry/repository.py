@@ -1,8 +1,9 @@
+import re
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, and_, delete, func, or_, select, update
+from sqlalchemy import Select, and_, case, delete, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -20,6 +21,25 @@ from app.modules.registry.models import (
     RegistryServerVersion,
 )
 from app.modules.users.models import User
+
+REGISTRY_SEARCH_GENERIC_TERMS = frozenset({"mcp", "server", "servers"})
+REGISTRY_SEARCH_GENERIC_PHRASE = re.compile(r"\bmodel\s+context\s+protocol\b")
+
+
+def normalize_registry_search_query(query: str) -> str:
+    normalized_query = query.casefold()
+    tokens = [token.strip("_") for token in re.findall(r"\w+", normalized_query)]
+    tokens = [token for token in tokens if token]
+    catalog_agnostic_query = REGISTRY_SEARCH_GENERIC_PHRASE.sub(" ", normalized_query)
+    catalog_agnostic_tokens = [
+        token.strip("_") for token in re.findall(r"\w+", catalog_agnostic_query)
+    ]
+    meaningful_tokens = [
+        token
+        for token in catalog_agnostic_tokens
+        if token and token not in REGISTRY_SEARCH_GENERIC_TERMS
+    ]
+    return " ".join(meaningful_tokens or tokens) or normalized_query.strip()
 
 
 def visible_servers_query(include_deleted: bool) -> Select[tuple[RegistryServer]]:
@@ -54,6 +74,25 @@ def published_server_current_version_query(*entities: Any) -> Select[Any]:
             RegistryServerVersion.status == "active",
             RegistryServerVersion.is_latest.is_(True),
         )
+    )
+
+
+def published_servers_query() -> Select[tuple[RegistryServer]]:
+    current_version_exists = (
+        select(RegistryServerVersion.id)
+        .where(
+            RegistryServerVersion.id == RegistryServer.current_version_id,
+            RegistryServerVersion.server_id == RegistryServer.id,
+            RegistryServerVersion.status == "active",
+            RegistryServerVersion.is_latest.is_(True),
+        )
+        .exists()
+    )
+    return select(RegistryServer).where(
+        RegistryServer.status == "active",
+        RegistryServer.visibility == "public",
+        RegistryServer.current_version_id.is_not(None),
+        current_version_exists,
     )
 
 
@@ -140,15 +179,58 @@ async def list_servers(
     if status and status != "active":
         return [], ""
 
-    statement = published_server_current_version_query(RegistryServer)
-    if search:
-        pattern = f"%{search.strip()}%"
+    statement = published_servers_query()
+    normalized_search = normalize_registry_search_query(search) if search else ""
+    if normalized_search:
+        escaped_search = (
+            normalized_search.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        english_query = func.websearch_to_tsquery(
+            literal_column("'english'::regconfig"),
+            normalized_search,
+        )
+        simple_query = func.websearch_to_tsquery(
+            literal_column("'simple'::regconfig"),
+            normalized_search,
+        )
+        english_match = RegistryServer.search_vector.op("@@")(english_query)
+        simple_match = RegistryServer.search_vector.op("@@")(simple_query)
+        text_match = or_(english_match, simple_match)
+        normalized_name = func.lower(RegistryServer.name)
+        normalized_title = func.lower(RegistryServer.title)
+        exact_match = or_(
+            normalized_name == normalized_search,
+            normalized_title == normalized_search,
+        )
+        prefix_pattern = f"{escaped_search}%"
+        prefix_match = or_(
+            normalized_name.ilike(prefix_pattern, escape="\\"),
+            normalized_title.ilike(prefix_pattern, escape="\\"),
+        )
+        contains_pattern = f"%{escaped_search}%"
+        contains_match = or_(
+            normalized_name.ilike(contains_pattern, escape="\\"),
+            normalized_title.ilike(contains_pattern, escape="\\"),
+        )
+        match_tier = case(
+            (exact_match, 0),
+            (prefix_match, 1),
+            (contains_match, 2),
+            else_=3,
+        )
+        text_rank = func.ts_rank_cd(
+            RegistryServer.search_vector,
+            english_query,
+            32,
+        ) + func.ts_rank_cd(
+            RegistryServer.search_vector,
+            simple_query,
+            32,
+        )
         statement = statement.where(
-            or_(
-                RegistryServer.name.ilike(pattern),
-                RegistryServer.title.ilike(pattern),
-                RegistryServer.description.ilike(pattern),
-            )
+            or_(exact_match, prefix_match, contains_match, text_match)
         )
     if updated_since:
         statement = statement.where(RegistryServer.updated_at >= updated_since)
@@ -229,11 +311,42 @@ async def list_servers(
     # until the registry query layer gets explicit package/remote indexes.
     _ = registry_type, transport_type
 
-    statement = statement.order_by(RegistryServer.name.asc())
+    if normalized_search:
+        statement = statement.order_by(
+            match_tier,
+            text_rank.desc(),
+            RegistryServer.name.asc(),
+        )
+    else:
+        statement = statement.order_by(RegistryServer.name.asc())
     result = await session.execute(statement.offset(offset).limit(limit + 1))
     rows = list(result.scalars().unique().all())
     next_cursor = str(offset + limit) if len(rows) > limit else ""
     return rows[:limit], next_cursor
+
+
+async def get_registry_stats(
+    session: AsyncSession,
+) -> tuple[int, int, datetime | None]:
+    category_count = (
+        select(func.count(RegistryCategory.id))
+        .where(RegistryCategory.status == "active")
+        .scalar_subquery()
+    )
+    result = await session.execute(
+        published_server_current_version_query(
+            func.count(RegistryServer.id),
+            category_count,
+            func.max(
+                func.greatest(
+                    RegistryServer.updated_at,
+                    RegistryServerVersion.published_at,
+                )
+            ),
+        )
+    )
+    published_server_count, active_category_count, last_registry_update = result.one()
+    return published_server_count, active_category_count, last_registry_update
 
 
 async def list_published_servers(

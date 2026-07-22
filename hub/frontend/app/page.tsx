@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { ArrowRight, CheckCircle2, Layers3, Search, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, Layers3, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
+import { CatalogSearchForm } from "@/components/catalog-search-form";
 import { ServerIcon } from "@/components/server-icon";
 import { PublicHeader } from "@/components/site-header";
 import type { RegistryCategoryRead, RegistryServerRead } from "@/lib/api/generated/model";
@@ -10,8 +11,8 @@ import {
   listPublishedRegistryServerPage,
   serverDetailPath,
 } from "@/lib/public-registry";
+import { countPublicSkills } from "@/lib/public-skills";
 import { getRegistryFacts } from "@/lib/registry-facts";
-import { formatFactDate } from "@/lib/registry-facts-shared";
 import { siteConfig } from "@/lib/site";
 
 export const revalidate = 3600;
@@ -91,10 +92,11 @@ function CategoryLink({ category }: { category: RegistryCategoryRead }) {
 }
 
 export default async function Home() {
-  const [serverResult, categoryResult, registryFacts] = await Promise.all([
+  const [serverResult, categoryResult, registryFacts, skillCount] = await Promise.all([
     listPublishedRegistryServerPage({ limit: 6 }).catch(() => ({ nextCursor: "", servers: [] })),
     listPublicCategories().catch(() => []),
     getRegistryFacts(),
+    countPublicSkills().catch(() => null),
   ]);
   const servers = serverResult.servers;
   const categories = categoryResult.slice(0, 12);
@@ -112,24 +114,15 @@ export default async function Home() {
             Discover MCP servers and reusable agent skills, with the context to compare them
             before they enter your workflow.
           </p>
-          <form action="/mcp-servers" className="home-search" method="get" role="search">
-            <Search aria-hidden="true" size={21} />
-            <label className="sr-only" htmlFor="home-server-search">
-              Search MCP servers
-            </label>
-            <input
-              autoComplete="off"
-              id="home-server-search"
-              name="q"
-              placeholder="Search MCP servers by name or capability"
-              type="search"
-            />
-            <button type="submit">Search</button>
-          </form>
+          <CatalogSearchForm id="home-catalog-search" />
           <p className="home-registry-facts">
             <span>{serverCount.toLocaleString("en-US")} MCP servers</span>
-            <span>{registryFacts.categoryCount ?? categories.length} categories</span>
-            <span>Updated {formatFactDate(registryFacts.lastRegistryUpdate)}</span>
+            {skillCount === null ? null : (
+              <span>
+                {skillCount.toLocaleString("en-US")} agent{" "}
+                {skillCount === 1 ? "skill" : "skills"}
+              </span>
+            )}
           </p>
         </div>
       </section>

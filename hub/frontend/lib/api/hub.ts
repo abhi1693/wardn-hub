@@ -137,8 +137,19 @@ import {
 } from "@/lib/api/generated/users/users";
 import type { DetailTab, ServerDetailTabResponse } from "@/lib/server-detail-tabs";
 import { serverTabApiPath } from "@/lib/server-detail-tabs";
+import { publishedRegistryServerPage } from "@/lib/published-registry-page";
 
 export type RegistryUserRead = UserDirectoryRead;
+
+type RegistryServerListRequest = {
+  cursor?: string;
+  fields?: string;
+  search?: string;
+  supportLevel?: string;
+  partner?: boolean;
+  category?: string;
+  limit?: number;
+};
 
 const API_PREFIX = "/api/v1";
 const TOKEN_STORAGE_KEY = "wardn_hub_api_token";
@@ -242,15 +253,7 @@ function pathValue(value: string) {
   return value.split("/").map(encodeURIComponent).join("/");
 }
 
-export function listServers(params: {
-  cursor?: string;
-  fields?: string;
-  search?: string;
-  supportLevel?: string;
-  partner?: boolean;
-  category?: string;
-  limit?: number;
-}) {
+export function listServers(params: RegistryServerListRequest, init?: RequestInit) {
   const generatedParams: McpServersListParams = {
     cursor: optionalQueryString(params.cursor),
     fields: optionalQueryString(params.fields),
@@ -260,22 +263,19 @@ export function listServers(params: {
     category: optionalQueryString(params.category),
     limit: params.limit ?? 25,
   };
-  return generatedRequest<RegistryServerListResponse>(getMcpServersListUrl(generatedParams));
+  return generatedRequest<RegistryServerListResponse>(getMcpServersListUrl(generatedParams), init);
 }
 
-export async function listPublishedServers(params: {
-  cursor?: string;
-  fields?: string;
-  search?: string;
-  supportLevel?: string;
-  partner?: boolean;
-  category?: string;
-  limit?: number;
-}) {
-  const response = await listServers(params);
+export async function listPublishedServers(params: RegistryServerListRequest, init?: RequestInit) {
+  const response = await listServers(params, init);
+  const page = publishedRegistryServerPage(response);
   return {
     ...response,
-    servers: response.servers.filter((server) => Boolean(server.latestVersion)),
+    metadata: {
+      ...response.metadata,
+      nextCursor: page.nextCursor,
+    },
+    servers: page.servers,
   };
 }
 
@@ -371,8 +371,8 @@ export function archiveServer(serverName: string) {
   return deleteServer(serverName);
 }
 
-export function listSubmissions(params?: SubmissionsListParams) {
-  return generatedRequest<SubmissionListResponse>(getSubmissionsListUrl(params));
+export function listSubmissions(params?: SubmissionsListParams, init?: RequestInit) {
+  return generatedRequest<SubmissionListResponse>(getSubmissionsListUrl(params), init);
 }
 
 export function getSubmission(submissionId: string) {

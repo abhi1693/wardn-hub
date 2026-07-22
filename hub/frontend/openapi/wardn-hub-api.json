@@ -4770,6 +4770,43 @@
         "title": "RegistryServerVersionUpdate",
         "type": "object"
       },
+      "RegistryStatsResponse": {
+        "properties": {
+          "categoryCount": {
+            "title": "Categorycount",
+            "type": "integer"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+          },
+          "lastRegistryUpdate": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastregistryupdate"
+          },
+          "publishedServerCount": {
+            "title": "Publishedservercount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "publishedServerCount",
+          "categoryCount",
+          "lastRegistryUpdate",
+          "generatedAt"
+        ],
+        "title": "RegistryStatsResponse",
+        "type": "object"
+      },
       "RegistryToolParameterRead": {
         "properties": {
           "description": {
@@ -7660,7 +7697,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.130"
+    "version": "0.2.131"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -9718,6 +9755,27 @@
           }
         },
         "summary": "List Mcp Catalog",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/catalog/stats": {
+      "get": {
+        "operationId": "mcp_catalog_stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Mcp Catalog Stats",
         "tags": [
           "mcp"
         ]

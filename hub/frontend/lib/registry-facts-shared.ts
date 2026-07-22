@@ -6,7 +6,6 @@ export type RegistryFacts = {
   lastRegistryUpdate: string | null;
   methodologyPath: string;
   publishedServerCount: number | null;
-  scannedServerCount: number;
 };
 
 export function formatFactDate(value: string | null) {

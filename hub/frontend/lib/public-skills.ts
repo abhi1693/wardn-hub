@@ -13,6 +13,7 @@ import { resolveSiteUrl } from "@/lib/site";
 
 const API_PREFIX = "/api/v1";
 const DEFAULT_SKILLS_LIMIT = 100;
+const PUBLIC_SKILL_COUNT_REVALIDATE_SECONDS = 3600;
 
 class SkillsRequestError extends Error {
   status: number;
@@ -59,8 +60,12 @@ function resolveApiBaseUrl() {
   return stripTrailingSlash(url.toString());
 }
 
-async function skillsRequest<T>(path: string, params?: Record<string, boolean | number | string>) {
-  return skillsJsonRequest<T>(path, { params });
+async function skillsRequest<T>(
+  path: string,
+  params?: Record<string, boolean | number | string>,
+  init?: { signal?: AbortSignal },
+) {
+  return skillsJsonRequest<T>(path, { params, signal: init?.signal });
 }
 
 async function skillsJsonRequest<T>(
@@ -69,6 +74,8 @@ async function skillsJsonRequest<T>(
     body?: unknown;
     method?: "GET" | "POST";
     params?: Record<string, boolean | number | string>;
+    revalidate?: number;
+    signal?: AbortSignal;
   },
 ) {
   const baseUrl = resolveApiBaseUrl();
@@ -78,14 +85,19 @@ async function skillsJsonRequest<T>(
     url.searchParams.set(key, String(value));
   }
 
+  const cacheOptions =
+    options?.revalidate === undefined
+      ? { cache: "no-store" as const }
+      : { next: { revalidate: options.revalidate } };
   const response = await fetch(url, {
+    ...cacheOptions,
     body: options?.body === undefined ? undefined : JSON.stringify(options.body),
-    cache: "no-store",
     headers: {
       Accept: "application/json",
       ...(options?.body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     method: options?.method ?? "GET",
+    signal: options?.signal,
   });
 
   if (!response.ok) {
@@ -234,6 +246,18 @@ export async function listPublicSkills(params?: {
   return response.skills;
 }
 
+export async function countPublicSkills() {
+  const response = await skillsJsonRequest<SkillListResponse>("/skills", {
+    params: {
+      page: 0,
+      per_page: 1,
+      view: "all-time",
+    },
+    revalidate: PUBLIC_SKILL_COUNT_REVALIDATE_SECONDS,
+  });
+  return response.pagination.total;
+}
+
 export async function listPublicSkillsPage(params?: {
   auditStatus?: "fail" | "pass" | "unaudited" | "warn";
   limit?: number;
@@ -271,7 +295,7 @@ export async function searchPublicSkillsPage(params: {
   official?: boolean;
   owner?: string;
   query: string;
-}): Promise<{
+}, init?: { signal?: AbortSignal }): Promise<{
   auditEnabled: boolean;
   hasMore: boolean;
   nextCursor: string;
@@ -290,7 +314,11 @@ export async function searchPublicSkillsPage(params: {
   if (params.official !== undefined) searchParams.official = params.official;
   if (params.owner) searchParams.owner = params.owner;
 
-  const response = await skillsRequest<SkillSearchResponse>("/skills/search", searchParams);
+  const response = await skillsRequest<SkillSearchResponse>(
+    "/skills/search",
+    searchParams,
+    init,
+  );
   return {
     auditEnabled: response.auditEnabled,
     hasMore: response.hasMore === true,

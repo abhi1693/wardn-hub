@@ -50,6 +50,7 @@ from app.modules.registry.schemas import (
     RegistryServerVersionDetailResponse,
     RegistryServerVersionListResponse,
     RegistryServerVersionUpdate,
+    RegistryStatsResponse,
 )
 from app.modules.registry.service import (
     claim_server_ownership,
@@ -58,6 +59,7 @@ from app.modules.registry.service import (
     delete_category,
     delete_server,
     delete_server_version,
+    get_registry_stats,
     get_server_detail,
     get_server_overview_tab,
     get_server_prompts_tab,
@@ -341,6 +343,17 @@ async def search_mcp_servers(
         raise bad_request(exc, detail="invalid cursor") from exc
     except ValueError as exc:
         raise bad_request(exc, detail="invalid fields") from exc
+
+
+@catalog_router.get(
+    "/stats",
+    response_model=RegistryStatsResponse,
+    operation_id="mcp_catalog_stats",
+)
+async def get_mcp_catalog_stats(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RegistryStatsResponse:
+    return await get_registry_stats(session)
 
 
 @catalog_router.get(

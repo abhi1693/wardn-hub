@@ -44,6 +44,24 @@ class CaptureSession:
         self.added.append(instance)
 
 
+class StatsExecuteResult:
+    def __init__(self, last_registry_update: datetime) -> None:
+        self.last_registry_update = last_registry_update
+
+    def one(self) -> tuple[int, int, datetime]:
+        return 1575, 50, self.last_registry_update
+
+
+class StatsCaptureSession(CaptureSession):
+    def __init__(self, last_registry_update: datetime) -> None:
+        super().__init__()
+        self.last_registry_update = last_registry_update
+
+    async def execute(self, statement) -> StatsExecuteResult:
+        self.statements.append(statement)
+        return StatsExecuteResult(self.last_registry_update)
+
+
 def sql(statement: object) -> str:
     return str(
         statement.compile(
@@ -74,6 +92,65 @@ async def test_list_servers_uses_published_filters_when_syncing_updates() -> Non
     assert "mcp_server_versions.status = 'active'" in statement
     assert "mcp_server_versions.is_latest IS true" in statement
     assert "mcp_servers.status = 'deleted'" not in statement
+
+
+def test_registry_search_normalization_drops_only_generic_catalog_terms() -> None:
+    assert repository.normalize_registry_search_query("argocd") == "argocd"
+    assert repository.normalize_registry_search_query("ArgoCD MCP Server") == "argocd"
+    assert (
+        repository.normalize_registry_search_query("ArgoCD Model Context Protocol server")
+        == "argocd"
+    )
+    assert repository.normalize_registry_search_query("mcp server") == "mcp server"
+    assert (
+        repository.normalize_registry_search_query("cloudformation best practices")
+        == "cloudformation best practices"
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_servers_uses_indexed_ranked_search_with_normalized_terms() -> None:
+    session = CaptureSession()
+
+    await repository.list_servers(
+        session,
+        offset=0,
+        limit=25,
+        include_deleted=False,
+        search="argocd mcp server",
+    )
+
+    statement = sql(session.statements[0])
+    assert (
+        "mcp_servers.search_vector @@ "
+        "websearch_to_tsquery('english'::regconfig, 'argocd')" in statement
+    )
+    assert (
+        "mcp_servers.search_vector @@ "
+        "websearch_to_tsquery('simple'::regconfig, 'argocd')" in statement
+    )
+    assert "ts_rank_cd(mcp_servers.search_vector" in statement
+    assert "argocd mcp server" not in statement
+    assert "mcp_servers.description ILIKE" not in statement
+    assert "ORDER BY CASE" in statement
+
+
+@pytest.mark.asyncio
+async def test_registry_stats_uses_one_aggregate_published_query() -> None:
+    last_registry_update = datetime(2026, 7, 22, tzinfo=UTC)
+    session = StatsCaptureSession(last_registry_update)
+
+    stats = await repository.get_registry_stats(session)
+
+    statement = sql(session.statements[0])
+    assert stats == (1575, 50, last_registry_update)
+    assert len(session.statements) == 1
+    assert "count(mcp_servers.id)" in statement
+    assert "count(mcp_categories.id)" in statement
+    assert "max(greatest(mcp_servers.updated_at, mcp_server_versions.published_at))" in statement
+    assert "mcp_servers.status = 'active'" in statement
+    assert "mcp_servers.visibility = 'public'" in statement
+    assert "mcp_server_versions.is_latest IS true" in statement
 
 
 @pytest.mark.asyncio

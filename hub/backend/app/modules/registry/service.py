@@ -76,6 +76,7 @@ from app.modules.registry.schemas import (
     RegistryServerVersionListResponse,
     RegistryServerVersionRead,
     RegistryServerVersionUpdate,
+    RegistryStatsResponse,
     RegistryToolParameterRead,
     RegistryToolRead,
     RegistryTrustReport,
@@ -2032,6 +2033,23 @@ async def sync_server_categories_if_present(
         await repository.sync_server_categories(session, server_id, category_slugs)
 
 
+def sync_server_from_latest_version(
+    server: RegistryServer,
+    version: RegistryServerVersion,
+) -> None:
+    server.title = version.title
+    server.description = version.description
+    server.documentation = version.documentation
+    server.registry_namespace = version.registry_namespace
+    server.registry_namespace_type = version.registry_namespace_type
+    server.registry_namespace_verification_status = (
+        version.registry_namespace_verification_status
+    )
+    server.website_url = version.website_url
+    server.repository = version.repository
+    server.icons = version.icons
+
+
 async def build_trust_context(
     session,
     *,
@@ -2459,16 +2477,7 @@ async def update_server_version(
         version.status_changed_at = datetime.now(UTC)
 
     if version.is_latest:
-        server.title = payload.title
-        server.description = payload.description
-        server.registry_namespace = values["registry_namespace"]
-        server.registry_namespace_type = values["registry_namespace_type"]
-        server.registry_namespace_verification_status = values[
-            "registry_namespace_verification_status"
-        ]
-        server.website_url = payload.website_url
-        server.repository = values["repository"]
-        server.icons = values["icons"]
+        sync_server_from_latest_version(server, version)
         if updated_by_user_id is not None:
             server.updated_by_user_id = updated_by_user_id
         await sync_server_categories_if_present(session, server.id, category_values(payload))
@@ -2571,11 +2580,7 @@ async def delete_server_version(
         if replacement is not None:
             replacement.is_latest = True
             server.current_version_id = replacement.id
-            server.title = replacement.title
-            server.description = replacement.description
-            server.website_url = replacement.website_url
-            server.repository = replacement.repository
-            server.icons = replacement.icons
+            sync_server_from_latest_version(server, replacement)
         else:
             server.status = "deleted"
             server.status_message = "All versions deleted from Wardn Hub."
@@ -2653,11 +2658,7 @@ async def set_latest_version(
     await repository.clear_latest_for_server(session, server.id)
     version.is_latest = True
     server.current_version_id = version.id
-    server.title = version.title
-    server.description = version.description
-    server.website_url = version.website_url
-    server.repository = version.repository
-    server.icons = version.icons
+    sync_server_from_latest_version(server, version)
     await sync_server_categories_if_present(
         session,
         server.id,
@@ -2713,6 +2714,18 @@ async def list_servers(
     return RegistryServerListResponse(
         servers=await servers_with_latest(session, servers),
         metadata=RegistryListMetadata(count=len(servers), next_cursor=next_cursor),
+    )
+
+
+async def get_registry_stats(session) -> RegistryStatsResponse:
+    published_server_count, category_count, last_registry_update = (
+        await repository.get_registry_stats(session)
+    )
+    return RegistryStatsResponse(
+        publishedServerCount=published_server_count,
+        categoryCount=category_count,
+        lastRegistryUpdate=last_registry_update,
+        generatedAt=datetime.now(UTC),
     )
 
 

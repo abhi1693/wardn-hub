@@ -4,8 +4,13 @@ import type {
   RegistryServerDetailResponse,
   RegistryServerListResponse,
   RegistryServerRead,
+  RegistryStatsResponse,
 } from "@/lib/api/generated/model";
 import { PUBLIC_CARD_FIELDS } from "@/lib/registry-fields";
+import {
+  mergePublishedServers,
+  publishedRegistryServerPage,
+} from "@/lib/published-registry-page";
 import type {
   DetailTab,
   ServerDetailTabResponse,
@@ -294,7 +299,7 @@ export async function listPublishedRegistryServers(params?: {
   search?: string;
   transportType?: string;
 }) {
-  const servers: RegistryServerRead[] = [];
+  let servers: RegistryServerRead[] = [];
   let cursor = "";
   const maxServers = params?.limit ?? SITEMAP_CATALOG_CHUNK_SIZE;
 
@@ -314,7 +319,8 @@ export async function listPublishedRegistryServers(params?: {
       ...(cursor ? { cursor } : {}),
     });
 
-    servers.push(...response.servers.filter((server) => Boolean(server.latestVersion)));
+    const page = publishedRegistryServerPage(response);
+    servers = mergePublishedServers(servers, page.servers);
     if (servers.length >= maxServers) return servers.slice(0, maxServers);
 
     cursor = response.metadata.nextCursor ?? "";
@@ -346,10 +352,11 @@ export async function listPublishedRegistryServerPage(params?: {
     limit: params?.limit ?? PAGE_SIZE,
   });
 
-  return {
-    nextCursor: response.metadata.nextCursor ?? "",
-    servers: response.servers.filter((server) => Boolean(server.latestVersion)),
-  };
+  return publishedRegistryServerPage(response);
+}
+
+export function getPublicRegistryStats() {
+  return registryRequest<RegistryStatsResponse>("/mcp/catalog/stats");
 }
 
 export async function countPublishedRegistryServers() {
@@ -361,7 +368,7 @@ export async function countPublishedRegistryServers() {
 }
 
 export async function listPublishedRegistryServerSitemapChunk(chunkIndex: number) {
-  const servers: RegistryServerRead[] = [];
+  let servers: RegistryServerRead[] = [];
   const startOffset = chunkIndex * SITEMAP_CATALOG_CHUNK_SIZE;
   let cursor = String(startOffset);
 
@@ -372,7 +379,8 @@ export async function listPublishedRegistryServerSitemapChunk(chunkIndex: number
       limit: Math.min(PAGE_SIZE, SITEMAP_CATALOG_CHUNK_SIZE - servers.length),
     });
 
-    servers.push(...response.servers.filter((server) => Boolean(server.latestVersion)));
+    const page = publishedRegistryServerPage(response);
+    servers = mergePublishedServers(servers, page.servers);
 
     cursor = response.metadata.nextCursor ?? "";
     if (!cursor) break;

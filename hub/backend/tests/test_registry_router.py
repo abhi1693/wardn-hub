@@ -160,6 +160,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         "/api/v1/mcp/categories",
         "/api/v1/mcp/badges/quality/{server_name}",
         "/api/v1/mcp/catalog",
+        "/api/v1/mcp/catalog/stats",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/search",
         "/api/v1/mcp/servers/{server_name}",
@@ -230,6 +231,10 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         == "mcp_catalog_list"
     )
     assert (
+        schema["paths"]["/api/v1/mcp/catalog/stats"]["get"]["operationId"]
+        == "mcp_catalog_stats"
+    )
+    assert (
         schema["paths"]["/api/v1/mcp/badges/quality/{server_name}"]["get"]["operationId"]
         == "mcp_quality_score_badge"
     )
@@ -298,6 +303,34 @@ def test_published_servers_route_accepts_catalog_read_api_token(monkeypatch) -> 
     response = TestClient(app).get("/api/v1/mcp/catalog", headers=auth_headers())
 
     assert response.status_code == 200
+
+
+def test_registry_stats_route_allows_anonymous_access(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    async def registry_stats(*args, **kwargs):
+        return {
+            "publishedServerCount": 1575,
+            "categoryCount": 50,
+            "lastRegistryUpdate": "2026-07-20T12:00:00Z",
+            "generatedAt": "2026-07-22T12:00:00Z",
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "get_registry_stats", registry_stats)
+
+    response = TestClient(app).get("/api/v1/mcp/catalog/stats")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "publishedServerCount": 1575,
+        "categoryCount": 50,
+        "lastRegistryUpdate": "2026-07-20T12:00:00Z",
+        "generatedAt": "2026-07-22T12:00:00Z",
+    }
 
 
 def test_server_list_allows_anonymous_access(monkeypatch) -> None:
