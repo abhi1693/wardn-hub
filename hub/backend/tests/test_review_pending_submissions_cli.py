@@ -331,6 +331,42 @@ def test_codex_app_server_analysis_only_session_configures_prompt_only_mode() ->
     assert "tools" not in params["config"]
 
 
+def test_codex_app_server_web_research_session_excludes_shell_and_subagents() -> None:
+    reviewer = cli.CodexAppServerReviewer(
+        url="ws://127.0.0.1:41237",
+        timeout_seconds=5,
+        cwd=None,
+        web_research_only=True,
+    )
+
+    params = reviewer._thread_start_params()
+
+    assert "cwd" not in params
+    assert "runtimeWorkspaceRoots" not in params
+    assert params["config"]["web_search"] == "live"
+    assert params["config"]["tools"] == {
+        "web_search": {"context_size": "medium"}
+    }
+    assert params["config"]["agents"] == {"enabled": False}
+    instructions = params["config"]["developer_instructions"]
+    assert "Use only the built-in web search tool" in instructions
+    assert "Do not call shell commands" in instructions
+    assert "app-server filesystem" in instructions
+
+
+def test_codex_app_server_rejects_conflicting_reviewer_modes() -> None:
+    with pytest.raises(
+        ValueError,
+        match="analysis_only and web_research_only cannot both be enabled",
+    ):
+        cli.CodexAppServerReviewer(
+            url="ws://127.0.0.1:41237",
+            timeout_seconds=5,
+            analysis_only=True,
+            web_research_only=True,
+        )
+
+
 def test_codex_app_server_reviewer_uses_capability_token_header_only() -> None:
     websocket = FakeCodexWebSocket(
         [
@@ -449,6 +485,7 @@ def test_main_uses_codex_app_server_without_login(
             "progress_stream": sys.stdout,
             "stream_output": True,
             "auth_token": "",
+            "web_research_only": True,
         }
     ]
 

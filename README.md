@@ -289,6 +289,11 @@ Slug identity remains repository-local. Deterministic SHA-256 suffixes are used
 only when normalized slugs collide within the same repository, and re-importing
 the same source path updates its existing record.
 
+Submission review and repair sessions use the Codex app-server's built-in web
+search for public-source evidence. They disable subagents and instruct Codex not
+to use shell commands, shell-based HTTP clients, the app-server filesystem, MCP
+servers, or apps.
+
 When `WARDN_HUB_SKILL_AUDIT_ENABLED=true`, imports and refreshes drain the
 pending-audit queue after their GitHub phase. The pinned Cisco AI Skill Scanner
 runs static/YARA, bytecode, pipeline, and behavioral analysis. Its optional LLM

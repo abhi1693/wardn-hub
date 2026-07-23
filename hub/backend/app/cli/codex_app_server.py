@@ -14,6 +14,14 @@ ANALYSIS_ONLY_DEVELOPER_INSTRUCTIONS = (
     "not available on this host. Return only the requested response."
 )
 
+WEB_RESEARCH_DEVELOPER_INSTRUCTIONS = (
+    "Complete the requested review from the submission text supplied by the client. "
+    "Use only the built-in web search tool when public-source research is required. "
+    "Do not call shell commands or shell-based HTTP clients, and do not inspect the "
+    "app-server filesystem. Do not use MCP servers, apps, subagents, or any tools "
+    "other than built-in web search. Return only the requested response."
+)
+
 
 class UserFacingError(Exception):
     """Error that should be shown without a traceback."""
@@ -29,6 +37,13 @@ class CodexAppServerReviewer:
     auth_token: str = ""
     websocket_connect: Any | None = None
     analysis_only: bool = False
+    web_research_only: bool = False
+
+    def __post_init__(self) -> None:
+        if self.analysis_only and self.web_research_only:
+            raise ValueError(
+                "analysis_only and web_research_only cannot both be enabled"
+            )
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         del environment
@@ -271,6 +286,13 @@ class CodexAppServerReviewer:
                 "web_search": "disabled",
                 "agents": {"enabled": False},
                 "developer_instructions": ANALYSIS_ONLY_DEVELOPER_INSTRUCTIONS,
+            }
+        elif self.web_research_only:
+            config = {
+                "web_search": "live",
+                "tools": {"web_search": {"context_size": "medium"}},
+                "agents": {"enabled": False},
+                "developer_instructions": WEB_RESEARCH_DEVELOPER_INSTRUCTIONS,
             }
         else:
             config = {

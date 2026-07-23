@@ -553,6 +553,7 @@ def main(argv: list[str] | None = None) -> int:
             progress_stream=sys.stdout if args.verbose else None,
             stream_output=args.verbose,
             auth_token=os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip(),
+            web_research_only=True,
         )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return fix_loop(
