@@ -700,6 +700,7 @@ def test_cisco_scanner_invocation_enables_llm_when_gated_on(monkeypatch) -> None
     assert "--use-aidefense" not in captured
     assert captured_bridge_args["app_server_url"] == "ws://127.0.0.1:41237"
     assert captured_bridge_args["app_server_auth_token"] == "app-server-token"
+    assert "cwd" not in captured_bridge_args
     assert captured_environment["SKILL_SCANNER_LLM_PROVIDER"] == cli.CISCO_LLM_PROVIDER
     assert captured_environment["SKILL_SCANNER_LLM_MODEL"] == cli.CODEX_CHAT_COMPLETIONS_MODEL
     assert captured_environment["SKILL_SCANNER_LLM_BASE_URL"] == FakeBridge.base_url

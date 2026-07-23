@@ -312,6 +312,25 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
     }
 
 
+def test_codex_app_server_analysis_only_session_configures_prompt_only_mode() -> None:
+    reviewer = cli.CodexAppServerReviewer(
+        url="ws://127.0.0.1:41237",
+        timeout_seconds=5,
+        cwd=None,
+        analysis_only=True,
+    )
+
+    params = reviewer._thread_start_params()
+
+    assert "cwd" not in params
+    assert "runtimeWorkspaceRoots" not in params
+    assert params["config"]["web_search"] == "disabled"
+    assert params["config"]["agents"] == {"enabled": False}
+    assert "Do not call shell commands" in params["config"]["developer_instructions"]
+    assert "client-local paths are not available" in params["config"]["developer_instructions"]
+    assert "tools" not in params["config"]
+
+
 def test_codex_app_server_reviewer_uses_capability_token_header_only() -> None:
     websocket = FakeCodexWebSocket(
         [
@@ -499,7 +518,10 @@ def test_main_passes_codex_app_server_auth_token_from_env(
 
 def test_main_requires_app_server_without_explicit_review_command(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv(cli.CODEX_APP_SERVER_URL_ENV, raising=False)
+
     result = cli.main(["--once"])
 
     assert result == 1

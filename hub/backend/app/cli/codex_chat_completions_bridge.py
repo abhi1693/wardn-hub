@@ -7,7 +7,6 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -39,7 +38,6 @@ class CodexChatCompletionsBridge:
         *,
         app_server_url: str,
         timeout_seconds: int,
-        cwd: Path,
         app_server_auth_token: str = "",
         completion_client: CodexCompletionClient | None = None,
     ) -> None:
@@ -47,8 +45,9 @@ class CodexChatCompletionsBridge:
         self._completion_client = completion_client or CodexAppServerReviewer(
             url=app_server_url,
             timeout_seconds=timeout_seconds,
-            cwd=cwd,
+            cwd=None,
             auth_token=app_server_auth_token,
+            analysis_only=True,
         )
         self._server: _LoopbackHTTPServer | None = None
         self._server_thread: threading.Thread | None = None

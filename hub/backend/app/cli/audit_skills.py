@@ -1019,7 +1019,6 @@ class CiscoSkillScanner:
                     bridge_context = CodexChatCompletionsBridge(
                         app_server_url=app_server_url,
                         timeout_seconds=self.timeout_seconds,
-                        cwd=root,
                         app_server_auth_token=auth_token,
                     )
                     with bridge_context as bridge:

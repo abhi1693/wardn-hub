@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
+ANALYSIS_ONLY_DEVELOPER_INSTRUCTIONS = (
+    "Complete only the requested analysis from the text supplied by the client. "
+    "Do not call shell commands, web search, MCP servers, apps, subagents, or any "
+    "other tools. Do not inspect the app-server filesystem: client-local paths are "
+    "not available on this host. Return only the requested response."
+)
+
 
 class UserFacingError(Exception):
     """Error that should be shown without a traceback."""
@@ -21,6 +28,7 @@ class CodexAppServerReviewer:
     stream_output: bool = False
     auth_token: str = ""
     websocket_connect: Any | None = None
+    analysis_only: bool = False
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         del environment
@@ -258,14 +266,22 @@ class CodexAppServerReviewer:
         await websocket.send(json.dumps({"id": request_id, "result": result}))
 
     def _thread_start_params(self) -> dict[str, Any]:
+        if self.analysis_only:
+            config: dict[str, Any] = {
+                "web_search": "disabled",
+                "agents": {"enabled": False},
+                "developer_instructions": ANALYSIS_ONLY_DEVELOPER_INSTRUCTIONS,
+            }
+        else:
+            config = {
+                "web_search": "live",
+                "tools": {"web_search": {"context_size": "medium"}},
+            }
         params: dict[str, Any] = {
             "approvalPolicy": "never",
             "sandbox": "read-only",
             "ephemeral": True,
-            "config": {
-                "web_search": "live",
-                "tools": {"web_search": {"context_size": "medium"}},
-            },
+            "config": config,
         }
         if self.cwd is not None:
             cwd = str(self.cwd)

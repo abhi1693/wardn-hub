@@ -296,6 +296,9 @@ analyzer has a separate `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` gate. When enabled,
 Wardn Hub routes Cisco's OpenAI-compatible requests through an ephemeral
 loopback bridge to the Codex app-server configured by
 `WARDN_HUB_CODEX_APP_SERVER_URL`; no scanner LLM provider API key is used.
+The bridge sends the complete analysis input in the request, disables web search
+and subagents, instructs Codex not to invoke tools, and does not forward the
+scanner pod's temporary filesystem paths to the separate Codex app-server pod.
 Cisco AI Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
 
 Package compatibility is independent from security analysis: an incomplete or

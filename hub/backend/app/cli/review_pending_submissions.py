@@ -771,8 +771,9 @@ def review_loop(
         print_heading(stdout, f"Reviewing {submission_label(submission)}")
         context = build_review_context(client, submission)
         prompt = build_review_prompt(context)
-        environment = os.environ.copy()
-        environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] = current_submission_id
+        environment = {
+            "WARDN_HUB_REVIEW_SUBMISSION_ID": current_submission_id,
+        }
 
         try:
             findings = reviewer.review(prompt, environment=environment)
