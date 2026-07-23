@@ -284,14 +284,20 @@ class CodexAppServerReviewer:
         if self.analysis_only:
             config: dict[str, Any] = {
                 "web_search": "disabled",
-                "agents": {"enabled": False},
+                "features": {
+                    "multi_agent": False,
+                    "multi_agent_v2": False,
+                },
                 "developer_instructions": ANALYSIS_ONLY_DEVELOPER_INSTRUCTIONS,
             }
         elif self.web_research_only:
             config = {
                 "web_search": "live",
                 "tools": {"web_search": {"context_size": "medium"}},
-                "agents": {"enabled": False},
+                "features": {
+                    "multi_agent": False,
+                    "multi_agent_v2": False,
+                },
                 "developer_instructions": WEB_RESEARCH_DEVELOPER_INSTRUCTIONS,
             }
         else:

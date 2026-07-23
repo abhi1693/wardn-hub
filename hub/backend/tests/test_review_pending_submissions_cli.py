@@ -325,7 +325,10 @@ def test_codex_app_server_analysis_only_session_configures_prompt_only_mode() ->
     assert "cwd" not in params
     assert "runtimeWorkspaceRoots" not in params
     assert params["config"]["web_search"] == "disabled"
-    assert params["config"]["agents"] == {"enabled": False}
+    assert params["config"]["features"] == {
+        "multi_agent": False,
+        "multi_agent_v2": False,
+    }
     assert "Do not call shell commands" in params["config"]["developer_instructions"]
     assert "client-local paths are not available" in params["config"]["developer_instructions"]
     assert "tools" not in params["config"]
@@ -347,7 +350,10 @@ def test_codex_app_server_web_research_session_excludes_shell_and_subagents() ->
     assert params["config"]["tools"] == {
         "web_search": {"context_size": "medium"}
     }
-    assert params["config"]["agents"] == {"enabled": False}
+    assert params["config"]["features"] == {
+        "multi_agent": False,
+        "multi_agent_v2": False,
+    }
     instructions = params["config"]["developer_instructions"]
     assert "Use only the built-in web search tool" in instructions
     assert "Do not call shell commands" in instructions
