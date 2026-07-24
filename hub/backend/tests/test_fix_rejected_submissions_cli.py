@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from io import StringIO
 from typing import Any
@@ -57,7 +58,7 @@ def fix_result_json(
     payload = {
         "decision": decision,
         "updatedServerJson": (
-            json.dumps(updated_server_json, ensure_ascii=False, separators=(",", ":"))
+            structured_fix_server_json(updated_server_json)
             if updated_server_json is not None
             else None
         ),
@@ -66,6 +67,21 @@ def fix_result_json(
         "missingInformation": missing_information or [],
     }
     return json.dumps(payload)
+
+
+def structured_fix_server_json(server_json: dict[str, Any]) -> dict[str, Any]:
+    structured = copy.deepcopy(server_json)
+    for package in structured.get("packages", []):
+        transport = package.get("transport")
+        if not isinstance(transport, dict):
+            continue
+        env = transport.get("env")
+        if isinstance(env, dict):
+            transport["env"] = [
+                {"name": str(name), "value": str(value)}
+                for name, value in env.items()
+            ]
+    return structured
 
 
 def complete_server_json(version: str = "1.0.0") -> dict[str, Any]:
@@ -81,17 +97,40 @@ def complete_server_json(version: str = "1.0.0") -> dict[str, Any]:
             "type": "git",
             "source": "github",
             "url": "https://github.com/example/weather",
+            "subfolder": "",
+            "branch": "main",
+            "tag": "",
         },
         "packages": [
             {
                 "registryType": "npm",
+                "registryBaseUrl": "https://registry.npmjs.org",
                 "identifier": "@example/weather",
                 "version": version,
-                "transport": {"type": "stdio", "command": "npx", "args": []},
+                "runtimeHint": "node",
+                "transport": {
+                    "type": "stdio",
+                    "command": "npx",
+                    "args": [],
+                    "env": {},
+                },
+                "environmentVariables": [],
+                "packageArguments": [],
             }
         ],
+        "remotes": [],
+        "icons": [],
         "_meta": {
             "categories": ["developer-tools"],
+            "registryNamespace": {
+                "namespace": "io.github.example",
+                "type": "github",
+                "authority": "example",
+                "verificationStatus": "verified",
+                "verificationMethod": "github_owner",
+                "evidenceUrl": "https://github.com/example/weather",
+                "source": "github",
+            },
             "sourceReview": {
                 "llm": {
                     "filesRead": ["https://github.com/example/weather/README.md"],
@@ -145,7 +184,11 @@ def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() ->
     assert 'If submissionType is "new_server", keep serverJson.version' in prompt
     assert "transport-enforced output schema" in prompt
     assert "updatedServerJson" in prompt
-    assert "JSON-encoded string containing the complete replacement server object" in prompt
+    assert "nested server object required by the output schema" in prompt
+    assert "Do not JSON-encode it as a string." in prompt
+    assert "transport.env as an array of name/value entries" in prompt
+    assert "preserves official registry, import, publisher" in prompt
+    assert 'numeric and boolean-looking defaults such as "300", "true", and "0"' in prompt
     assert "missingInformation" in prompt
     assert "validates against this schema" not in prompt
     assert "WARDN_HUB_TOKEN" not in prompt
@@ -309,7 +352,8 @@ def test_extract_fix_result_reads_structured_json() -> None:
 
     assert result is not None
     assert result.decision == "fixed"
-    assert result.updated_server_json == server_json
+    assert result.updated_server_json is not None
+    assert result.updated_server_json.to_registry_json(server_json) == server_json
 
 
 def test_extract_fix_result_accepts_schema_only_json() -> None:
@@ -317,7 +361,7 @@ def test_extract_fix_result_accepts_schema_only_json() -> None:
     findings = json.dumps(
         {
             "decision": "fixed",
-            "updatedServerJson": json.dumps(server_json),
+            "updatedServerJson": structured_fix_server_json(server_json),
             "summary": "Verified and repaired metadata.",
             "sourceFilesRead": ["https://github.com/example/weather/README.md"],
             "missingInformation": [],
@@ -328,7 +372,8 @@ def test_extract_fix_result_accepts_schema_only_json() -> None:
 
     assert result is not None
     assert result.decision == "fixed"
-    assert result.updated_server_json == server_json
+    assert result.updated_server_json is not None
+    assert result.updated_server_json.name == server_json["name"]
 
 
 def test_fix_output_schema_requires_every_contract_field() -> None:
@@ -337,21 +382,28 @@ def test_fix_output_schema_requires_every_contract_field() -> None:
     assert schema["additionalProperties"] is False
     assert set(schema["required"]) == set(schema["properties"])
     assert '"additionalProperties": true' not in json.dumps(schema)
-    assert {
-        option["type"]
-        for option in schema["properties"]["updatedServerJson"]["anyOf"]
-    } == {"string", "null"}
+    updated_server_options = schema["properties"]["updatedServerJson"]["anyOf"]
+    assert {"type": "null"} in updated_server_options
+    assert any(
+        option.get("$ref") == "#/$defs/SubmissionFixServerJson"
+        for option in updated_server_options
+    )
+    package_argument_schema = schema["$defs"]["SubmissionFixPackageArgument"]
+    assert package_argument_schema["properties"]["default"]["type"] == "string"
+    assert set(package_argument_schema["required"]) == set(
+        package_argument_schema["properties"]
+    )
 
 
 def test_extract_fix_result_rejects_schema_only_json_with_missing_fields() -> None:
     assert cli.extract_fix_result(json.dumps({"decision": "skip"})) is None
 
 
-def test_extract_fix_result_rejects_invalid_encoded_server_json() -> None:
+def test_extract_fix_result_rejects_legacy_encoded_server_json() -> None:
     findings = json.dumps(
         {
             "decision": "fixed",
-            "updatedServerJson": "not-json",
+            "updatedServerJson": json.dumps(complete_server_json()),
             "summary": "Tried to repair metadata.",
             "sourceFilesRead": [],
             "missingInformation": [],
@@ -361,7 +413,7 @@ def test_extract_fix_result_rejects_invalid_encoded_server_json() -> None:
     assert cli.extract_fix_result(findings) is None
 
 
-def test_extract_fix_result_allows_markdown_fences_inside_json_string() -> None:
+def test_extract_fix_result_allows_markdown_fences_inside_nested_documentation() -> None:
     server_json = complete_server_json()
     server_json["documentation"] = (
         "## Installation\n\n"
@@ -377,7 +429,124 @@ def test_extract_fix_result_allows_markdown_fences_inside_json_string() -> None:
     result = cli.extract_fix_result(findings)
 
     assert result is not None
-    assert result.updated_server_json == server_json
+    assert result.updated_server_json is not None
+    assert result.updated_server_json.documentation == server_json["documentation"]
+
+
+def test_extract_fix_result_rejects_non_string_package_argument_defaults() -> None:
+    server_json = complete_server_json()
+    server_json["packages"][0]["packageArguments"] = [
+        {
+            "name": "",
+            "flag": "--max-rows",
+            "value": "",
+            "default": 1000,
+            "description": "Maximum rows returned.",
+            "format": "integer",
+            "requiresValue": True,
+            "includeInLaunch": False,
+            "options": [],
+            "allowedValues": [],
+            "isRequired": False,
+            "isSecret": False,
+        }
+    ]
+
+    findings = fix_result_json("fixed", updated_server_json=server_json)
+
+    assert cli.extract_fix_result(findings) is None
+
+
+def test_nested_fix_contract_accepts_stringified_scalar_argument_defaults() -> None:
+    server_json = complete_server_json()
+    server_json["packages"][0]["packageArguments"] = [
+        {
+            "name": "",
+            "flag": flag,
+            "value": "",
+            "default": default,
+            "description": description,
+            "format": format_,
+            "requiresValue": requires_value,
+            "includeInLaunch": False,
+            "options": [],
+            "allowedValues": [],
+            "isRequired": False,
+            "isSecret": False,
+        }
+        for flag, default, description, format_, requires_value in (
+            ("--rest-cache-ttl", "300", "REST cache TTL.", "integer", True),
+            ("--max-rows", "1000", "Maximum rows returned.", "integer", True),
+            ("--read-only", "true", "Keep queries read-only.", "boolean", False),
+            ("--http-port", "0", "Optional HTTP port.", "integer", True),
+        )
+    ]
+
+    result = cli.extract_fix_result(
+        fix_result_json("fixed", updated_server_json=server_json)
+    )
+
+    assert result is not None
+    assert result.updated_server_json is not None
+    registry_json = result.updated_server_json.to_registry_json(server_json)
+    validated = cli.RegistryServerVersionCreate.model_validate(registry_json)
+    assert [
+        argument.default
+        for argument in validated.packages[0].package_arguments
+    ] == ["300", "1000", "true", "0"]
+
+
+def test_nested_fix_contract_converts_maps_and_preserves_system_metadata() -> None:
+    current_server_json = complete_server_json()
+    current_server_json["_meta"]["wardnImport"] = {
+        "source": "modelcontextprotocol-registry",
+        "upstreamVersion": "1.0.0",
+    }
+    current_server_json["_meta"]["io.modelcontextprotocol.registry/official"] = {
+        "status": "active",
+        "isLatest": True,
+    }
+    current_server_json["repository"]["customRepositoryField"] = "preserved"
+    current_server_json["packages"][0]["fileSha256"] = "sha256:preserved"
+    current_server_json["packages"][0]["transport"]["customTransportField"] = "preserved"
+    updated_server_json = complete_server_json()
+    updated_server_json["packages"][0]["transport"]["env"] = {
+        "WEATHER_API_TOKEN": "",
+    }
+    updated_server_json["packages"][0]["environmentVariables"] = [
+        {
+            "name": "WEATHER_API_TOKEN",
+            "description": "Weather API token.",
+            "value": "",
+            "default": "",
+            "format": "string",
+            "isRequired": True,
+            "isSecret": True,
+        }
+    ]
+
+    result = cli.extract_fix_result(
+        fix_result_json("fixed", updated_server_json=updated_server_json)
+    )
+
+    assert result is not None
+    assert result.updated_server_json is not None
+    registry_json = result.updated_server_json.to_registry_json(current_server_json)
+    assert registry_json["packages"][0]["transport"]["env"] == {
+        "WEATHER_API_TOKEN": "",
+    }
+    assert registry_json["_meta"]["wardnImport"]["upstreamVersion"] == "1.0.0"
+    assert registry_json["_meta"]["io.modelcontextprotocol.registry/official"] == {
+        "status": "active",
+        "isLatest": True,
+    }
+    assert registry_json["repository"]["customRepositoryField"] == "preserved"
+    assert registry_json["packages"][0]["fileSha256"] == "sha256:preserved"
+    assert (
+        registry_json["packages"][0]["transport"]["customTransportField"]
+        == "preserved"
+    )
+    cli.RegistryServerVersionCreate.model_validate(registry_json)
 
 
 def test_extract_fix_result_rejects_markdown_only_output() -> None:

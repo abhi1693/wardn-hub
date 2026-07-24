@@ -5,10 +5,9 @@
  * OpenAPI spec version: 0.2.142
  */
 
-export type SkillsAuditHistoryGetParams = {
+export type SkillsAuditGetParams = {
 /**
- * @minimum 1
- * @maximum 100
+ * Return the audit for this retained content snapshot.
  */
-limit?: number;
+content_hash?: string | null;
 };

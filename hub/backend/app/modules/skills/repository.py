@@ -673,14 +673,23 @@ async def get_skill_snapshot(
     session: AsyncSession,
     skill: Skill,
     *,
+    content_hash: str | None = None,
     include_files: bool = True,
 ) -> SkillSnapshot | None:
-    query = select(SkillSnapshot).where(
-        SkillSnapshot.id == skill.current_snapshot_id,
-        SkillSnapshot.skill_id == skill.id,
-        SkillSnapshot.status == "active",
-        SkillSnapshot.is_latest.is_(True),
-    )
+    query = select(SkillSnapshot).where(SkillSnapshot.skill_id == skill.id)
+    if content_hash is None:
+        query = query.where(
+            SkillSnapshot.id == skill.current_snapshot_id,
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+        )
+    else:
+        query = query.where(
+            SkillSnapshot.content_hash == content_hash,
+            SkillSnapshot.status == "active",
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+        )
     if not include_files:
         query = query.options(
             load_only(
@@ -694,6 +703,35 @@ async def get_skill_snapshot(
             )
         )
     result = await session.execute(query)
+    return result.scalar_one_or_none()
+
+
+async def get_skill_audit_for_snapshot(
+    session: AsyncSession,
+    skill: Skill,
+    *,
+    content_hash: str,
+) -> SkillAudit | None:
+    result = await session.execute(
+        select(SkillAudit)
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == SkillAudit.snapshot_id,
+                SkillSnapshot.skill_id == SkillAudit.skill_id,
+                SkillSnapshot.content_hash == SkillAudit.content_hash,
+            ),
+        )
+        .where(
+            SkillAudit.skill_id == skill.id,
+            SkillAudit.content_hash == content_hash,
+            SkillSnapshot.status == "active",
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+            SkillAudit.status.in_(("pass", "warn", "fail")),
+        )
+        .limit(1)
+    )
     return result.scalar_one_or_none()
 
 

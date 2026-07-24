@@ -336,7 +336,7 @@ def test_import_github_skill_catalog_returns_400(monkeypatch) -> None:
 def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:
     async def get_skill_detail(*args, **kwargs):
         assert args[1] == "vercel-labs/skills/find-skills"
-        assert kwargs == {"include_bundle": False}
+        assert kwargs == {"content_hash": None, "include_bundle": False}
         return SkillDetailResponse(
             id="vercel-labs/skills/find-skills",
             source="vercel-labs/skills",
@@ -363,7 +363,7 @@ def test_get_skill_detail_supports_nested_github_source(monkeypatch) -> None:
 def test_get_skill_detail_does_not_shadow_audit_history_owner(monkeypatch) -> None:
     async def get_skill_detail(*args, **kwargs):
         assert args[1] == "audit-history/acme/widget"
-        assert kwargs == {"include_bundle": False}
+        assert kwargs == {"content_hash": None, "include_bundle": False}
         return SkillDetailResponse(
             id="audit-history/acme/widget",
             source="audit-history/acme",
@@ -382,7 +382,7 @@ def test_get_skill_detail_does_not_shadow_audit_history_owner(monkeypatch) -> No
 
 def test_get_skill_detail_can_return_complete_bundle(monkeypatch) -> None:
     async def get_skill_detail(*args, **kwargs):
-        assert kwargs == {"include_bundle": True}
+        assert kwargs == {"content_hash": None, "include_bundle": True}
         return SkillDetailResponse(
             id="vercel-labs/skills/find-skills",
             source="vercel-labs/skills",
@@ -426,6 +426,28 @@ def test_get_skill_detail_can_return_complete_bundle(monkeypatch) -> None:
             "executable": True,
         },
     ]
+
+
+def test_get_skill_detail_can_select_retained_snapshot(monkeypatch) -> None:
+    async def get_skill_detail(*args, **kwargs):
+        assert kwargs == {"content_hash": "a" * 64, "include_bundle": True}
+        return SkillDetailResponse(
+            id="vercel-labs/skills/find-skills",
+            source="vercel-labs/skills",
+            slug="find-skills",
+            hash="a" * 64,
+            auditEnabled=True,
+        )
+
+    monkeypatch.setattr(router, "get_skill_detail", get_skill_detail)
+
+    response = TestClient(create_app()).get(
+        "/api/v1/skills/vercel-labs/skills/find-skills"
+        f"?include_bundle=true&content_hash={'a' * 64}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["hash"] == "a" * 64
 
 
 def test_get_skill_detail_returns_404(monkeypatch) -> None:
@@ -504,6 +526,7 @@ def test_get_skill_audit_returns_current_cisco_result(monkeypatch) -> None:
 
     async def get_skill_audit(*args, **kwargs):
         assert args[1] == "vercel-labs/skills/find-skills"
+        assert kwargs == {"content_hash": None}
         return SkillAuditResponse(
             id="vercel-labs/skills/find-skills",
             source="vercel-labs/skills",
@@ -539,6 +562,21 @@ def test_get_skill_audit_returns_current_cisco_result(monkeypatch) -> None:
     assert response.json()["audit"]["riskLevel"] == "low"
     assert response.json()["audit"]["score"] == 100
     assert response.json()["audit"]["rank"] == "S"
+
+
+def test_get_skill_audit_can_select_retained_snapshot(monkeypatch) -> None:
+    async def get_skill_audit(*args, **kwargs):
+        assert kwargs == {"content_hash": "a" * 64}
+        raise SkillAuditNotFoundError("skill audits not found")
+
+    monkeypatch.setattr(router, "get_skill_audit", get_skill_audit)
+
+    response = TestClient(create_app()).get(
+        "/api/v1/skills/audit/vercel-labs/skills/find-skills"
+        f"?content_hash={'a' * 64}"
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize(

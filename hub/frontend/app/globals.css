@@ -193,6 +193,21 @@
   margin: 0.25rem 0 0;
 }
 
+.skill-snapshot-notice {
+  background: var(--primary-fixed);
+  border-color: color-mix(in srgb, var(--electric-blue) 34%, var(--border));
+}
+
+.skill-snapshot-notice svg,
+.skill-snapshot-notice a {
+  color: var(--electric-blue);
+}
+
+.skill-snapshot-notice a {
+  font-weight: 750;
+  text-underline-offset: 3px;
+}
+
 .skill-detail-tab-rail {
   position: sticky;
   top: 64px;
@@ -581,7 +596,7 @@
 }
 
 .skill-audit-history-dot-target {
-  cursor: help;
+  cursor: pointer;
   outline: none;
 }
 
@@ -783,12 +798,46 @@
   background: color-mix(in srgb, var(--electric-blue) 5%, transparent);
 }
 
+.skill-audit-history-table tbody tr {
+  position: relative;
+  cursor: pointer;
+}
+
 .skill-audit-history-table tbody tr:hover {
   background: var(--surface-container-low);
 }
 
+.skill-audit-history-table tbody tr[data-selected="true"] {
+  background: color-mix(in srgb, var(--electric-blue) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--electric-blue);
+}
+
+.skill-audit-history-snapshot-link {
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--electric-blue);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 42%, transparent);
+  text-underline-offset: 3px;
+}
+
+.skill-audit-history-snapshot-link::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+.skill-audit-history-snapshot-link:hover {
+  text-decoration-color: currentColor;
+}
+
+.skill-audit-history-table tbody tr:has(.skill-audit-history-snapshot-link:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 .skill-audit-history-table code {
-  color: var(--on-surface-variant);
+  color: inherit;
   font-size: 11px;
 }
 

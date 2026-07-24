@@ -371,6 +371,7 @@ async def get_skill_detail(
     session: AsyncSession,
     skill_id: str,
     *,
+    content_hash: str | None = None,
     include_bundle: bool = False,
 ) -> SkillDetailResponse:
     audit_enabled = get_settings().skill_audit_enabled
@@ -381,9 +382,12 @@ async def get_skill_detail(
     snapshot = await repository.get_skill_snapshot(
         session,
         skill,
+        content_hash=content_hash,
         include_files=include_bundle,
     )
     if snapshot is None:
+        if content_hash is not None:
+            raise SkillNotFoundError("skill snapshot not found")
         return SkillDetailResponse(
             id=f"{skill.source}/{skill.slug}",
             source=skill.source,
@@ -484,14 +488,27 @@ def audit_read(audit: SkillAudit) -> SkillAuditRead:
     )
 
 
-async def get_skill_audit(session: AsyncSession, skill_id: str) -> SkillAuditResponse:
+async def get_skill_audit(
+    session: AsyncSession,
+    skill_id: str,
+    *,
+    content_hash: str | None = None,
+) -> SkillAuditResponse:
     if not get_settings().skill_audit_enabled:
         raise SkillAuditNotFoundError("skill audits are disabled")
     source, slug = split_skill_id(skill_id)
     skill = await repository.get_skill(session, source, slug)
     if skill is None:
         raise SkillNotFoundError("skill not found")
-    audit = await repository.get_current_skill_audit(session, skill)
+    audit = (
+        await repository.get_skill_audit_for_snapshot(
+            session,
+            skill,
+            content_hash=content_hash,
+        )
+        if content_hash is not None
+        else await repository.get_current_skill_audit(session, skill)
+    )
     if audit is None:
         raise SkillAuditNotFoundError("skill audits not found")
     return SkillAuditResponse(

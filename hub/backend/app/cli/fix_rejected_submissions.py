@@ -30,6 +30,7 @@ from app.cli.review_pending_submissions import (
     submission_read_to_review_dict,
     submitted_mcp_server_model_json,
 )
+from app.cli.submission_fix_contract import SubmissionFixServerJson
 from app.modules.registry.schemas import RegistryServerVersionCreate
 
 SOURCE_REVIEW_LIST_FORMAT = """Source review list format:
@@ -42,6 +43,8 @@ DRAFT_METADATA_RULES = f"""Metadata rules:
 - For secrets or user-specific values, use an empty string.
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
 - Split package versions from identifiers. Do not put versions or tags inside package identifiers.
+- Keep every environmentVariables[].default and packageArguments[].default value as a string, including numeric and boolean-looking defaults such as "300", "true", and "0".
+- Use empty strings, empty lists, or null for schema-required metadata that has no documented value; do not invent values to fill the strict output contract.
 - Ensure package transport command, args, env, and type match documented install/run instructions.
 {VALIDATION_PACKAGE_ARGUMENT_CHECKS}
 {VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS}
@@ -54,7 +57,7 @@ class FixDecisionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     decision: Literal["fixed", "cannot_fix", "skip"]
-    updated_server_json_text: str | None = Field(
+    updated_server_json: SubmissionFixServerJson | None = Field(
         alias="updatedServerJson",
     )
     summary: str = Field(max_length=2000)
@@ -63,31 +66,12 @@ class FixDecisionPayload(BaseModel):
 
     @model_validator(mode="after")
     def require_updated_server_json_for_fixed(self) -> FixDecisionPayload:
-        if self.decision == "fixed" and self.updated_server_json_text is None:
+        if self.decision == "fixed" and self.updated_server_json is None:
             raise ValueError("updatedServerJson is required when decision is fixed")
-        if self.updated_server_json_text is not None:
-            self._parse_updated_server_json()
+        if self.decision != "fixed" and self.updated_server_json is not None:
+            raise ValueError("updatedServerJson must be null unless decision is fixed")
         return self
 
-    @property
-    def updated_server_json(self) -> dict[str, Any] | None:
-        if self.updated_server_json_text is None:
-            return None
-        return self._parse_updated_server_json()
-
-    def _parse_updated_server_json(self) -> dict[str, Any]:
-        try:
-            parsed = json.loads(self.updated_server_json_text or "")
-        except json.JSONDecodeError as exc:
-            raise ValueError("updatedServerJson must contain valid JSON") from exc
-        if not isinstance(parsed, dict):
-            raise ValueError("updatedServerJson must encode a JSON object")
-        return parsed
-
-
-# Keep the transport schema strict without closing the forward-compatible registry
-# document: updatedServerJson is a JSON-encoded string, then the Hub registry models
-# and service validation provide the second gate before any mutation.
 FIX_DECISION_OUTPUT_SCHEMA = FixDecisionPayload.model_json_schema(by_alias=True)
 
 
@@ -334,7 +318,9 @@ Required output:
 - Return only the JSON object required by the transport-enforced output schema.
 - Put the concise outcome in summary and every inspected source URL/file in sourceFilesRead.
 - Set missingInformation to an empty list only when no user-supplied evidence is missing.
-- When decision is "fixed", set updatedServerJson to a JSON-encoded string containing the complete replacement server object. Do not return that field as a nested object.
+- When decision is "fixed", set updatedServerJson to the nested server object required by the output schema. Do not JSON-encode it as a string.
+- The output schema represents packages[].transport.env as an array of name/value entries; the database fix controller converts it to the registry env map.
+- In updatedServerJson._meta, return only categories, registryNamespace, and sourceReview. The database fix controller preserves official registry, import, publisher, and other system-managed metadata from the current submission.
 
 If you cannot fix it, set decision to "cannot_fix", set updatedServerJson to null, and include the exact missing information needed from the user in missingInformation.
 The database fix controller will validate the schema-constrained JSON before applying updatedServerJson.
@@ -442,7 +428,7 @@ def fix_loop(
                             "Schema-constrained fix response did not include updatedServerJson"
                         )
                     updated_server_json = normalize_updated_server_json(
-                        updated_server_json,
+                        updated_server_json.to_registry_json(context["submission"]["serverJson"]),
                         context["submission"],
                     )
                     final_submission = client.fix_submission(

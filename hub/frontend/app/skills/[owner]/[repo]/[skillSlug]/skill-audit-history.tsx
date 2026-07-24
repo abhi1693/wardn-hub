@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   CartesianGrid,
@@ -16,6 +18,7 @@ import type {
   SkillAuditHistoryEntryRead,
   SkillAuditHistoryResponse,
 } from "@/lib/api/generated/model";
+import { skillDetailPath } from "@/lib/public-skills";
 
 const GRADE_THRESHOLD = 75;
 
@@ -64,10 +67,12 @@ function decisionLabel(status: SkillAuditHistoryEntryRead["status"]) {
 function AuditScoreDot({
   onActivate,
   onDeactivate,
+  onSelect,
   ...props
 }: DotItemDotProps & {
   onActivate: (point: ActiveAuditPoint) => void;
   onDeactivate: () => void;
+  onSelect: (entry: AuditChartEntry) => void;
 }) {
   const entry = props.payload as AuditChartEntry;
   const { cx, cy } = props;
@@ -89,16 +94,22 @@ function AuditScoreDot({
     x: cx,
     y: cy,
   } satisfies ActiveAuditPoint;
-  const label = `${entry.dateFull}: ${entry.score} out of 100, grade ${entry.rank}, ${decisionLabel(entry.status)}${entry.current ? ", current snapshot" : ""}`;
+  const label = `${entry.dateFull}: ${entry.score} out of 100, grade ${entry.rank}, ${decisionLabel(entry.status)}${entry.current ? ", current snapshot" : ""}. Load snapshot`;
   return (
     <g
       aria-label={label}
       className="skill-audit-history-dot-target"
       onBlur={onDeactivate}
       onFocus={() => onActivate(point)}
+      onClick={() => onSelect(entry)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onSelect(entry);
+      }}
       onMouseEnter={() => onActivate(point)}
       onMouseLeave={onDeactivate}
-      role="img"
+      role="link"
       tabIndex={0}
     >
       <circle className="skill-audit-history-dot-hit-area" cx={cx} cy={cy} r={14} />
@@ -152,12 +163,22 @@ function AuditHistoryTooltip({ entry }: { entry: AuditChartEntry }) {
 
 export function SkillAuditHistory({
   history,
+  selectedContentHash,
 }: {
   history: SkillAuditHistoryResponse | null;
+  selectedContentHash?: string;
 }) {
+  const router = useRouter();
   const [activePoint, setActivePoint] = useState<ActiveAuditPoint | null>(null);
   const newestFirst = history?.data ?? [];
-  if (!newestFirst.length) return null;
+  const historySkillId = history?.id;
+  if (!newestFirst.length || !historySkillId) return null;
+  const historySkillPath = skillDetailPath(historySkillId);
+
+  function snapshotHref(entry: SkillAuditHistoryEntryRead) {
+    const path = `${historySkillPath}?tab=security`;
+    return entry.current ? path : `${path}&snapshot=${entry.contentHash}`;
+  }
 
   const entries = [...newestFirst].reverse();
   const chartEntries: AuditChartEntry[] = entries.map((entry) => ({
@@ -186,7 +207,8 @@ export function SkillAuditHistory({
       >
         <p className="skill-audit-history-chart-description" id="skill-audit-history-chart-description">
           Scores range from zero to one hundred. Use Tab and arrow keys to inspect each snapshot.
-          Dots are green for pass, amber for review, and red for fail.
+          Press Enter on a point to load that snapshot. Dots are green for pass, amber for review,
+          and red for fail.
         </p>
         <div className="skill-audit-history-chart-canvas">
           <ResponsiveContainer height={250} width="100%">
@@ -233,6 +255,7 @@ export function SkillAuditHistory({
                     {...props}
                     onActivate={setActivePoint}
                     onDeactivate={() => setActivePoint(null)}
+                    onSelect={(entry) => router.push(snapshotHref(entry), { scroll: false })}
                   />
                 )}
                 isAnimationActive={false}
@@ -272,9 +295,22 @@ export function SkillAuditHistory({
             {newestFirst.map((entry) => {
               const change = scoreChange(entry, newestFirst);
               return (
-                <tr key={entry.contentHash}>
+                <tr
+                  data-selected={entry.contentHash === selectedContentHash ? "true" : undefined}
+                  key={entry.contentHash}
+                >
                   <td data-label="Snapshot">
-                    <code title={entry.contentHash}>{entry.contentHash.slice(0, 10)}</code>
+                    <Link
+                      aria-current={
+                        entry.contentHash === selectedContentHash ? "page" : undefined
+                      }
+                      className="skill-audit-history-snapshot-link"
+                      href={snapshotHref(entry)}
+                      scroll={false}
+                      title={`Load snapshot ${entry.contentHash}`}
+                    >
+                      <code>{entry.contentHash.slice(0, 10)}</code>
+                    </Link>
                     {entry.current ? <span className="skill-audit-history-current">Current</span> : null}
                   </td>
                   <td data-label="Published">

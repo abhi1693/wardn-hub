@@ -1,4 +1,12 @@
-import { Download, FileArchive, FileCode2, FileText, ShieldAlert, Sparkles } from "lucide-react";
+import {
+  Download,
+  FileArchive,
+  FileCode2,
+  FileText,
+  History,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -39,6 +47,7 @@ type SkillDetailViewProps = {
   repo: string;
   selectedFilePath: string;
   skillSlug: string;
+  snapshotHash?: string;
 };
 
 function GithubMark() {
@@ -111,18 +120,22 @@ export async function SkillDetailView({
   repo,
   selectedFilePath,
   skillSlug,
+  snapshotHash,
 }: SkillDetailViewProps) {
   const source = `${owner}/${repo}`;
   const id = `${source}/${skillSlug}`;
   const [skill, sourceSkills] = await Promise.all([
-    getPublicSkill(id, { includeBundle: true }).catch((error) => {
+    getPublicSkill(id, { contentHash: snapshotHash, includeBundle: true }).catch((error) => {
       if (isSkillsNotFoundError(error)) notFound();
       throw error;
     }),
     listPublicSkills({ limit: 100, source }).catch(() => []),
   ]);
   const [audit, auditHistory] = skill.auditEnabled
-    ? await Promise.all([getPublicSkillAudit(id), getPublicSkillAuditHistory(id)])
+    ? await Promise.all([
+        getPublicSkillAudit(id, snapshotHash),
+        getPublicSkillAuditHistory(id),
+      ])
     : [null, null];
   const displayedAuditHistory =
     auditHistory ??
@@ -165,6 +178,12 @@ export async function SkillDetailView({
   const contentHash = audit?.contentHash ?? skill.hash ?? undefined;
   const packageReady = skill.bundleFormatVersion === 2 && skill.resolutionStatus === "complete";
   const packageIssue = (skill.resolutionIssues ?? [])[0]?.reason;
+  const viewingRetainedSnapshot = Boolean(
+    snapshotHash &&
+      !displayedAuditHistory?.data.some(
+        (entry) => entry.contentHash === snapshotHash && entry.current,
+      ),
+  );
 
   return (
     <main className="site-shell">
@@ -245,6 +264,19 @@ export async function SkillDetailView({
         </div>
       </section>
 
+      {viewingRetainedSnapshot ? (
+        <section className="skill-package-notice skill-snapshot-notice" role="status">
+          <History aria-hidden="true" size={20} />
+          <div>
+            <strong>Viewing retained snapshot {snapshotHash?.slice(0, 12)}</strong>
+            <p>
+              The files and security evidence below belong to this historical bundle.{" "}
+              <Link href={`${skillDetailPath(id)}?tab=security`}>Return to current snapshot</Link>
+            </p>
+          </div>
+        </section>
+      ) : null}
+
       {!packageReady ? (
         <section className="skill-package-notice" role="status">
           <ShieldAlert aria-hidden="true" size={20} />
@@ -323,7 +355,10 @@ export async function SkillDetailView({
               </p>
             </div>
             <SkillAuditPanel audit={audit} />
-            <SkillAuditHistory history={displayedAuditHistory} />
+            <SkillAuditHistory
+              history={displayedAuditHistory}
+              selectedContentHash={skill.hash ?? undefined}
+            />
           </div>
         ) : undefined}
         skillId={id}

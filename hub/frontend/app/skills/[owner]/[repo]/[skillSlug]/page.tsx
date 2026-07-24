@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { SkillDetailView } from "./skill-detail-view";
 
 type SkillDetailPageProps = {
@@ -8,6 +9,7 @@ type SkillDetailPageProps = {
     skillSlug: string;
   }>;
   searchParams: Promise<{
+    snapshot?: string | string[];
     tab?: string | string[];
   }>;
 };
@@ -16,6 +18,13 @@ function detailTab(value: string | string[] | undefined) {
   return value === "files" || value === "install" || value === "security"
     ? value
     : "overview";
+}
+
+function snapshotHash(value: string | string[] | undefined) {
+  if (value === undefined) return undefined;
+  const resolved = Array.isArray(value) ? value[0] : value;
+  if (!resolved || !/^[a-f0-9]{64}$/.test(resolved)) notFound();
+  return resolved;
 }
 
 export async function generateMetadata({ params }: SkillDetailPageProps): Promise<Metadata> {
@@ -38,6 +47,7 @@ export default async function SkillDetailPage({ params, searchParams }: SkillDet
       repo={repo}
       selectedFilePath="SKILL.md"
       skillSlug={skillSlug}
+      snapshotHash={snapshotHash(query.snapshot)}
     />
   );
 }

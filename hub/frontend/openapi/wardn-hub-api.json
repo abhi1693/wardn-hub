@@ -7697,7 +7697,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.141"
+    "version": "0.2.142"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12578,6 +12578,25 @@
               "title": "Skill Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Return the audit for this retained content snapshot.",
+            "in": "query",
+            "name": "content_hash",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return the audit for this retained content snapshot.",
+              "title": "Content Hash"
+            }
           }
         ],
         "responses": {
@@ -12917,6 +12936,25 @@
               "description": "Include scripts, references, assets, and other stored skill files.",
               "title": "Include Bundle",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Return this retained content snapshot instead of the current snapshot.",
+            "in": "query",
+            "name": "content_hash",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return this retained content snapshot instead of the current snapshot.",
+              "title": "Content Hash"
             }
           }
         ],

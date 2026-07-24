@@ -336,18 +336,22 @@ export async function importPublicGitHubSkill(repositoryUrl: string) {
 
 export async function getPublicSkill(
   skillId: string,
-  options?: { includeBundle?: boolean },
+  options?: { contentHash?: string; includeBundle?: boolean },
 ) {
+  const params: Record<string, boolean | string> = {};
+  if (options?.includeBundle) params.include_bundle = true;
+  if (options?.contentHash) params.content_hash = options.contentHash;
   return skillsRequest<SkillDetailResponse>(
     `/skills/${skillId.split("/").map(encodeURIComponent).join("/")}`,
-    options?.includeBundle ? { include_bundle: true } : undefined,
+    Object.keys(params).length ? params : undefined,
   );
 }
 
-export async function getPublicSkillAudit(skillId: string) {
+export async function getPublicSkillAudit(skillId: string, contentHash?: string) {
   try {
     return await skillsRequest<SkillAuditResponse>(
       `/skills/audit/${skillId.split("/").map(encodeURIComponent).join("/")}`,
+      contentHash ? { content_hash: contentHash } : undefined,
     );
   } catch (error) {
     if (isSkillsNotFoundError(error)) return null;

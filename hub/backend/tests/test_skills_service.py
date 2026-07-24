@@ -444,6 +444,66 @@ async def test_disabled_audit_gate_hides_stored_audit_results(
         )
 
 
+async def test_get_skill_audit_selects_retained_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(skill_audit_enabled=True),
+    )
+    skill = SimpleNamespace(id=uuid.uuid4(), source="acme/skills", slug="weather")
+    audit = SimpleNamespace(
+        content_hash="a" * 64,
+        scanner_name="Cisco AI Skill Scanner",
+        scanner_version="2.0.12",
+        policy_name="default",
+        policy_version="1.0",
+        policy_fingerprint="b" * 64,
+        status="pass",
+        summary="No risks detected",
+        audited_at=datetime(2026, 7, 20, tzinfo=UTC),
+        risk_level="low",
+        score=100,
+        rank="S",
+        score_deductions=[],
+        findings=[],
+        analyzers=[],
+        scan_duration_ms=120,
+    )
+
+    async def get_skill(*args: object) -> SimpleNamespace:
+        return skill
+
+    async def get_skill_audit_for_snapshot(*args: object, **kwargs: object) -> SimpleNamespace:
+        assert kwargs == {"content_hash": "a" * 64}
+        return audit
+
+    async def unexpected_current_audit(*args: object, **kwargs: object) -> None:
+        raise AssertionError("retained audit lookup must not read the current audit")
+
+    monkeypatch.setattr(service.repository, "get_skill", get_skill)
+    monkeypatch.setattr(
+        service.repository,
+        "get_skill_audit_for_snapshot",
+        get_skill_audit_for_snapshot,
+    )
+    monkeypatch.setattr(
+        service.repository,
+        "get_current_skill_audit",
+        unexpected_current_audit,
+    )
+
+    response = await service.get_skill_audit(
+        object(),  # type: ignore[arg-type]
+        "acme/skills/weather",
+        content_hash="a" * 64,
+    )
+
+    assert response.content_hash == "a" * 64
+    assert response.audit.score == 100
+
+
 async def test_skill_audit_history_returns_snapshot_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -654,6 +714,52 @@ async def test_get_skill_snapshot_can_defer_bundle_files() -> None:
     assert "skill_snapshots.files" not in selected_columns
 
 
+async def test_get_skill_snapshot_can_select_retained_hash() -> None:
+    class FakeSession:
+        statement = ""
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statement = str(statement.compile(dialect=postgresql.dialect()))
+            return SimpleNamespace(scalar_one_or_none=lambda: None)
+
+    session = FakeSession()
+    skill = SimpleNamespace(current_snapshot_id="snapshot-id", id="skill-id")
+
+    await repository.get_skill_snapshot(  # type: ignore[arg-type]
+        session,
+        skill,
+        content_hash="a" * 64,
+        include_files=False,
+    )
+
+    assert "skill_snapshots.content_hash =" in session.statement
+    assert "skill_snapshots.is_latest IS true" not in session.statement
+    assert "skill_snapshots.bundle_format_version =" in session.statement
+    assert "skill_snapshots.resolution_status =" in session.statement
+
+
+async def test_get_skill_audit_for_snapshot_is_hash_bounded() -> None:
+    class FakeSession:
+        statement = ""
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statement = str(statement.compile(dialect=postgresql.dialect()))
+            return SimpleNamespace(scalar_one_or_none=lambda: None)
+
+    session = FakeSession()
+
+    await repository.get_skill_audit_for_snapshot(  # type: ignore[arg-type]
+        session,
+        SimpleNamespace(id="skill-id"),
+        content_hash="a" * 64,
+    )
+
+    assert "skill_audits.content_hash =" in session.statement
+    assert "skill_snapshots.content_hash = skill_audits.content_hash" in session.statement
+    assert "skill_snapshots.is_latest IS true" not in session.statement
+    assert "LIMIT" in session.statement
+
+
 async def test_get_current_skill_audit_requires_current_snapshot_hash_and_is_bounded() -> None:
     class FakeSession:
         statement = ""
@@ -747,10 +853,10 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     async def get_skill(*args: object) -> SimpleNamespace:
         return skill
 
-    include_files_values: list[object] = []
+    snapshot_options: list[dict[str, object]] = []
 
     async def get_skill_snapshot(*args: object, **kwargs: object) -> SimpleNamespace:
-        include_files_values.append(kwargs["include_files"])
+        snapshot_options.append(kwargs)
         return snapshot
 
     monkeypatch.setattr(service.repository, "get_skill", get_skill)
@@ -764,7 +870,10 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     )
 
     assert [file.path for file in default_detail.files or []] == ["SKILL.md"]
-    assert include_files_values == [False, True]
+    assert snapshot_options == [
+        {"content_hash": None, "include_files": False},
+        {"content_hash": None, "include_files": True},
+    ]
     assert [file.path for file in bundle_detail.files or []] == [
         "SKILL.md",
         "references/api.md",
@@ -777,6 +886,49 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     assert bundle_detail.bundle_format_version == 2
     assert bundle_detail.source_entrypoint == "SKILL.md"
     assert bundle_detail.resolution_status == "complete"
+
+
+async def test_get_skill_detail_selects_retained_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill = SimpleNamespace(
+        source="acme/skills",
+        slug="weather",
+        source_owner="acme",
+        source_name="skills",
+        source_owner_url="",
+        source_owner_icon_url="",
+        source_url="",
+    )
+    snapshot = SimpleNamespace(
+        content_hash="a" * 64,
+        skill_md="# Retained weather",
+        bundle_format_version=2,
+        source_commit_sha="b" * 40,
+        source_entrypoint="SKILL.md",
+        resolution_status="complete",
+        resolution_issues=[],
+        files=[],
+    )
+
+    async def get_skill(*args: object) -> SimpleNamespace:
+        return skill
+
+    async def get_skill_snapshot(*args: object, **kwargs: object) -> SimpleNamespace:
+        assert kwargs == {"content_hash": "a" * 64, "include_files": False}
+        return snapshot
+
+    monkeypatch.setattr(service.repository, "get_skill", get_skill)
+    monkeypatch.setattr(service.repository, "get_skill_snapshot", get_skill_snapshot)
+
+    detail = await service.get_skill_detail(
+        object(),  # type: ignore[arg-type]
+        "acme/skills/weather",
+        content_hash="a" * 64,
+    )
+
+    assert detail.hash == "a" * 64
+    assert (detail.files or [])[0].contents == "# Retained weather"
 
 
 async def test_record_skill_install_requires_current_snapshot_hash(

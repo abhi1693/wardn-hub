@@ -155,9 +155,16 @@ async def import_github_skill_catalog(
 async def get_skill_catalog_audit(
     skill_id: str,
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    content_hash: Annotated[
+        str | None,
+        Query(
+            description="Return the audit for this retained content snapshot.",
+            pattern=r"^[a-f0-9]{64}$",
+        ),
+    ] = None,
 ) -> SkillAuditResponse:
     try:
-        return await get_skill_audit(session, skill_id)
+        return await get_skill_audit(session, skill_id, content_hash=content_hash)
     except (SkillNotFoundError, SkillAuditNotFoundError) as exc:
         raise not_found(exc, detail=str(exc)) from exc
 
@@ -224,8 +231,20 @@ async def get_skill_catalog_detail(
         bool,
         Query(description="Include scripts, references, assets, and other stored skill files."),
     ] = False,
+    content_hash: Annotated[
+        str | None,
+        Query(
+            description="Return this retained content snapshot instead of the current snapshot.",
+            pattern=r"^[a-f0-9]{64}$",
+        ),
+    ] = None,
 ) -> SkillDetailResponse:
     try:
-        return await get_skill_detail(session, skill_id, include_bundle=include_bundle)
+        return await get_skill_detail(
+            session,
+            skill_id,
+            content_hash=content_hash,
+            include_bundle=include_bundle,
+        )
     except SkillNotFoundError as exc:
-        raise not_found(exc, detail="skill not found") from exc
+        raise not_found(exc, detail=str(exc)) from exc
