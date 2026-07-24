@@ -1,6 +1,18 @@
+import pytest
+
 from app.modules.imports import service
 from app.modules.imports.exceptions import SourceNotFoundError
 from app.modules.imports.schemas import ServerSourceImportRequest
+
+
+def test_fetch_text_wraps_source_read_timeout(monkeypatch) -> None:
+    def timed_out(*args, **kwargs):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(service, "urlopen", timed_out)
+
+    with pytest.raises(SourceNotFoundError, match="source metadata could not be loaded"):
+        service.fetch_text("https://raw.githubusercontent.com/acme/weather/main/server.json")
 
 
 def test_source_request_headers_use_github_token_for_github_hosts(monkeypatch) -> None:

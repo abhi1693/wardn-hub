@@ -219,7 +219,7 @@ def fetch_text(url: str, *, accept: str = "application/json") -> str | None:
                 return None
             span.set_status(Status(StatusCode.ERROR, "source metadata could not be loaded"))
             raise SourceNotFoundError("source metadata could not be loaded") from exc
-        except URLError as exc:
+        except (TimeoutError, URLError) as exc:
             span.set_status(Status(StatusCode.ERROR, "source metadata could not be loaded"))
             raise SourceNotFoundError("source metadata could not be loaded") from exc
 
