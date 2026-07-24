@@ -126,6 +126,10 @@ def test_registry_selects_all_or_named_jobs_and_rejects_unknown_names() -> None:
         "submission-repair",
         "mcp-registry-sync",
         "skill-maintenance",
+        "skill-audit-backfill",
+    ]
+    assert [job.name for job in jobs if not job.singleton] == [
+        "skill-audit-backfill"
     ]
     assert [job.name for job in select_job_definitions(jobs, ["events", "events"])] == [
         "events"
@@ -165,6 +169,39 @@ async def test_worker_holds_and_releases_its_database_advisory_lock() -> None:
     assert lock_name("test") == "wardn-hub:worker:test"
     assert fake_engine.connection.unlocked is True
     assert fake_engine.connection.commits >= 3
+
+
+@pytest.mark.asyncio
+async def test_replicated_worker_lane_runs_without_database_advisory_lock() -> None:
+    stop = asyncio.Event()
+    started = asyncio.Event()
+
+    class UnexpectedEngine:
+        def connect(self) -> None:
+            raise AssertionError("replicated job lanes must not open a coordinator connection")
+
+    async def run(stop_event: asyncio.Event) -> None:
+        started.set()
+        await stop_event.wait()
+
+    worker = asyncio.create_task(
+        run_worker(
+            (
+                JobDefinition(
+                    name="replicated",
+                    description="replicated",
+                    run=run,
+                    singleton=False,
+                ),
+            ),
+            stop=stop,
+            settings=get_settings(),
+            db_engine=UnexpectedEngine(),  # type: ignore[arg-type]
+        )
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    stop.set()
+    await asyncio.wait_for(worker, timeout=1)
 
 
 @pytest.mark.asyncio
@@ -303,6 +340,7 @@ async def test_worker_claim_queries_skip_current_leases_and_lock_rows() -> None:
     await job_repository.claim_next_skill_audit(  # type: ignore[arg-type]
         session,
         lease_seconds=1800,
+        published_before=datetime(2026, 7, 24, tzinfo=UTC),
     )
 
     sql = [
@@ -319,6 +357,8 @@ async def test_worker_claim_queries_skip_current_leases_and_lock_rows() -> None:
     assert "worker_item_states.item_updated_at = server_submissions.updated_at" in sql[0]
     assert "worker_item_states.item_updated_at = server_submissions.updated_at" in sql[1]
     assert "worker_item_states.item_revision = skill_snapshots.content_hash" in sql[2]
+    assert "skill_snapshots.published_at <=" in sql[2]
+    assert "ORDER BY skill_snapshots.published_at ASC, skills.id ASC" in sql[2]
 
 
 @pytest.mark.asyncio
@@ -562,7 +602,6 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
     stop = asyncio.Event()
     commands: list[tuple[str, ...]] = []
     finished: list[tuple[str, int]] = []
-    next_refresh = datetime(2099, 1, 1, tzinfo=UTC)
     item = ClaimedWorkItem(
         item_id="28b58eb1-092d-41be-8589-f2964314ab2b",
         command_id="owner/repository/skill",
@@ -572,21 +611,12 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
         attempt_count=1,
     )
 
-    async def scheduled_job_next_run(
-        name: str,
-        *,
-        initial_next_run_at: datetime,
-    ) -> datetime:
-        assert name == "skill-refresh"
-        assert initial_next_run_at < next_refresh
-        return next_refresh
-
     async def claim_work(*, settings) -> ClaimedWorkItem:
         assert settings.worker_item_lease_seconds == 1800
         return item
 
     async def run_command(job_name: str, *arguments: str) -> int:
-        assert job_name == "skill-maintenance"
+        assert job_name == "skill-audit-backfill"
         commands.append(arguments)
         stop.set()
         return 0
@@ -601,21 +631,13 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
         finished.append((claimed_item.command_id, return_code))
         return "completed"
 
-    schedule = WeeklySchedule(
-        weekday=6,
-        hour=4,
-        minute=43,
-        timezone=ZoneInfo("UTC"),
-    )
-    monkeypatch.setattr(tasks, "scheduled_job_next_run", scheduled_job_next_run)
     monkeypatch.setattr(tasks, "claim_skill_audit_work", claim_work)
     monkeypatch.setattr(tasks, "run_app_command", run_command)
     monkeypatch.setattr(tasks, "finish_skill_audit_work", finish_work)
 
-    await tasks.run_skill_maintenance(
+    await tasks.run_skill_audit_backfill(
         stop,
         settings=get_settings(),
-        refresh_schedule=schedule,
     )
 
     assert len(commands) == 1
@@ -623,3 +645,63 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
     assert "--skill-id" in commands[0]
     assert "owner/repository/skill" in commands[0]
     assert finished == [("owner/repository/skill", 0)]
+
+
+@pytest.mark.asyncio
+async def test_skill_refresh_keeps_immediate_audits_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    commands: list[tuple[str, ...]] = []
+    scheduled_at = datetime(2026, 7, 25, tzinfo=UTC)
+    next_run = datetime(2026, 8, 1, tzinfo=UTC)
+
+    async def scheduled_job_next_run(
+        name: str,
+        *,
+        initial_next_run_at: datetime,
+    ) -> datetime:
+        assert name == "skill-refresh"
+        assert initial_next_run_at == next_run
+        return scheduled_at
+
+    async def wait_for_stop(_stop: asyncio.Event, _seconds: float) -> bool:
+        return False
+
+    async def mark_started(name: str) -> None:
+        assert name == "skill-refresh"
+
+    async def run_command(job_name: str, *arguments: str) -> int:
+        assert job_name == "skill-maintenance"
+        commands.append(arguments)
+        return 0
+
+    async def mark_finished(
+        name: str,
+        *,
+        next_run_at: datetime,
+        return_code: int,
+    ) -> None:
+        assert (name, next_run_at, return_code) == ("skill-refresh", next_run, 0)
+        stop.set()
+
+    monkeypatch.setattr(tasks, "scheduled_job_next_run", scheduled_job_next_run)
+    monkeypatch.setattr(tasks, "wait_for_stop", wait_for_stop)
+    monkeypatch.setattr(tasks, "mark_scheduled_job_started", mark_started)
+    monkeypatch.setattr(tasks, "run_app_command", run_command)
+    monkeypatch.setattr(tasks, "mark_scheduled_job_finished", mark_finished)
+    monkeypatch.setattr(WeeklySchedule, "next_after", lambda _self, _now=None: next_run)
+
+    await tasks.run_skill_refresh(
+        stop,
+        settings=get_settings(),
+        schedule=WeeklySchedule(
+            weekday=6,
+            hour=4,
+            minute=43,
+            timezone=ZoneInfo("UTC"),
+        ),
+    )
+
+    assert len(commands) == 1
+    assert commands[0][-3:] == ("app.manage", "skills", "refresh")

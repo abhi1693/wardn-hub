@@ -127,15 +127,18 @@ targets, snapshot pinning, and telemetry controls.
 
 Production background work uses `python -m app.cli.worker`. The worker registers
 event delivery, submission review/repair, MCP registry sync, and skill
-maintenance lanes from the backend application. PostgreSQL advisory locks make
-each lane singleton across one or more worker replicas, while persisted schedule
-state preserves due daily and weekly runs across restarts. Submission and skill
-lanes also persist per-item leases and retry windows: unchanged blocked records
-are deferred while the lane continues through the backlog, command failures use
+maintenance lanes from the backend application. PostgreSQL advisory locks keep
+scheduled and event/submission lanes singleton across replicas, while the skill
+audit backfill lane runs once per replica so it can scale horizontally. That
+backfill claims the oldest eligible current snapshot first after a short grace
+period for the immediate import/refresh audit queue. Persisted schedule state
+preserves due daily and weekly runs across restarts. Submission and skill lanes
+also persist per-item leases and retry windows: unchanged blocked records are
+deferred while the lane continues through the backlog, command failures use
 bounded exponential backoff, and a changed submission or skill snapshot becomes
 eligible immediately. Each reclaim rotates a UUID fencing token, so completion
 from an expired lease cannot overwrite or delete the newer claim. The worker
-waits for the exact packaged Alembic revision before acquiring any lane.
+waits for the exact packaged Alembic revision before starting any lane.
 Submission review and repair turns pass
 Pydantic-derived JSON Schemas to Codex app-server as `outputSchema`; controller
 validation remains the final gate before any automatic database action.
@@ -199,6 +202,13 @@ uv run python -m app.cli.worker
 
 Use `--list-jobs` to inspect the registry, or repeat `--job JOB_NAME` to run
 only selected lanes in a dedicated worker process.
+
+For a horizontally scalable skill-audit backfill pool, run one or more worker
+processes dedicated to that replicated lane:
+
+```sh
+uv run python -m app.cli.worker --job skill-audit-backfill
+```
 
 ### 3. Start the frontend
 
@@ -360,6 +370,7 @@ high-entropy session and API-token keys.
 | `WARDN_HUB_OIDC_*` | Issuer, client, callback, scope, domain, and account-provisioning settings |
 | `WARDN_HUB_SKILL_AUDIT_ENABLED` | Master gate for skill auditing and audit exposure |
 | `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` | Separate gate for the scanner's semantic LLM analyzer |
+| `WARDN_HUB_WORKER_SKILL_AUDIT_BACKFILL_MIN_AGE_SECONDS` | Grace period before an unaudited snapshot enters the scalable oldest-first backfill lane |
 | `WARDN_HUB_CODEX_APP_SERVER_URL` | Codex app-server WebSocket URL used by review, repair, and skill-audit LLM analysis |
 | `WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN` | Optional bearer token for the Codex app-server WebSocket handshake |
 | `WARDN_HUB_VALKEY_*` | Shared direct or Sentinel Valkey connection used by bounded remote state clients |

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.cli.events_worker import run_worker as run_events_worker
 from app.core.config import Settings
@@ -101,6 +101,10 @@ async def claim_skill_audit_work(
         item = await job_repository.claim_next_skill_audit(
             session,
             lease_seconds=settings.worker_item_lease_seconds,
+            published_before=datetime.now(UTC)
+            - timedelta(
+                seconds=settings.worker_skill_audit_backfill_min_age_seconds,
+            ),
         )
         await session.commit()
         return item
@@ -378,76 +382,92 @@ async def run_mcp_registry_sync(
         )
 
 
-async def run_skill_maintenance(
+async def run_skill_audit_consumer(
     stop: asyncio.Event,
     *,
     settings: Settings,
-    refresh_schedule: WeeklySchedule,
+    consumer: int,
+) -> None:
+    while not stop.is_set():
+        item = await claim_skill_audit_work(settings=settings)
+        if item is None:
+            await wait_for_stop(
+                stop,
+                settings.worker_skill_audit_poll_interval_seconds,
+            )
+            continue
+
+        return_code = await run_app_command(
+            "skill-audit-backfill",
+            "-m",
+            "app.manage",
+            "skills",
+            "audit",
+            "--skill-id",
+            item.command_id,
+            "--scanner-timeout",
+            str(settings.worker_skill_audit_scanner_timeout_seconds),
+        )
+        result = await finish_skill_audit_work(
+            item,
+            return_code=return_code,
+            settings=settings,
+        )
+        metrics_service.record_worker_item_result(
+            "skill-audit-backfill",
+            result=result,
+        )
+        logger.info(
+            "worker item finished",
+            extra={
+                "worker_job": "skill-audit-backfill",
+                "worker_item_id": item.item_id,
+                "worker_item_result": result,
+                "worker_item_attempt": item.attempt_count,
+                "worker_consumer": consumer,
+            },
+        )
+
+
+async def run_skill_audit_backfill(
+    stop: asyncio.Event,
+    *,
+    settings: Settings,
+) -> None:
+    await run_skill_audit_consumer(
+        stop,
+        settings=settings,
+        consumer=0,
+    )
+
+
+async def run_skill_refresh(
+    stop: asyncio.Event,
+    *,
+    settings: Settings,
+    schedule: WeeklySchedule,
 ) -> None:
     next_refresh = await scheduled_job_next_run(
         "skill-refresh",
-        initial_next_run_at=refresh_schedule.next_after(),
+        initial_next_run_at=schedule.next_after(),
     )
     while not stop.is_set():
-        now = datetime.now(UTC)
-        if now >= next_refresh:
-            await mark_scheduled_job_started("skill-refresh")
-            return_code = await run_app_command(
-                "skill-maintenance",
-                "-m",
-                "app.manage",
-                "skills",
-                "refresh",
-            )
-            next_refresh = refresh_schedule.next_after()
-            await mark_scheduled_job_finished(
-                "skill-refresh",
-                next_run_at=next_refresh,
-                return_code=return_code,
-            )
-            continue
-
-        item = await claim_skill_audit_work(settings=settings)
-        if item is not None:
-            return_code = await run_app_command(
-                "skill-maintenance",
-                "-m",
-                "app.manage",
-                "skills",
-                "audit",
-                "--skill-id",
-                item.command_id,
-                "--scanner-timeout",
-                str(settings.worker_skill_audit_scanner_timeout_seconds),
-            )
-            result = await finish_skill_audit_work(
-                item,
-                return_code=return_code,
-                settings=settings,
-            )
-            metrics_service.record_worker_item_result(
-                "skill-maintenance",
-                result=result,
-            )
-            logger.info(
-                "worker item finished",
-                extra={
-                    "worker_job": "skill-maintenance",
-                    "worker_item_id": item.item_id,
-                    "worker_item_result": result,
-                    "worker_item_attempt": item.attempt_count,
-                },
-            )
-            continue
-
-        seconds_until_refresh = max(
-            0.0,
-            (next_refresh - datetime.now(UTC)).total_seconds(),
-        )
-        await wait_for_stop(
+        if await wait_for_stop(
             stop,
-            min(
-                settings.worker_skill_audit_poll_interval_seconds,
-                seconds_until_refresh,
-            ),
+            (next_refresh - datetime.now(UTC)).total_seconds(),
+        ):
+            return
+        await mark_scheduled_job_started("skill-refresh")
+        return_code = await run_app_command(
+            "skill-maintenance",
+            "-m",
+            "app.manage",
+            "skills",
+            "refresh",
+        )
+        next_refresh = schedule.next_after()
+        await mark_scheduled_job_finished(
+            "skill-refresh",
+            next_run_at=next_refresh,
+            return_code=return_code,
         )

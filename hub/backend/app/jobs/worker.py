@@ -165,6 +165,42 @@ async def run_worker(
     for job in jobs:
         metrics_service.set_worker_job_lock_held(job.name, held=False)
 
+    singleton_jobs = tuple(job for job in jobs if job.singleton)
+    replicated_jobs = tuple(job for job in jobs if not job.singleton)
+
+    async with asyncio.TaskGroup() as group:
+        if singleton_jobs:
+            group.create_task(
+                run_singleton_jobs(
+                    singleton_jobs,
+                    stop=stop,
+                    settings=settings,
+                    db_engine=db_engine,
+                ),
+                name="wardn-worker-singleton-coordinator",
+            )
+        for job in replicated_jobs:
+            logger.info(
+                "worker replicated job lane started",
+                extra={"worker_job": job.name},
+            )
+            group.create_task(
+                run_owned_job(
+                    job,
+                    stop=stop,
+                    retry_seconds=settings.worker_lock_retry_seconds,
+                ),
+                name=f"wardn-worker-replicated-job-{job.name}",
+            )
+
+
+async def run_singleton_jobs(
+    jobs: tuple[JobDefinition, ...],
+    *,
+    stop: asyncio.Event,
+    settings: Settings,
+    db_engine: AsyncEngine,
+) -> None:
     while not stop.is_set():
         try:
             await run_coordinator_session(

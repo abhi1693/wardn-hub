@@ -17,6 +17,7 @@ class JobDefinition:
     name: str
     description: str
     run: JobRunner
+    singleton: bool = True
 
 
 def build_job_definitions(settings: Settings) -> tuple[JobDefinition, ...]:
@@ -59,12 +60,21 @@ def build_job_definitions(settings: Settings) -> tuple[JobDefinition, ...]:
         ),
         JobDefinition(
             name="skill-maintenance",
-            description="Audit pending skill snapshots and refresh GitHub sources weekly.",
-            run=lambda stop: tasks.run_skill_maintenance(
+            description="Refresh GitHub skill sources weekly.",
+            run=lambda stop: tasks.run_skill_refresh(
                 stop,
                 settings=settings,
-                refresh_schedule=skill_refresh_schedule,
+                schedule=skill_refresh_schedule,
             ),
+        ),
+        JobDefinition(
+            name="skill-audit-backfill",
+            description="Audit the oldest pending skill snapshots.",
+            run=lambda stop: tasks.run_skill_audit_backfill(
+                stop,
+                settings=settings,
+            ),
+            singleton=False,
         ),
     )
 

@@ -234,6 +234,7 @@ async def claim_next_skill_audit(
     session: AsyncSession,
     *,
     lease_seconds: float,
+    published_before: datetime,
     now: datetime | None = None,
 ) -> ClaimedWorkItem | None:
     claimed_at = now or utc_now()
@@ -255,6 +256,7 @@ async def claim_next_skill_audit(
             SkillSnapshot.content_hash.is_not(None),
             SkillSnapshot.bundle_format_version == 2,
             SkillSnapshot.resolution_status == "complete",
+            SkillSnapshot.published_at <= published_before,
             ~completed_skill_audit(
                 skill_id=Skill.id,
                 snapshot_id=SkillSnapshot.id,
@@ -267,7 +269,10 @@ async def claim_next_skill_audit(
                 now=claimed_at,
             ),
         )
-        .order_by(Skill.id.asc())
+        .order_by(
+            SkillSnapshot.published_at.asc(),
+            Skill.id.asc(),
+        )
         .with_for_update(skip_locked=True, of=Skill)
         .limit(1)
     )
