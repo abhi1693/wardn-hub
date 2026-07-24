@@ -1,3 +1,4 @@
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -28,6 +29,29 @@ from app.modules.skills.models import (
     SkillSnapshot,
     SkillSourceOwner,
 )
+
+_SEARCH_FALLBACK_MAX_TERMS = 8
+_SEARCH_FALLBACK_MIN_TERMS = 3
+_SEARCH_FALLBACK_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "find",
+    "for",
+    "from",
+    "in",
+    "into",
+    "of",
+    "on",
+    "or",
+    "skill",
+    "skills",
+    "the",
+    "to",
+    "use",
+    "using",
+    "with",
+}
 
 
 @dataclass(frozen=True)
@@ -200,6 +224,19 @@ def skill_identifier_order(search: str) -> ColumnElement[int] | None:
     )
 
 
+def skill_search_fallback_query(search: str) -> str | None:
+    terms = list(
+        dict.fromkeys(
+            term
+            for term in re.findall(r"[a-z0-9]+", search.casefold())
+            if len(term) >= 2 and term not in _SEARCH_FALLBACK_STOP_WORDS
+        )
+    )
+    if len(terms) < _SEARCH_FALLBACK_MIN_TERMS:
+        return None
+    return " OR ".join(terms[:_SEARCH_FALLBACK_MAX_TERMS])
+
+
 def current_skill_audit_status_subquery():
     # Audit configuration is retained as provenance. Public eligibility follows
     # the current immutable snapshot so provider/model changes do not hide results.
@@ -290,6 +327,34 @@ async def search_skill_documents(
     simple_query = func.websearch_to_tsquery("simple", query)
     english_match = SkillSearchDocument.search_vector.op("@@")(english_query)
     simple_match = SkillSearchDocument.search_vector.op("@@")(simple_query)
+    fallback_query = skill_search_fallback_query(query)
+    if fallback_query is None:
+        fallback_english_query = None
+        fallback_simple_query = None
+        fallback_match = literal(False)
+        fallback_rank = literal(0.0)
+    else:
+        fallback_english_query = func.websearch_to_tsquery("english", fallback_query)
+        fallback_simple_query = func.websearch_to_tsquery("simple", fallback_query)
+        fallback_english_match = SkillSearchDocument.search_vector.op("@@")(
+            fallback_english_query
+        )
+        fallback_simple_match = SkillSearchDocument.search_vector.op("@@")(
+            fallback_simple_query
+        )
+        fallback_match = or_(fallback_english_match, fallback_simple_match)
+        fallback_rank = (
+            func.ts_rank_cd(
+                SkillSearchDocument.search_vector,
+                fallback_english_query,
+                32,
+            )
+            + func.ts_rank_cd(
+                SkillSearchDocument.search_vector,
+                fallback_simple_query,
+                32,
+            )
+        )
     identifier_parts = skill_identifier_parts(normalized_query)
     exact_full_id = (
         and_(
@@ -319,11 +384,13 @@ async def search_skill_documents(
         (or_(exact_name, exact_slug), 1),
         (prefix_match, 2),
         (text_match, 3),
-        else_=4,
+        (fallback_match, 4),
+        else_=5,
     ).label("match_tier")
     text_rank = (
         func.ts_rank_cd(SkillSearchDocument.search_vector, english_query, 32)
         + func.ts_rank_cd(SkillSearchDocument.search_vector, simple_query, 32)
+        + fallback_rank
     ).label("text_rank")
     trigram_rank = func.greatest(
         func.similarity(SkillSearchDocument.identity_text, normalized_query),
@@ -344,6 +411,7 @@ async def search_skill_documents(
         or_(
             exact_full_id,
             text_match,
+            fallback_match,
             trigram_match,
             contains_match,
         ),

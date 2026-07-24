@@ -43,6 +43,50 @@ async def test_indexed_skill_search_uses_bounded_ranked_candidates() -> None:
     assert "count(" not in session.statement.lower()
 
 
+async def test_indexed_skill_search_broadens_long_natural_language_queries() -> None:
+    class FakeSession:
+        statement = ""
+        params: dict[str, object] = {}
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            compiled = statement.compile(dialect=postgresql.dialect())
+            self.statement = str(compiled)
+            self.params = compiled.params
+            return SimpleNamespace(all=list)
+
+    session = FakeSession()
+    await repository.search_skill_documents(  # type: ignore[arg-type]
+        session,
+        query=(
+            "Kubernetes CPU request rightsizing Prometheus percentile "
+            "capacity optimization"
+        ),
+        limit=8,
+    )
+
+    assert (
+        "kubernetes OR cpu OR request OR rightsizing OR prometheus OR percentile "
+        "OR capacity OR optimization"
+    ) in session.params.values()
+    assert 4 in session.params.values()
+    assert 5 in session.params.values()
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("code review", None),
+        ("find a skill for Kubernetes CPU optimization", "kubernetes OR cpu OR optimization"),
+        (
+            "Kubernetes kubernetes CPU optimization capacity planning extra terms",
+            "kubernetes OR cpu OR optimization OR capacity OR planning OR extra OR terms",
+        ),
+    ],
+)
+def test_skill_search_fallback_query(query: str, expected: str | None) -> None:
+    assert repository.skill_search_fallback_query(query) == expected
+
+
 async def test_search_skills_returns_and_accepts_stable_cursor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -144,6 +188,22 @@ def test_search_cursor_rejects_filter_changes_and_non_finite_ranks() -> None:
 
     with pytest.raises(ValueError, match="cursor"):
         service.decode_skill_search_cursor(cursor, "different-filter")
+
+    trigram_position = repository.SkillSearchCursor(
+        **{**position.__dict__, "match_tier": 5}
+    )
+    trigram_cursor = service.encode_skill_search_cursor(trigram_position, fingerprint)
+    assert (
+        service.decode_skill_search_cursor(trigram_cursor, fingerprint)
+        == trigram_position
+    )
+
+    invalid_tier = repository.SkillSearchCursor(
+        **{**position.__dict__, "match_tier": 6}
+    )
+    invalid_tier_cursor = service.encode_skill_search_cursor(invalid_tier, fingerprint)
+    with pytest.raises(ValueError, match="cursor"):
+        service.decode_skill_search_cursor(invalid_tier_cursor, fingerprint)
 
     invalid = repository.SkillSearchCursor(**{**position.__dict__, "text_rank": float("nan")})
     invalid_cursor = service.encode_skill_search_cursor(invalid, fingerprint)

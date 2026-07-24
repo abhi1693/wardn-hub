@@ -356,7 +356,7 @@ def decode_skill_search_cursor(
     except (binascii.Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("search cursor is invalid") from exc
     if (
-        cursor.match_tier not in range(5)
+        cursor.match_tier not in range(6)
         or cursor.installs < 0
         or not math.isfinite(cursor.text_rank)
         or not math.isfinite(cursor.trigram_rank)

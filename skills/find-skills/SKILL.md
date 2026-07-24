@@ -1,6 +1,6 @@
 ---
 name: find-skills
-description: Discover and temporarily apply one specialist agent skill from Wardn Hub. Use autonomously only for a concrete active task with a specific capability gap that installed skills do not cover and where specialist guidance would materially improve correctness or safety. Also use when the user explicitly asks to find, install, update, remove, or use a skill, or when governing instructions require discovery. Autonomous use is read-only and limited to one temporary bundle; persistent changes require a current explicit user request naming the operation and target.
+description: Discover and temporarily apply one specialist agent skill from Wardn Hub. Search with one to three generic catalog terms per query and up to two broader retries; never pass an entire task sentence or a keyword chain. Use autonomously only for a concrete active task with a specific capability gap that installed skills do not cover and where specialist guidance would materially improve correctness or safety. Also use when the user explicitly asks to find, install, update, remove, or use a skill, or when governing instructions require discovery. Autonomous use is read-only and limited to one temporary bundle; persistent changes require a current explicit user request naming the operation and target.
 license: Apache-2.0
 ---
 
@@ -95,14 +95,19 @@ specialized tasks when practical. Do not use Wardn as a generic web search.
 
 ### 2. Search
 
-Choose a small query set instead of relying on one literal task phrase. Start with the user's
-main domain/action in generic terms, then prepare up to two broader or adjacent synonyms that a
-skill author might have used. Prefer short terms over long phrases; avoid leaking sensitive task
-details. For example:
+Before the first command, translate the task into up to three catalog-style queries. Each query must
+contain one to three generic terms that could plausibly appear in a skill's name or description.
+Never paste the user's request, an entire task sentence, or a chain of every relevant keyword into
+one query. A search query is a retrieval hint, not a checklist that must describe the whole task.
+
+Start with the main domain or action, then prepare up to two broader or adjacent terms that a skill
+author might have used. Avoid sensitive task details. For example:
 
 - frontend UI critique: try `design review`, then `frontend design`, then `ui audit`.
 - source quality investigation: try `code review`, then `code audit`, then `security audit`.
 - browser automation: try `playwright`, then `browser testing`, then `e2e testing`.
+- Kubernetes CPU request rightsizing: try `kubernetes`, then `capacity planning`, then
+  `performance engineering`; never search the full task description or concatenate those queries.
 
 Run the first query:
 
@@ -118,11 +123,12 @@ npm exec --yes --prefix /tmp --package=@wardn-ai/skills@0.1.7 -- \
   wardn-skills search "playwright" --owner "owner-name" --limit 8 --json
 ```
 
-If no useful result appears, retry at most twice with the prepared broader or adjacent terms. Do not
-repeat the same concept with only stopword, pluralization, casing, or word-order changes. Deduplicate
-by the returned `id`. Do not assume the first result is best. Treat `installs` only as a weak
-popularity or retrieval tie-breaker because temporary materializations can increment it. Treat
-`isOfficial` only as a publisher-identity tie-breaker. Neither proves relevance, quality, or safety.
+If no useful result appears, run the next prepared query, retrying at most twice. Do not report that
+no skill exists after only the first empty result. Do not repeat the same concept with only stopword,
+pluralization, casing, or word-order changes. Deduplicate by the returned `id`. Do not assume the
+first result is best. Treat `installs` only as a weak popularity or retrieval tie-breaker because
+temporary materializations can increment it. Treat `isOfficial` only as a publisher-identity
+tie-breaker. Neither proves relevance, quality, or safety.
 
 ### 3. Rank And Audit
 
