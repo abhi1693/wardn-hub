@@ -125,6 +125,12 @@ targets, snapshot pinning, and telemetry controls.
 | `hub/codex-app-server` | Container wrapper used by optional submission review and repair automation |
 | `skills/find-skills` | Script-free bootstrap skill that delegates discovery to the published CLI |
 
+Production background work uses `python -m app.cli.worker`. The worker registers
+event delivery, submission review/repair, MCP registry sync, and skill
+maintenance lanes from the backend application. PostgreSQL advisory locks make
+each lane singleton across one or more worker replicas, while persisted schedule
+state preserves due daily and weekly runs across restarts.
+
 Core conventions:
 
 - API prefix: `/api/v1`
@@ -174,7 +180,18 @@ curl --request POST http://localhost:8000/api/v1/users/bootstrap \
   }'
 ```
 
-### 2. Start the frontend
+### 2. Start the background worker
+
+In another terminal, from `hub/backend`:
+
+```sh
+uv run python -m app.cli.worker
+```
+
+Use `--list-jobs` to inspect the registry, or repeat `--job JOB_NAME` to run
+only selected lanes in a dedicated worker process.
+
+### 3. Start the frontend
 
 In another terminal, from the repository root:
 
@@ -186,7 +203,7 @@ npm run web:dev
 Open `http://localhost:3000`. The Next.js server proxies `/api/v1` to
 `http://localhost:8000` by default.
 
-### 3. Open the API documentation
+### 4. Open the API documentation
 
 - Swagger UI: `http://localhost:8000/api/v1/docs`
 - OpenAPI JSON: `http://localhost:8000/api/v1/openapi.json`

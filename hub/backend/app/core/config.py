@@ -2,6 +2,7 @@ from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from typing import ClassVar
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -113,6 +114,25 @@ class Settings(BaseSettings):
     cache_max_connections: int = 10
     skill_audit_enabled: bool = False
     skill_audit_llm_enabled: bool = False
+    worker_metrics_port: int = 8092
+    worker_lock_retry_seconds: float = 5.0
+    worker_lock_heartbeat_seconds: float = 30.0
+    worker_events_limit: int = 50
+    worker_events_interval_seconds: float = 5.0
+    worker_events_idle_min_interval_seconds: float = 30.0
+    worker_events_idle_max_interval_seconds: float = 60.0
+    worker_submission_poll_interval_seconds: float = 60.0
+    worker_review_timeout_seconds: int = 1200
+    worker_skill_audit_poll_interval_seconds: float = 60.0
+    worker_skill_audit_scanner_timeout_seconds: int = 300
+    worker_api_base_url: str = "http://localhost:8000"
+    worker_schedule_timezone: str = "UTC"
+    worker_registry_sync_hour: int = 2
+    worker_registry_sync_minute: int = 17
+    worker_registry_sync_since_days: float = 1.0
+    worker_skill_refresh_weekday: int = 6
+    worker_skill_refresh_hour: int = 4
+    worker_skill_refresh_minute: int = 43
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -196,6 +216,17 @@ class Settings(BaseSettings):
             raise ValueError("public rate limit values must be positive")
         return value
 
+    @field_validator(
+        "worker_events_limit",
+        "worker_review_timeout_seconds",
+        "worker_skill_audit_scanner_timeout_seconds",
+    )
+    @classmethod
+    def validate_positive_worker_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("worker values must be positive")
+        return value
+
     @field_validator("public_rate_limit_valkey_db", "cache_valkey_db")
     @classmethod
     def validate_public_rate_limit_valkey_db(cls, value: int) -> int:
@@ -213,6 +244,72 @@ class Settings(BaseSettings):
             raise ValueError("public_rate_limit_valkey_socket_timeout_seconds must be positive")
         return value
 
+    @field_validator(
+        "worker_lock_retry_seconds",
+        "worker_lock_heartbeat_seconds",
+        "worker_events_interval_seconds",
+        "worker_events_idle_min_interval_seconds",
+        "worker_events_idle_max_interval_seconds",
+        "worker_submission_poll_interval_seconds",
+        "worker_skill_audit_poll_interval_seconds",
+        "worker_registry_sync_since_days",
+    )
+    @classmethod
+    def validate_positive_worker_interval(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("worker intervals must be positive")
+        return value
+
+    @field_validator("worker_metrics_port")
+    @classmethod
+    def validate_worker_metrics_port(cls, value: int) -> int:
+        if value < 0 or value > 65535:
+            raise ValueError("worker_metrics_port must be between 0 and 65535")
+        return value
+
+    @field_validator("worker_registry_sync_hour", "worker_skill_refresh_hour")
+    @classmethod
+    def validate_worker_schedule_hour(cls, value: int) -> int:
+        if value < 0 or value > 23:
+            raise ValueError("worker schedule hours must be between 0 and 23")
+        return value
+
+    @field_validator("worker_registry_sync_minute", "worker_skill_refresh_minute")
+    @classmethod
+    def validate_worker_schedule_minute(cls, value: int) -> int:
+        if value < 0 or value > 59:
+            raise ValueError("worker schedule minutes must be between 0 and 59")
+        return value
+
+    @field_validator("worker_skill_refresh_weekday")
+    @classmethod
+    def validate_worker_schedule_weekday(cls, value: int) -> int:
+        if value < 0 or value > 6:
+            raise ValueError("worker_skill_refresh_weekday must be between 0 and 6")
+        return value
+
+    @field_validator("worker_schedule_timezone")
+    @classmethod
+    def validate_worker_schedule_timezone(cls, value: str) -> str:
+        normalized = value.strip()
+        try:
+            ZoneInfo(normalized)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("worker_schedule_timezone must be an IANA time zone") from exc
+        return normalized
+
+    @field_validator("worker_api_base_url")
+    @classmethod
+    def validate_worker_api_base_url(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not is_absolute_http_url(
+            normalized,
+            require_https=False,
+            allow_query=False,
+        ):
+            raise ValueError("worker_api_base_url must be an absolute HTTP URL")
+        return normalized
+
     @field_validator("otel_traces_sample_ratio")
     @classmethod
     def validate_otel_traces_sample_ratio(cls, value: float) -> float:
@@ -224,6 +321,14 @@ class Settings(BaseSettings):
     def validate_release_settings(self) -> "Settings":
         self.validate_public_rate_limit_settings()
         self.validate_cache_settings()
+        if (
+            self.worker_events_idle_max_interval_seconds
+            < self.worker_events_idle_min_interval_seconds
+        ):
+            raise ValueError(
+                "worker_events_idle_max_interval_seconds must be greater than or equal to "
+                "worker_events_idle_min_interval_seconds"
+            )
         if self.environment in LOCAL_ENVIRONMENTS:
             self.validate_auth_provider_settings()
             return self

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from prometheus_client import (
     CollectorRegistry,
     Counter,
+    Gauge,
     Histogram,
     generate_latest,
 )
@@ -58,6 +59,31 @@ EVENT_WORKER_BATCH_DURATION = Histogram(
     "wardn_event_worker_batch_duration_seconds",
     "Time spent in one event worker batch.",
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60),
+    registry=PROCESS_REGISTRY,
+)
+WORKER_JOB_LOCK_HELD = Gauge(
+    "wardn_worker_job_lock_held",
+    "Whether this worker process currently owns a registered job lane.",
+    ["job"],
+    registry=PROCESS_REGISTRY,
+)
+WORKER_JOB_ACTIVE = Gauge(
+    "wardn_worker_job_active",
+    "Whether a registered worker job is currently executing.",
+    ["job"],
+    registry=PROCESS_REGISTRY,
+)
+WORKER_JOB_RUNS = Counter(
+    "wardn_worker_job_runs_total",
+    "Registered worker job executions.",
+    ["job", "result"],
+    registry=PROCESS_REGISTRY,
+)
+WORKER_JOB_DURATION = Histogram(
+    "wardn_worker_job_duration_seconds",
+    "Time spent executing a registered worker job.",
+    ["job"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 5, 30, 60, 300, 900, 1800, 7200, 21600),
     registry=PROCESS_REGISTRY,
 )
 
@@ -414,3 +440,24 @@ def record_event_worker_batch(
     EVENT_WORKER_BATCHES.labels(result=result).inc()
     EVENT_WORKER_DELIVERIES_CREATED.inc(deliveries_created)
     EVENT_WORKER_DELIVERIES_SENT.inc(deliveries_sent)
+
+
+def set_worker_job_lock_held(job_name: str, *, held: bool) -> None:
+    WORKER_JOB_LOCK_HELD.labels(job=job_name).set(1 if held else 0)
+
+
+@contextmanager
+def worker_job_timer(job_name: str) -> Iterator[dict[str, str]]:
+    state = {"result": "success"}
+    WORKER_JOB_ACTIVE.labels(job=job_name).inc()
+    start = time.monotonic()
+    try:
+        yield state
+    except BaseException:
+        if state["result"] == "success":
+            state["result"] = "failed"
+        raise
+    finally:
+        WORKER_JOB_ACTIVE.labels(job=job_name).dec()
+        WORKER_JOB_DURATION.labels(job=job_name).observe(time.monotonic() - start)
+        WORKER_JOB_RUNS.labels(job=job_name, result=state["result"]).inc()
