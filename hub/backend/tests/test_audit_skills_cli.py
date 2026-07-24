@@ -391,7 +391,9 @@ def test_security_preflight_does_not_grade_dependency_compatibility() -> None:
         [{"path": "SKILL.md", "contents": valid_skill_md(body="Read ../secret.md")}],
     ],
 )
-def test_invalid_bundles_fail_before_scanner(files: list[dict]) -> None:
+def test_invalid_bundles_store_deterministic_preflight_failure(
+    files: list[dict],
+) -> None:
     target = audit_target(files=files)
     inspection = cli.inspect_bundle(target)
     scanner = FakeScanner()
@@ -406,9 +408,16 @@ def test_invalid_bundles_fail_before_scanner(files: list[dict]) -> None:
         stdout=StringIO(),
     )
     assert inspection.hard_findings
-    assert result == 1
+    assert result == 0
     assert scanner.calls == []
-    assert client.saved == []
+    assert len(client.saved) == 1
+    stored = client.saved[0][1]
+    assert stored.scanner_name == "Wardn Bundle Preflight"
+    assert stored.status == "fail"
+    assert stored.risk_level == "high"
+    assert stored.score <= 49
+    assert stored.analyzers == ["wardn_bundle_preflight"]
+    assert stored.raw_result["preflightFailed"] is True
 
 
 @pytest.mark.parametrize(

@@ -94,7 +94,7 @@ def review_result_json(
         "suggestedApprovalNote": suggested_approval_note,
         "findings": [],
     }
-    return "\n\nReview result JSON:\n```json\n" + json.dumps(payload) + "\n```"
+    return json.dumps(payload)
 
 
 class FakeCodexWebSocket:
@@ -278,6 +278,7 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
         timeout_seconds=5,
         cwd=None,
         websocket_connect=lambda _url: websocket,
+        structured_output_schema=cli.REVIEW_DECISION_OUTPUT_SCHEMA,
     )
 
     findings = reviewer.review(
@@ -310,6 +311,10 @@ def test_codex_app_server_reviewer_uses_one_ephemeral_turn_without_secrets() -> 
         "type": "readOnly",
         "networkAccess": True,
     }
+    assert (
+        websocket.sent[3]["params"]["outputSchema"]
+        == cli.REVIEW_DECISION_OUTPUT_SCHEMA
+    )
 
 
 def test_codex_app_server_analysis_only_session_configures_prompt_only_mode() -> None:
@@ -492,6 +497,7 @@ def test_main_uses_codex_app_server_without_login(
             "stream_output": True,
             "auth_token": "",
             "web_research_only": True,
+            "structured_output_schema": cli.REVIEW_DECISION_OUTPUT_SCHEMA,
         }
     ]
 
@@ -528,6 +534,10 @@ def test_main_uses_database_queue_with_codex_app_server(
     assert client_created is True
     assert captured_reviewers[0]["url"] == "ws://127.0.0.1:41237"
     assert captured_reviewers[0]["auth_token"] == ""
+    assert (
+        captured_reviewers[0]["structured_output_schema"]
+        == cli.REVIEW_DECISION_OUTPUT_SCHEMA
+    )
 
 
 def test_main_passes_codex_app_server_auth_token_from_env(
@@ -715,12 +725,13 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert 'validationResult.status is "passed"' in prompt
     assert "validationResult has warning or failing checks" in prompt
     assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt
-    assert "Review result JSON" in prompt
-    assert '"suggestedRejectionMessage"' in prompt
-    assert '"decision"' in prompt
+    assert "transport-enforced output schema" in prompt
+    assert "suggestedRejectionMessage" in prompt
+    assert "Return only the JSON object" in prompt
+    assert "validates against this schema" not in prompt
     assert "Call GET /submissions" not in prompt
     assert prompt.index("System review mode:") < prompt.index("Submission context:")
-    assert prompt.index("Report format:") < prompt.index("Submission context:")
+    assert prompt.index("Required output:") < prompt.index("Submission context:")
     assert prompt.index("Submission context:") < prompt.index("In-review submission ID shown in UI")
 
 
@@ -731,7 +742,7 @@ def test_build_review_prompt_keeps_submission_data_after_stable_prefix() -> None
 
     assert prompt.startswith("Validate one Wardn Hub MCP server version")
     assert prompt.index("System review mode:") < prompt.index("sub-cache-test")
-    assert prompt.index("Review result JSON") < prompt.index("sub-cache-test")
+    assert prompt.index("Required output:") < prompt.index("sub-cache-test")
     snapshot = prompt[prompt.index("Wardn Hub submission JSON snapshot:"):]
     assert snapshot.index('"id"') < snapshot.index('"name"') < snapshot.index('"serverJson"')
 
@@ -789,7 +800,7 @@ def test_review_loop_sets_only_submission_context_environment() -> None:
             assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in environment
             assert "WARDN_HUB_API_BASE_URL" not in environment
             assert environment["WARDN_HUB_REVIEW_SUBMISSION_ID"] == "sub-1"
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -816,13 +827,10 @@ def test_review_loop_sets_only_submission_context_environment() -> None:
     assert "System review mode:" in reviewer.prompts[0]
 
 
-def test_extract_review_result_from_structured_json_block() -> None:
-    findings = (
-        "Decision: pass\n"
-        + review_result_json(
-            "pass",
-            suggested_approval_note="Looks good.",
-        )
+def test_extract_review_result_from_structured_json() -> None:
+    findings = review_result_json(
+        "pass",
+        suggested_approval_note="Looks good.",
     )
 
     result = cli.extract_review_result(findings)
@@ -832,15 +840,47 @@ def test_extract_review_result_from_structured_json_block() -> None:
     assert result.suggested_approval_note == "Looks good."
 
 
+def test_extract_review_result_accepts_schema_only_json() -> None:
+    findings = json.dumps(
+        {
+            "decision": "pass",
+            "suggestedRejectionMessage": None,
+            "suggestedApprovalNote": "Source metadata verified.",
+            "findings": [],
+        }
+    )
+
+    result = cli.extract_review_result(findings)
+
+    assert result is not None
+    assert result.decision == "pass"
+    assert result.suggested_approval_note == "Source metadata verified."
+
+
+def test_review_output_schema_requires_every_contract_field() -> None:
+    schema = cli.REVIEW_DECISION_OUTPUT_SCHEMA
+
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"])
+    assert schema["$defs"]["ReviewFinding"]["additionalProperties"] is False
+
+
+def test_extract_review_result_rejects_schema_only_json_with_missing_fields() -> None:
+    assert cli.extract_review_result(json.dumps({"decision": "pass"})) is None
+
+
 def test_extract_review_result_rejects_markdown_only_decision() -> None:
     assert cli.extract_review_result("**Decision: pass**") is None
 
 
-def test_extract_review_result_validates_schema() -> None:
+def test_extract_review_result_rejects_legacy_fenced_json() -> None:
     findings = (
         "Review result JSON:\n"
         "```json\n"
-        + json.dumps({"decision": "approved", "findings": []})
+        + review_result_json(
+            "pass",
+            suggested_approval_note="Source metadata verified.",
+        )
         + "\n```"
     )
 
@@ -915,7 +955,7 @@ def test_review_loop_rejects_with_suggested_message() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: needs fixes" + review_result_json(
+            return review_result_json(
                 "needs_fixes",
                 suggested_rejection_message="Please fix the source review evidence.",
             )
@@ -948,7 +988,7 @@ def test_review_loop_auto_rejects_llm_rejection_with_suggested_message() -> None
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: needs fixes" + review_result_json(
+            return review_result_json(
                 "needs_fixes",
                 suggested_rejection_message="Please add missing package transport metadata.",
             )
@@ -983,7 +1023,7 @@ def test_review_loop_auto_rejects_llm_pass_when_validation_is_not_ready() -> Non
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1026,7 +1066,7 @@ def test_review_loop_skips_llm_pass_when_validation_is_not_ready_without_auto_re
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1062,11 +1102,7 @@ def test_review_loop_skips_uncertain_llm_decision_without_prompt_or_action() -> 
     class UncertainReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return (
-                "Findings grouped by severity:\n"
-                "Source repository was unavailable.\n"
-                + review_result_json("cannot_validate")
-            )
+            return review_result_json("cannot_validate")
 
     client = FakeClient([submitted_submission()])
     reviewer = UncertainReviewer()
@@ -1122,7 +1158,10 @@ def test_review_loop_targets_exact_submission_id() -> None:
     assert len(reviewer.prompts) == 1
     assert "sub-2" in reviewer.prompts[0]
     assert "sub-1" not in reviewer.prompts[0]
-    assert "No valid Review result JSON was returned for sub-2" in stdout.getvalue()
+    assert (
+        "No valid schema-constrained review response was returned for sub-2"
+        in stdout.getvalue()
+    )
 
 
 def test_review_loop_skips_missing_exact_submission_id() -> None:
@@ -1154,7 +1193,7 @@ def test_review_loop_non_interactive_skips_without_prompt() -> None:
     class NeedsHumanReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: needs fixes" + review_result_json("needs_fixes")
+            return review_result_json("needs_fixes")
 
     client = FakeClient([submitted_submission()])
     reviewer = NeedsHumanReviewer()
@@ -1208,7 +1247,7 @@ def test_review_loop_non_interactive_skips_markdown_only_decision() -> None:
     assert result == 0
     assert client.actions == []
     output = stdout.getvalue()
-    assert "No valid Review result JSON was returned" in output
+    assert "No valid schema-constrained review response was returned" in output
     assert "Decision (" not in output
 
 
@@ -1216,7 +1255,7 @@ def test_review_loop_auto_reject_requires_suggested_message() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: needs fixes" + review_result_json("needs_fixes")
+            return review_result_json("needs_fixes")
 
     client = FakeClient([submitted_submission()])
     reviewer = RejectingReviewer()
@@ -1238,7 +1277,7 @@ def test_review_loop_auto_reject_requires_suggested_message() -> None:
     assert result == 0
     assert client.actions == []
     output = stdout.getvalue()
-    assert "No valid Review result JSON was returned for sub-1" in output
+    assert "No valid schema-constrained review response was returned for sub-1" in output
     assert "Decision (" not in output
 
 
@@ -1246,7 +1285,7 @@ def test_review_loop_auto_approves_llm_pass_without_publishing() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1281,7 +1320,7 @@ def test_review_loop_auto_publishes_llm_pass_with_publish_access() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1321,7 +1360,7 @@ def test_review_loop_auto_publish_blocks_new_server_non_initial_version() -> Non
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1360,7 +1399,7 @@ def test_review_loop_auto_publish_leaves_pass_without_publish_access() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1398,7 +1437,7 @@ def test_review_loop_auto_approve_leaves_non_pass_for_manual_decision() -> None:
     class RejectingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
-            return "Decision: needs fixes" + review_result_json(
+            return review_result_json(
                 "needs_fixes",
                 suggested_rejection_message="Please fix the metadata.",
             )
@@ -1448,7 +1487,10 @@ def test_review_loop_skips_submission_for_current_run() -> None:
     assert result == 0
     assert len(reviewer.prompts) == 1
     assert client.actions == []
-    assert "No valid Review result JSON was returned for sub-1" in stdout.getvalue()
+    assert (
+        "No valid schema-constrained review response was returned for sub-1"
+        in stdout.getvalue()
+    )
 
 
 def test_review_loop_continues_after_review_error() -> None:
@@ -1457,7 +1499,7 @@ def test_review_loop_continues_after_review_error() -> None:
             super().review(prompt, environment=environment)
             if len(self.prompts) == 1:
                 raise cli.UserFacingError("Codex app-server review timed out after 900 seconds")
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )
@@ -1501,11 +1543,11 @@ def test_review_loop_continues_after_action_error() -> None:
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
             if len(self.prompts) == 1:
-                return "Decision: needs fixes" + review_result_json(
+                return review_result_json(
                     "needs_fixes",
                     suggested_rejection_message="Please fix the metadata.",
                 )
-            return "Decision: pass" + review_result_json(
+            return review_result_json(
                 "pass",
                 suggested_approval_note="Approved.",
             )

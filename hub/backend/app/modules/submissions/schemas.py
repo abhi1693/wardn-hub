@@ -2,13 +2,41 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.registry.schemas import RegistryServerVersionCreate
 
 SubmissionStatus = Literal["draft", "submitted", "approved", "rejected", "withdrawn", "published"]
 SubmissionType = Literal["new_server", "new_version", "metadata_edit", "takedown_appeal"]
 SubmissionOwnerScope = Literal["mine", "all"]
+
+
+class SubmissionImportInventoryRequest(BaseModel):
+    names: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("names")
+    @classmethod
+    def normalize_names(cls, value: list[str]) -> list[str]:
+        normalized = list(
+            dict.fromkeys(name.strip() for name in value if name.strip())
+        )
+        if not normalized:
+            raise ValueError("names must contain at least one non-empty server name")
+        return normalized
+
+
+class SubmissionImportInventoryItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: UUID
+    name: str
+    version: str
+    status: SubmissionStatus
+    upstream_version: str = Field(default="", alias="upstreamVersion")
+
+
+class SubmissionImportInventoryResponse(BaseModel):
+    submissions: list[SubmissionImportInventoryItem]
 
 
 class SubmissionCreate(BaseModel):

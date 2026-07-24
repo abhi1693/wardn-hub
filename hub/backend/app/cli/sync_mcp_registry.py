@@ -15,6 +15,7 @@ import httpx
 from app.modules.imports.exceptions import SourceNotFoundError, UnsupportedSourceError
 from app.modules.imports.schemas import ServerSourceImportRequest
 from app.modules.imports.service import import_server_source
+from app.modules.submissions.constants import MCP_REGISTRY_IMPORT_META_KEY
 
 API_PREFIX = "/api/v1"
 DEFAULT_HUB_API_BASE_URL = "http://localhost:8000/api/v1"
@@ -29,7 +30,7 @@ REGISTRY_URL_ENV = "WARDN_HUB_MCP_REGISTRY_URL"
 USER_AGENT_ENV = "WARDN_HUB_USER_AGENT"
 DEFAULT_USER_AGENT = "WardnHubMCPRegistrySync/0.1"
 OFFICIAL_META_KEY = "io.modelcontextprotocol.registry/official"
-IMPORT_META_KEY = "wardnImport"
+IMPORT_META_KEY = MCP_REGISTRY_IMPORT_META_KEY
 
 
 class UserFacingError(Exception):
@@ -65,7 +66,7 @@ class ImportOutcome:
 
 
 class HubClient(Protocol):
-    def list_submissions(self) -> list[dict[str, Any]]: ...
+    def list_submissions(self, names: list[str]) -> list[dict[str, Any]]: ...
 
     def get_server(self, server_name: str) -> dict[str, Any] | None: ...
 
@@ -137,22 +138,33 @@ class WardnHubApiClient:
         path: str,
         *,
         payload: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         expected_statuses: set[int],
     ) -> httpx.Response:
         response = self._client.request(
             method,
             f"{self.base_url}{path}",
             json=payload,
+            params=params,
         )
         if response.status_code not in expected_statuses:
             raise HubApiError(response.status_code, parse_error_detail(response), str(response.url))
         return response
 
-    def list_submissions(self) -> list[dict[str, Any]]:
-        response = self.request("GET", "/submissions", expected_statuses={200})
+    def list_submissions(self, names: list[str]) -> list[dict[str, Any]]:
+        response = self.request(
+            "POST",
+            "/submissions/import-inventory",
+            payload={"names": names},
+            expected_statuses={200},
+        )
         payload = response.json()
-        submissions = payload.get("submissions") if isinstance(payload, dict) else []
-        return submissions if isinstance(submissions, list) else []
+        records = payload.get("submissions") if isinstance(payload, dict) else None
+        if not isinstance(records, list):
+            raise UserFacingError(
+                "Wardn Hub submission import inventory response is invalid"
+            )
+        return [item for item in records if isinstance(item, dict)]
 
     def get_server(self, server_name: str) -> dict[str, Any] | None:
         try:
@@ -299,11 +311,15 @@ def submission_key(value: dict[str, Any]) -> tuple[str, str]:
     return str(value.get("name") or "").strip(), str(value.get("version") or "").strip()
 
 
-def existing_submissions_by_key(hub: HubClient) -> dict[tuple[str, str], dict[str, Any]]:
+def existing_submissions_by_key(
+    hub: HubClient,
+    *,
+    names: list[str],
+) -> dict[tuple[str, str], dict[str, Any]]:
     active_statuses = {"draft", "submitted", "approved", "rejected"}
     status_rank = {"approved": 0, "submitted": 1, "draft": 2, "rejected": 3}
     submissions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    for submission in hub.list_submissions():
+    for submission in hub.list_submissions(names):
         if not isinstance(submission, dict):
             continue
         status = str(submission.get("status") or "")
@@ -453,6 +469,13 @@ def import_upstream_version_from_payload(payload: dict[str, Any]) -> str:
 
 
 def import_upstream_version_from_submission(submission: dict[str, Any]) -> str:
+    inventory_value = str(
+        submission.get("upstreamVersion")
+        or submission.get("upstream_version")
+        or ""
+    ).strip()
+    if inventory_value:
+        return inventory_value
     server_json = submission.get("serverJson")
     if not isinstance(server_json, dict):
         server_json = submission.get("server_json")
@@ -816,7 +839,8 @@ def sync_registry(
     stats = SyncStats()
     cursor: str | None = None
     synced_at = datetime.now(UTC)
-    existing_submissions = {} if dry_run else existing_submissions_by_key(hub)
+    existing_submissions: dict[tuple[str, str], dict[str, Any]] = {}
+    loaded_inventory_names: set[str] = set()
 
     while True:
         verbose_print(
@@ -836,6 +860,28 @@ def sync_registry(
         if not isinstance(servers, list):
             raise UserFacingError("official MCP registry response missing servers list")
         verbose_print(verbose, f"fetched page {stats.pages}: records={len(servers)}")
+        if not dry_run:
+            inventory_names = sorted(
+                {
+                    name
+                    for entry in servers
+                    if isinstance(entry, dict)
+                    for name, _version in (registry_entry_identity(entry),)
+                    if (
+                        name
+                        and official_status(entry) != "deleted"
+                        and name not in loaded_inventory_names
+                    )
+                }
+            )
+            if inventory_names:
+                existing_submissions.update(
+                    existing_submissions_by_key(
+                        hub,
+                        names=inventory_names,
+                    )
+                )
+                loaded_inventory_names.update(inventory_names)
 
         for entry in servers:
             if max_records is not None and stats.seen >= max_records:

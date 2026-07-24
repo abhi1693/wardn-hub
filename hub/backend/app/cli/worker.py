@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import signal
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from prometheus_client import start_http_server
+from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -14,8 +18,61 @@ from app.jobs.registry import (
     build_job_definitions,
     select_job_definitions,
 )
+from app.jobs.tasks import wait_for_stop
 from app.jobs.worker import run_worker
 from app.modules.metrics.service import PROCESS_REGISTRY
+
+logger = logging.getLogger(__name__)
+
+
+def expected_database_revision() -> str:
+    heads = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+    if len(heads) != 1:
+        raise RuntimeError(
+            "worker requires exactly one Alembic head; found "
+            + (", ".join(heads) or "none")
+        )
+    return heads[0]
+
+
+async def wait_for_database_revision(
+    stop: asyncio.Event,
+    *,
+    expected_revision: str,
+    retry_seconds: float,
+) -> None:
+    while not stop.is_set():
+        current_revision = ""
+        try:
+            async with engine.connect() as connection:
+                current_revision = str(
+                    (
+                        await connection.execute(
+                            text("SELECT version_num FROM alembic_version")
+                        )
+                    ).scalar_one()
+                )
+                await connection.commit()
+        except Exception:
+            logger.exception(
+                "worker database revision check failed; retrying",
+                extra={"expected_database_revision": expected_revision},
+            )
+        if current_revision == expected_revision:
+            logger.info(
+                "worker database revision ready",
+                extra={"database_revision": current_revision},
+            )
+            return
+        if current_revision:
+            logger.info(
+                "worker waiting for database migrations",
+                extra={
+                    "database_revision": current_revision,
+                    "expected_database_revision": expected_revision,
+                },
+            )
+        await wait_for_stop(stop, retry_seconds)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,6 +111,13 @@ async def run_selected_jobs(job_names: list[str]) -> None:
     for shutdown_signal in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(shutdown_signal, stop.set)
     try:
+        await wait_for_database_revision(
+            stop,
+            expected_revision=expected_database_revision(),
+            retry_seconds=settings.worker_lock_retry_seconds,
+        )
+        if stop.is_set():
+            return
         await run_worker(jobs, stop=stop, settings=settings)
     finally:
         for shutdown_signal in (signal.SIGINT, signal.SIGTERM):

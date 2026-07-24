@@ -1113,6 +1113,48 @@ async def test_create_submission_rejects_restricted_api_token_personal_owner() -
 
 
 @pytest.mark.asyncio
+async def test_import_inventory_returns_only_sync_identity_fields(monkeypatch) -> None:
+    submission = submission_record(
+        submitter_user_id=uuid4(),
+        status="rejected",
+    )
+    submission.server_json["_meta"] = {
+        "wardnImport": {
+            "upstreamVersion": "2026.7.24",
+        }
+    }
+    captured: dict[str, object] = {}
+
+    async def list_inventory(_session, *, names):
+        captured["names"] = names
+        return [submission]
+
+    monkeypatch.setattr(
+        service.repository,
+        "list_submission_import_inventory",
+        list_inventory,
+    )
+
+    response = await service.list_submission_import_inventory(
+        FakeSession(),
+        names=["io.github.example/weather"],
+    )
+
+    assert captured["names"] == ["io.github.example/weather"]
+    assert response.model_dump(by_alias=True) == {
+        "submissions": [
+            {
+                "id": submission.id,
+                "name": "io.github.example/weather",
+                "version": "1.0.0",
+                "status": "rejected",
+                "upstreamVersion": "2026.7.24",
+            }
+        ]
+    }
+
+
+@pytest.mark.asyncio
 async def test_restricted_api_token_filters_listed_submissions(monkeypatch) -> None:
     user = current_user(is_global_moderator=True)
     allowed_organization_id = uuid4()

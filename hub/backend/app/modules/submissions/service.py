@@ -18,6 +18,7 @@ from app.modules.registry import service as registry_service
 from app.modules.registry.exceptions import DuplicateRegistryVersionError
 from app.modules.registry.schemas import RegistryServerVersionCreate
 from app.modules.submissions import repository
+from app.modules.submissions.constants import MCP_REGISTRY_IMPORT_META_KEY
 from app.modules.submissions.exceptions import (
     DuplicatePublishedVersionError,
     InvalidSubmissionTransitionError,
@@ -28,6 +29,8 @@ from app.modules.submissions.exceptions import (
 from app.modules.submissions.models import ServerSubmission
 from app.modules.submissions.schemas import (
     SubmissionCreate,
+    SubmissionImportInventoryItem,
+    SubmissionImportInventoryResponse,
     SubmissionListMetadata,
     SubmissionListResponse,
     SubmissionOwnerScope,
@@ -1130,6 +1133,39 @@ async def get_submission(
     await ensure_can_read_submission(session, user, submission)
     ensure_api_token_submission_access(api_token, submission)
     return submission_response(submission)
+
+
+async def list_submission_import_inventory(
+    session: AsyncSession,
+    *,
+    names: list[str],
+) -> SubmissionImportInventoryResponse:
+    submissions = await repository.list_submission_import_inventory(
+        session,
+        names=names,
+    )
+    inventory: list[SubmissionImportInventoryItem] = []
+    for submission in submissions:
+        metadata = (
+            submission.server_json.get("_meta")
+            if isinstance(submission.server_json.get("_meta"), dict)
+            else {}
+        )
+        import_metadata = (
+            metadata.get(MCP_REGISTRY_IMPORT_META_KEY)
+            if isinstance(metadata.get(MCP_REGISTRY_IMPORT_META_KEY), dict)
+            else {}
+        )
+        inventory.append(
+            SubmissionImportInventoryItem(
+                id=submission.id,
+                name=submission.name,
+                version=submission.version,
+                status=submission.status,
+                upstreamVersion=str(import_metadata.get("upstreamVersion") or "").strip(),
+            )
+        )
+    return SubmissionImportInventoryResponse(submissions=inventory)
 
 
 async def list_submissions(

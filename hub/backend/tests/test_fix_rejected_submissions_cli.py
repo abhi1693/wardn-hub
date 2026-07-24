@@ -42,7 +42,7 @@ class FakeReviewer:
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         self.prompts.append(prompt)
         self.environments.append(environment)
-        return "Decision: fixed" + fix_result_json(
+        return fix_result_json(
             "fixed",
             updated_server_json=self.server_json,
         )
@@ -56,12 +56,16 @@ def fix_result_json(
 ) -> str:
     payload = {
         "decision": decision,
-        "updatedServerJson": updated_server_json,
+        "updatedServerJson": (
+            json.dumps(updated_server_json, ensure_ascii=False, separators=(",", ":"))
+            if updated_server_json is not None
+            else None
+        ),
         "summary": "Fixed metadata.",
         "sourceFilesRead": ["https://github.com/example/weather/README.md"],
         "missingInformation": missing_information or [],
     }
-    return "\n\nFix result JSON:\n```json\n" + json.dumps(payload) + "\n```"
+    return json.dumps(payload)
 
 
 def complete_server_json(version: str = "1.0.0") -> dict[str, Any]:
@@ -139,14 +143,16 @@ def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() ->
     assert "Do not call Wardn Hub API endpoints." in prompt
     assert "The database fix controller will apply your returned serverJson" in prompt
     assert 'If submissionType is "new_server", keep serverJson.version' in prompt
-    assert "Fix result JSON" in prompt
-    assert '"updatedServerJson"' in prompt
-    assert '"missingInformation"' in prompt
+    assert "transport-enforced output schema" in prompt
+    assert "updatedServerJson" in prompt
+    assert "JSON-encoded string containing the complete replacement server object" in prompt
+    assert "missingInformation" in prompt
+    assert "validates against this schema" not in prompt
     assert "WARDN_HUB_TOKEN" not in prompt
     assert "GET /submissions" not in prompt
     assert "PUT /submissions" not in prompt
     assert prompt.index("System fix mode:") < prompt.index("Submission context:")
-    assert prompt.index("Return format:") < prompt.index("Submission context:")
+    assert prompt.index("Required output:") < prompt.index("Submission context:")
     assert prompt.index("Submission context:") < prompt.index("Submission ID: sub-1")
 
 
@@ -158,7 +164,7 @@ def test_build_fix_prompt_keeps_submission_data_after_stable_prefix() -> None:
 
     assert prompt.startswith("Fix this Wardn Hub draft or rejected MCP server submission")
     assert prompt.index("System fix mode:") < prompt.index("sub-cache-test")
-    assert prompt.index("Fix result JSON") < prompt.index("sub-cache-test")
+    assert prompt.index("Required output:") < prompt.index("sub-cache-test")
     snapshot = prompt[prompt.index("Wardn Hub submission JSON snapshot:"):]
     assert snapshot.index('"id"') < snapshot.index('"name"') < snapshot.index('"rejectionMessage"')
 
@@ -221,7 +227,7 @@ def test_fix_loop_skips_cannot_fix_decision() -> None:
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             self.prompts.append(prompt)
             self.environments.append(environment)
-            return "Decision: cannot fix" + fix_result_json(
+            return fix_result_json(
                 "cannot_fix",
                 missing_information=["Missing official repository URL."],
             )
@@ -268,7 +274,10 @@ def test_fix_loop_reports_failure_when_llm_omits_server_json() -> None:
 
     assert result == 1
     assert client.fixed == []
-    assert "LLM did not return valid Fix result JSON" in stdout.getvalue()
+    assert (
+        "LLM did not return a valid schema-constrained fix response"
+        in stdout.getvalue()
+    )
 
 
 def test_dry_run_prints_prompt_without_running_reviewer() -> None:
@@ -294,13 +303,62 @@ def test_dry_run_prints_prompt_without_running_reviewer() -> None:
 
 def test_extract_fix_result_reads_structured_json() -> None:
     server_json = complete_server_json()
-    findings = "Decision: fixed" + fix_result_json("fixed", updated_server_json=server_json)
+    findings = fix_result_json("fixed", updated_server_json=server_json)
 
     result = cli.extract_fix_result(findings)
 
     assert result is not None
     assert result.decision == "fixed"
     assert result.updated_server_json == server_json
+
+
+def test_extract_fix_result_accepts_schema_only_json() -> None:
+    server_json = complete_server_json()
+    findings = json.dumps(
+        {
+            "decision": "fixed",
+            "updatedServerJson": json.dumps(server_json),
+            "summary": "Verified and repaired metadata.",
+            "sourceFilesRead": ["https://github.com/example/weather/README.md"],
+            "missingInformation": [],
+        }
+    )
+
+    result = cli.extract_fix_result(findings)
+
+    assert result is not None
+    assert result.decision == "fixed"
+    assert result.updated_server_json == server_json
+
+
+def test_fix_output_schema_requires_every_contract_field() -> None:
+    schema = cli.FIX_DECISION_OUTPUT_SCHEMA
+
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"])
+    assert '"additionalProperties": true' not in json.dumps(schema)
+    assert {
+        option["type"]
+        for option in schema["properties"]["updatedServerJson"]["anyOf"]
+    } == {"string", "null"}
+
+
+def test_extract_fix_result_rejects_schema_only_json_with_missing_fields() -> None:
+    assert cli.extract_fix_result(json.dumps({"decision": "skip"})) is None
+
+
+def test_extract_fix_result_rejects_invalid_encoded_server_json() -> None:
+    findings = json.dumps(
+        {
+            "decision": "fixed",
+            "updatedServerJson": "not-json",
+            "summary": "Tried to repair metadata.",
+            "sourceFilesRead": [],
+            "missingInformation": [],
+        }
+    )
+
+    assert cli.extract_fix_result(findings) is None
 
 
 def test_extract_fix_result_allows_markdown_fences_inside_json_string() -> None:
@@ -314,7 +372,7 @@ def test_extract_fix_result_allows_markdown_fences_inside_json_string() -> None:
         '{"mcpServers":{"weather":{"command":"npx"}}}\n'
         "```"
     )
-    findings = "Decision: fixed" + fix_result_json("fixed", updated_server_json=server_json)
+    findings = fix_result_json("fixed", updated_server_json=server_json)
 
     result = cli.extract_fix_result(findings)
 
@@ -335,6 +393,17 @@ def test_extract_fix_result_rejects_markdown_only_output() -> None:
     assert cli.extract_fix_result(findings) is None
 
 
+def test_extract_fix_result_rejects_legacy_fenced_json() -> None:
+    findings = (
+        "Fix result JSON:\n"
+        "```json\n"
+        + fix_result_json("fixed", updated_server_json=complete_server_json())
+        + "\n```"
+    )
+
+    assert cli.extract_fix_result(findings) is None
+
+
 def test_parser_uses_app_server_defaults() -> None:
     args = cli.build_parser().parse_args(["--submission-id", "sub-1", "--dry-run"])
 
@@ -342,3 +411,30 @@ def test_parser_uses_app_server_defaults() -> None:
     assert args.dry_run is True
     assert hasattr(args, "codex_app_server_url")
     assert not hasattr(args, "review_command")
+
+
+def test_main_configures_transport_enforced_fix_schema(monkeypatch) -> None:
+    captured_reviewers: list[dict[str, Any]] = []
+
+    class CapturingReviewer:
+        def __init__(self, **kwargs: Any) -> None:
+            captured_reviewers.append(kwargs)
+
+    monkeypatch.setattr(cli, "WardnHubDatabaseFixClient", object)
+    monkeypatch.setattr(cli, "validate_database_fix_client", lambda _client: {"id": "database"})
+    monkeypatch.setattr(cli, "CodexAppServerReviewer", CapturingReviewer)
+    monkeypatch.setattr(cli, "fix_loop", lambda **_kwargs: 0)
+
+    result = cli.main(
+        [
+            "--codex-app-server-url",
+            "ws://127.0.0.1:41237",
+            "--once",
+        ]
+    )
+
+    assert result == 0
+    assert (
+        captured_reviewers[0]["structured_output_schema"]
+        == cli.FIX_DECISION_OUTPUT_SCHEMA
+    )

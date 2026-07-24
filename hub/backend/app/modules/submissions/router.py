@@ -25,6 +25,8 @@ from app.modules.submissions.exceptions import (
 )
 from app.modules.submissions.schemas import (
     SubmissionCreate,
+    SubmissionImportInventoryRequest,
+    SubmissionImportInventoryResponse,
     SubmissionListResponse,
     SubmissionOwnerScope,
     SubmissionRead,
@@ -40,6 +42,7 @@ from app.modules.submissions.service import (
     delete_submission,
     get_submission,
     get_submission_for_system_review,
+    list_submission_import_inventory,
     list_submissions,
     list_submissions_for_system_review,
     publish_submission,
@@ -105,6 +108,25 @@ async def list_submission_records(
         owner_scope=owner_scope,
         query=query,
         filter_user_id=filter_user_id,
+    )
+
+
+@router.post(
+    "/import-inventory",
+    response_model=SubmissionImportInventoryResponse,
+    include_in_schema=False,
+)
+async def get_submission_import_inventory(
+    payload: SubmissionImportInventoryRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    _current_user: Annotated[
+        User,
+        Depends(require_superuser_scopes("submissions:read")),
+    ],
+) -> SubmissionImportInventoryResponse:
+    return await list_submission_import_inventory(
+        session,
+        names=payload.names,
     )
 
 

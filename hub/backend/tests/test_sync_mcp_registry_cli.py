@@ -24,9 +24,15 @@ class FakeHub:
         self.created_submissions: list[dict[str, Any]] = []
         self.updated_submissions: list[tuple[str, dict[str, Any]]] = []
         self.submitted: list[str] = []
+        self.inventory_requests: list[list[str]] = []
 
-    def list_submissions(self) -> list[dict[str, Any]]:
-        return self.pending_submissions
+    def list_submissions(self, names: list[str]) -> list[dict[str, Any]]:
+        self.inventory_requests.append(names)
+        return [
+            submission
+            for submission in self.pending_submissions
+            if submission.get("name") in names
+        ]
 
     def get_server(self, server_name: str) -> dict[str, Any] | None:
         return self.existing_server
@@ -109,6 +115,33 @@ class FlakyHttpClient:
         if len(self.requests) <= self.failures:
             raise cli.httpx.ConnectError("tls eof")
         return FakeResponse({"servers": [], "metadata": {}})
+
+    def close(self) -> None:
+        pass
+
+
+class InventoryHubHttpClient:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.payload = payload
+        self.requests: list[dict[str, Any]] = []
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json: dict[str, Any] | None,
+        params: dict[str, Any] | None,
+    ) -> FakeResponse:
+        self.requests.append(
+            {
+                "method": method,
+                "url": url,
+                "json": json,
+                "params": params,
+            }
+        )
+        return FakeResponse(self.payload, url=url)
 
     def close(self) -> None:
         pass
@@ -566,6 +599,10 @@ def test_sync_registry_paginates_and_counts_duplicate_skips() -> None:
     assert registry.requests[1]["cursor"] == "next"
     assert all(request["updated_since"] == "2026-06-27T12:00:00Z" for request in registry.requests)
     assert all("include_deleted" not in request for request in registry.requests)
+    assert hub.inventory_requests == [
+        ["io.github.example/one"],
+        ["io.github.example/two"],
+    ]
 
 
 def test_sync_registry_verbose_prints_page_and_record_progress(
@@ -599,6 +636,38 @@ def test_sync_registry_verbose_prints_page_and_record_progress(
     assert "fetched page 1: records=1" in output
     assert "dry-run candidate: name=io.github.example/one version=1.0.0 reason=dry_run" in output
     assert "registry pagination complete" in output
+
+
+def test_hub_client_loads_a_targeted_submission_inventory() -> None:
+    client = cli.WardnHubApiClient(
+        base_url="https://hub.example",
+        token="token",
+        timeout_seconds=1,
+        user_agent="test",
+    )
+    http_client = InventoryHubHttpClient(
+        {"submissions": [{"id": "one"}, {"id": "two"}]}
+    )
+    client._client = http_client  # type: ignore[assignment]
+
+    submissions = client.list_submissions(
+        ["io.github.example/one", "io.github.example/two"]
+    )
+
+    assert submissions == [{"id": "one"}, {"id": "two"}]
+    assert http_client.requests == [
+        {
+            "method": "POST",
+            "url": "https://hub.example/api/v1/submissions/import-inventory",
+            "json": {
+                "names": [
+                    "io.github.example/one",
+                    "io.github.example/two",
+                ]
+            },
+            "params": None,
+        }
+    ]
 
 
 def test_mcp_registry_client_retries_transient_registry_errors(monkeypatch) -> None:

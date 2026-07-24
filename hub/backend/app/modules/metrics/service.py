@@ -86,6 +86,12 @@ WORKER_JOB_DURATION = Histogram(
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 5, 30, 60, 300, 900, 1800, 7200, 21600),
     registry=PROCESS_REGISTRY,
 )
+WORKER_ITEM_RESULTS = Counter(
+    "wardn_worker_item_results_total",
+    "Durable worker items completed, deferred, retried, or fenced as stale.",
+    ["job", "result"],
+    registry=PROCESS_REGISTRY,
+)
 
 
 @dataclass(frozen=True)
@@ -444,6 +450,10 @@ def record_event_worker_batch(
 
 def set_worker_job_lock_held(job_name: str, *, held: bool) -> None:
     WORKER_JOB_LOCK_HELD.labels(job=job_name).set(1 if held else 0)
+
+
+def record_worker_item_result(job_name: str, *, result: str) -> None:
+    WORKER_ITEM_RESULTS.labels(job=job_name, result=result).inc()
 
 
 @contextmanager

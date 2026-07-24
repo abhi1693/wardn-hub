@@ -812,6 +812,55 @@ def score_findings(findings: list[dict[str, Any]]) -> tuple[int, str, list[dict[
     return score, score_rank(score), deductions
 
 
+def stored_preflight_audit(
+    target: SkillAuditTarget,
+    inspection: BundleInspection,
+    *,
+    configuration_hash: str,
+) -> StoredAudit:
+    findings = inspection.hard_findings[:MAX_STORED_FINDINGS]
+    score, rank, score_deductions = score_findings(findings)
+    policy_fingerprint = hashlib.sha256(
+        (
+            "wardn-bundle-preflight-v1:"
+            f"{MAX_SKILL_FILES}:{MAX_SKILL_FILE_BYTES}:{MAX_SKILL_BUNDLE_BYTES}:"
+            f"{MAX_ROOT_SKILL_CHARS}:{MAX_PATH_CHARS}:{MAX_PATH_PARTS}"
+        ).encode()
+    ).hexdigest()
+    return StoredAudit(
+        scanner_name="Wardn Bundle Preflight",
+        scanner_version="1",
+        policy_name="resolver-compatibility",
+        policy_version="1",
+        policy_fingerprint=policy_fingerprint,
+        configuration_hash=configuration_hash,
+        status="fail",
+        summary=(
+            f"Wardn bundle preflight recorded {len(findings)} high-risk "
+            "resolver compatibility finding(s)."
+        ),
+        risk_level="high",
+        score=score,
+        rank=rank,
+        score_deductions=score_deductions,
+        findings=findings,
+        analyzers=["wardn_bundle_preflight"],
+        scan_duration_ms=0,
+        raw_result={
+            "version": 1,
+            "snapshotId": str(target.snapshot_id),
+            "contentHash": target.content_hash,
+            "configurationHash": configuration_hash,
+            "scanCompleted": True,
+            "preflightFailed": True,
+            "storedFindingCount": len(findings),
+            "score": score,
+            "rank": rank,
+            "scoreDeductions": score_deductions,
+        },
+    )
+
+
 def stored_scanner_audit(
     target: SkillAuditTarget,
     payload: CiscoScanPayload,
@@ -1126,11 +1175,15 @@ def audit_skills(
         )
         inspection = inspect_bundle(target)
         try:
-            if inspection.hard_findings:
-                raise UserFacingError(
-                    "stored package failed safe materialization; refresh its source package"
+            audit = (
+                stored_preflight_audit(
+                    target,
+                    inspection,
+                    configuration_hash=scanner.configuration_hash,
                 )
-            audit = scanner.scan(target, inspection)
+                if inspection.hard_findings
+                else scanner.scan(target, inspection)
+            )
         except UserFacingError as exc:
             stats.errors += 1
             print(
@@ -1211,11 +1264,15 @@ async def audit_pending_skill_snapshot_async(
     )
     inspection = inspect_bundle(target)
     try:
-        if inspection.hard_findings:
-            raise UserFacingError(
-                "stored package failed safe materialization; refresh its source package"
+        audit = (
+            stored_preflight_audit(
+                target,
+                inspection,
+                configuration_hash=selected_scanner.configuration_hash,
             )
-        audit = await asyncio.to_thread(selected_scanner.scan, target, inspection)
+            if inspection.hard_findings
+            else await asyncio.to_thread(selected_scanner.scan, target, inspection)
+        )
     except UserFacingError as exc:
         print(
             f"Audit failed for {target.catalog_id}; leaving it unaudited: {exc}",

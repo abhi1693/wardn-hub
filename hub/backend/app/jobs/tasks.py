@@ -5,17 +5,12 @@ import logging
 import sys
 from datetime import UTC, datetime
 
-from app.cli.audit_skills import load_audit_target
 from app.cli.events_worker import run_worker as run_events_worker
 from app.core.config import Settings
 from app.db.session import AsyncSessionLocal
 from app.jobs import repository as job_repository
 from app.jobs.schedules import DailySchedule, WeeklySchedule
 from app.modules.metrics import service as metrics_service
-from app.modules.submissions.service import (
-    next_submission_for_database_review,
-    next_submission_for_system_fix,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -72,27 +67,83 @@ async def run_app_command(job_name: str, *arguments: str) -> int:
         return return_code
 
 
-async def has_submission_review_work() -> bool:
+async def claim_submission_review_work(
+    *,
+    settings: Settings,
+) -> job_repository.ClaimedWorkItem | None:
     async with AsyncSessionLocal() as session:
-        submission = await next_submission_for_database_review(session)
-        return submission is not None
-
-
-async def has_submission_repair_work() -> bool:
-    async with AsyncSessionLocal() as session:
-        submission = await next_submission_for_system_fix(session)
-        return submission is not None
-
-
-async def next_pending_skill_audit_id() -> str | None:
-    async with AsyncSessionLocal() as session:
-        target = await load_audit_target(
+        item = await job_repository.claim_next_submission_review(
             session,
-            after_skill_id=None,
-            skill_id=None,
-            re_audit=False,
+            lease_seconds=settings.worker_item_lease_seconds,
         )
-        return target.catalog_id if target is not None else None
+        await session.commit()
+        return item
+
+
+async def claim_submission_repair_work(
+    *,
+    settings: Settings,
+) -> job_repository.ClaimedWorkItem | None:
+    async with AsyncSessionLocal() as session:
+        item = await job_repository.claim_next_submission_repair(
+            session,
+            lease_seconds=settings.worker_item_lease_seconds,
+        )
+        await session.commit()
+        return item
+
+
+async def claim_skill_audit_work(
+    *,
+    settings: Settings,
+) -> job_repository.ClaimedWorkItem | None:
+    async with AsyncSessionLocal() as session:
+        item = await job_repository.claim_next_skill_audit(
+            session,
+            lease_seconds=settings.worker_item_lease_seconds,
+        )
+        await session.commit()
+        return item
+
+
+async def finish_submission_work(
+    item: job_repository.ClaimedWorkItem,
+    *,
+    job_name: str,
+    eligible_statuses: tuple[str, ...],
+    return_code: int,
+    settings: Settings,
+) -> str:
+    async with AsyncSessionLocal() as session:
+        result = await job_repository.finish_submission_item(
+            session,
+            item,
+            job_name=job_name,
+            eligible_statuses=eligible_statuses,
+            return_code=return_code,
+            deferred_retry_seconds=settings.worker_item_deferred_retry_seconds,
+            error_retry_seconds=settings.worker_item_error_retry_seconds,
+        )
+        await session.commit()
+        return result
+
+
+async def finish_skill_audit_work(
+    item: job_repository.ClaimedWorkItem,
+    *,
+    return_code: int,
+    settings: Settings,
+) -> str:
+    async with AsyncSessionLocal() as session:
+        result = await job_repository.finish_skill_audit_item(
+            session,
+            item,
+            return_code=return_code,
+            deferred_retry_seconds=settings.worker_item_deferred_retry_seconds,
+            error_retry_seconds=settings.worker_item_error_retry_seconds,
+        )
+        await session.commit()
+        return result
 
 
 async def scheduled_job_next_run(
@@ -159,9 +210,15 @@ async def run_events(stop: asyncio.Event, *, settings: Settings) -> None:
             raise exception
 
 
-async def run_submission_reviews(stop: asyncio.Event, *, settings: Settings) -> None:
+async def run_submission_review_consumer(
+    stop: asyncio.Event,
+    *,
+    settings: Settings,
+    consumer: int,
+) -> None:
     while not stop.is_set():
-        if not await has_submission_review_work():
+        item = await claim_submission_review_work(settings=settings)
+        if item is None:
             await wait_for_stop(stop, settings.worker_submission_poll_interval_seconds)
             continue
         return_code = await run_app_command(
@@ -175,18 +232,53 @@ async def run_submission_reviews(stop: asyncio.Event, *, settings: Settings) -> 
             "--auto-publish",
             "--non-interactive",
             "--verbose",
+            "--submission-id",
+            item.command_id,
         )
-        delay = (
-            ACTIVE_SUBMISSION_DELAY_SECONDS
-            if return_code == 0
-            else settings.worker_submission_poll_interval_seconds
+        result = await finish_submission_work(
+            item,
+            job_name="submission-review",
+            eligible_statuses=("submitted",),
+            return_code=return_code,
+            settings=settings,
         )
-        await wait_for_stop(stop, delay)
+        metrics_service.record_worker_item_result("submission-review", result=result)
+        logger.info(
+            "worker item finished",
+            extra={
+                "worker_job": "submission-review",
+                "worker_item_id": item.item_id,
+                "worker_item_result": result,
+                "worker_item_attempt": item.attempt_count,
+                "worker_consumer": consumer,
+            },
+        )
+        if result == "completed":
+            await wait_for_stop(stop, ACTIVE_SUBMISSION_DELAY_SECONDS)
 
 
-async def run_submission_repairs(stop: asyncio.Event, *, settings: Settings) -> None:
+async def run_submission_reviews(stop: asyncio.Event, *, settings: Settings) -> None:
+    async with asyncio.TaskGroup() as group:
+        for consumer in range(settings.worker_submission_review_concurrency):
+            group.create_task(
+                run_submission_review_consumer(
+                    stop,
+                    settings=settings,
+                    consumer=consumer,
+                ),
+                name=f"wardn-worker-submission-review-{consumer}",
+            )
+
+
+async def run_submission_repair_consumer(
+    stop: asyncio.Event,
+    *,
+    settings: Settings,
+    consumer: int,
+) -> None:
     while not stop.is_set():
-        if not await has_submission_repair_work():
+        item = await claim_submission_repair_work(settings=settings)
+        if item is None:
             await wait_for_stop(stop, settings.worker_submission_poll_interval_seconds)
             continue
         return_code = await run_app_command(
@@ -197,13 +289,42 @@ async def run_submission_repairs(stop: asyncio.Event, *, settings: Settings) -> 
             str(settings.worker_review_timeout_seconds),
             "--once",
             "--verbose",
+            "--submission-id",
+            item.command_id,
         )
-        delay = (
-            ACTIVE_SUBMISSION_DELAY_SECONDS
-            if return_code == 0
-            else settings.worker_submission_poll_interval_seconds
+        result = await finish_submission_work(
+            item,
+            job_name="submission-repair",
+            eligible_statuses=("draft", "rejected"),
+            return_code=return_code,
+            settings=settings,
         )
-        await wait_for_stop(stop, delay)
+        metrics_service.record_worker_item_result("submission-repair", result=result)
+        logger.info(
+            "worker item finished",
+            extra={
+                "worker_job": "submission-repair",
+                "worker_item_id": item.item_id,
+                "worker_item_result": result,
+                "worker_item_attempt": item.attempt_count,
+                "worker_consumer": consumer,
+            },
+        )
+        if result == "completed":
+            await wait_for_stop(stop, ACTIVE_SUBMISSION_DELAY_SECONDS)
+
+
+async def run_submission_repairs(stop: asyncio.Event, *, settings: Settings) -> None:
+    async with asyncio.TaskGroup() as group:
+        for consumer in range(settings.worker_submission_repair_concurrency):
+            group.create_task(
+                run_submission_repair_consumer(
+                    stop,
+                    settings=settings,
+                    consumer=consumer,
+                ),
+                name=f"wardn-worker-submission-repair-{consumer}",
+            )
 
 
 async def run_mcp_registry_sync(
@@ -286,8 +407,8 @@ async def run_skill_maintenance(
             )
             continue
 
-        skill_id = await next_pending_skill_audit_id()
-        if skill_id is not None:
+        item = await claim_skill_audit_work(settings=settings)
+        if item is not None:
             return_code = await run_app_command(
                 "skill-maintenance",
                 "-m",
@@ -295,15 +416,28 @@ async def run_skill_maintenance(
                 "skills",
                 "audit",
                 "--skill-id",
-                skill_id,
+                item.command_id,
                 "--scanner-timeout",
                 str(settings.worker_skill_audit_scanner_timeout_seconds),
             )
-            if return_code != 0:
-                await wait_for_stop(
-                    stop,
-                    settings.worker_skill_audit_poll_interval_seconds,
-                )
+            result = await finish_skill_audit_work(
+                item,
+                return_code=return_code,
+                settings=settings,
+            )
+            metrics_service.record_worker_item_result(
+                "skill-maintenance",
+                result=result,
+            )
+            logger.info(
+                "worker item finished",
+                extra={
+                    "worker_job": "skill-maintenance",
+                    "worker_item_id": item.item_id,
+                    "worker_item_result": result,
+                    "worker_item_attempt": item.attempt_count,
+                },
+            )
             continue
 
         seconds_until_refresh = max(

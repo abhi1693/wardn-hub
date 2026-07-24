@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import sys
 import time
 import uuid
@@ -66,16 +65,14 @@ class ReviewDecisionPayload(BaseModel):
 
     decision: Literal["pass", "needs_fixes", "reject", "cannot_validate", "skip"]
     suggested_rejection_message: str | None = Field(
-        default=None,
         alias="suggestedRejectionMessage",
         max_length=2000,
     )
     suggested_approval_note: str | None = Field(
-        default=None,
         alias="suggestedApprovalNote",
         max_length=2000,
     )
-    findings: list[ReviewFinding] = Field(default_factory=list)
+    findings: list[ReviewFinding]
 
     @model_validator(mode="after")
     def require_action_notes(self) -> ReviewDecisionPayload:
@@ -88,11 +85,7 @@ class ReviewDecisionPayload(BaseModel):
         return self
 
 
-REVIEW_DECISION_SCHEMA_JSON = json.dumps(
-    ReviewDecisionPayload.model_json_schema(by_alias=True),
-    indent=2,
-    sort_keys=True,
-)
+REVIEW_DECISION_OUTPUT_SCHEMA = ReviewDecisionPayload.model_json_schema(by_alias=True)
 
 
 TRANSIENT_DATABASE_DISCONNECT_SNIPPETS = (
@@ -476,19 +469,11 @@ Required checks:
 - validationResult.status is "passed"; warning or failing checks mean the submission is not ready for approval until resolved.
 - If submissionType is "new_server", serverJson.version must be "1.0.0"; upstream artifact versions belong in packages[].version, remotes metadata, documentation, or _meta evidence.
 
-Report format:
-- Submission ID
-- Server name and version
-- Repository/source files reviewed
-- Findings grouped by severity
-- Missing or incorrect environment variables
-- Missing or incorrect command arguments
-- Suggested rejection message if the submission should be rejected
-- Suggested approval note if the submission passes
-- Final section named exactly "Review result JSON" containing one fenced JSON object that validates against this schema:
-```json
-{REVIEW_DECISION_SCHEMA_JSON}
-```
+Required output:
+- Return only the JSON object required by the transport-enforced output schema.
+- Put every material issue in findings with its severity and a user-facing message.
+- Set suggestedRejectionMessage to null unless the decision is "needs_fixes" or "reject".
+- Set suggestedApprovalNote to a concise source-backed note for "pass", otherwise null.
 
 Decision rules:
 - Use "pass" only when the submitted metadata can be verified against source evidence and validationResult.status is "passed".
@@ -496,10 +481,9 @@ Decision rules:
 - If decision is "needs_fixes" or "reject", suggestedRejectionMessage must be a non-empty, user-facing message that explains the exact changes needed.
 - Use "cannot validate" when source evidence is unavailable, ambiguous, or insufficient to make a safe approval/rejection decision. This leaves the submission unchanged so it can be retried or reviewed manually later.
 
-After the report:
 - Do not call Wardn Hub API endpoints.
 - Do not approve, reject, publish, update, or delete anything directly.
-- The database review controller will parse only the final Review result JSON for automatic actions. Markdown headings such as "Decision: pass" are ignored by automation.
+- The database review controller will validate the schema-constrained JSON before any automatic action.
 
 Do not mark a submission as passing if source review evidence is incomplete, validationResult has warning or failing checks, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified.
 
@@ -663,27 +647,9 @@ def validation_rejection_message(messages: list[str]) -> str:
 
 
 def extract_review_result(findings: str) -> ReviewDecisionPayload | None:
-    label = re.search(
-        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Review result JSON(?:[*_`]+)?\s*:?\s*$",
-        findings,
-    )
-    if label is None:
-        return None
-
-    search_from = label.end()
-    fenced = re.search(r"```(?:json)?\s*", findings[search_from:], re.IGNORECASE)
-    if fenced is not None:
-        payload_start = search_from + fenced.end()
-    else:
-        object_start = findings.find("{", search_from)
-        if object_start < 0:
-            return None
-        payload_start = object_start
-
     try:
-        payload, _end = json.JSONDecoder().raw_decode(findings, payload_start)
-        return ReviewDecisionPayload.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError):
+        return ReviewDecisionPayload.model_validate_json(findings)
+    except ValidationError:
         return None
 
 
@@ -808,7 +774,7 @@ def review_loop(
             completed_reviews += 1
             skipped_ids.add(current_submission_id)
             print(
-                f"No valid Review result JSON was returned for {current_submission_id}; "
+                f"No valid schema-constrained review response was returned for {current_submission_id}; "
                 "leaving submission unchanged and skipping it for this run.",
                 file=stdout,
             )
@@ -1150,6 +1116,7 @@ def main(argv: list[str] | None = None) -> int:
             stream_output=args.verbose,
             auth_token=os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip(),
             web_research_only=True,
+            structured_output_schema=REVIEW_DECISION_OUTPUT_SCHEMA,
         )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return review_loop(

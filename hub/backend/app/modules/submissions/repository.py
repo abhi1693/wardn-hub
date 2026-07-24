@@ -60,6 +60,27 @@ async def get_submission_by_id(
     return await session.get(ServerSubmission, submission_id)
 
 
+async def list_submission_import_inventory(
+    session: AsyncSession,
+    *,
+    names: list[str],
+) -> list[ServerSubmission]:
+    statement = (
+        select(ServerSubmission)
+        .where(
+            ServerSubmission.name.in_(names),
+            ServerSubmission.status.in_(("draft", "submitted", "approved", "rejected")),
+        )
+        .order_by(
+            ServerSubmission.name.asc(),
+            ServerSubmission.updated_at.desc(),
+            ServerSubmission.id.desc(),
+        )
+    )
+    result = await session.execute(statement)
+    return list(result.scalars().all())
+
+
 async def list_submissions(
     session: AsyncSession,
     *,

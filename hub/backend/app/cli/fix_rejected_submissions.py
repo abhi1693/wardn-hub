@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import sys
 import time
 import uuid
@@ -55,26 +54,41 @@ class FixDecisionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     decision: Literal["fixed", "cannot_fix", "skip"]
-    updated_server_json: dict[str, Any] | None = Field(
-        default=None,
+    updated_server_json_text: str | None = Field(
         alias="updatedServerJson",
     )
-    summary: str = Field(default="", max_length=2000)
-    source_files_read: list[str] = Field(default_factory=list, alias="sourceFilesRead")
-    missing_information: list[str] = Field(default_factory=list, alias="missingInformation")
+    summary: str = Field(max_length=2000)
+    source_files_read: list[str] = Field(alias="sourceFilesRead")
+    missing_information: list[str] = Field(alias="missingInformation")
 
     @model_validator(mode="after")
     def require_updated_server_json_for_fixed(self) -> FixDecisionPayload:
-        if self.decision == "fixed" and self.updated_server_json is None:
+        if self.decision == "fixed" and self.updated_server_json_text is None:
             raise ValueError("updatedServerJson is required when decision is fixed")
+        if self.updated_server_json_text is not None:
+            self._parse_updated_server_json()
         return self
 
+    @property
+    def updated_server_json(self) -> dict[str, Any] | None:
+        if self.updated_server_json_text is None:
+            return None
+        return self._parse_updated_server_json()
 
-FIX_DECISION_SCHEMA_JSON = json.dumps(
-    FixDecisionPayload.model_json_schema(by_alias=True),
-    indent=2,
-    sort_keys=True,
-)
+    def _parse_updated_server_json(self) -> dict[str, Any]:
+        try:
+            parsed = json.loads(self.updated_server_json_text or "")
+        except json.JSONDecodeError as exc:
+            raise ValueError("updatedServerJson must contain valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("updatedServerJson must encode a JSON object")
+        return parsed
+
+
+# Keep the transport schema strict without closing the forward-compatible registry
+# document: updatedServerJson is a JSON-encoded string, then the Hub registry models
+# and service validation provide the second gate before any mutation.
+FIX_DECISION_OUTPUT_SCHEMA = FixDecisionPayload.model_json_schema(by_alias=True)
 
 
 class FixClient(Protocol):
@@ -287,7 +301,7 @@ System fix mode:
 
 Eligibility:
 - This worker only receives draft/rejected submissions owned by a superuser or active partner organization.
-- If the snapshot is not status "draft" or "rejected", return Fix result JSON with decision "cannot_fix".
+- If the snapshot is not status "draft" or "rejected", return decision "cannot_fix".
 
 Goal:
 - Validate the submission against any submit/review feedback and Wardn Hub review requirements.
@@ -296,7 +310,7 @@ Goal:
 - Do not approve, reject, publish, withdraw, delete, or otherwise moderate this submission.
 - Do not create a new submission.
 - Do not guess source-review evidence. It must reflect URLs/files actually inspected.
-- If the submission lacks enough source links to verify the server, return Fix result JSON with decision "cannot_fix" and list the official repository or documentation URL needed from the user in missingInformation.
+- If the submission lacks enough source links to verify the server, return decision "cannot_fix" and list the official repository or documentation URL needed from the user in missingInformation.
 - {REGISTRY_METADATA_SCOPE_RULE}
 - If submissionType is "new_server", keep serverJson.version as the Wardn registry version from the submission snapshot, normally "1.0.0". Put upstream package, image, CLI, npm, PyPI, or MCP registry versions only in packages[].version, remotes metadata, documentation, or _meta evidence.
 
@@ -316,16 +330,14 @@ Source review requirements:
 
 {DRAFT_METADATA_RULES}
 
-Return format:
-- Summary
-- Source URLs/files read
-- Final section named exactly "Fix result JSON" containing one fenced JSON object that validates against this schema:
-```json
-{FIX_DECISION_SCHEMA_JSON}
-```
+Required output:
+- Return only the JSON object required by the transport-enforced output schema.
+- Put the concise outcome in summary and every inspected source URL/file in sourceFilesRead.
+- Set missingInformation to an empty list only when no user-supplied evidence is missing.
+- When decision is "fixed", set updatedServerJson to a JSON-encoded string containing the complete replacement server object. Do not return that field as a nested object.
 
 If you cannot fix it, set decision to "cannot_fix", set updatedServerJson to null, and include the exact missing information needed from the user in missingInformation.
-The database fix controller will parse only the final Fix result JSON for automatic actions. Markdown headings such as "Decision: fixed" and "Updated serverJson" are ignored by automation.
+The database fix controller will validate the schema-constrained JSON before applying updatedServerJson.
 
 Submission context:
 Submission ID: {submission_id}
@@ -346,27 +358,9 @@ Submitted MCP server model JSON from to_json_dict():
 
 
 def extract_fix_result(findings: str) -> FixDecisionPayload | None:
-    label = re.search(
-        r"(?im)^\s*(?:[-*]\s*)?(?:#+\s*)?(?:[*_`]+)?Fix result JSON(?:[*_`]+)?\s*:?\s*$",
-        findings,
-    )
-    if label is None:
-        return None
-
-    search_from = label.end()
-    fenced = re.search(r"```(?:json)?\s*", findings[search_from:], re.IGNORECASE)
-    if fenced is not None:
-        payload_start = search_from + fenced.end()
-    else:
-        object_start = findings.find("{", search_from)
-        if object_start < 0:
-            return None
-        payload_start = object_start
-
     try:
-        payload, _end = json.JSONDecoder().raw_decode(findings, payload_start)
-        return FixDecisionPayload.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError):
+        return FixDecisionPayload.model_validate_json(findings)
+    except ValidationError:
         return None
 
 
@@ -434,7 +428,9 @@ def fix_loop(
                 print(findings, file=stdout)
                 fix_result = extract_fix_result(findings)
                 if fix_result is None:
-                    raise UserFacingError("LLM did not return valid Fix result JSON")
+                    raise UserFacingError(
+                        "LLM did not return a valid schema-constrained fix response"
+                    )
                 if fix_result.decision in {"cannot_fix", "skip"}:
                     stats.skipped += 1
                     skipped_ids.add(current_submission_id)
@@ -442,7 +438,9 @@ def fix_loop(
                 else:
                     updated_server_json = fix_result.updated_server_json
                     if updated_server_json is None:
-                        raise UserFacingError("Fix result JSON did not include updatedServerJson")
+                        raise UserFacingError(
+                            "Schema-constrained fix response did not include updatedServerJson"
+                        )
                     updated_server_json = normalize_updated_server_json(
                         updated_server_json,
                         context["submission"],
@@ -554,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
             stream_output=args.verbose,
             auth_token=os.getenv(CODEX_APP_SERVER_AUTH_TOKEN_ENV, "").strip(),
             web_research_only=True,
+            structured_output_schema=FIX_DECISION_OUTPUT_SCHEMA,
         )
         print(f"Authenticated as {display_user(user)}.", file=sys.stdout)
         return fix_loop(

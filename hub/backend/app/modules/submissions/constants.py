@@ -1,0 +1,1 @@
+MCP_REGISTRY_IMPORT_META_KEY = "wardnImport"

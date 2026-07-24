@@ -77,6 +77,67 @@ def test_submission_write_rejects_token_without_write_scope(monkeypatch) -> None
     }
 
 
+def test_superuser_can_load_targeted_submission_import_inventory(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, object] = {}
+    submission_id = uuid4()
+
+    async def fake_session():
+        yield object()
+
+    async def authenticate_api_token(*args, **kwargs):
+        return (
+            User(
+                id=uuid4(),
+                email="admin@example.com",
+                is_superuser=True,
+            ),
+            SimpleNamespace(id=uuid4(), scopes=["submissions:read"], organization_ids=[]),
+        )
+
+    async def load_inventory(_session, *, names):
+        captured["names"] = names
+        return {
+            "submissions": [
+                {
+                    "id": submission_id,
+                    "name": "io.github.example/weather",
+                    "version": "1.0.0",
+                    "status": "rejected",
+                    "upstreamVersion": "2026.7.24",
+                }
+            ]
+        }
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_api_token)
+    monkeypatch.setattr(
+        submissions_router,
+        "list_submission_import_inventory",
+        load_inventory,
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/submissions/import-inventory",
+        headers={"Authorization": "Bearer wardn_hub_key.secret"},
+        json={"names": [" io.github.example/weather ", "io.github.example/weather"]},
+    )
+
+    assert response.status_code == 200
+    assert captured["names"] == ["io.github.example/weather"]
+    assert response.json() == {
+        "submissions": [
+            {
+                "id": str(submission_id),
+                "name": "io.github.example/weather",
+                "version": "1.0.0",
+                "status": "rejected",
+                "upstreamVersion": "2026.7.24",
+            }
+        ]
+    }
+
+
 def test_create_and_submit_submission_returns_created(monkeypatch) -> None:
     app = create_app()
     captured: dict[str, object] = {}

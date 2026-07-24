@@ -55,6 +55,29 @@ def sql(statement: object) -> str:
 
 
 @pytest.mark.asyncio
+async def test_import_inventory_uses_exact_names_and_active_workflow_states() -> None:
+    session = CaptureSession()
+
+    submissions = await repository.list_submission_import_inventory(
+        session,
+        names=[
+            "io.github.example/one",
+            "io.github.example/two",
+        ],
+    )
+
+    statement = sql(session.statements[0])
+    assert submissions == []
+    assert "server_submissions.name IN" in statement
+    assert "io.github.example/one" in statement
+    assert "io.github.example/two" in statement
+    assert (
+        "server_submissions.status IN ('draft', 'submitted', 'approved', 'rejected')"
+        in statement
+    )
+
+
+@pytest.mark.asyncio
 async def test_list_submissions_includes_owned_organization_memberships() -> None:
     user_id = uuid4()
     session = CaptureSession()

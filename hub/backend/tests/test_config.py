@@ -474,3 +474,16 @@ def test_public_rate_limit_values_must_be_positive(monkeypatch) -> None:
 
     with pytest.raises(ValidationError, match="public_rate_limit_requests"):
         Settings(_env_file=None)
+
+
+def test_worker_lease_must_outlast_command_timeouts(monkeypatch) -> None:
+    set_required_settings(
+        monkeypatch,
+        {
+            "WARDN_HUB_WORKER_REVIEW_TIMEOUT_SECONDS": "1200",
+            "WARDN_HUB_WORKER_ITEM_LEASE_SECONDS": "1200",
+        },
+    )
+
+    with pytest.raises(ValidationError, match="must exceed every worker command timeout"):
+        Settings(_env_file=None)

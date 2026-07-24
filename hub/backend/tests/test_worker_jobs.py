@@ -2,17 +2,24 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
+from app.cli import worker as worker_cli
 from app.core.config import get_settings
+from app.jobs import repository as job_repository
 from app.jobs import tasks
+from app.jobs.models import WorkerItemState
 from app.jobs.registry import (
     JobDefinition,
     build_job_definitions,
     select_job_definitions,
 )
+from app.jobs.repository import ClaimedWorkItem
 from app.jobs.schedules import DailySchedule, WeeklySchedule
 from app.jobs.worker import lock_name, run_worker
 
@@ -23,6 +30,27 @@ class FakeResult:
 
     def scalar_one(self) -> object:
         return self.value
+
+    def scalars(self) -> FakeResult:
+        return self
+
+    def first(self) -> None:
+        return None
+
+
+class FakeDmlResult:
+    def __init__(self, rowcount: int) -> None:
+        self.rowcount = rowcount
+
+
+class RecordingDmlSession:
+    def __init__(self, *rowcounts: int) -> None:
+        self.rowcounts = iter(rowcounts)
+        self.statements: list[object] = []
+
+    async def execute(self, statement: object) -> FakeDmlResult:
+        self.statements.append(statement)
+        return FakeDmlResult(next(self.rowcounts))
 
 
 class FakeConnection:
@@ -145,9 +173,19 @@ async def test_submission_review_lane_runs_one_noninteractive_review(
 ) -> None:
     stop = asyncio.Event()
     commands: list[tuple[str, ...]] = []
+    finished: list[tuple[str, int]] = []
+    item = ClaimedWorkItem(
+        item_id="5cf92456-5a43-4669-865f-60d861cadb70",
+        command_id="5cf92456-5a43-4669-865f-60d861cadb70",
+        claim_token=uuid4(),
+        item_revision=None,
+        item_updated_at=datetime(2026, 7, 24, tzinfo=UTC),
+        attempt_count=1,
+    )
 
-    async def has_work() -> bool:
-        return True
+    async def claim_work(*, settings) -> ClaimedWorkItem:
+        assert settings.worker_item_lease_seconds == 1800
+        return item
 
     async def run_command(job_name: str, *arguments: str) -> int:
         assert job_name == "submission-review"
@@ -155,16 +193,311 @@ async def test_submission_review_lane_runs_one_noninteractive_review(
         stop.set()
         return 0
 
-    monkeypatch.setattr(tasks, "has_submission_review_work", has_work)
-    monkeypatch.setattr(tasks, "run_app_command", run_command)
+    async def finish_work(
+        claimed_item: ClaimedWorkItem,
+        *,
+        job_name: str,
+        eligible_statuses: tuple[str, ...],
+        return_code: int,
+        settings,
+    ) -> str:
+        assert claimed_item == item
+        assert eligible_statuses == ("submitted",)
+        assert settings.worker_item_deferred_retry_seconds == 604800
+        finished.append((job_name, return_code))
+        return "deferred"
 
-    await tasks.run_submission_reviews(stop, settings=get_settings())
+    monkeypatch.setattr(tasks, "claim_submission_review_work", claim_work)
+    monkeypatch.setattr(tasks, "run_app_command", run_command)
+    monkeypatch.setattr(tasks, "finish_submission_work", finish_work)
+
+    settings = get_settings().model_copy(
+        update={"worker_submission_review_concurrency": 1}
+    )
+    await tasks.run_submission_reviews(stop, settings=settings)
 
     assert len(commands) == 1
     assert "app.cli.review_pending_submissions" in commands[0]
     assert "--once" in commands[0]
     assert "--non-interactive" in commands[0]
     assert "--auto-publish" in commands[0]
+    assert commands[0][commands[0].index("--submission-id") + 1] == item.item_id
+    assert finished == [("submission-review", 0)]
+
+
+@pytest.mark.asyncio
+async def test_submission_review_consumer_moves_past_unchanged_blocker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    now = datetime(2026, 7, 24, tzinfo=UTC)
+    items = [
+        ClaimedWorkItem(
+            item_id="0cdce04b-c661-4610-8216-452919e84730",
+            command_id="0cdce04b-c661-4610-8216-452919e84730",
+            claim_token=uuid4(),
+            item_revision=None,
+            item_updated_at=now,
+            attempt_count=1,
+        ),
+        ClaimedWorkItem(
+            item_id="86f3be8d-e1cc-4e8a-b658-794025a27b9d",
+            command_id="86f3be8d-e1cc-4e8a-b658-794025a27b9d",
+            claim_token=uuid4(),
+            item_revision=None,
+            item_updated_at=now,
+            attempt_count=1,
+        ),
+    ]
+    commands: list[str] = []
+    results = iter(("deferred", "completed"))
+
+    async def claim_work(*, settings) -> ClaimedWorkItem | None:
+        del settings
+        return items.pop(0) if items else None
+
+    async def run_command(_job_name: str, *arguments: str) -> int:
+        commands.append(arguments[arguments.index("--submission-id") + 1])
+        return 0
+
+    async def finish_work(*_args, **_kwargs) -> str:
+        result = next(results)
+        if result == "completed":
+            stop.set()
+        return result
+
+    monkeypatch.setattr(tasks, "claim_submission_review_work", claim_work)
+    monkeypatch.setattr(tasks, "run_app_command", run_command)
+    monkeypatch.setattr(tasks, "finish_submission_work", finish_work)
+
+    await tasks.run_submission_review_consumer(
+        stop,
+        settings=get_settings(),
+        consumer=0,
+    )
+
+    assert commands == [
+        "0cdce04b-c661-4610-8216-452919e84730",
+        "86f3be8d-e1cc-4e8a-b658-794025a27b9d",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_claim_queries_skip_current_leases_and_lock_rows() -> None:
+    statements: list[object] = []
+
+    class EmptySession:
+        async def execute(self, statement: object) -> FakeResult:
+            statements.append(statement)
+            return FakeResult(None)
+
+    session = EmptySession()
+    await job_repository.claim_next_submission_review(  # type: ignore[arg-type]
+        session,
+        lease_seconds=1800,
+    )
+    await job_repository.claim_next_submission_repair(  # type: ignore[arg-type]
+        session,
+        lease_seconds=1800,
+    )
+    await job_repository.claim_next_skill_audit(  # type: ignore[arg-type]
+        session,
+        lease_seconds=1800,
+    )
+
+    sql = [
+        str(
+            statement.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        for statement in statements
+    ]
+    assert all("worker_item_states" in statement for statement in sql)
+    assert all("FOR UPDATE" in statement and "SKIP LOCKED" in statement for statement in sql)
+    assert "worker_item_states.item_updated_at = server_submissions.updated_at" in sql[0]
+    assert "worker_item_states.item_updated_at = server_submissions.updated_at" in sql[1]
+    assert "worker_item_states.item_revision = skill_snapshots.content_hash" in sql[2]
+
+
+@pytest.mark.asyncio
+async def test_reclaim_rotates_the_item_fencing_token() -> None:
+    now = datetime(2026, 7, 24, tzinfo=UTC)
+    original_token = uuid4()
+    state = WorkerItemState(
+        job_name="submission-review",
+        item_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        claim_token=original_token,
+        item_revision=None,
+        item_updated_at=now,
+        attempt_count=1,
+        claimed_until=now,
+        retry_after=None,
+        last_result="claimed",
+        last_error="",
+    )
+
+    class StateSession:
+        async def get(self, _model: object, _key: object) -> WorkerItemState:
+            return state
+
+        async def flush(self) -> None:
+            pass
+
+    item = await job_repository.claim_item_state(
+        StateSession(),  # type: ignore[arg-type]
+        job_name="submission-review",
+        item_id=state.item_id,
+        command_id=state.item_id,
+        item_updated_at=now,
+        lease_seconds=1800,
+        now=now,
+    )
+
+    assert item.claim_token != original_token
+    assert state.claim_token == item.claim_token
+    assert state.attempt_count == 2
+
+
+@pytest.mark.asyncio
+async def test_completion_dml_requires_the_exact_claim_token() -> None:
+    token = uuid4()
+    now = datetime(2026, 7, 24, tzinfo=UTC)
+    item = ClaimedWorkItem(
+        item_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        command_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        claim_token=token,
+        item_revision=None,
+        item_updated_at=now,
+        attempt_count=1,
+    )
+    session = RecordingDmlSession(1, 1)
+
+    assert await job_repository.defer_item_state(
+        session,  # type: ignore[arg-type]
+        item,
+        job_name="submission-review",
+        retry_seconds=300,
+        result="deferred",
+        now=now,
+    )
+    assert await job_repository.delete_item_state(
+        session,  # type: ignore[arg-type]
+        item,
+        job_name="submission-review",
+    )
+
+    statements = [
+        str(
+            statement.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        for statement in session.statements
+    ]
+    assert all("worker_item_states.claim_token" in statement for statement in statements)
+    assert all(str(token) in statement for statement in statements)
+
+
+@pytest.mark.asyncio
+async def test_stale_submission_completion_cannot_modify_a_newer_claim() -> None:
+    now = datetime(2026, 7, 24, tzinfo=UTC)
+    item = ClaimedWorkItem(
+        item_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        command_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        claim_token=uuid4(),
+        item_revision=None,
+        item_updated_at=now,
+        attempt_count=1,
+    )
+
+    class StaleCompletionSession(RecordingDmlSession):
+        async def get(self, _model: object, _key: object) -> SimpleNamespace:
+            return SimpleNamespace(status="submitted", updated_at=now)
+
+    session = StaleCompletionSession(0)
+
+    result = await job_repository.finish_submission_item(
+        session,  # type: ignore[arg-type]
+        item,
+        job_name="submission-review",
+        eligible_statuses=("submitted",),
+        return_code=0,
+        deferred_retry_seconds=604800,
+        error_retry_seconds=300,
+        now=now,
+    )
+
+    assert result == "stale"
+
+
+def test_worker_errors_use_bounded_exponential_backoff() -> None:
+    first_attempt = ClaimedWorkItem(
+        item_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        command_id="3d072851-f4f3-4ea2-b2f0-cfc90f8b0a32",
+        claim_token=uuid4(),
+        item_revision=None,
+        item_updated_at=None,
+        attempt_count=1,
+    )
+    repeated_attempt = ClaimedWorkItem(
+        item_id=first_attempt.item_id,
+        command_id=first_attempt.command_id,
+        claim_token=uuid4(),
+        item_revision=None,
+        item_updated_at=None,
+        attempt_count=20,
+    )
+
+    assert (
+        job_repository.error_retry_delay(
+            first_attempt,
+            initial_retry_seconds=300,
+            maximum_retry_seconds=604800,
+        )
+        == 300
+    )
+    assert (
+        job_repository.error_retry_delay(
+            repeated_attempt,
+            initial_retry_seconds=300,
+            maximum_retry_seconds=604800,
+        )
+        == 604800
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_waits_for_the_packaged_database_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    revisions = iter(("202607240001", "202607240002"))
+
+    class RevisionConnection:
+        async def execute(self, _statement: object) -> FakeResult:
+            return FakeResult(next(revisions))
+
+        async def commit(self) -> None:
+            pass
+
+    class RevisionEngine:
+        def connect(self) -> FakeConnectionContext:
+            return FakeConnectionContext(RevisionConnection())  # type: ignore[arg-type]
+
+    async def no_wait(_stop: asyncio.Event, _seconds: float) -> bool:
+        return False
+
+    monkeypatch.setattr(worker_cli, "engine", RevisionEngine())
+    monkeypatch.setattr(worker_cli, "wait_for_stop", no_wait)
+
+    await worker_cli.wait_for_database_revision(
+        stop,
+        expected_revision="202607240002",
+        retry_seconds=5,
+    )
 
 
 @pytest.mark.asyncio
@@ -228,7 +561,16 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
 ) -> None:
     stop = asyncio.Event()
     commands: list[tuple[str, ...]] = []
+    finished: list[tuple[str, int]] = []
     next_refresh = datetime(2099, 1, 1, tzinfo=UTC)
+    item = ClaimedWorkItem(
+        item_id="28b58eb1-092d-41be-8589-f2964314ab2b",
+        command_id="owner/repository/skill",
+        claim_token=uuid4(),
+        item_revision="a" * 64,
+        item_updated_at=None,
+        attempt_count=1,
+    )
 
     async def scheduled_job_next_run(
         name: str,
@@ -239,14 +581,25 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
         assert initial_next_run_at < next_refresh
         return next_refresh
 
-    async def next_pending_skill_audit_id() -> str:
-        return "owner/repository/skill"
+    async def claim_work(*, settings) -> ClaimedWorkItem:
+        assert settings.worker_item_lease_seconds == 1800
+        return item
 
     async def run_command(job_name: str, *arguments: str) -> int:
         assert job_name == "skill-maintenance"
         commands.append(arguments)
         stop.set()
         return 0
+
+    async def finish_work(
+        claimed_item: ClaimedWorkItem,
+        *,
+        return_code: int,
+        settings,
+    ) -> str:
+        assert claimed_item == item
+        finished.append((claimed_item.command_id, return_code))
+        return "completed"
 
     schedule = WeeklySchedule(
         weekday=6,
@@ -255,8 +608,9 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
         timezone=ZoneInfo("UTC"),
     )
     monkeypatch.setattr(tasks, "scheduled_job_next_run", scheduled_job_next_run)
-    monkeypatch.setattr(tasks, "next_pending_skill_audit_id", next_pending_skill_audit_id)
+    monkeypatch.setattr(tasks, "claim_skill_audit_work", claim_work)
     monkeypatch.setattr(tasks, "run_app_command", run_command)
+    monkeypatch.setattr(tasks, "finish_skill_audit_work", finish_work)
 
     await tasks.run_skill_maintenance(
         stop,
@@ -268,3 +622,4 @@ async def test_skill_maintenance_audits_one_exact_pending_snapshot(
     assert "app.manage" in commands[0]
     assert "--skill-id" in commands[0]
     assert "owner/repository/skill" in commands[0]
+    assert finished == [("owner/repository/skill", 0)]

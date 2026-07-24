@@ -122,7 +122,12 @@ class Settings(BaseSettings):
     worker_events_idle_min_interval_seconds: float = 30.0
     worker_events_idle_max_interval_seconds: float = 60.0
     worker_submission_poll_interval_seconds: float = 60.0
+    worker_submission_review_concurrency: int = 2
+    worker_submission_repair_concurrency: int = 1
     worker_review_timeout_seconds: int = 1200
+    worker_item_lease_seconds: float = 1800.0
+    worker_item_deferred_retry_seconds: float = 604800.0
+    worker_item_error_retry_seconds: float = 300.0
     worker_skill_audit_poll_interval_seconds: float = 60.0
     worker_skill_audit_scanner_timeout_seconds: int = 300
     worker_api_base_url: str = "http://localhost:8000"
@@ -218,6 +223,8 @@ class Settings(BaseSettings):
 
     @field_validator(
         "worker_events_limit",
+        "worker_submission_review_concurrency",
+        "worker_submission_repair_concurrency",
         "worker_review_timeout_seconds",
         "worker_skill_audit_scanner_timeout_seconds",
     )
@@ -251,6 +258,9 @@ class Settings(BaseSettings):
         "worker_events_idle_min_interval_seconds",
         "worker_events_idle_max_interval_seconds",
         "worker_submission_poll_interval_seconds",
+        "worker_item_lease_seconds",
+        "worker_item_deferred_retry_seconds",
+        "worker_item_error_retry_seconds",
         "worker_skill_audit_poll_interval_seconds",
         "worker_registry_sync_since_days",
     )
@@ -328,6 +338,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "worker_events_idle_max_interval_seconds must be greater than or equal to "
                 "worker_events_idle_min_interval_seconds"
+            )
+        if self.worker_item_lease_seconds <= max(
+            self.worker_review_timeout_seconds,
+            self.worker_skill_audit_scanner_timeout_seconds,
+        ):
+            raise ValueError(
+                "worker_item_lease_seconds must exceed every worker command timeout"
             )
         if self.environment in LOCAL_ENVIRONMENTS:
             self.validate_auth_provider_settings()

@@ -129,7 +129,16 @@ Production background work uses `python -m app.cli.worker`. The worker registers
 event delivery, submission review/repair, MCP registry sync, and skill
 maintenance lanes from the backend application. PostgreSQL advisory locks make
 each lane singleton across one or more worker replicas, while persisted schedule
-state preserves due daily and weekly runs across restarts.
+state preserves due daily and weekly runs across restarts. Submission and skill
+lanes also persist per-item leases and retry windows: unchanged blocked records
+are deferred while the lane continues through the backlog, command failures use
+bounded exponential backoff, and a changed submission or skill snapshot becomes
+eligible immediately. Each reclaim rotates a UUID fencing token, so completion
+from an expired lease cannot overwrite or delete the newer claim. The worker
+waits for the exact packaged Alembic revision before acquiring any lane.
+Submission review and repair turns pass
+Pydantic-derived JSON Schemas to Codex app-server as `outputSchema`; controller
+validation remains the final gate before any automatic database action.
 
 Core conventions:
 

@@ -38,6 +38,7 @@ class CodexAppServerReviewer:
     websocket_connect: Any | None = None
     analysis_only: bool = False
     web_research_only: bool = False
+    structured_output_schema: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.analysis_only and self.web_research_only:
@@ -47,7 +48,10 @@ class CodexAppServerReviewer:
 
     def review(self, prompt: str, *, environment: dict[str, str]) -> str:
         del environment
-        return self.complete(prompt)
+        return self.complete(
+            prompt,
+            output_schema=self.structured_output_schema,
+        )
 
     def complete(
         self,
