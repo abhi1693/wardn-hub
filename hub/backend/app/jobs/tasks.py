@@ -471,3 +471,38 @@ async def run_skill_refresh(
             next_run_at=next_refresh,
             return_code=return_code,
         )
+
+
+async def run_skill_import(
+    stop: asyncio.Event,
+    *,
+    settings: Settings,
+    schedule: WeeklySchedule,
+) -> None:
+    next_import = await scheduled_job_next_run(
+        "skill-import",
+        initial_next_run_at=schedule.next_after(),
+    )
+    while not stop.is_set():
+        if await wait_for_stop(
+            stop,
+            (next_import - datetime.now(UTC)).total_seconds(),
+        ):
+            return
+        await mark_scheduled_job_started("skill-import")
+        return_code = await run_app_command(
+            "skill-import",
+            "-m",
+            "app.manage",
+            "skills",
+            "import-github",
+            *settings.worker_skill_import_arguments,
+            "--output",
+            "text",
+        )
+        next_import = schedule.next_after()
+        await mark_scheduled_job_finished(
+            "skill-import",
+            next_run_at=next_import,
+            return_code=return_code,
+        )

@@ -68,6 +68,46 @@ def test_skill_audit_llm_gate_defaults_off_and_can_be_enabled(monkeypatch) -> No
     assert Settings(_env_file=None).skill_audit_llm_enabled is True
 
 
+def test_skill_import_arguments_parse_shell_style_env(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.setenv(
+        "WARDN_HUB_WORKER_SKILL_IMPORT_ARGUMENTS",
+        "--all-github --subfolder skills --repo-name 'agent skills' --min-stars 1000",
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.worker_skill_import_arguments == [
+        "--all-github",
+        "--subfolder",
+        "skills",
+        "--repo-name",
+        "agent skills",
+        "--min-stars",
+        "1000",
+    ]
+
+
+def test_skill_import_defaults_to_verified_github_organizations(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_WORKER_SKILL_IMPORT_ARGUMENTS", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert "--verified-orgs-only" in settings.worker_skill_import_arguments
+
+
+def test_skill_import_arguments_reject_secrets_and_managed_output(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.setenv(
+        "WARDN_HUB_WORKER_SKILL_IMPORT_ARGUMENTS",
+        "--all-github --github-token secret",
+    )
+
+    with pytest.raises(ValidationError, match="must not set --github-token"):
+        Settings(_env_file=None)
+
+
 def test_auth_providers_parse_comma_separated_env(monkeypatch) -> None:
     set_required_settings(
         monkeypatch,

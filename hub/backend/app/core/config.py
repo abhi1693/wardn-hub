@@ -1,3 +1,4 @@
+import shlex
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from typing import ClassVar
@@ -139,6 +140,22 @@ class Settings(BaseSettings):
     worker_skill_refresh_weekday: int = 6
     worker_skill_refresh_hour: int = 4
     worker_skill_refresh_minute: int = 43
+    worker_skill_import_enabled: bool = False
+    worker_skill_import_weekday: int = 5
+    worker_skill_import_hour: int = 3
+    worker_skill_import_minute: int = 17
+    worker_skill_import_arguments: list[str] = [
+        "--all-github",
+        "--subfolder",
+        "skills",
+        "--recursive",
+        "--repo-name",
+        "skills",
+        "--min-stars",
+        "1000",
+        "--exclude-existing-owners",
+        "--verified-orgs-only",
+    ]
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -190,6 +207,22 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [email.strip().casefold() for email in value.split(",") if email.strip()]
         return [email.strip().casefold() for email in value]
+
+    @field_validator("worker_skill_import_arguments", mode="before")
+    @classmethod
+    def parse_worker_skill_import_arguments(cls, value: str | list[str]) -> list[str]:
+        arguments = shlex.split(value) if isinstance(value, str) else value
+        if len(arguments) > 128:
+            raise ValueError("worker_skill_import_arguments must contain at most 128 arguments")
+        if any(not argument or len(argument) > 500 or "\x00" in argument for argument in arguments):
+            raise ValueError("worker_skill_import_arguments contains an invalid argument")
+        forbidden = {"--github-token", "--output"}.intersection(arguments)
+        if forbidden:
+            raise ValueError(
+                "worker_skill_import_arguments must not set "
+                f"{', '.join(sorted(forbidden))}"
+            )
+        return arguments
 
     @field_validator("session_cookie_name", "oidc_state_cookie_name")
     @classmethod
@@ -279,25 +312,33 @@ class Settings(BaseSettings):
             raise ValueError("worker_metrics_port must be between 0 and 65535")
         return value
 
-    @field_validator("worker_registry_sync_hour", "worker_skill_refresh_hour")
+    @field_validator(
+        "worker_registry_sync_hour",
+        "worker_skill_refresh_hour",
+        "worker_skill_import_hour",
+    )
     @classmethod
     def validate_worker_schedule_hour(cls, value: int) -> int:
         if value < 0 or value > 23:
             raise ValueError("worker schedule hours must be between 0 and 23")
         return value
 
-    @field_validator("worker_registry_sync_minute", "worker_skill_refresh_minute")
+    @field_validator(
+        "worker_registry_sync_minute",
+        "worker_skill_refresh_minute",
+        "worker_skill_import_minute",
+    )
     @classmethod
     def validate_worker_schedule_minute(cls, value: int) -> int:
         if value < 0 or value > 59:
             raise ValueError("worker schedule minutes must be between 0 and 59")
         return value
 
-    @field_validator("worker_skill_refresh_weekday")
+    @field_validator("worker_skill_refresh_weekday", "worker_skill_import_weekday")
     @classmethod
     def validate_worker_schedule_weekday(cls, value: int) -> int:
         if value < 0 or value > 6:
-            raise ValueError("worker_skill_refresh_weekday must be between 0 and 6")
+            raise ValueError("worker schedule weekdays must be between 0 and 6")
         return value
 
     @field_validator("worker_schedule_timezone")

@@ -33,6 +33,27 @@ def build_job_definitions(settings: Settings) -> tuple[JobDefinition, ...]:
         minute=settings.worker_skill_refresh_minute,
         timezone=timezone,
     )
+    skill_import_schedule = WeeklySchedule(
+        weekday=settings.worker_skill_import_weekday,
+        hour=settings.worker_skill_import_hour,
+        minute=settings.worker_skill_import_minute,
+        timezone=timezone,
+    )
+    skill_import_jobs = (
+        (
+            JobDefinition(
+                name="skill-import",
+                description="Import configured GitHub skill sources on a weekly schedule.",
+                run=lambda stop: tasks.run_skill_import(
+                    stop,
+                    settings=settings,
+                    schedule=skill_import_schedule,
+                ),
+            ),
+        )
+        if settings.worker_skill_import_enabled
+        else ()
+    )
     return (
         JobDefinition(
             name="events",
@@ -67,6 +88,7 @@ def build_job_definitions(settings: Settings) -> tuple[JobDefinition, ...]:
                 schedule=skill_refresh_schedule,
             ),
         ),
+        *skill_import_jobs,
         JobDefinition(
             name="skill-audit-backfill",
             description="Audit the oldest pending skill snapshots.",

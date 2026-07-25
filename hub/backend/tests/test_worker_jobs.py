@@ -138,6 +138,20 @@ def test_registry_selects_all_or_named_jobs_and_rejects_unknown_names() -> None:
         select_job_definitions(jobs, ["missing"])
 
 
+def test_registry_adds_skill_import_only_when_enabled() -> None:
+    settings = get_settings()
+
+    disabled = build_job_definitions(
+        settings.model_copy(update={"worker_skill_import_enabled": False})
+    )
+    enabled = build_job_definitions(
+        settings.model_copy(update={"worker_skill_import_enabled": True})
+    )
+
+    assert "skill-import" not in {job.name for job in disabled}
+    assert "skill-import" in {job.name for job in enabled}
+
+
 @pytest.mark.asyncio
 async def test_worker_holds_and_releases_its_database_advisory_lock() -> None:
     stop = asyncio.Event()
@@ -705,3 +719,89 @@ async def test_skill_refresh_keeps_immediate_audits_enabled(
 
     assert len(commands) == 1
     assert commands[0][-3:] == ("app.manage", "skills", "refresh")
+
+
+@pytest.mark.asyncio
+async def test_skill_import_runs_configured_arguments_on_schedule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    commands: list[tuple[str, ...]] = []
+    scheduled_at = datetime(2026, 7, 25, tzinfo=UTC)
+    next_run = datetime(2026, 8, 1, tzinfo=UTC)
+    settings = get_settings().model_copy(
+        update={
+            "worker_skill_import_arguments": [
+                "--all-github",
+                "--subfolder",
+                "skills",
+                "--recursive",
+                "--min-stars",
+                "1000",
+            ]
+        }
+    )
+
+    async def scheduled_job_next_run(
+        name: str,
+        *,
+        initial_next_run_at: datetime,
+    ) -> datetime:
+        assert name == "skill-import"
+        assert initial_next_run_at == next_run
+        return scheduled_at
+
+    async def wait_for_stop(_stop: asyncio.Event, _seconds: float) -> bool:
+        return False
+
+    async def mark_started(name: str) -> None:
+        assert name == "skill-import"
+
+    async def run_command(job_name: str, *arguments: str) -> int:
+        assert job_name == "skill-import"
+        commands.append(arguments)
+        return 1
+
+    async def mark_finished(
+        name: str,
+        *,
+        next_run_at: datetime,
+        return_code: int,
+    ) -> None:
+        assert (name, next_run_at, return_code) == ("skill-import", next_run, 1)
+        stop.set()
+
+    monkeypatch.setattr(tasks, "scheduled_job_next_run", scheduled_job_next_run)
+    monkeypatch.setattr(tasks, "wait_for_stop", wait_for_stop)
+    monkeypatch.setattr(tasks, "mark_scheduled_job_started", mark_started)
+    monkeypatch.setattr(tasks, "run_app_command", run_command)
+    monkeypatch.setattr(tasks, "mark_scheduled_job_finished", mark_finished)
+    monkeypatch.setattr(WeeklySchedule, "next_after", lambda _self, _now=None: next_run)
+
+    await tasks.run_skill_import(
+        stop,
+        settings=settings,
+        schedule=WeeklySchedule(
+            weekday=5,
+            hour=3,
+            minute=17,
+            timezone=ZoneInfo("UTC"),
+        ),
+    )
+
+    assert commands == [
+        (
+            "-m",
+            "app.manage",
+            "skills",
+            "import-github",
+            "--all-github",
+            "--subfolder",
+            "skills",
+            "--recursive",
+            "--min-stars",
+            "1000",
+            "--output",
+            "text",
+        )
+    ]
