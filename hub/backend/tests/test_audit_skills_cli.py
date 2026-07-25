@@ -517,6 +517,15 @@ def test_cisco_zero_line_numbers_are_treated_as_unknown(
     assert parsed.findings[0].line_number is None
 
 
+def test_cisco_oversized_finding_text_is_safely_truncated() -> None:
+    payload = scan_payload(findings=[scanner_finding("high")]).model_dump(mode="json")
+    payload["findings"][0]["snippet"] = "x" * 20_000
+
+    parsed = cli.CiscoScanPayload.model_validate(payload)
+
+    assert parsed.findings[0].snippet == "x" * 10_000
+
+
 def test_audit_stream_stores_one_snapshot_result() -> None:
     target = audit_target()
     client = FakeClient([target])

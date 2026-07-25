@@ -97,6 +97,26 @@ class CiscoFinding(BaseModel):
     def normalize_severity(cls, value: Any) -> Any:
         return value.strip().lower() if isinstance(value, str) else value
 
+    @field_validator("description", "remediation", "snippet", mode="before")
+    @classmethod
+    def truncate_long_detail(cls, value: Any) -> Any:
+        return value[:10_000] if isinstance(value, str) else value
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def truncate_long_title(cls, value: Any) -> Any:
+        return value[:2_000] if isinstance(value, str) else value
+
+    @field_validator("file_path", mode="before")
+    @classmethod
+    def truncate_long_file_path(cls, value: Any) -> Any:
+        return value[:2_048] if isinstance(value, str) else value
+
+    @field_validator("analyzer", "category", "id", "rule_id", mode="before")
+    @classmethod
+    def truncate_long_identifier(cls, value: Any) -> Any:
+        return value[:256] if isinstance(value, str) else value
+
     @field_validator("line_number", mode="before")
     @classmethod
     def normalize_line_number(cls, value: Any) -> Any:
