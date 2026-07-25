@@ -30,7 +30,7 @@ from app.modules.skills.service import (
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"])
-SKILL_SEARCH_CACHE_VERSION = 2
+SKILL_SEARCH_CACHE_VERSION = 3
 
 
 @router.get("", response_model=SkillListResponse, operation_id="skills_list")
@@ -40,7 +40,7 @@ async def list_skill_catalog(
     audit_status: Annotated[
         str | None,
         Query(
-            description="Filter by current audit status: pass, warn, fail, or unaudited.",
+            description="Filter by current audit status: pass, warn, or fail.",
         ),
     ] = None,
     page: Annotated[int, Query(ge=0)] = 0,
@@ -75,7 +75,7 @@ async def search_skill_catalog(
     owner: str | None = None,
     audit_status: Annotated[
         str | None,
-        Query(description="Filter by current audit status: pass, warn, fail, or unaudited."),
+        Query(description="Filter by current audit status: pass, warn, or fail."),
     ] = None,
     official: bool | None = None,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,

@@ -46,7 +46,7 @@ from app.modules.skills.schemas import (
 )
 
 VALID_SKILL_VIEWS = {"all-time", "trending", "hot"}
-VALID_SKILL_AUDIT_FILTERS = {"pass", "warn", "fail", "unaudited"}
+VALID_SKILL_AUDIT_FILTERS = {"pass", "warn", "fail"}
 
 
 class SkillGitHubImportError(ValueError):
@@ -191,7 +191,7 @@ async def list_skills(
         raise ValueError("view must be one of all-time, trending, or hot")
     normalized_audit_status = audit_status.strip().lower() if audit_status else None
     if normalized_audit_status and normalized_audit_status not in VALID_SKILL_AUDIT_FILTERS:
-        raise ValueError("audit_status must be one of pass, warn, fail, or unaudited")
+        raise ValueError("audit_status must be one of pass, warn, or fail")
     if not audit_enabled:
         normalized_audit_status = None
     offset = page * per_page
@@ -242,7 +242,7 @@ async def search_skills(
     search_query = query.strip()
     normalized_audit_status = audit_status.strip().lower() if audit_status else None
     if normalized_audit_status and normalized_audit_status not in VALID_SKILL_AUDIT_FILTERS:
-        raise ValueError("audit_status must be one of pass, warn, fail, or unaudited")
+        raise ValueError("audit_status must be one of pass, warn, or fail")
     if not audit_enabled:
         normalized_audit_status = None
     cursor_fingerprint = skill_search_cursor_fingerprint(

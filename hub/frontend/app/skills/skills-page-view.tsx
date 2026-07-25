@@ -5,7 +5,7 @@ import { listPublicSkillsPage, searchPublicSkillsPage } from "@/lib/public-skill
 import { SkillsClient } from "./skills-client";
 
 export type SkillView = "all-time" | "hot" | "trending";
-export type SkillAuditFilter = "fail" | "pass" | "unaudited" | "warn";
+export type SkillAuditFilter = "fail" | "pass" | "warn";
 export type SkillsSearchParams = Promise<{
   audit_status?: string | string[];
   official?: string | string[];
@@ -23,7 +23,7 @@ function emptyPagination(): SkillPagination {
 
 function auditFilterParam(value: string | string[] | undefined): SkillAuditFilter | undefined {
   const filter = firstSearchParam(value).toLowerCase();
-  if (filter === "pass" || filter === "warn" || filter === "fail" || filter === "unaudited") {
+  if (filter === "pass" || filter === "warn" || filter === "fail") {
     return filter;
   }
   return undefined;

@@ -399,11 +399,22 @@ def test_canonical_skill_filter_uses_postgresql_distinct_on() -> None:
     assert "row_number()" not in compiled
 
 
-async def test_list_skills_rejects_unknown_audit_status() -> None:
+@pytest.mark.parametrize("audit_status", ["unaudited", "unknown"])
+async def test_list_skills_rejects_non_public_audit_status(audit_status: str) -> None:
     with pytest.raises(ValueError, match="audit_status"):
         await service.list_skills(
             object(),  # type: ignore[arg-type]
-            audit_status="unknown",
+            audit_status=audit_status,
+        )
+
+
+@pytest.mark.parametrize("audit_status", ["unaudited", "unknown"])
+async def test_search_skills_rejects_non_public_audit_status(audit_status: str) -> None:
+    with pytest.raises(ValueError, match="audit_status"):
+        await service.search_skills(
+            object(),  # type: ignore[arg-type]
+            query="security",
+            audit_status=audit_status,
         )
 
 

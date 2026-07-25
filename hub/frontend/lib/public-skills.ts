@@ -259,7 +259,7 @@ export async function countPublicSkills() {
 }
 
 export async function listPublicSkillsPage(params?: {
-  auditStatus?: "fail" | "pass" | "unaudited" | "warn";
+  auditStatus?: "fail" | "pass" | "warn";
   limit?: number;
   official?: boolean;
   owner?: string;
@@ -289,7 +289,7 @@ export async function listPublicSkillsPage(params?: {
 }
 
 export async function searchPublicSkillsPage(params: {
-  auditStatus?: "fail" | "pass" | "unaudited" | "warn";
+  auditStatus?: "fail" | "pass" | "warn";
   cursor?: string;
   limit?: number;
   official?: boolean;

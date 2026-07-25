@@ -3,7 +3,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   BadgeCheck,
-  CircleDashed,
   GitBranch,
   Globe2,
   Loader2,
@@ -32,7 +31,7 @@ import {
 import { SkillLeaderboard } from "./skills-ui";
 
 const SEARCH_DEBOUNCE_MS = 250;
-type SkillAuditFilter = "fail" | "pass" | "unaudited" | "warn";
+type SkillAuditFilter = "fail" | "pass" | "warn";
 type SkillView = "all-time" | "hot" | "trending";
 const SKILL_VIEW_PATHS: Record<SkillView, string> = {
   "all-time": "/skills",
@@ -49,7 +48,6 @@ const SKILL_AUDIT_FILTER_OPTIONS: Array<SkillFilterOption<SkillAuditFilter | "">
   { icon: ShieldCheck, label: "Passed", value: "pass" },
   { icon: ShieldAlert, label: "Review", value: "warn" },
   { icon: ShieldX, label: "Failed", value: "fail" },
-  { icon: CircleDashed, label: "Unaudited", value: "unaudited" },
 ];
 type SkillOfficialFilter = "" | "false" | "true";
 const SKILL_OFFICIAL_FILTER_OPTIONS: Array<SkillFilterOption<SkillOfficialFilter>> = [
