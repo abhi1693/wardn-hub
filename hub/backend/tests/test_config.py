@@ -95,6 +95,7 @@ def test_skill_import_defaults_to_verified_github_organizations(monkeypatch) -> 
     settings = Settings(_env_file=None)
 
     assert "--verified-orgs-only" in settings.worker_skill_import_arguments
+    assert "--max-repositories" not in settings.worker_skill_import_arguments
 
 
 def test_skill_import_arguments_reject_secrets_and_managed_output(monkeypatch) -> None:
