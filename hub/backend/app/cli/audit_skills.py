@@ -97,6 +97,11 @@ class CiscoFinding(BaseModel):
     def normalize_severity(cls, value: Any) -> Any:
         return value.strip().lower() if isinstance(value, str) else value
 
+    @field_validator("line_number", mode="before")
+    @classmethod
+    def normalize_line_number(cls, value: Any) -> Any:
+        return None if isinstance(value, int) and value < 1 else value
+
 
 class CiscoScanPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1044,6 +1049,7 @@ class CiscoSkillScanner:
                 "--format",
                 "json",
                 "--compact",
+                "--lenient",
                 "--output-json",
                 str(report_path),
             ]

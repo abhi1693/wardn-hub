@@ -30,7 +30,7 @@ from app.modules.skills.service import (
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"])
-SKILL_SEARCH_CACHE_VERSION = 1
+SKILL_SEARCH_CACHE_VERSION = 2
 
 
 @router.get("", response_model=SkillListResponse, operation_id="skills_list")

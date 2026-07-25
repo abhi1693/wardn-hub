@@ -109,6 +109,7 @@ def published_skill_query(*entities) -> Select:
             Skill.current_snapshot_id.is_not(None),
             SkillSnapshot.status == "active",
             SkillSnapshot.is_latest.is_(True),
+            audited_skill_condition(Skill.id),
         )
     )
 
@@ -284,6 +285,11 @@ def audit_status_condition(skill_id, audit_status: str):
     )
 
 
+def audited_skill_condition(skill_id):
+    current_audit_statuses = current_skill_audit_status_subquery()
+    return skill_id.in_(select(current_audit_statuses.c.skill_id))
+
+
 def _search_after_condition(
     cursor: SkillSearchCursor,
     *,
@@ -408,6 +414,7 @@ async def search_skill_documents(
         source_order,
     ).where(
         SkillSearchDocument.is_canonical.is_(True),
+        audited_skill_condition(SkillSearchDocument.skill_id),
         or_(
             exact_full_id,
             text_match,
@@ -689,6 +696,14 @@ async def get_skill_snapshot(
             SkillSnapshot.status == "active",
             SkillSnapshot.bundle_format_version == 2,
             SkillSnapshot.resolution_status == "complete",
+            exists(
+                select(SkillAudit.id).where(
+                    SkillAudit.skill_id == skill.id,
+                    SkillAudit.snapshot_id == SkillSnapshot.id,
+                    SkillAudit.content_hash == SkillSnapshot.content_hash,
+                    SkillAudit.status.in_(("pass", "warn", "fail")),
+                )
+            ),
         )
     if not include_files:
         query = query.options(

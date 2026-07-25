@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     worker_item_error_retry_seconds: float = 300.0
     worker_skill_audit_poll_interval_seconds: float = 60.0
     worker_skill_audit_backfill_min_age_seconds: float = 600.0
-    worker_skill_audit_scanner_timeout_seconds: int = 300
+    worker_skill_audit_scanner_timeout_seconds: int = 900
     worker_api_base_url: str = "http://localhost:8000"
     worker_schedule_timezone: str = "UTC"
     worker_registry_sync_hour: int = 2

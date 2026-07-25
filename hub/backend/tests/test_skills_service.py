@@ -70,6 +70,7 @@ async def test_indexed_skill_search_broadens_long_natural_language_queries() -> 
     ) in session.params.values()
     assert 4 in session.params.values()
     assert 5 in session.params.values()
+    assert "skill_audits" in session.statement
 
 
 @pytest.mark.parametrize(
@@ -249,6 +250,7 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "skills_1.installs DESC" in all_time_session.statements[-1]
     assert "length(skills_1.slug)" in all_time_session.statements[-1]
     assert "SELECT DISTINCT ON" in all_time_session.statements[-1]
+    assert "skill_audits" in all_time_session.statements[-1]
     assert "canonical_rank" not in all_time_session.statements[-1]
     assert "NOT (EXISTS" not in all_time_session.statements[-1]
     assert "ORDER BY CASE WHEN" in all_time_session.statements[-1]
@@ -372,6 +374,18 @@ def test_audit_filter_uses_single_current_snapshot_result() -> None:
     assert "skill_audits.configuration_hash" not in compiled
     assert "MATERIALIZED" not in compiled
     assert "NOT IN (SELECT" in compiled
+
+
+def test_public_skill_query_requires_a_current_completed_audit() -> None:
+    statement = repository.published_skill_query(Skill)
+
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "skill_audits" in compiled
+    assert "skill_snapshots.is_latest" in compiled
+    assert "skill_snapshots.bundle_format_version" in compiled
+    assert "skill_snapshots.resolution_status" in compiled
+    assert "skill_audits.status IN" in compiled
 
 
 def test_canonical_skill_filter_uses_postgresql_distinct_on() -> None:

@@ -505,6 +505,15 @@ def test_cisco_uppercase_severities_are_normalized() -> None:
     assert parsed.findings[0].severity == "high"
 
 
+def test_cisco_zero_line_numbers_are_treated_as_unknown() -> None:
+    payload = scan_payload(findings=[scanner_finding("high")]).model_dump(mode="json")
+    payload["findings"][0]["line_number"] = 0
+
+    parsed = cli.CiscoScanPayload.model_validate(payload)
+
+    assert parsed.findings[0].line_number is None
+
+
 def test_audit_stream_stores_one_snapshot_result() -> None:
     target = audit_target()
     client = FakeClient([target])
@@ -644,6 +653,7 @@ def test_cisco_scanner_invocation_enables_only_local_analyzers(monkeypatch) -> N
 
     assert audit.status == "pass"
     assert "--use-behavioral" in captured
+    assert "--lenient" in captured
     assert "--policy" in captured
     assert "--use-llm" not in captured
     assert "--enable-meta" not in captured
