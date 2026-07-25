@@ -100,7 +100,14 @@ class CiscoFinding(BaseModel):
     @field_validator("line_number", mode="before")
     @classmethod
     def normalize_line_number(cls, value: Any) -> Any:
-        return None if isinstance(value, int) and value < 1 else value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return None if value < 1 else value
+        if isinstance(value, str):
+            try:
+                return None if float(value.strip()) < 1 else value
+            except ValueError:
+                pass
+        return value
 
 
 class CiscoScanPayload(BaseModel):
@@ -1131,7 +1138,11 @@ class CiscoSkillScanner:
                 report = report_path.read_bytes()
                 payload = CiscoScanPayload.model_validate_json(report)
             except (OSError, ValidationError) as exc:
-                detail = str(exc).splitlines()[0][:500]
+                detail = (
+                    repr(exc.errors()[0])[:500]
+                    if isinstance(exc, ValidationError) and exc.errors()
+                    else str(exc).splitlines()[0][:500]
+                )
                 raise UserFacingError(
                     f"Cisco scanner returned invalid JSON report: {detail}"
                 ) from exc

@@ -505,9 +505,12 @@ def test_cisco_uppercase_severities_are_normalized() -> None:
     assert parsed.findings[0].severity == "high"
 
 
-def test_cisco_zero_line_numbers_are_treated_as_unknown() -> None:
+@pytest.mark.parametrize("line_number", [0, 0.0, "0", "0.0"])
+def test_cisco_zero_line_numbers_are_treated_as_unknown(
+    line_number: int | float | str,
+) -> None:
     payload = scan_payload(findings=[scanner_finding("high")]).model_dump(mode="json")
-    payload["findings"][0]["line_number"] = 0
+    payload["findings"][0]["line_number"] = line_number
 
     parsed = cli.CiscoScanPayload.model_validate(payload)
 
