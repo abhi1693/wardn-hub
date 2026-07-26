@@ -22,6 +22,8 @@ from app.modules.submissions.constants import MCP_REGISTRY_IMPORT_META_KEY
 API_PREFIX = "/api/v1"
 DEFAULT_HUB_API_BASE_URL = "http://localhost:8000/api/v1"
 DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0.1/servers"
+DEFAULT_HUB_RETRIES = 5
+DEFAULT_HUB_RETRY_DELAY_SECONDS = 2.0
 DEFAULT_REGISTRY_RETRIES = 3
 DEFAULT_REGISTRY_RETRY_DELAY_SECONDS = 2.0
 DEFAULT_CATEGORY = "other-tools-integrations"
@@ -117,11 +119,15 @@ class WardnHubApiClient:
         token: str,
         timeout_seconds: float,
         user_agent: str,
+        retries: int = DEFAULT_HUB_RETRIES,
+        retry_delay_seconds: float = DEFAULT_HUB_RETRY_DELAY_SECONDS,
     ) -> None:
         self.base_url = normalize_api_base_url(base_url)
         self.token = token
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent.strip() or DEFAULT_USER_AGENT
+        self.retries = max(1, retries)
+        self.retry_delay_seconds = max(0.0, retry_delay_seconds)
         self._client = httpx.Client(
             timeout=timeout_seconds,
             headers={
@@ -143,15 +149,42 @@ class WardnHubApiClient:
         params: dict[str, Any] | None = None,
         expected_statuses: set[int],
     ) -> httpx.Response:
-        response = self._client.request(
-            method,
-            f"{self.base_url}{path}",
-            json=payload,
-            params=params,
-        )
-        if response.status_code not in expected_statuses:
-            raise HubApiError(response.status_code, parse_error_detail(response), str(response.url))
-        return response
+        url = f"{self.base_url}{path}"
+        retryable_method = method.upper() in {"GET", "HEAD", "OPTIONS", "PUT"}
+        for attempt in range(1, self.retries + 1):
+            try:
+                response = self._client.request(
+                    method,
+                    url,
+                    json=payload,
+                    params=params,
+                )
+            except httpx.HTTPError as exc:
+                if not retryable_method or attempt >= self.retries:
+                    raise UserFacingError(
+                        f"Wardn Hub request failed after {attempt} attempt(s): {exc}"
+                    ) from exc
+                time.sleep(self.retry_delay_seconds * attempt)
+                continue
+
+            if response.status_code in expected_statuses:
+                return response
+            retryable_status = response.status_code == 429 or (
+                retryable_method and response.status_code in {502, 503, 504}
+            )
+            if not retryable_status or attempt >= self.retries:
+                raise HubApiError(
+                    response.status_code,
+                    parse_error_detail(response),
+                    str(response.url),
+                )
+            retry_after = str(response.headers.get("Retry-After") or "").strip()
+            delay = self.retry_delay_seconds * attempt
+            if retry_after.isdigit():
+                delay = max(delay, float(retry_after))
+            time.sleep(delay)
+
+        raise UserFacingError("Wardn Hub request failed")
 
     def list_submissions(self, names: list[str]) -> list[dict[str, Any]]:
         response = self.request(
@@ -1097,6 +1130,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-records", type=int, default=None, help="Stop after N records.")
     parser.add_argument("--http-timeout", type=float, default=30.0, help="HTTP timeout seconds.")
     parser.add_argument(
+        "--hub-retries",
+        type=int,
+        default=DEFAULT_HUB_RETRIES,
+        help="Attempts for retryable Wardn Hub API requests.",
+    )
+    parser.add_argument(
+        "--hub-retry-delay",
+        type=float,
+        default=DEFAULT_HUB_RETRY_DELAY_SECONDS,
+        help="Base seconds to wait between retryable Wardn Hub API requests.",
+    )
+    parser.add_argument(
         "--registry-retries",
         type=int,
         default=DEFAULT_REGISTRY_RETRIES,
@@ -1135,6 +1180,10 @@ def main(argv: list[str] | None = None) -> int:
             raise UserFacingError("--registry-retries must be at least 1")
         if args.registry_retry_delay < 0:
             raise UserFacingError("--registry-retry-delay must be greater than or equal to 0")
+        if args.hub_retries < 1:
+            raise UserFacingError("--hub-retries must be at least 1")
+        if args.hub_retry_delay < 0:
+            raise UserFacingError("--hub-retry-delay must be greater than or equal to 0")
 
         token = (args.token or os.getenv(HUB_TOKEN_ENV, "")).strip()
         if not token and not args.dry_run:
@@ -1153,6 +1202,8 @@ def main(argv: list[str] | None = None) -> int:
             token=token,
             timeout_seconds=args.http_timeout,
             user_agent=args.user_agent,
+            retries=args.hub_retries,
+            retry_delay_seconds=args.hub_retry_delay,
         )
         registry = MCPRegistryClient(
             registry_url=args.registry_url,

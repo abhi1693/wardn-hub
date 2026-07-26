@@ -110,10 +110,12 @@ class FakeResponse:
         *,
         status_code: int = 200,
         url: str = "https://registry.test",
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.payload = payload
         self.status_code = status_code
         self.url = url
+        self.headers = headers or {}
 
     def json(self) -> Any:
         return self.payload
@@ -156,6 +158,33 @@ class InventoryHubHttpClient:
             }
         )
         return FakeResponse(self.payload, url=url)
+
+    def close(self) -> None:
+        pass
+
+
+class SequencedHubHttpClient:
+    def __init__(self, responses: list[FakeResponse]) -> None:
+        self.responses = responses
+        self.requests: list[dict[str, Any]] = []
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json: dict[str, Any] | None,
+        params: dict[str, Any] | None,
+    ) -> FakeResponse:
+        self.requests.append(
+            {
+                "method": method,
+                "url": url,
+                "json": json,
+                "params": params,
+            }
+        )
+        return self.responses.pop(0)
 
     def close(self) -> None:
         pass
@@ -856,6 +885,117 @@ def test_hub_client_loads_a_targeted_submission_inventory() -> None:
             "params": None,
         }
     ]
+
+
+def test_hub_client_honors_retry_after_for_rate_limits(monkeypatch) -> None:
+    client = cli.WardnHubApiClient(
+        base_url="https://hub.example",
+        token="token",
+        timeout_seconds=1,
+        user_agent="test",
+        retries=3,
+        retry_delay_seconds=2,
+    )
+    http_client = SequencedHubHttpClient(
+        [
+            FakeResponse(
+                {"detail": "rate limit exceeded"},
+                status_code=429,
+                url="https://hub.example/api/v1/mcp/servers/example",
+                headers={"Retry-After": "7"},
+            ),
+            FakeResponse(
+                {"server": {"name": "example"}},
+                url="https://hub.example/api/v1/mcp/servers/example",
+            ),
+        ]
+    )
+    client._client = http_client  # type: ignore[assignment]
+    delays: list[float] = []
+    monkeypatch.setattr(cli.time, "sleep", delays.append)
+
+    response = client.request(
+        "GET",
+        "/mcp/servers/example",
+        expected_statuses={200},
+    )
+
+    assert response.json() == {"server": {"name": "example"}}
+    assert len(http_client.requests) == 2
+    assert delays == [7.0]
+
+
+def test_hub_client_reports_exhausted_rate_limit_retries(monkeypatch) -> None:
+    client = cli.WardnHubApiClient(
+        base_url="https://hub.example",
+        token="token",
+        timeout_seconds=1,
+        user_agent="test",
+        retries=2,
+        retry_delay_seconds=0,
+    )
+    http_client = SequencedHubHttpClient(
+        [
+            FakeResponse(
+                {"detail": "rate limit exceeded"},
+                status_code=429,
+                url="https://hub.example/api/v1/mcp/servers/example",
+            ),
+            FakeResponse(
+                {"detail": "rate limit exceeded"},
+                status_code=429,
+                url="https://hub.example/api/v1/mcp/servers/example",
+            ),
+        ]
+    )
+    client._client = http_client  # type: ignore[assignment]
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(cli.HubApiError, match="rate limit exceeded"):
+        client.request(
+            "GET",
+            "/mcp/servers/example",
+            expected_statuses={200},
+        )
+
+    assert len(http_client.requests) == 2
+
+
+def test_hub_client_does_not_retry_ambiguous_post_gateway_errors(monkeypatch) -> None:
+    client = cli.WardnHubApiClient(
+        base_url="https://hub.example",
+        token="token",
+        timeout_seconds=1,
+        user_agent="test",
+        retries=3,
+        retry_delay_seconds=0,
+    )
+    http_client = SequencedHubHttpClient(
+        [
+            FakeResponse(
+                {"detail": "gateway unavailable"},
+                status_code=503,
+                url="https://hub.example/api/v1/submissions",
+            ),
+            FakeResponse(
+                {"id": "duplicate-risk"},
+                status_code=201,
+                url="https://hub.example/api/v1/submissions",
+            ),
+        ]
+    )
+    client._client = http_client  # type: ignore[assignment]
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(cli.HubApiError, match="gateway unavailable"):
+        client.request(
+            "POST",
+            "/submissions",
+            payload={"serverJson": {}},
+            expected_statuses={201},
+        )
+
+    assert len(http_client.requests) == 1
 
 
 def test_mcp_registry_client_retries_transient_registry_errors(monkeypatch) -> None:
