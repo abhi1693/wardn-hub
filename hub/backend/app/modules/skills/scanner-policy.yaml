@@ -1,13 +1,13 @@
 ---
 policy_name: wardn-balanced-expanded-context
-policy_version: "1.0"
+policy_version: "1.1"
 preset_base: balanced
 
 # Keep the balanced scanner preset and expand only the semantic-analysis
 # context budgets. The independent total prompt ceiling prevents a collection
 # of individually acceptable files from growing the request without bound.
 llm_analysis:
-  max_instruction_body_chars: 20000
+  max_instruction_body_chars: 25000
   max_code_file_chars: 15000
   max_referenced_file_chars: 25000
   max_total_prompt_chars: 160000

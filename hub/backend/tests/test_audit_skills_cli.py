@@ -253,7 +253,7 @@ def test_wardn_scanner_policy_expands_only_llm_context_budgets() -> None:
 
     assert wardn.policy_name == cli.SCANNER_POLICY
     assert wardn.preset_base == "balanced"
-    assert wardn.llm_analysis.max_instruction_body_chars == 20_000
+    assert wardn.llm_analysis.max_instruction_body_chars == 25_000
     assert wardn.llm_analysis.max_code_file_chars == 15_000
     assert wardn.llm_analysis.max_referenced_file_chars == 25_000
     assert wardn.llm_analysis.max_total_prompt_chars == 160_000

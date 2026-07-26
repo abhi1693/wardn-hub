@@ -341,8 +341,8 @@ The bridge sends the complete analysis input in the request, disables web search
 and subagents, instructs Codex not to invoke tools, and does not forward the
 scanner pod's temporary filesystem paths to the separate Codex app-server pod.
 Cisco's balanced policy remains the security baseline, with Wardn-specific LLM
-budgets of 25,000 characters per referenced file and 160,000 characters across
-skill content. The bridge independently rejects client input above
+budgets of 25,000 characters for both the instruction body and each referenced
+file, and 160,000 characters across skill content. The bridge independently rejects client input above
 `WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES` (200,000 by default), including the
 structured-output schema, before starting a Codex turn.
 Cisco AI Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
