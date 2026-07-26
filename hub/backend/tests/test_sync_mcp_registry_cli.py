@@ -386,6 +386,32 @@ def test_import_entry_creates_and_submits_new_server_submission() -> None:
     assert hub.submitted == ["submission-1"]
 
 
+def test_import_entry_existing_only_skips_server_missing_from_wardn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hub = FakeHub()
+
+    def unexpected_build(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("unpublished servers must be skipped before enrichment")
+
+    monkeypatch.setattr(cli, "build_import_payload", unexpected_build)
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(name="io.github.example/not-published"),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 7, 27, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_only=True,
+        existing_submissions={},
+    )
+
+    assert outcome == cli.ImportOutcome("skipped", "not_published_in_wardn")
+    assert hub.created_submissions == []
+    assert hub.updated_submissions == []
+    assert hub.submitted == []
+
+
 def test_import_entry_normalizes_first_official_registry_version_to_initial_version() -> None:
     hub = FakeHub()
 
@@ -888,3 +914,9 @@ def test_build_parser_rejects_bad_datetime() -> None:
 
     with pytest.raises(SystemExit):
         parser.parse_args(["--updated-since", "not-a-date"])
+
+
+def test_build_parser_supports_existing_only_reconciliation() -> None:
+    args = cli.build_parser().parse_args(["--existing-only"])
+
+    assert args.existing_only is True

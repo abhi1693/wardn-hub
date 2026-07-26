@@ -810,22 +810,27 @@ def import_entry(
     registry_url: str,
     synced_at: datetime,
     dry_run: bool,
+    existing_only: bool = False,
     existing_submissions: dict[tuple[str, str], dict[str, Any]],
 ) -> ImportOutcome:
-    payload = build_import_payload(entry, registry_url=registry_url, synced_at=synced_at)
-    name = str(payload.get("name") or "").strip()
-    version = str(payload.get("version") or "").strip()
+    name, _entry_version = registry_entry_identity(entry)
     if not name:
         raise ValueError("server name is required")
-
     if official_status(entry) == "deleted":
         return ImportOutcome("skipped", "upstream_deleted")
+
+    existing_server = hub.get_server(name) if existing_only else None
+    if existing_only and existing_server is None:
+        return ImportOutcome("skipped", "not_published_in_wardn")
+
+    payload = build_import_payload(entry, registry_url=registry_url, synced_at=synced_at)
+    version = str(payload.get("version") or "").strip()
 
     if dry_run:
         return ImportOutcome("candidate", "dry_run")
 
     try:
-        server_detail = hub.get_server(name)
+        server_detail = existing_server if existing_only else hub.get_server(name)
         upstream_version = import_upstream_version_from_payload(payload)
         published_upstream_versions = published_import_upstream_versions(server_detail)
         if (
@@ -916,6 +921,7 @@ def sync_registry(
     version: str,
     updated_since: str | None,
     dry_run: bool,
+    existing_only: bool = False,
     max_pages: int | None,
     max_records: int | None,
     verbose: bool,
@@ -984,6 +990,7 @@ def sync_registry(
                     registry_url=registry_url,
                     synced_at=synced_at,
                     dry_run=dry_run,
+                    existing_only=existing_only,
                     existing_submissions=existing_submissions,
                 )
             except ValueError as exc:
@@ -1078,6 +1085,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only fetch records updated in the last N days.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Fetch and validate without writes.")
+    parser.add_argument(
+        "--existing-only",
+        action="store_true",
+        help=(
+            "Reconcile only servers already published in Wardn Hub; "
+            "do not create submissions for missing catalog entries."
+        ),
+    )
     parser.add_argument("--max-pages", type=int, default=None, help="Stop after N registry pages.")
     parser.add_argument("--max-records", type=int, default=None, help="Stop after N records.")
     parser.add_argument("--http-timeout", type=float, default=30.0, help="HTTP timeout seconds.")
@@ -1155,6 +1170,7 @@ def main(argv: list[str] | None = None) -> int:
                 version=args.version,
                 updated_since=updated_since,
                 dry_run=args.dry_run,
+                existing_only=args.existing_only,
                 max_pages=args.max_pages,
                 max_records=args.max_records,
                 verbose=args.verbose,
