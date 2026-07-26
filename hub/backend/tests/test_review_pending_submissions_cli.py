@@ -702,6 +702,8 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
 
     prompt = cli.build_review_prompt(context)
 
+    assert "packageRegistryEvidence" in prompt
+    assert "Prefer packageRegistryEvidence over repository documentation" in prompt
     assert "Validate one Wardn Hub MCP server version that is currently in review." in prompt
     assert "System review mode:" in prompt
     assert "Wardn Hub submission JSON snapshot" in prompt

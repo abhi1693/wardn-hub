@@ -11,6 +11,7 @@ from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from app.modules.imports.exceptions import SourceNotFoundError, UnsupportedSourceError
+from app.modules.imports.package_registry import add_package_registry_evidence
 from app.modules.imports.schemas import ServerSourceImportRequest, ServerSourceImportResponse
 
 DEFAULT_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
@@ -580,6 +581,19 @@ def add_import_source_review(server_json: dict[str, Any], files: list[str]) -> d
     return {**server_json, "_meta": {**meta, "sourceReview": source_review}}
 
 
+def finalize_import_server_json(
+    server_json: dict[str, Any],
+    *,
+    files: list[str],
+    include_package_registry_evidence: bool,
+) -> dict[str, Any]:
+    finalized = normalize_import_package_configs(server_json)
+    finalized = add_import_source_review(finalized, files)
+    if include_package_registry_evidence:
+        finalized = add_package_registry_evidence(finalized, fetch_json=fetch_json)
+    return finalized
+
+
 def with_server_targets(metadata: dict[str, Any], server_json: dict[str, Any]) -> dict[str, Any]:
     return {
         **metadata,
@@ -640,7 +654,11 @@ def server_json_from_metadata(
     return server_json
 
 
-def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImportResponse:
+def import_server_source(
+    payload: ServerSourceImportRequest,
+    *,
+    include_package_registry_evidence: bool = True,
+) -> ServerSourceImportResponse:
     with tracer.start_as_current_span("imports.server_source") as span:
         repository = parse_github_repository(payload.repository_url)
         subfolder = clean_subfolder(payload.subfolder) or github_source_subfolder(
@@ -696,8 +714,11 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
                 )
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
                 server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
-                server_json = normalize_import_package_configs(server_json)
-                server_json = add_import_source_review(server_json, files)
+                server_json = finalize_import_server_json(
+                    server_json,
+                    files=files,
+                    include_package_registry_evidence=include_package_registry_evidence,
+                )
                 metadata = with_server_targets(metadata, server_json)
                 span.set_attribute("imports.source", "server.json")
                 span.set_attribute("imports.files", len(files))
@@ -711,8 +732,11 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
             if raw_payload.get("mcpServers"):
                 metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
-                server_json = normalize_import_package_configs(server_json)
-                server_json = add_import_source_review(server_json, files)
+                server_json = finalize_import_server_json(
+                    server_json,
+                    files=files,
+                    include_package_registry_evidence=include_package_registry_evidence,
+                )
                 metadata = with_server_targets(metadata, server_json)
                 span.set_attribute("imports.source", "mcp.json")
                 span.set_attribute("imports.files", len(files))
@@ -726,8 +750,11 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
         if readme_mcp_json:
             metadata = with_fallback(readme_mcp_metadata, fallback)
             server_json = server_json_from_metadata(metadata, repository, subfolder)
-            server_json = normalize_import_package_configs(server_json)
-            server_json = add_import_source_review(server_json, files)
+            server_json = finalize_import_server_json(
+                server_json,
+                files=files,
+                include_package_registry_evidence=include_package_registry_evidence,
+            )
             metadata = with_server_targets(metadata, server_json)
             span.set_attribute("imports.source", "mcp.json")
             span.set_attribute("imports.files", len(files))
@@ -751,8 +778,11 @@ def import_server_source(payload: ServerSourceImportRequest) -> ServerSourceImpo
             repository,
             subfolder,
         )
-        server_json = normalize_import_package_configs(server_json)
-        server_json = add_import_source_review(server_json, files)
+        server_json = finalize_import_server_json(
+            server_json,
+            files=files,
+            include_package_registry_evidence=include_package_registry_evidence,
+        )
         missing = import_missing_fields(server_json)
         span.set_attribute("imports.source", "github")
         span.set_attribute("imports.files", len(files))

@@ -13,7 +13,9 @@ from urllib.parse import quote
 import httpx
 
 from app.modules.imports.exceptions import SourceNotFoundError, UnsupportedSourceError
+from app.modules.imports.package_registry import add_package_registry_evidence
 from app.modules.imports.schemas import ServerSourceImportRequest
+from app.modules.imports.service import fetch_json as fetch_package_registry_json
 from app.modules.imports.service import import_server_source
 from app.modules.submissions.constants import MCP_REGISTRY_IMPORT_META_KEY
 
@@ -669,11 +671,51 @@ def source_import_payload(server: dict[str, Any]) -> dict[str, Any] | None:
     repository_url, subfolder = source
     try:
         response = import_server_source(
-            ServerSourceImportRequest(repositoryUrl=repository_url, subfolder=subfolder)
+            ServerSourceImportRequest(repositoryUrl=repository_url, subfolder=subfolder),
+            include_package_registry_evidence=False,
         )
     except (SourceNotFoundError, UnsupportedSourceError):
         return None
     return response.server_json.model_dump(by_alias=True, exclude_none=True)
+
+
+def package_identity(package: Any) -> tuple[str, str] | None:
+    if not isinstance(package, dict):
+        return None
+    registry_type = str(package.get("registryType") or "").strip().casefold()
+    identifier = str(package.get("identifier") or "").strip()
+    if not registry_type or not identifier:
+        return None
+    return registry_type, identifier
+
+
+def merge_official_packages(
+    *,
+    official: list[Any],
+    imported: list[Any],
+) -> list[Any]:
+    imported_by_identity = {
+        identity: package
+        for package in imported
+        if (identity := package_identity(package)) is not None
+    }
+    merged_packages: list[Any] = []
+    for official_package in official:
+        identity = package_identity(official_package)
+        imported_package = imported_by_identity.get(identity) if identity is not None else None
+        if not isinstance(official_package, dict) or not isinstance(imported_package, dict):
+            merged_packages.append(copy.deepcopy(official_package))
+            continue
+        merged_package = {**copy.deepcopy(imported_package), **copy.deepcopy(official_package)}
+        imported_transport = imported_package.get("transport")
+        official_transport = official_package.get("transport")
+        if isinstance(imported_transport, dict) and isinstance(official_transport, dict):
+            merged_package["transport"] = {
+                **copy.deepcopy(imported_transport),
+                **copy.deepcopy(official_transport),
+            }
+        merged_packages.append(merged_package)
+    return merged_packages
 
 
 def merge_official_payload(
@@ -693,7 +735,14 @@ def merge_official_payload(
     ):
         if official.get(key):
             payload[key] = copy.deepcopy(official[key])
-    for key in ("packages", "remotes", "icons"):
+    official_packages = official.get("packages")
+    if isinstance(official_packages, list) and official_packages:
+        imported_packages = imported.get("packages") if isinstance(imported, dict) else []
+        payload["packages"] = merge_official_packages(
+            official=official_packages,
+            imported=imported_packages if isinstance(imported_packages, list) else [],
+        )
+    for key in ("remotes", "icons"):
         if isinstance(official.get(key), list) and official[key]:
             payload[key] = copy.deepcopy(official[key])
     return payload
@@ -709,6 +758,10 @@ def build_import_payload(
     if not isinstance(server, dict):
         raise ValueError("registry entry does not contain a server object")
     payload = merge_official_payload(official=server, imported=source_import_payload(server))
+    payload = add_package_registry_evidence(
+        payload,
+        fetch_json=fetch_package_registry_json,
+    )
 
     entry_meta = entry.get("_meta") if isinstance(entry.get("_meta"), dict) else {}
     server_meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}

@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.events.service import emit_audit_and_event, subject_payload
+from app.modules.imports.package_registry import PACKAGE_REGISTRY_EVIDENCE_META_KEY
 from app.modules.organizations import repository as organization_repository
 from app.modules.organizations.exceptions import (
     OrganizationAccessDeniedError,
@@ -717,6 +718,90 @@ def new_server_initial_version_check(
     )
 
 
+def package_registry_evidence_check(
+    payload: RegistryServerVersionCreate,
+) -> dict[str, str]:
+    meta = payload.meta if isinstance(payload.meta, dict) else {}
+    raw_evidence = meta.get(PACKAGE_REGISTRY_EVIDENCE_META_KEY)
+    if raw_evidence is None:
+        return validation_check(
+            "packageRegistryEvidence",
+            "passed",
+            "No package registry evidence was supplied.",
+        )
+    if not isinstance(raw_evidence, list):
+        return validation_check(
+            "packageRegistryEvidence",
+            "warning",
+            "Package registry evidence is malformed and must be refreshed.",
+        )
+
+    evidence_by_identity: dict[tuple[str, str], dict[str, Any]] = {}
+    for value in raw_evidence:
+        if not isinstance(value, dict):
+            continue
+        registry_type = str(value.get("registryType") or "").strip().casefold()
+        identifier = str(value.get("identifier") or "").strip()
+        if registry_type == "uvx":
+            registry_type = "pypi"
+        if registry_type and identifier:
+            evidence_by_identity[(registry_type, identifier)] = value
+
+    unavailable: list[str] = []
+    invalid: list[str] = []
+    verified = 0
+    for package_value in payload.packages:
+        package = model_or_dict(package_value)
+        registry_type = str(package.get("registryType") or "").strip().casefold()
+        if registry_type == "uvx":
+            registry_type = "pypi"
+        if registry_type not in {"npm", "pypi"}:
+            continue
+        identifier = str(package.get("identifier") or "").strip()
+        version = str(package.get("version") or "").strip()
+        label = f"{registry_type}:{identifier}{f'@{version}' if version else ''}"
+        evidence = evidence_by_identity.get((registry_type, identifier))
+        if evidence is None:
+            unavailable.append(f"{label} has no registry evidence")
+            continue
+        status = str(evidence.get("status") or "").strip().casefold()
+        requested_version = str(evidence.get("requestedVersion") or "").strip()
+        resolved_version = str(evidence.get("resolvedVersion") or "").strip()
+        if status in {"not_found", "version_mismatch"}:
+            invalid.append(f"{label} is {status.replace('_', ' ')}")
+            continue
+        if status != "published":
+            unavailable.append(f"{label} registry status is {status or 'unknown'}")
+            continue
+        if version and (requested_version != version or resolved_version != version):
+            invalid.append(
+                f"{label} does not match requested/resolved registry evidence"
+            )
+            continue
+        if not resolved_version:
+            unavailable.append(f"{label} has no resolved registry version")
+            continue
+        verified += 1
+
+    if invalid:
+        return validation_check(
+            "packageRegistryEvidence",
+            "failed",
+            "Package registry evidence is invalid: " + "; ".join(invalid),
+        )
+    if unavailable:
+        return validation_check(
+            "packageRegistryEvidence",
+            "warning",
+            "Package registry evidence could not be verified: " + "; ".join(unavailable),
+        )
+    return validation_check(
+        "packageRegistryEvidence",
+        "passed",
+        f"Verified {verified} PyPI/npm package target(s) against the official registry.",
+    )
+
+
 def validation_result_for(
     payload: RegistryServerVersionCreate,
     *,
@@ -730,6 +815,7 @@ def validation_result_for(
         duplicate_environment_check(payload),
         environment_metadata_check(payload.packages),
         source_review_list_quality_check(payload),
+        package_registry_evidence_check(payload),
         package_targets_check(payload.packages),
         package_manager_argument_check(payload.packages),
         package_transport_detail_check(payload.packages),

@@ -2,10 +2,24 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import unquote
 
 import pytest
 
 from app.cli import sync_mcp_registry as cli
+
+
+@pytest.fixture(autouse=True)
+def stub_package_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fetch_json(url: str) -> dict[str, Any]:
+        parts = url.rstrip("/").split("/")
+        if "pypi.org" in url:
+            version = unquote(parts[-2]) if parts[-1] == "json" and len(parts) > 2 else ""
+            return {"info": {"version": version or "1.0.0"}, "urls": []}
+        version = unquote(parts[-1])
+        return {"name": "@example/weather", "version": version if version != "latest" else "1.0.0"}
+
+    monkeypatch.setattr(cli, "fetch_package_registry_json", fetch_json)
 
 
 class FakeHub:
@@ -218,6 +232,8 @@ def test_build_import_payload_adds_default_category_and_import_evidence() -> Non
     assert payload["_meta"]["sourceReview"]["llm"]["filesRead"] == [
         f"Official MCP registry record: {cli.DEFAULT_REGISTRY_URL}"
     ]
+    assert payload["_meta"]["packageRegistryEvidence"][0]["status"] == "published"
+    assert payload["_meta"]["packageRegistryEvidence"][0]["resolvedVersion"] == "1.0.0"
     assert "## Installation" in payload["documentation"]
 
 
@@ -229,6 +245,111 @@ def test_build_import_payload_preserves_existing_categories() -> None:
     )
 
     assert payload["_meta"]["categories"] == ["developer-tools"]
+
+
+def test_merge_official_packages_keeps_source_details_with_the_official_version() -> None:
+    payload = cli.merge_official_payload(
+        official={
+            "name": "io.github.example/weather",
+            "version": "0.22.0",
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "example-weather",
+                    "version": "0.22.0",
+                    "transport": {"type": "stdio"},
+                }
+            ],
+        },
+        imported={
+            "name": "io.github.example/weather",
+            "version": "0.23.0",
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "example-weather",
+                    "version": "0.23.0",
+                    "transport": {
+                        "type": "stdio",
+                        "command": "uvx",
+                        "args": ["example-weather"],
+                    },
+                    "environmentVariables": [{"name": "WEATHER_API_KEY", "isSecret": True}],
+                }
+            ],
+        },
+    )
+
+    package = payload["packages"][0]
+    assert payload["version"] == "0.22.0"
+    assert package["version"] == "0.22.0"
+    assert package["transport"] == {
+        "type": "stdio",
+        "command": "uvx",
+        "args": ["example-weather"],
+    }
+    assert package["environmentVariables"] == [
+        {"name": "WEATHER_API_KEY", "isSecret": True}
+    ]
+
+
+def test_build_import_payload_verifies_official_version_after_source_merge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entry = registry_entry(version="2.0.2")
+    entry["server"]["packages"] = [
+        {
+            "registryType": "pypi",
+            "identifier": "mcp-google-search-console",
+            "version": "2.0.2",
+            "transport": {"type": "stdio"},
+        }
+    ]
+    monkeypatch.setattr(
+        cli,
+        "source_import_payload",
+        lambda _server: {
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "mcp-google-search-console",
+                    "version": "2.0.3",
+                    "transport": {
+                        "type": "stdio",
+                        "command": "uvx",
+                        "args": ["mcp-google-search-console"],
+                    },
+                }
+            ]
+        },
+    )
+    requested_urls: list[str] = []
+
+    def fetch_json(url: str) -> dict[str, Any]:
+        requested_urls.append(url)
+        return {"info": {"version": "2.0.2"}, "urls": []}
+
+    monkeypatch.setattr(cli, "fetch_package_registry_json", fetch_json)
+
+    payload = cli.build_import_payload(
+        entry,
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 7, 27, 12, 0, tzinfo=UTC),
+    )
+
+    assert payload["packages"][0]["version"] == "2.0.2"
+    assert payload["packages"][0]["transport"] == {
+        "type": "stdio",
+        "command": "uvx",
+        "args": ["mcp-google-search-console"],
+    }
+    assert requested_urls == [
+        "https://pypi.org/pypi/mcp-google-search-console/2.0.2/json"
+    ]
+    evidence = payload["_meta"]["packageRegistryEvidence"][0]
+    assert evidence["status"] == "published"
+    assert evidence["requestedVersion"] == "2.0.2"
+    assert evidence["resolvedVersion"] == "2.0.2"
 
 
 def test_import_entry_skips_duplicate_by_default() -> None:

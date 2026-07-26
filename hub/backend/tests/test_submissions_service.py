@@ -255,6 +255,74 @@ def test_validation_passes_with_source_review_and_transport_details() -> None:
     assert service.validation_result_for(complete_registry_payload())["status"] == "passed"
 
 
+def test_validation_passes_with_matching_package_registry_evidence() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    payload.meta["packageRegistryEvidence"] = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "requestedVersion": "1.0.0",
+            "resolvedVersion": "1.0.0",
+            "status": "published",
+        }
+    ]
+
+    result = service.validation_result_for(payload)
+
+    check = next(
+        value for value in result["checks"] if value["name"] == "packageRegistryEvidence"
+    )
+    assert check["status"] == "passed"
+    assert "Verified 1" in check["message"]
+
+
+def test_validation_rejects_unpublished_package_registry_version() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    payload.meta["packageRegistryEvidence"] = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "requestedVersion": "1.0.0",
+            "resolvedVersion": "",
+            "status": "not_found",
+        }
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "failed"
+    check = next(
+        value for value in result["checks"] if value["name"] == "packageRegistryEvidence"
+    )
+    assert check["status"] == "failed"
+    assert "not found" in check["message"]
+
+
+def test_validation_warns_when_package_registry_is_unavailable() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    payload.meta["packageRegistryEvidence"] = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "requestedVersion": "1.0.0",
+            "resolvedVersion": "",
+            "status": "unavailable",
+        }
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "warning"
+    check = next(
+        value for value in result["checks"] if value["name"] == "packageRegistryEvidence"
+    )
+    assert check["status"] == "warning"
+    assert "unavailable" in check["message"]
+
+
 def test_validation_passes_for_package_without_server_args() -> None:
     payload = complete_registry_payload()
     package = payload.packages[0]

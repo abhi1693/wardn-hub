@@ -28,7 +28,8 @@ SYSTEM_REVIEW_INSTRUCTIONS = """System review mode:
 - Use the submission JSON snapshot and submitted MCP server model JSON in this prompt as the Wardn Hub source of truth.
 - Do not call Wardn Hub API endpoints.
 - Do not request or expose Wardn Hub credentials.
-- Review upstream public source repositories, README files, documentation, and package metadata only."""
+- Review upstream public source repositories, README files, documentation, and package metadata only.
+- When serverJson._meta.packageRegistryEvidence is present, exact identifier, version, and publication status came from the official PyPI or npm API. Other registry fields are supporting context and still require corroboration."""
 
 REGISTRY_METADATA_SCOPE_RULE = (
     "Treat this as registry metadata review only. Do not install workspace MCP servers, "
@@ -446,6 +447,7 @@ Validation workflow for each submission:
 4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
 5. {REGISTRY_METADATA_SCOPE_RULE}
 6. If submissionType is "new_server", serverJson.version is the Wardn registry version and must be "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
+7. Prefer packageRegistryEvidence over repository documentation for exact PyPI/npm package identity, version existence, and publication status. Treat summaries, links, licenses, dependencies, engines, and binaries as registry-provided context rather than proof of MCP behavior.
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.
@@ -453,6 +455,7 @@ Required checks:
 - For official MCP registry imports, confirm registryNamespace.verificationStatus is "verified", verificationMethod is "official_registry", and evidenceUrl points to the official registry record.
 - For io.github.* namespaces, compare the namespace owner against the linked GitHub repository owner unless official registry evidence already verifies the namespace.
 - Package identifiers and versions are split correctly. No package identifier contains a version or tag.
+- For every PyPI/npm package with packageRegistryEvidence, status is "published", requestedVersion matches packages[].version when set, and resolvedVersion is the actual published version. A "not_found" or "version_mismatch" status is a material error; "unavailable" or "metadata_invalid" means the package cannot yet be safely validated.
 - Transport command, args, env, and transport type match documented install/run instructions.
 {VALIDATION_PACKAGE_ARGUMENT_CHECKS}
 {VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS}
