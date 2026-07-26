@@ -120,6 +120,33 @@ def test_registry_adapter_records_not_found_without_trusting_documentation() -> 
     assert evidence["resolvedVersion"] == ""
 
 
+def test_pypi_adapter_accepts_nullable_release_arrays() -> None:
+    result = add_package_registry_evidence(
+        {
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "weather-mcp",
+                    "version": "1.0.0",
+                }
+            ]
+        },
+        fetch_json=lambda _url: {
+            "info": {
+                "version": "1.0.0",
+                "requires_dist": None,
+            },
+            "urls": None,
+        },
+    )
+
+    evidence = result["_meta"][PACKAGE_REGISTRY_EVIDENCE_META_KEY][0]
+    assert evidence["status"] == "published"
+    assert evidence["dependencies"] == []
+    assert evidence["publishedAt"] == ""
+    assert evidence["sha256"] == ""
+
+
 def test_package_api_url_uses_latest_when_version_is_missing() -> None:
     assert (
         package_api_url("npm", "weather-mcp", "")

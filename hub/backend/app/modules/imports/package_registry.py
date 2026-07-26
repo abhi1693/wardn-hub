@@ -96,7 +96,14 @@ def pypi_evidence(
         if isinstance(project_urls, dict)
         else {}
     )
-    uploads = [value for value in payload.get("urls", []) if isinstance(value, dict)]
+    raw_uploads = payload.get("urls")
+    uploads = [
+        value
+        for value in (raw_uploads if isinstance(raw_uploads, list) else [])
+        if isinstance(value, dict)
+    ]
+    raw_dependencies = info.get("requires_dist")
+    dependencies = raw_dependencies if isinstance(raw_dependencies, list) else []
     published_at = min(
         (
             string_value(upload.get("upload_time_iso_8601"))
@@ -131,7 +138,7 @@ def pypi_evidence(
         "requiresPython": string_value(info.get("requires_python")),
         "dependencies": [
             string_value(value)
-            for value in info.get("requires_dist", [])
+            for value in dependencies
             if string_value(value)
         ][:100],
         "publishedAt": published_at,
