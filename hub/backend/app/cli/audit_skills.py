@@ -40,6 +40,7 @@ from app.modules.skills.audit_policy import (
     SCANNER_DISTRIBUTION,
     SCANNER_NAME,
     SCANNER_POLICY,
+    SCANNER_POLICY_PATH,
     SCANNER_VERSION,
     current_audit_configuration_hash,
 )
@@ -1072,7 +1073,7 @@ class CiscoSkillScanner:
                 "scan",
                 str(root),
                 "--policy",
-                SCANNER_POLICY,
+                str(SCANNER_POLICY_PATH),
                 "--format",
                 "json",
                 "--compact",
@@ -1102,6 +1103,7 @@ class CiscoSkillScanner:
                         app_server_url=app_server_url,
                         timeout_seconds=self.timeout_seconds,
                         app_server_auth_token=auth_token,
+                        max_input_bytes=get_settings().codex_bridge_max_input_bytes,
                     )
                     with bridge_context as bridge:
                         scanner_environment = os.environ.copy()

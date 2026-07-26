@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     cache_max_connections: int = 10
     skill_audit_enabled: bool = False
     skill_audit_llm_enabled: bool = False
+    codex_bridge_max_input_bytes: int = 200_000
     worker_metrics_port: int = 8092
     worker_lock_retry_seconds: float = 5.0
     worker_lock_heartbeat_seconds: float = 30.0
@@ -266,6 +267,13 @@ class Settings(BaseSettings):
     def validate_positive_worker_int(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("worker values must be positive")
+        return value
+
+    @field_validator("codex_bridge_max_input_bytes")
+    @classmethod
+    def validate_codex_bridge_max_input_bytes(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("codex_bridge_max_input_bytes must be positive")
         return value
 
     @field_validator("public_rate_limit_valkey_db", "cache_valkey_db")

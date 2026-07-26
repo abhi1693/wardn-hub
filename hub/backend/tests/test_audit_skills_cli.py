@@ -2,12 +2,14 @@ import base64
 import json
 import subprocess
 import uuid
+from dataclasses import asdict
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from asyncpg.exceptions import ProtocolViolationError
+from skill_scanner.core.scan_policy import ScanPolicy
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
@@ -235,6 +237,36 @@ def test_llm_gate_changes_audit_configuration_hash() -> None:
     assert audit_configuration_hash(llm_enabled=False) != audit_configuration_hash(llm_enabled=True)
 
 
+def test_scanner_policy_content_changes_audit_configuration_hash() -> None:
+    assert audit_configuration_hash(
+        llm_enabled=True,
+        scanner_policy_content_hash="a" * 64,
+    ) != audit_configuration_hash(
+        llm_enabled=True,
+        scanner_policy_content_hash="b" * 64,
+    )
+
+
+def test_wardn_scanner_policy_expands_only_llm_context_budgets() -> None:
+    balanced = ScanPolicy.from_preset("balanced")
+    wardn = ScanPolicy.from_yaml(cli.SCANNER_POLICY_PATH)
+
+    assert wardn.policy_name == cli.SCANNER_POLICY
+    assert wardn.preset_base == "balanced"
+    assert wardn.llm_analysis.max_instruction_body_chars == 20_000
+    assert wardn.llm_analysis.max_code_file_chars == 15_000
+    assert wardn.llm_analysis.max_referenced_file_chars == 25_000
+    assert wardn.llm_analysis.max_total_prompt_chars == 160_000
+    assert wardn.llm_analysis.max_output_tokens == 8_192
+
+    balanced_payload = asdict(balanced)
+    wardn_payload = asdict(wardn)
+    for key in ("policy_name", "policy_version", "llm_analysis"):
+        balanced_payload.pop(key)
+        wardn_payload.pop(key)
+    assert wardn_payload == balanced_payload
+
+
 def test_llm_routing_changes_audit_configuration_hash_only_when_enabled() -> None:
     assert audit_configuration_hash(
         llm_enabled=True,
@@ -258,7 +290,10 @@ def test_current_audit_hash_records_codex_bridge_routing(monkeypatch) -> None:
     monkeypatch.setattr(
         audit_policy,
         "get_settings",
-        lambda: SimpleNamespace(skill_audit_llm_enabled=True),
+        lambda: SimpleNamespace(
+            skill_audit_llm_enabled=True,
+            codex_bridge_max_input_bytes=200_000,
+        ),
     )
     monkeypatch.setenv(
         audit_policy.CODEX_APP_SERVER_URL_ENV,
@@ -667,6 +702,7 @@ def test_cisco_scanner_invocation_enables_only_local_analyzers(monkeypatch) -> N
     assert "--use-behavioral" in captured
     assert "--lenient" in captured
     assert "--policy" in captured
+    assert captured[captured.index("--policy") + 1] == str(cli.SCANNER_POLICY_PATH)
     assert "--use-llm" not in captured
     assert "--enable-meta" not in captured
     assert "--use-aidefense" not in captured
@@ -731,6 +767,7 @@ def test_cisco_scanner_invocation_enables_llm_when_gated_on(monkeypatch) -> None
     assert "--use-aidefense" not in captured
     assert captured_bridge_args["app_server_url"] == "ws://127.0.0.1:41237"
     assert captured_bridge_args["app_server_auth_token"] == "app-server-token"
+    assert captured_bridge_args["max_input_bytes"] == 200_000
     assert "cwd" not in captured_bridge_args
     assert captured_environment["SKILL_SCANNER_LLM_PROVIDER"] == cli.CISCO_LLM_PROVIDER
     assert captured_environment["SKILL_SCANNER_LLM_MODEL"] == cli.CODEX_CHAT_COMPLETIONS_MODEL

@@ -68,6 +68,16 @@ def test_skill_audit_llm_gate_defaults_off_and_can_be_enabled(monkeypatch) -> No
     assert Settings(_env_file=None).skill_audit_llm_enabled is True
 
 
+def test_codex_bridge_input_limit_defaults_and_validates(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES", raising=False)
+    assert Settings(_env_file=None).codex_bridge_max_input_bytes == 200_000
+
+    monkeypatch.setenv("WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES", "0")
+    with pytest.raises(ValidationError, match="codex_bridge_max_input_bytes must be positive"):
+        Settings(_env_file=None)
+
+
 def test_skill_import_arguments_parse_shell_style_env(monkeypatch) -> None:
     set_required_settings(monkeypatch)
     monkeypatch.setenv(

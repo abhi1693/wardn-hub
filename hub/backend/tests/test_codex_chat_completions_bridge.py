@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+import pytest
 from litellm import acompletion
 
 from app.cli import codex_chat_completions_bridge as bridge_module
@@ -25,10 +26,15 @@ class FakeCompletionClient:
         return self.output
 
 
-def bridge_for_test(client: FakeCompletionClient) -> CodexChatCompletionsBridge:
+def bridge_for_test(
+    client: FakeCompletionClient,
+    *,
+    max_input_bytes: int = 200_000,
+) -> CodexChatCompletionsBridge:
     return CodexChatCompletionsBridge(
         app_server_url="ws://127.0.0.1:41237",
         timeout_seconds=5,
+        max_input_bytes=max_input_bytes,
         completion_client=client,
     )
 
@@ -125,6 +131,55 @@ def test_bridge_rejects_requests_without_its_ephemeral_token() -> None:
     assert client.calls == []
 
 
+def test_bridge_rejects_context_above_the_input_safety_limit() -> None:
+    client = FakeCompletionClient()
+
+    with bridge_for_test(client, max_input_bytes=100) as bridge:
+        response = httpx.post(
+            f"{bridge.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {bridge.api_key}"},
+            json={
+                "model": "codex-app-server",
+                "messages": [{"role": "user", "content": "x" * 100}],
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == {
+        "message": "Codex bridge input exceeds the 100-byte context safety limit",
+        "type": "invalid_request_error",
+        "param": None,
+        "code": "context_length_exceeded",
+    }
+    assert client.calls == []
+
+
+def test_bridge_input_limit_includes_the_structured_output_schema() -> None:
+    client = FakeCompletionClient()
+    schema = {
+        "type": "object",
+        "properties": {"result": {"type": "string", "description": "x" * 100}},
+    }
+
+    with bridge_for_test(client, max_input_bytes=250) as bridge:
+        response = httpx.post(
+            f"{bridge.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {bridge.api_key}"},
+            json={
+                "model": "codex-app-server",
+                "messages": [{"role": "user", "content": "short"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "result", "schema": schema, "strict": True},
+                },
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "context_length_exceeded"
+    assert client.calls == []
+
+
 def test_bridge_maps_codex_failures_to_openai_error_shape() -> None:
     class FailingCompletionClient(FakeCompletionClient):
         def complete(
@@ -172,3 +227,10 @@ def test_bridge_uses_an_analysis_only_remote_codex_session(monkeypatch) -> None:
     assert captured["cwd"] is None
     assert captured["analysis_only"] is True
     assert captured["auth_token"] == "capability-token"
+
+
+def test_bridge_requires_a_positive_input_safety_limit() -> None:
+    client = FakeCompletionClient()
+
+    with pytest.raises(ValueError, match="max_input_bytes must be positive"):
+        bridge_for_test(client, max_input_bytes=0)

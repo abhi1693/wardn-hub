@@ -39,9 +39,13 @@ class CodexChatCompletionsBridge:
         app_server_url: str,
         timeout_seconds: int,
         app_server_auth_token: str = "",
+        max_input_bytes: int = 200_000,
         completion_client: CodexCompletionClient | None = None,
     ) -> None:
+        if max_input_bytes <= 0:
+            raise ValueError("max_input_bytes must be positive")
         self.api_key = secrets.token_urlsafe(32)
+        self.max_input_bytes = max_input_bytes
         self._completion_client = completion_client or CodexAppServerReviewer(
             url=app_server_url,
             timeout_seconds=timeout_seconds,
@@ -100,6 +104,18 @@ class CodexChatCompletionsBridge:
             payload = self._read_payload(handler)
             prompt = chat_messages_to_prompt(payload.get("messages"))
             output_schema = response_format_output_schema(payload.get("response_format"))
+            input_bytes = codex_input_bytes(prompt, output_schema=output_schema)
+            if input_bytes > self.max_input_bytes:
+                self._send_error(
+                    handler,
+                    400,
+                    (
+                        f"Codex bridge input exceeds the {self.max_input_bytes:,}-byte "
+                        "context safety limit"
+                    ),
+                    code="context_length_exceeded",
+                )
+                return
             output = self._completion_client.complete(
                 prompt,
                 output_schema=output_schema,
@@ -256,3 +272,26 @@ def response_format_output_schema(raw_response_format: Any) -> dict[str, Any] | 
     if not isinstance(json_schema, dict) or not isinstance(json_schema.get("schema"), dict):
         raise ValueError("response_format.json_schema.schema must be an object")
     return json_schema["schema"]
+
+
+def codex_input_bytes(
+    prompt: str,
+    *,
+    output_schema: dict[str, Any] | None,
+) -> int:
+    """Return a conservative upper bound for client-supplied input tokens.
+
+    A tokenizer token always represents at least one byte, so UTF-8 bytes are
+    an offline, model-independent upper bound. Counting the structured-output
+    schema also covers input added outside the role-separated prompt.
+    """
+
+    total = len(prompt.encode("utf-8"))
+    if output_schema is not None:
+        serialized_schema = json.dumps(
+            output_schema,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        total += len(serialized_schema.encode("utf-8"))
+    return total

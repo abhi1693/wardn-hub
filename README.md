@@ -340,6 +340,11 @@ loopback bridge to the Codex app-server configured by
 The bridge sends the complete analysis input in the request, disables web search
 and subagents, instructs Codex not to invoke tools, and does not forward the
 scanner pod's temporary filesystem paths to the separate Codex app-server pod.
+Cisco's balanced policy remains the security baseline, with Wardn-specific LLM
+budgets of 25,000 characters per referenced file and 160,000 characters across
+skill content. The bridge independently rejects client input above
+`WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES` (200,000 by default), including the
+structured-output schema, before starting a Codex turn.
 Cisco AI Defense, meta analysis, and VirusTotal are not enabled by Wardn Hub.
 
 Package compatibility is independent from security analysis: an incomplete or
@@ -370,6 +375,7 @@ high-entropy session and API-token keys.
 | `WARDN_HUB_OIDC_*` | Issuer, client, callback, scope, domain, and account-provisioning settings |
 | `WARDN_HUB_SKILL_AUDIT_ENABLED` | Master gate for skill auditing and audit exposure |
 | `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` | Separate gate for the scanner's semantic LLM analyzer |
+| `WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES` | Conservative client-input ceiling for scanner requests sent through Codex app-server |
 | `WARDN_HUB_WORKER_SKILL_AUDIT_BACKFILL_MIN_AGE_SECONDS` | Grace period before an unaudited snapshot enters the scalable oldest-first backfill lane |
 | `WARDN_HUB_CODEX_APP_SERVER_URL` | Codex app-server WebSocket URL used by review, repair, and skill-audit LLM analysis |
 | `WARDN_HUB_CODEX_APP_SERVER_AUTH_TOKEN` | Optional bearer token for the Codex app-server WebSocket handshake |
