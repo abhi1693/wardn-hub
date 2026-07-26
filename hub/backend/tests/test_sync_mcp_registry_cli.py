@@ -357,6 +357,7 @@ def test_import_entry_uses_next_wardn_version_for_existing_server() -> None:
 
 
 def test_import_entry_skips_already_published_upstream_import() -> None:
+    packages = registry_entry(version="0.22.0")["server"]["packages"]
     hub = FakeHub(
         existing_server={
             "server": {"owner": {"id": "owner-1"}},
@@ -364,6 +365,7 @@ def test_import_entry_skips_already_published_upstream_import() -> None:
                 {
                     "version": "1.0.0",
                     "serverJson": {
+                        "packages": packages,
                         "_meta": {
                             cli.IMPORT_META_KEY: {
                                 "upstreamVersion": "0.22.0",
@@ -386,6 +388,45 @@ def test_import_entry_skips_already_published_upstream_import() -> None:
 
     assert outcome == cli.ImportOutcome("skipped", "upstream_version_already_published=0.22.0")
     assert hub.created_submissions == []
+
+
+def test_import_entry_reconciles_install_targets_for_a_published_upstream_version() -> None:
+    stale_packages = registry_entry(version="0.23.0")["server"]["packages"]
+    hub = FakeHub(
+        existing_server={
+            "server": {"owner": {"id": "owner-1"}},
+            "versions": [
+                {
+                    "version": "1.0.0",
+                    "serverJson": {
+                        "packages": stale_packages,
+                        "_meta": {
+                            cli.IMPORT_META_KEY: {
+                                "upstreamVersion": "0.22.0",
+                            }
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    outcome = cli.import_entry(
+        hub,
+        registry_entry(version="0.22.0"),
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+        dry_run=False,
+        existing_submissions={},
+    )
+
+    assert outcome == cli.ImportOutcome(
+        "submitted",
+        "submission_id=submission-1; wardn_version=1.0.1; upstream_version=0.22.0",
+    )
+    assert hub.created_submissions[0]["submissionType"] == "new_version"
+    assert hub.created_submissions[0]["serverJson"]["packages"][0]["version"] == "0.22.0"
+    assert hub.submitted == ["submission-1"]
 
 
 def test_import_entry_updates_existing_rejected_submission_by_upstream_version() -> None:

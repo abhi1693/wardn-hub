@@ -502,6 +502,33 @@ def published_import_upstream_versions(server_detail: dict[str, Any] | None) -> 
     }
 
 
+def version_server_json(version: dict[str, Any]) -> dict[str, Any]:
+    server_json = version.get("serverJson")
+    if not isinstance(server_json, dict):
+        server_json = version.get("server_json")
+    return server_json if isinstance(server_json, dict) else {}
+
+
+def install_targets(payload: dict[str, Any]) -> dict[str, list[Any]]:
+    return {
+        key: copy.deepcopy(payload[key]) if isinstance(payload.get(key), list) else []
+        for key in ("packages", "remotes")
+    }
+
+
+def published_import_matches_install_targets(
+    server_detail: dict[str, Any] | None,
+    payload: dict[str, Any],
+) -> bool:
+    upstream_version = import_upstream_version_from_payload(payload)
+    expected_targets = install_targets(payload)
+    return any(
+        import_upstream_version_from_version(version) == upstream_version
+        and install_targets(version_server_json(version)) == expected_targets
+        for version in server_detail_versions(server_detail)
+    )
+
+
 def next_wardn_import_version(server_detail: dict[str, Any] | None) -> str:
     versions = []
     for version in server_detail_versions(server_detail):
@@ -748,7 +775,11 @@ def import_entry(
         server_detail = hub.get_server(name)
         upstream_version = import_upstream_version_from_payload(payload)
         published_upstream_versions = published_import_upstream_versions(server_detail)
-        if upstream_version and upstream_version in published_upstream_versions:
+        if (
+            upstream_version
+            and upstream_version in published_upstream_versions
+            and published_import_matches_install_targets(server_detail, payload)
+        ):
             return ImportOutcome(
                 "skipped",
                 f"upstream_version_already_published={upstream_version}",
