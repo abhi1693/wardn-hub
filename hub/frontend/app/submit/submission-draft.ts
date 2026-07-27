@@ -80,6 +80,7 @@ export type SubmissionDraftValues = {
   iconUrl: string;
   remotes: RemoteTarget[];
   packages: PackageTarget[];
+  ownerUserId: string;
   ownerOrganizationId: string;
   sourceImportMessage: string;
 };
@@ -563,7 +564,10 @@ export function mergeEnvironmentFields(environmentVariables: EnvironmentField[])
       ...existing,
       description: existing.description || envVar.description,
       defaultValue: existing.defaultValue || envVar.defaultValue,
-      format: existing.format || envVar.format || "string",
+      format:
+        !existing.format || existing.format === "string"
+          ? envVar.format || existing.format || "string"
+          : existing.format,
       required: existing.required || envVar.required,
       secret: existing.secret || envVar.secret,
     });
@@ -992,6 +996,7 @@ export function submissionDraftValues(
     name: submission.name,
     isNameOverrideEnabled: true,
     version: mode === "new_version" ? bumpPatchVersion(submission.version) : submission.version,
+    ownerUserId: submission.ownerUserId ?? "",
     ownerOrganizationId: submission.ownerOrganizationId ?? "",
     sourceImportMessage:
       mode === "new_version"
@@ -1022,6 +1027,7 @@ export function publishedServerDraftValues(
     description: draft.description || response.server.description,
     documentation: draft.documentation || response.server.documentation || "",
     websiteUrl: draft.websiteUrl || response.server.websiteUrl || "",
+    ownerUserId: response.server.owner?.id ?? "",
     ownerOrganizationId: response.server.organization?.id ?? "",
     sourceImportMessage:
       mode === "server_new_version"

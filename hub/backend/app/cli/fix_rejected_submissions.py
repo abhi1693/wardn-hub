@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from app.cli.review_pending_submissions import (
     CODEX_APP_SERVER_AUTH_TOKEN_ENV,
     CODEX_APP_SERVER_URL_ENV,
+    ENVIRONMENT_VARIABLE_FORMAT_CHECKS,
     REGISTRY_METADATA_SCOPE_RULE,
     VALIDATION_PACKAGE_ARGUMENT_CHECKS,
     VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS,
@@ -44,6 +45,8 @@ DRAFT_METADATA_RULES = f"""Metadata rules:
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
 - Split package versions from identifiers. Do not put versions or tags inside package identifiers.
 - Keep every environmentVariables[].default and packageArguments[].default value as a string, including numeric and boolean-looking defaults such as "300", "true", and "0".
+- Apply these format rules to both packages[].environmentVariables and sourceReview.llm.environmentVariables:
+{ENVIRONMENT_VARIABLE_FORMAT_CHECKS}
 - Use empty strings, empty lists, or null for schema-required metadata that has no documented value; do not invent values to fill the strict output contract.
 - Ensure package transport command, args, env, and type match documented install/run instructions.
 {VALIDATION_PACKAGE_ARGUMENT_CHECKS}

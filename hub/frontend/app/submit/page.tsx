@@ -119,6 +119,7 @@ function SubmitServerPageContent() {
     serverMeta,
     categories,
     partnerOwnerOrganizations,
+    ownerUserId,
     ownerOrganizationId,
     setOwnerOrganizationId,
     sourceMode,
@@ -483,6 +484,7 @@ function SubmitServerPageContent() {
           return;
         }
         const submitted = await createAndSubmitSubmission({
+          ownerUserId: ownerOrganizationId ? null : ownerUserId || null,
           ownerOrganizationId: ownerOrganizationId || null,
           submissionType: "new_version",
           serverJson,
@@ -500,11 +502,13 @@ function SubmitServerPageContent() {
         isEditingExistingSubmission
           ? {
               submissionId: editingSubmissionId,
+              ownerUserId: ownerOrganizationId ? null : ownerUserId || null,
               ownerOrganizationId: ownerOrganizationId || null,
               submissionType,
               serverJson,
             }
           : {
+              ownerUserId: ownerOrganizationId ? null : ownerUserId || null,
               ownerOrganizationId: ownerOrganizationId || null,
               submissionType,
               serverJson,

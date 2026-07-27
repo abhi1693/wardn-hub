@@ -69,6 +69,8 @@ export const ENVIRONMENT_VARIABLE_RULES = `Environment variable rules:
 - For secrets or user-specific values, use an empty string.
 - Use documented non-secret defaults when available.
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
+- Set format to string for text, boolean for true/false toggles, integer for whole numbers, select for enumerated options, and file for file paths.
+- Use format "file" whenever the value is a path to a file, even when the variable name does not end in FILE. For example, GOOGLE_APPLICATION_CREDENTIALS is a file when its documented value is a path to a service-account JSON key file.
 - Add every documented environment variable to serverJson._meta.sourceReview.llm.environmentVariables, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.
 - If an env var belongs in runtime launch config, add it to packages[].transport.env with a safe value.`;
 
@@ -99,6 +101,8 @@ export const DRAFT_METADATA_RULES = `Metadata rules:
 - Do not use environment placeholder values that wrap names in dollar signs and braces.
 - For secrets or user-specific values, use an empty string.
 - Do not create duplicate environment variable entries. If the same variable appears in multiple docs/import sources, merge it into one entry with the best description, default, required, secret, and source evidence.
+- Set environmentVariables[].format to string for text, boolean for true/false toggles, integer for whole numbers, select for enumerated options, and file for file paths.
+- Use format "file" whenever an environment variable contains a path to a file, including GOOGLE_APPLICATION_CREDENTIALS when it points to a service-account JSON key file.
 - Split package versions from identifiers. Do not put versions or tags inside package identifiers.
 - Ensure package transport command, args, env, and type match documented install/run instructions.
 ${PACKAGE_ARGUMENT_RULES}

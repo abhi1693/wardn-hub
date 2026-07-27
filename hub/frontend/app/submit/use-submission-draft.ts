@@ -62,6 +62,7 @@ export function useSubmissionDraft({ user, setError }: UseSubmissionDraftOptions
   const [partnerOwnerOrganizations, setPartnerOwnerOrganizations] = useState<OrganizationRead[]>(
     [],
   );
+  const [ownerUserId, setOwnerUserId] = useState("");
   const [ownerOrganizationId, setOwnerOrganizationId] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("repository");
   const [repositoryUrl, setRepositoryUrl] = useState("");
@@ -93,6 +94,7 @@ export function useSubmissionDraft({ user, setError }: UseSubmissionDraftOptions
     setIconUrl(draft.iconUrl);
     setRemotes(draft.remotes);
     setPackages(draft.packages);
+    setOwnerUserId(draft.ownerUserId);
     setOwnerOrganizationId(draft.ownerOrganizationId);
     setSourceImportMessage(draft.sourceImportMessage);
   }, []);
@@ -273,6 +275,7 @@ export function useSubmissionDraft({ user, setError }: UseSubmissionDraftOptions
     serverMeta,
     categories,
     partnerOwnerOrganizations,
+    ownerUserId,
     ownerOrganizationId,
     setOwnerOrganizationId,
     sourceMode,

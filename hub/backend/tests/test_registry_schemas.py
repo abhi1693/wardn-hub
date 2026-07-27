@@ -128,6 +128,58 @@ def test_package_metadata_accepts_official_snake_case_manifest_fields() -> None:
     assert serialized["packages"][1]["environmentVariables"][0]["isRequired"] is True
 
 
+def test_environment_variable_infers_file_format_from_documented_path() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[
+                {
+                    "registryType": "npm",
+                    "identifier": "@example/weather-mcp",
+                    "transport": {
+                        "type": "stdio",
+                        "env": {"GOOGLE_APPLICATION_CREDENTIALS": ""},
+                    },
+                    "environmentVariables": [
+                        {
+                            "name": "GOOGLE_APPLICATION_CREDENTIALS",
+                            "description": (
+                                "Path to the Google Cloud service account JSON key file "
+                                "used for service-account auth."
+                            ),
+                            "format": "string",
+                        }
+                    ],
+                }
+            ]
+        )
+    )
+
+    assert payload.packages[0].environment_variables[0].format == "file"
+
+
+def test_environment_variable_preserves_non_file_format() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[
+                {
+                    "registryType": "npm",
+                    "identifier": "@example/weather-mcp",
+                    "transport": {"type": "stdio"},
+                    "environmentVariables": [
+                        {
+                            "name": "GOOGLE_APPLICATION_CREDENTIALS",
+                            "description": "Enable credential discovery from a configured file.",
+                            "format": "boolean",
+                        }
+                    ],
+                }
+            ]
+        )
+    )
+
+    assert payload.packages[0].environment_variables[0].format == "boolean"
+
+
 def test_package_arguments_distinguish_options_from_launch_args() -> None:
     payload = RegistryServerVersionCreate(
         **registry_payload(

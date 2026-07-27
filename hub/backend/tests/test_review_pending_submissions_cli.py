@@ -724,6 +724,8 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "packages[].transport.args contains only the concrete default launch arguments" in prompt
     assert "Optional CLI flags/configurable arguments are represented" in prompt
     assert "Every documented environment variable is represented" in prompt
+    assert 'Use format "file" when the value is a path to a file' in prompt
+    assert "GOOGLE_APPLICATION_CREDENTIALS" in prompt
     assert 'validationResult.status is "passed"' in prompt
     assert "validationResult has warning or failing checks" in prompt
     assert "Do not mark a submission as passing if source review evidence is incomplete" in prompt

@@ -1036,6 +1036,40 @@ async def test_new_version_submission_allows_personal_server_owner(monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_new_version_submission_allows_superuser_to_submit_for_owner(monkeypatch) -> None:
+    superuser = current_user(is_superuser=True)
+    selected_owner = current_user()
+    server = registry_server(owner_user_id=selected_owner.id)
+
+    async def existing_server(*args, **kwargs):
+        return server
+
+    async def active_versions(*args, **kwargs):
+        return [registry_version(server.id)]
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(
+        service.registry_repository,
+        "list_published_server_versions",
+        active_versions,
+    )
+
+    response = await service.create_submission(
+        FakeSession(),
+        superuser,
+        SubmissionCreate(
+            ownerUserId=selected_owner.id,
+            submissionType="new_version",
+            serverJson=complete_registry_payload(version="1.0.1"),
+        ),
+    )
+
+    assert response.submission_type == "new_version"
+    assert response.submitter_user_id == superuser.id
+    assert response.owner_user_id == selected_owner.id
+
+
+@pytest.mark.asyncio
 async def test_new_version_submission_requires_existing_owner_organization(monkeypatch) -> None:
     existing_organization_id = uuid4()
     server = registry_server(owner_organization_id=existing_organization_id)

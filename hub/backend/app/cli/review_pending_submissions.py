@@ -48,6 +48,9 @@ VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS = """- Remote endpoint URLs do not incl
 - Remote URL query parameters are represented in remotes[].queryParameters, not remotes[].authentication.queryParameters.
 - If docs show a hosted URL with query authentication, the base endpoint is stored in remotes[].url and the query auth fields are stored in remotes[].queryParameters."""
 
+ENVIRONMENT_VARIABLE_FORMAT_CHECKS = """- Environment variable format matches the documented input type: string for text, boolean for true/false toggles, integer for whole numbers, select for enumerated options, and file for file paths.
+- Use format "file" when the value is a path to a file, even when the variable name does not end in FILE. For example, GOOGLE_APPLICATION_CREDENTIALS is a file when its documented value is a path to a service-account JSON key file."""
+
 NEW_SERVER_INITIAL_VERSION_MESSAGE = (
     "New server submissions must start at Wardn registry version 1.0.0. "
     "Keep upstream package, image, or server versions in packages[].version."
@@ -459,6 +462,7 @@ Required checks:
 - Transport command, args, env, and transport type match documented install/run instructions.
 {VALIDATION_PACKAGE_ARGUMENT_CHECKS}
 {VALIDATION_REMOTE_QUERY_PARAMETER_CHECKS}
+{ENVIRONMENT_VARIABLE_FORMAT_CHECKS}
 - No environment value uses placeholder syntax that wraps names in dollar signs and braces.
 - Environment variable names are unique within each package target and within sourceReview.environmentVariables.
 - Secret or user-specific defaults are empty strings.

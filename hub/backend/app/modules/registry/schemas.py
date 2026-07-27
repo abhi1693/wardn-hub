@@ -46,6 +46,16 @@ REMOTE_QUERY_PARAMETER_ALIASES = (
     "query_params",
 )
 REMOTE_QUERY_VALUE_PLACEHOLDER_PATTERN = re.compile(r"^(?:\{([^{}]+)\}|<([^<>]+)>|\[([^\[\]]+)\])$")
+FILE_ENVIRONMENT_NAME_PATTERN = re.compile(
+    r"(?:^|_)(?:FILE|FILEPATH|FILE_PATH|KEY_FILE|CERT_FILE|CERTIFICATE_FILE)(?:$|_)"
+)
+FILE_ENVIRONMENT_DESCRIPTION_PATTERNS = (
+    re.compile(r"\b(?:file|key|certificate|credential)\s+path\b", re.IGNORECASE),
+    re.compile(
+        r"\bpath\s+(?:to|of|for)\b.{0,160}\b(?:file|key|certificate|credential)\b",
+        re.IGNORECASE,
+    ),
+)
 
 
 def split_argument_value_placeholder(flag: str) -> tuple[str, bool]:
@@ -177,6 +187,22 @@ def normalize_remote_mapping(value: Any) -> Any:
     return remote
 
 
+def environment_variable_uses_file(
+    *,
+    name: Any,
+    description: Any,
+) -> bool:
+    normalized_name = str(name or "").strip().upper()
+    normalized_description = str(description or "").strip()
+    return bool(
+        FILE_ENVIRONMENT_NAME_PATTERN.search(normalized_name)
+        or any(
+            pattern.search(normalized_description)
+            for pattern in FILE_ENVIRONMENT_DESCRIPTION_PATTERNS
+        )
+    )
+
+
 class RegistryRepository(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -223,6 +249,21 @@ class RegistryEnvironmentVariable(BaseModel):
         validation_alias=AliasChoices("isSecret", "is_secret", "secret"),
         serialization_alias="isSecret",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_file_format(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        current_format = str(data.get("format") or "").strip().lower()
+        if current_format not in {"", "string"}:
+            return data
+        if not environment_variable_uses_file(
+            name=data.get("name"),
+            description=data.get("description"),
+        ):
+            return data
+        return {**data, "format": "file"}
 
 
 class RegistryPackageArgument(BaseModel):

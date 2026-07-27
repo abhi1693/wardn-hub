@@ -189,6 +189,8 @@ def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() ->
     assert "transport.env as an array of name/value entries" in prompt
     assert "preserves official registry, import, publisher" in prompt
     assert 'numeric and boolean-looking defaults such as "300", "true", and "0"' in prompt
+    assert 'Use format "file" when the value is a path to a file' in prompt
+    assert "GOOGLE_APPLICATION_CREDENTIALS" in prompt
     assert "missingInformation" in prompt
     assert "validates against this schema" not in prompt
     assert "WARDN_HUB_TOKEN" not in prompt
