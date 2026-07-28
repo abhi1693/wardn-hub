@@ -60,6 +60,7 @@ def test_import_server_source_uses_server_json(monkeypatch) -> None:
               "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
               "name": "io.github.acme/weather-mcp",
               "description": "Weather forecast MCP tools.",
+              "documentation": "## Server JSON docs\\n\\nThis should not replace the README.",
               "version": "1.0.0",
               "packages": [
                 {

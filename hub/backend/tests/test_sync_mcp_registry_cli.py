@@ -322,6 +322,59 @@ def test_merge_official_packages_keeps_source_details_with_the_official_version(
     ]
 
 
+def test_merge_official_payload_prefers_github_readme_documentation() -> None:
+    payload = cli.merge_official_payload(
+        official={
+            "name": "io.github.example/weather",
+            "version": "0.22.0",
+            "documentation": "## Official registry docs\n\nDo not use this when README is present.",
+        },
+        imported={
+            "name": "io.github.example/weather",
+            "version": "0.23.0",
+            "documentation": "# Weather README\n\nUse this README.",
+            "_meta": {
+                "sourceReview": {
+                    "llm": {
+                        "filesRead": ["README.md", "server.json"],
+                    }
+                }
+            },
+        },
+    )
+
+    assert payload["version"] == "0.22.0"
+    assert payload["documentation"] == "# Weather README\n\nUse this README."
+
+
+def test_build_import_payload_uses_generated_documentation_without_readme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entry = registry_entry()
+    entry["server"]["documentation"] = (
+        "## Official registry docs\n\n"
+        "Installation, configuration, and capabilities are all present here."
+    )
+    monkeypatch.setattr(
+        cli,
+        "source_import_payload",
+        lambda _server: {
+            "documentation": "# Server JSON docs\n\nNo README was read.",
+            "_meta": {"sourceReview": {"llm": {"filesRead": ["server.json"]}}},
+        },
+    )
+
+    payload = cli.build_import_payload(
+        entry,
+        registry_url=cli.DEFAULT_REGISTRY_URL,
+        synced_at=datetime(2026, 6, 28, 12, 0, tzinfo=UTC),
+    )
+
+    assert "Official registry docs" not in payload["documentation"]
+    assert "Server JSON docs" not in payload["documentation"]
+    assert payload["documentation"] == cli.official_registry_documentation(payload)
+
+
 def test_build_import_payload_verifies_official_version_after_source_merge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

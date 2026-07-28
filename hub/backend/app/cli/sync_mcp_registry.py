@@ -609,16 +609,6 @@ def find_existing_submission_by_upstream_version(
     return None
 
 
-def documentation_has_review_sections(value: str) -> bool:
-    lower = value.lower()
-    required_terms = {
-        "installation": ("installation", "install", "mcpservers", "command"),
-        "configuration": ("configuration", "environment", "env", "args", "variables"),
-        "capabilities": ("capabilities", "tools", "resources", "prompts"),
-    }
-    return all(any(term in lower for term in terms) for terms in required_terms.values())
-
-
 def official_registry_documentation(payload: dict[str, Any]) -> str:
     packages = payload.get("packages") if isinstance(payload.get("packages"), list) else []
     remotes = payload.get("remotes") if isinstance(payload.get("remotes"), list) else []
@@ -653,15 +643,33 @@ def official_registry_documentation(payload: dict[str, Any]) -> str:
 
 def ensure_official_registry_documentation(payload: dict[str, Any]) -> None:
     documentation = str(payload.get("documentation") or "").strip()
-    fallback = official_registry_documentation(payload)
     if not documentation:
-        payload["documentation"] = fallback
+        payload["documentation"] = official_registry_documentation(payload)
         return
-    if documentation_has_review_sections(documentation):
-        return
-    payload["documentation"] = (
-        documentation + "\n\n## Wardn official registry import notes\n" + fallback
-    )
+
+
+def source_review_files(payload: dict[str, Any]) -> list[str]:
+    meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}
+    source_review = meta.get("sourceReview") if isinstance(meta.get("sourceReview"), dict) else {}
+    files = source_review.get("filesRead")
+    if isinstance(files, list):
+        return [str(item) for item in files]
+    llm = source_review.get("llm") if isinstance(source_review.get("llm"), dict) else {}
+    files = llm.get("filesRead")
+    if isinstance(files, list):
+        return [str(item) for item in files]
+    return []
+
+
+def imported_readme_documentation(imported: dict[str, Any] | None) -> str:
+    if not isinstance(imported, dict):
+        return ""
+    documentation = str(imported.get("documentation") or "").strip()
+    if not documentation:
+        return ""
+    if any("readme" in file.casefold() for file in source_review_files(imported)):
+        return str(imported.get("documentation") or "")
+    return ""
 
 
 def ensure_official_registry_source_review(payload: dict[str, Any], *, registry_url: str) -> None:
@@ -757,6 +765,11 @@ def merge_official_payload(
     imported: dict[str, Any] | None,
 ) -> dict[str, Any]:
     payload = copy.deepcopy(imported) if imported is not None else copy.deepcopy(official)
+    readme_documentation = imported_readme_documentation(imported)
+    if readme_documentation:
+        payload["documentation"] = readme_documentation
+    else:
+        payload.pop("documentation", None)
     for key in (
         "$schema",
         "name",

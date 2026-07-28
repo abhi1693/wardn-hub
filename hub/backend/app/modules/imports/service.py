@@ -617,6 +617,12 @@ def with_fallback(metadata: dict[str, Any], fallback: dict[str, Any]) -> dict[st
     }
 
 
+def prefer_readme_documentation(metadata: dict[str, Any], readme: str) -> dict[str, Any]:
+    if not readme:
+        return metadata
+    return {**metadata, "documentation": readme}
+
+
 def server_json_from_metadata(
     metadata: dict[str, Any],
     repository: GitHubRepository,
@@ -712,6 +718,7 @@ def import_server_source(
                     },
                     fallback,
                 )
+                metadata = prefer_readme_documentation(metadata, readme)
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
                 server_json = merge_readme_package_config(server_json, readme_mcp_metadata)
                 server_json = finalize_import_server_json(
@@ -731,6 +738,7 @@ def import_server_source(
 
             if raw_payload.get("mcpServers"):
                 metadata = with_fallback(metadata_from_mcp_json(raw_payload, repository), fallback)
+                metadata = prefer_readme_documentation(metadata, readme)
                 server_json = server_json_from_metadata(metadata, repository, subfolder)
                 server_json = finalize_import_server_json(
                     server_json,
@@ -749,6 +757,7 @@ def import_server_source(
 
         if readme_mcp_json:
             metadata = with_fallback(readme_mcp_metadata, fallback)
+            metadata = prefer_readme_documentation(metadata, readme)
             server_json = server_json_from_metadata(metadata, repository, subfolder)
             server_json = finalize_import_server_json(
                 server_json,
