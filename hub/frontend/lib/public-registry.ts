@@ -11,6 +11,11 @@ import {
   mergePublishedServers,
   publishedRegistryServerPage,
 } from "@/lib/published-registry-page";
+import {
+  REGISTRY_CACHE_TAG,
+  REGISTRY_LIST_CACHE_TAG,
+  registryServerCacheTag,
+} from "@/lib/registry-cache";
 import type {
   DetailTab,
   ServerDetailTabResponse,
@@ -18,6 +23,8 @@ import type {
 } from "@/lib/server-detail-tabs";
 import { serverTabApiPath } from "@/lib/server-detail-tabs";
 import { resolveSiteUrl } from "@/lib/site";
+
+export { serverDetailPath } from "@/lib/registry-cache";
 
 const API_PREFIX = "/api/v1";
 const PAGE_SIZE = 100;
@@ -267,14 +274,25 @@ function resolveApiBaseUrl() {
   return stripTrailingSlash(url.toString());
 }
 
-async function registryRequest<T>(path: string, params?: Record<string, string | number>) {
+type RegistryRequestOptions = {
+  tags?: string[];
+};
+
+async function registryRequest<T>(
+  path: string,
+  params?: Record<string, string | number>,
+  options?: RegistryRequestOptions,
+) {
   const url = new URL(`${resolveApiBaseUrl()}${path}`);
   for (const [key, value] of Object.entries(params ?? {})) {
     url.searchParams.set(key, String(value));
   }
 
   const response = await fetch(url, {
-    next: { revalidate: 3600 },
+    next: {
+      revalidate: 3600,
+      tags: [REGISTRY_CACHE_TAG, ...(options?.tags ?? [])],
+    },
     headers: { Accept: "application/json" },
   });
 
@@ -286,7 +304,9 @@ async function registryRequest<T>(path: string, params?: Record<string, string |
 }
 
 export async function listPublicCategories() {
-  const response = await registryRequest<RegistryCategoryListResponse>("/mcp/categories");
+  const response = await registryRequest<RegistryCategoryListResponse>("/mcp/categories", undefined, {
+    tags: [REGISTRY_LIST_CACHE_TAG],
+  });
   return response.categories;
 }
 
@@ -306,21 +326,25 @@ export async function listPublishedRegistryServers(params?: {
   const maxServers = params?.limit ?? SITEMAP_CATALOG_CHUNK_SIZE;
 
   while (servers.length < maxServers) {
-    const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
-      ...(params?.category ? { category: params.category } : {}),
-      fields: PUBLIC_CARD_FIELDS,
-      limit: Math.min(PAGE_SIZE, maxServers - servers.length),
-      ...(params?.namespace ? { namespace: params.namespace } : {}),
-      ...(params?.namespaceType ? { namespaceType: params.namespaceType } : {}),
-      ...(params?.namespaceVerificationStatus
-        ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
-        : {}),
-      ...(params?.registryType ? { registry_type: params.registryType } : {}),
-      ...(params?.search ? { search: params.search } : {}),
-      ...(params?.sort ? { sort: params.sort } : {}),
-      ...(params?.transportType ? { transport_type: params.transportType } : {}),
-      ...(cursor ? { cursor } : {}),
-    });
+    const response = await registryRequest<RegistryServerListResponse>(
+      "/mcp/servers",
+      {
+        ...(params?.category ? { category: params.category } : {}),
+        fields: PUBLIC_CARD_FIELDS,
+        limit: Math.min(PAGE_SIZE, maxServers - servers.length),
+        ...(params?.namespace ? { namespace: params.namespace } : {}),
+        ...(params?.namespaceType ? { namespaceType: params.namespaceType } : {}),
+        ...(params?.namespaceVerificationStatus
+          ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
+          : {}),
+        ...(params?.registryType ? { registry_type: params.registryType } : {}),
+        ...(params?.search ? { search: params.search } : {}),
+        ...(params?.sort ? { sort: params.sort } : {}),
+        ...(params?.transportType ? { transport_type: params.transportType } : {}),
+        ...(cursor ? { cursor } : {}),
+      },
+      { tags: [REGISTRY_LIST_CACHE_TAG] },
+    );
 
     const page = publishedRegistryServerPage(response);
     servers = mergePublishedServers(servers, page.servers);
@@ -343,32 +367,42 @@ export async function listPublishedRegistryServerPage(params?: {
   search?: string;
   sort?: RegistryServerSort;
 }) {
-  const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
-    ...(params?.category ? { category: params.category } : {}),
-    ...(params?.cursor ? { cursor: params.cursor } : {}),
-    ...(params?.namespace ? { namespace: params.namespace } : {}),
-    ...(params?.namespaceType ? { namespaceType: params.namespaceType } : {}),
-    ...(params?.namespaceVerificationStatus
-      ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
-      : {}),
-    ...(params?.search ? { search: params.search } : {}),
-    ...(params?.sort ? { sort: params.sort } : {}),
-    fields: PUBLIC_CARD_FIELDS,
-    limit: params?.limit ?? PAGE_SIZE,
-  });
+  const response = await registryRequest<RegistryServerListResponse>(
+    "/mcp/servers",
+    {
+      ...(params?.category ? { category: params.category } : {}),
+      ...(params?.cursor ? { cursor: params.cursor } : {}),
+      ...(params?.namespace ? { namespace: params.namespace } : {}),
+      ...(params?.namespaceType ? { namespaceType: params.namespaceType } : {}),
+      ...(params?.namespaceVerificationStatus
+        ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
+        : {}),
+      ...(params?.search ? { search: params.search } : {}),
+      ...(params?.sort ? { sort: params.sort } : {}),
+      fields: PUBLIC_CARD_FIELDS,
+      limit: params?.limit ?? PAGE_SIZE,
+    },
+    { tags: [REGISTRY_LIST_CACHE_TAG] },
+  );
 
   return publishedRegistryServerPage(response);
 }
 
 export function getPublicRegistryStats() {
-  return registryRequest<RegistryStatsResponse>("/mcp/catalog/stats");
+  return registryRequest<RegistryStatsResponse>("/mcp/catalog/stats", undefined, {
+    tags: [REGISTRY_LIST_CACHE_TAG],
+  });
 }
 
 export async function countPublishedRegistryServers() {
-  const response = await registryRequest<RegistryPublishedServerListResponse>("/mcp/catalog", {
-    fields: "id",
-    page: 1,
-  });
+  const response = await registryRequest<RegistryPublishedServerListResponse>(
+    "/mcp/catalog",
+    {
+      fields: "id",
+      page: 1,
+    },
+    { tags: [REGISTRY_LIST_CACHE_TAG] },
+  );
   return response.metadata.total;
 }
 
@@ -378,11 +412,15 @@ export async function listPublishedRegistryServerSitemapChunk(chunkIndex: number
   let cursor = String(startOffset);
 
   while (servers.length < SITEMAP_CATALOG_CHUNK_SIZE) {
-    const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
-      cursor,
-      fields: PUBLIC_CARD_FIELDS,
-      limit: Math.min(PAGE_SIZE, SITEMAP_CATALOG_CHUNK_SIZE - servers.length),
-    });
+    const response = await registryRequest<RegistryServerListResponse>(
+      "/mcp/servers",
+      {
+        cursor,
+        fields: PUBLIC_CARD_FIELDS,
+        limit: Math.min(PAGE_SIZE, SITEMAP_CATALOG_CHUNK_SIZE - servers.length),
+      },
+      { tags: [REGISTRY_LIST_CACHE_TAG] },
+    );
 
     const page = publishedRegistryServerPage(response);
     servers = mergePublishedServers(servers, page.servers);
@@ -397,13 +435,19 @@ export async function listPublishedRegistryServerSitemapChunk(chunkIndex: number
 export async function getPublishedRegistryServer(serverName: string) {
   const response = await registryRequest<RegistryServerDetailResponse>(
     `/mcp/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`,
+    undefined,
+    { tags: [registryServerCacheTag(serverName)] },
   );
   return response;
 }
 
 export async function getPublishedRegistryServerTab(serverName: string, tab: DetailTab) {
   try {
-    return await registryRequest<ServerDetailTabResponse>(serverTabApiPath(serverName, tab));
+    return await registryRequest<ServerDetailTabResponse>(
+      serverTabApiPath(serverName, tab),
+      undefined,
+      { tags: [registryServerCacheTag(serverName)] },
+    );
   } catch (error) {
     if (!isRegistryNotFoundError(error)) {
       throw error;
@@ -415,11 +459,9 @@ export async function getPublishedRegistryServerTab(serverName: string, tab: Det
 export async function getPublishedRegistryServerSummary(serverName: string) {
   return registryRequest<ServerSummaryResponse>(
     `/mcp/servers/${serverName.split("/").map(encodeURIComponent).join("/")}/summary`,
+    undefined,
+    { tags: [registryServerCacheTag(serverName)] },
   );
-}
-
-export function serverDetailPath(serverName: string) {
-  return `/servers/${serverName.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function serverDetailTabFallback(
