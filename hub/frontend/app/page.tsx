@@ -93,7 +93,10 @@ function CategoryLink({ category }: { category: RegistryCategoryRead }) {
 
 export default async function Home() {
   const [serverResult, categoryResult, registryFacts, skillCount] = await Promise.all([
-    listPublishedRegistryServerPage({ limit: 6 }).catch(() => ({ nextCursor: "", servers: [] })),
+    listPublishedRegistryServerPage({ limit: 6, sort: "latest" }).catch(() => ({
+      nextCursor: "",
+      servers: [],
+    })),
     listPublicCategories().catch(() => []),
     getRegistryFacts(),
     countPublicSkills().catch(() => null),

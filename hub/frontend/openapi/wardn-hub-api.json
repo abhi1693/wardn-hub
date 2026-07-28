@@ -10241,6 +10241,20 @@
               ],
               "title": "Namespaceverificationstatus"
             }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "name",
+              "enum": [
+                "latest",
+                "name"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
           }
         ],
         "responses": {

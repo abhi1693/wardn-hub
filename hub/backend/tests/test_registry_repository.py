@@ -133,6 +133,25 @@ async def test_list_servers_uses_indexed_ranked_search_with_normalized_terms() -
     assert "argocd mcp server" not in statement
     assert "mcp_servers.description ILIKE" not in statement
     assert "ORDER BY CASE" in statement
+    assert "mcp_server_versions.published_at DESC" not in statement
+
+
+@pytest.mark.asyncio
+async def test_list_servers_can_sort_latest_published_first() -> None:
+    session = CaptureSession()
+
+    await repository.list_servers(
+        session,
+        offset=0,
+        limit=6,
+        include_deleted=False,
+        sort="latest",
+    )
+
+    statement = sql(session.statements[0])
+    assert "ORDER BY mcp_server_versions.published_at DESC" in statement
+    assert "mcp_servers.updated_at DESC" in statement
+    assert "mcp_servers.name ASC" in statement
 
 
 @pytest.mark.asyncio

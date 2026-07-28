@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import Select, and_, case, delete, func, literal_column, or_, select, update
@@ -24,6 +24,7 @@ from app.modules.users.models import User
 
 REGISTRY_SEARCH_GENERIC_TERMS = frozenset({"mcp", "server", "servers"})
 REGISTRY_SEARCH_GENERIC_PHRASE = re.compile(r"\bmodel\s+context\s+protocol\b")
+RegistryServerSort = Literal["latest", "name"]
 
 
 def normalize_registry_search_query(query: str) -> str:
@@ -174,12 +175,13 @@ async def list_servers(
     namespace_type: str | None = None,
     namespace_verification_status: str | None = None,
     status: str | None = None,
+    sort: RegistryServerSort = "name",
 ) -> tuple[list[RegistryServer], str]:
     _ = include_deleted
     if status and status != "active":
         return [], ""
 
-    statement = published_servers_query()
+    statement = published_server_current_version_query(RegistryServer)
     normalized_search = normalize_registry_search_query(search) if search else ""
     if normalized_search:
         escaped_search = (
@@ -312,9 +314,20 @@ async def list_servers(
     _ = registry_type, transport_type
 
     if normalized_search:
+        order_by = [match_tier, text_rank.desc()]
+        if sort == "latest":
+            order_by.extend(
+                [
+                    RegistryServerVersion.published_at.desc(),
+                    RegistryServer.updated_at.desc(),
+                ]
+            )
+        order_by.append(RegistryServer.name.asc())
+        statement = statement.order_by(*order_by)
+    elif sort == "latest":
         statement = statement.order_by(
-            match_tier,
-            text_rank.desc(),
+            RegistryServerVersion.published_at.desc(),
+            RegistryServer.updated_at.desc(),
             RegistryServer.name.asc(),
         )
     else:

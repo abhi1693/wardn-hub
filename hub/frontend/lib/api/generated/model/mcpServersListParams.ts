@@ -4,6 +4,7 @@
  * Wardn Hub API
  * OpenAPI spec version: 0.2.150
  */
+import type { McpServersListSort } from './mcpServersListSort';
 
 export type McpServersListParams = {
 cursor?: string | null;
@@ -24,4 +25,5 @@ category?: string | null;
 namespace?: string | null;
 namespaceType?: string | null;
 namespaceVerificationStatus?: string | null;
+sort?: McpServersListSort;
 };

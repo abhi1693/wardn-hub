@@ -149,6 +149,7 @@ type RegistryServerListRequest = {
   partner?: boolean;
   category?: string;
   limit?: number;
+  sort?: McpServersListParams["sort"];
 };
 
 const API_PREFIX = "/api/v1";
@@ -262,6 +263,7 @@ export function listServers(params: RegistryServerListRequest, init?: RequestIni
     partner: params.partner,
     category: optionalQueryString(params.category),
     limit: params.limit ?? 25,
+    sort: params.sort,
   };
   return generatedRequest<RegistryServerListResponse>(getMcpServersListUrl(generatedParams), init);
 }

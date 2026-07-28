@@ -22,6 +22,7 @@ import { resolveSiteUrl } from "@/lib/site";
 const API_PREFIX = "/api/v1";
 const PAGE_SIZE = 100;
 export const SITEMAP_CATALOG_CHUNK_SIZE = 2000;
+type RegistryServerSort = "latest" | "name";
 
 class RegistryRequestError extends Error {
   status: number;
@@ -297,6 +298,7 @@ export async function listPublishedRegistryServers(params?: {
   namespaceVerificationStatus?: string;
   registryType?: string;
   search?: string;
+  sort?: RegistryServerSort;
   transportType?: string;
 }) {
   let servers: RegistryServerRead[] = [];
@@ -315,6 +317,7 @@ export async function listPublishedRegistryServers(params?: {
         : {}),
       ...(params?.registryType ? { registry_type: params.registryType } : {}),
       ...(params?.search ? { search: params.search } : {}),
+      ...(params?.sort ? { sort: params.sort } : {}),
       ...(params?.transportType ? { transport_type: params.transportType } : {}),
       ...(cursor ? { cursor } : {}),
     });
@@ -338,6 +341,7 @@ export async function listPublishedRegistryServerPage(params?: {
   namespaceType?: string;
   namespaceVerificationStatus?: string;
   search?: string;
+  sort?: RegistryServerSort;
 }) {
   const response = await registryRequest<RegistryServerListResponse>("/mcp/servers", {
     ...(params?.category ? { category: params.category } : {}),
@@ -348,6 +352,7 @@ export async function listPublishedRegistryServerPage(params?: {
       ? { namespaceVerificationStatus: params.namespaceVerificationStatus }
       : {}),
     ...(params?.search ? { search: params.search } : {}),
+    ...(params?.sort ? { sort: params.sort } : {}),
     fields: PUBLIC_CARD_FIELDS,
     limit: params?.limit ?? PAGE_SIZE,
   });

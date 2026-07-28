@@ -354,6 +354,29 @@ def test_server_list_allows_anonymous_access(monkeypatch) -> None:
     assert response.json() == {"servers": [], "metadata": {"count": 0, "nextCursor": ""}}
 
 
+def test_server_list_route_forwards_latest_sort(monkeypatch) -> None:
+    app = create_app()
+    captured: dict[str, object] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def list_servers(*args, **kwargs):
+        captured.update(kwargs)
+        return RegistryServerListResponse(
+            servers=[],
+            metadata=RegistryListMetadata(count=0, nextCursor=""),
+        )
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+
+    response = TestClient(app).get("/api/v1/mcp/servers?sort=latest")
+
+    assert response.status_code == 200
+    assert captured["sort"] == "latest"
+
+
 def test_category_list_allows_anonymous_access(monkeypatch) -> None:
     app = create_app()
     category_id = uuid4()

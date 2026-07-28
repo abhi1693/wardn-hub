@@ -1,6 +1,6 @@
 from datetime import datetime
 from html import escape
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -264,6 +264,7 @@ async def list_mcp_servers(
         default=None,
         alias="namespaceVerificationStatus",
     ),
+    sort: Annotated[Literal["latest", "name"], Query()] = "name",
 ) -> RegistryServerListResponse | JSONResponse:
     try:
         response = await list_servers(
@@ -281,6 +282,7 @@ async def list_mcp_servers(
             namespace=namespace,
             namespace_type=namespace_type,
             namespace_verification_status=namespace_verification_status,
+            sort=sort,
         )
         projected = project_list_response_fields(response, fields=fields)
         if projected is not None:

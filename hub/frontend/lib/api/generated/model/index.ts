@@ -57,6 +57,7 @@ export * from './mcpRegistryV01ServersGetVersionParams';
 export * from './mcpRegistryV01ServersListParams';
 export * from './mcpRegistryV01ServersListVersionsParams';
 export * from './mcpServersListParams';
+export * from './mcpServersListSort';
 export * from './mcpServersSearchParams';
 export * from './officialSkillOwner';
 export * from './organizationCreate';

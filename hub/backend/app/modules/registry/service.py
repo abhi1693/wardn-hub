@@ -5,7 +5,7 @@ import re
 import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin, urlparse, urlunparse
 from uuid import UUID, uuid4
 
@@ -88,6 +88,8 @@ from app.modules.registry.schemas import (
 )
 from app.modules.users.exceptions import UserNotFoundError
 from app.modules.users.models import User, UserAPIToken
+
+RegistryServerSort = Literal["latest", "name"]
 
 
 @dataclass
@@ -2691,6 +2693,7 @@ async def list_servers(
     namespace: str | None = None,
     namespace_type: str | None = None,
     namespace_verification_status: str | None = None,
+    sort: RegistryServerSort = "name",
 ) -> RegistryServerListResponse:
     offset = parse_cursor(cursor)
     servers, next_cursor = await repository.list_servers(
@@ -2710,6 +2713,7 @@ async def list_servers(
         namespace_type=namespace_type,
         namespace_verification_status=namespace_verification_status,
         status=status,
+        sort=sort,
     )
     return RegistryServerListResponse(
         servers=await servers_with_latest(session, servers),
