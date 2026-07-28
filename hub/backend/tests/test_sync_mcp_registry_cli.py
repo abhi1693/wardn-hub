@@ -253,7 +253,7 @@ def test_build_import_payload_adds_default_category_and_import_evidence() -> Non
         "namespace": "io.github.example",
         "type": "github",
         "authority": "example",
-        "verificationStatus": "verified",
+        "verificationStatus": "imported",
         "verificationMethod": "official_registry",
         "evidenceUrl": cli.DEFAULT_REGISTRY_URL,
         "source": "modelcontextprotocol-registry",

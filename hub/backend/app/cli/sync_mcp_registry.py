@@ -829,7 +829,7 @@ def build_import_payload(
             "namespace": namespace,
             "type": namespace_type,
             "authority": authority,
-            "verificationStatus": "verified",
+            "verificationStatus": "imported",
             "verificationMethod": "official_registry",
             "evidenceUrl": registry_url,
             "source": "modelcontextprotocol-registry",

@@ -302,7 +302,7 @@ Goal:
 - If submissionType is "new_server", keep serverJson.version as the Wardn registry version from the submission snapshot, normally "1.0.0". Put upstream package, image, CLI, npm, PyPI, or MCP registry versions only in packages[].version, remotes metadata, documentation, or _meta evidence.
 
 Source review requirements:
-- Derive the registry namespace from serverJson.name. If the source is the official MCP registry, set serverJson._meta.registryNamespace with namespace, type, authority, verificationStatus "verified", verificationMethod "official_registry", evidenceUrl, and source "modelcontextprotocol-registry".
+- Derive the registry namespace from serverJson.name. If the source is the official MCP registry, set serverJson._meta.registryNamespace with namespace, type, authority, verificationStatus "imported", verificationMethod "official_registry", evidenceUrl, and source "modelcontextprotocol-registry". Do not treat official registry provenance as namespace ownership verification.
 - For io.github.* names without official registry evidence, compare the namespace owner against the linked GitHub repository owner and record any uncertainty in sourceReview.llm.unknowns.
 - Fill serverJson._meta.sourceReview.llm.filesRead with every README/docs/source URL or file inspected.
 - Fill sourceReview.llm.installCommands with documented install/run commands when package targets exist.
