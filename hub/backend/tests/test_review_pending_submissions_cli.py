@@ -715,7 +715,9 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert "WARDN_HUB_SYSTEM_REVIEW_SECRET" not in prompt
     assert "Use the Wardn Hub submission JSON snapshot for submission ID" in prompt
     assert "Read the Submitted MCP server model JSON from to_json_dict()" in prompt
-    assert "Read the upstream README and relevant docs/files" in prompt
+    assert "Read every `.md` file you can find" in prompt
+    assert "QUICKSTART" in prompt
+    assert "cannot_validate" in prompt
     assert "Do not assume importer output is complete." in prompt
     assert (
         'If submissionType is "new_server", serverJson.version is the Wardn registry version'

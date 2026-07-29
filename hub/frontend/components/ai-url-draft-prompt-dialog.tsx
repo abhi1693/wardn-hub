@@ -52,8 +52,9 @@ Important:
 Source review workflow:
 1. Fetch and read the documentation URL.
 2. Follow linked pages that are necessary for installation, transport, configuration, authentication, environment variables, CLI arguments, prerequisites, capabilities, limitations, package identifiers, remote endpoints, and source repository.
-3. Prefer official docs, package manifests, README files, and source repository metadata over third-party summaries.
-4. Record every inspected URL or source file in serverJson._meta.sourceReview.llm.filesRead.
+3. If the docs identify a source repository, read every .md file you can find in that repository or selected subfolder, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files.
+4. Prefer official docs, package manifests, README files, and source repository metadata over third-party summaries.
+5. Record every inspected URL or source file in serverJson._meta.sourceReview.llm.filesRead. If repository access limits prevent reading all discovered Markdown files, do not create a draft; list the unread files or access limit.
 
 Draft creation rules:
 - Build a complete serverJson payload and create the draft with POST /submissions.

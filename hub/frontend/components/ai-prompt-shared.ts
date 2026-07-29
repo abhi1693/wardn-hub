@@ -75,6 +75,9 @@ export const ENVIRONMENT_VARIABLE_RULES = `Environment variable rules:
 - If an env var belongs in runtime launch config, add it to packages[].transport.env with a safe value.`;
 
 export const ENVIRONMENT_REVIEW_RULES = `Environment variable review:
+- Read every .md file you can find in the source repository or selected subfolder before deciding what metadata is complete, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files.
+- Record every inspected Markdown file in sourceReview.llm.filesRead.
+- If repository access limits prevent reading all discovered Markdown files, do not submit; list the unread files or access limit in sourceReview.llm.unknowns.
 - Read README/docs for every environment variable and CLI option.
 - Do not only copy variables returned by import API.
 - Add every documented environment variable to sourceReview.llm.environmentVariables.

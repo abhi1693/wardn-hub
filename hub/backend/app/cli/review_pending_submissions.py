@@ -446,11 +446,12 @@ Scope:
 Validation workflow for each submission:
 1. Read the Submitted MCP server model JSON from to_json_dict(), submission.validationResult, and the model _meta.sourceReview.
 2. Identify the source repository from serverJson.repository.url and any source links in documentation/package metadata.
-3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
-4. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
-5. {REGISTRY_METADATA_SCOPE_RULE}
-6. If submissionType is "new_server", serverJson.version is the Wardn registry version and must be "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
-7. Prefer packageRegistryEvidence over repository documentation for exact PyPI/npm package identity, version existence, and publication status. Treat summaries, links, licenses, dependencies, engines, and binaries as registry-provided context rather than proof of MCP behavior.
+3. Read every `.md` file you can find in the upstream repository or selected subfolder, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files. Record each inspected Markdown file in sourceReview.llm.filesRead. If repository access limits prevent reading all discovered Markdown files, use "cannot_validate" and list the unread files or access limit.
+4. Use that Markdown sweep plus package metadata to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
+5. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
+6. {REGISTRY_METADATA_SCOPE_RULE}
+7. If submissionType is "new_server", serverJson.version is the Wardn registry version and must be "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
+8. Prefer packageRegistryEvidence over repository documentation for exact PyPI/npm package identity, version existence, and publication status. Treat summaries, links, licenses, dependencies, engines, and binaries as registry-provided context rather than proof of MCP behavior.
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.

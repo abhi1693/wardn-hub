@@ -207,6 +207,52 @@ async def test_oidc_auth_updates_existing_identity_profile_names(monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_oidc_auth_assigns_github_namespace_servers(monkeypatch) -> None:
+    user = User(email="member@example.com", is_active=True)
+    user.id = uuid4()
+    identity = UserExternalIdentity(
+        user_id=user.id,
+        provider=service.oidc_identity_provider_key("https://issuer.example.com"),
+        subject="user_123",
+        email="member@example.com",
+    )
+    identity.user = user
+    captured: dict[str, object] = {}
+
+    async def existing_identity(*args, **kwargs):
+        return identity
+
+    async def assign_namespace_servers(_session, *, github_username, user):
+        captured["github_username"] = github_username
+        captured["user"] = user
+        return 2
+
+    monkeypatch.setattr(service.repository, "get_external_identity", existing_identity)
+    monkeypatch.setattr(
+        service.registry_service,
+        "assign_github_namespace_servers_to_user",
+        assign_namespace_servers,
+    )
+
+    response = await service.authenticate_oidc_identity(
+        FakeSession(),
+        OIDCIdentity(
+            subject="user_123",
+            email="MEMBER@EXAMPLE.COM",
+            first_name="Member",
+            last_name="User",
+            issuer="https://issuer.example.com",
+            github_username="AbHi1693",
+        ),
+        auto_create_users=True,
+        superuser_emails=[],
+    )
+
+    assert response is user
+    assert captured == {"github_username": "AbHi1693", "user": user}
+
+
+@pytest.mark.asyncio
 async def test_oidc_existing_subject_updates_canonical_user_and_identity_email(monkeypatch) -> None:
     user = User(email="old@example.com", is_active=True)
     user.id = uuid4()

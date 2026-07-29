@@ -188,6 +188,9 @@ def test_build_fix_prompt_uses_db_context_without_token_or_api_instructions() ->
     assert "Do not JSON-encode it as a string." in prompt
     assert "transport.env as an array of name/value entries" in prompt
     assert "preserves official registry, import, publisher" in prompt
+    assert "Read every `.md` file you can find" in prompt
+    assert "QUICKSTART" in prompt
+    assert "cannot_fix" in prompt
     assert 'numeric and boolean-looking defaults such as "300", "true", and "0"' in prompt
     assert 'Use format "file" when the value is a path to a file' in prompt
     assert "GOOGLE_APPLICATION_CREDENTIALS" in prompt

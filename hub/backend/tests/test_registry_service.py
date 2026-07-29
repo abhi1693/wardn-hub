@@ -214,6 +214,40 @@ def test_version_summary_normalizes_stored_remote_query_parameters() -> None:
     ]
 
 
+def test_version_summary_normalizes_stored_package_file_environment_formats() -> None:
+    version = version_model(uuid4(), "1.0.0", is_latest=True)
+    version.packages = [
+        {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "version": "1.0.0",
+            "transport": {"type": "stdio"},
+            "environmentVariables": [
+                {
+                    "name": "SERVICE_ACCOUNT_JSON",
+                    "description": "Absolute path to the service account JSON key file.",
+                    "format": "string",
+                    "isRequired": True,
+                    "isSecret": True,
+                },
+                {
+                    "name": "ENABLE_CACHE",
+                    "description": "Enable local cache.",
+                    "format": "boolean",
+                    "isRequired": False,
+                    "isSecret": False,
+                },
+            ],
+        }
+    ]
+
+    response = service.version_summary(version)
+
+    environment = response.packages[0]["environmentVariables"]
+    assert environment[0]["format"] == "file"
+    assert environment[1]["format"] == "boolean"
+
+
 def test_registry_tools_from_server_json_extracts_mcp_tool_metadata() -> None:
     tools = service.registry_tools_from_server_json(
         {
@@ -1200,6 +1234,77 @@ async def test_claim_server_ownership_with_wardn_json_sets_verified_owner(monkey
         component for component in report.components if component.key == "ownerVerification"
     )
     assert owner_component.score == 100
+
+
+@pytest.mark.asyncio
+async def test_assign_github_namespace_servers_to_user_moves_all_non_deleted_versions(
+    monkeypatch,
+) -> None:
+    owner = User(email="owner@example.com", is_active=True)
+    owner.id = uuid4()
+    server = server_model()
+    server.name = "io.github.AbHi1693/weather"
+    server.registry_namespace = "io.github.AbHi1693"
+    server.visibility = "private"
+    latest = version_model(server.id, "1.0.0", is_latest=True)
+    latest.name = server.name
+    latest.registry_namespace = "io.github.AbHi1693"
+    previous = version_model(server.id, "0.9.0", is_latest=False)
+    previous.name = server.name
+    previous.registry_namespace = "io.github.AbHi1693"
+
+    organization_owned_server = server_model()
+    organization_owned_server.id = uuid4()
+    organization_owned_server.name = "io.github.abhi1693/organization-owned"
+    organization_owned_server.owner_organization_id = uuid4()
+    organization_owned_version = version_model(
+        organization_owned_server.id,
+        "1.0.0",
+        is_latest=True,
+    )
+    organization_owned_version.name = organization_owned_server.name
+
+    async def list_servers(_session, namespace):
+        assert namespace == "io.github.abhi1693"
+        return [server, organization_owned_server]
+
+    async def list_versions(_session, supplied_name, *, include_deleted=False):
+        assert include_deleted is False
+        if supplied_name == server.name:
+            return [latest, previous]
+        return [organization_owned_version]
+
+    session = FakeSession()
+    monkeypatch.setattr(service.repository, "list_servers_for_github_namespace", list_servers)
+    monkeypatch.setattr(service.repository, "list_server_versions", list_versions)
+
+    count = await service.assign_github_namespace_servers_to_user(
+        session,
+        github_username="AbHi1693",
+        user=owner,
+    )
+
+    assert count == 1
+    assert session.flushed is True
+    assert server.owner_user_id == owner.id
+    assert server.updated_by_user_id == owner.id
+    assert server.registry_namespace == "io.github.abhi1693"
+    assert server.registry_namespace_type == "github"
+    assert server.registry_namespace_verification_status == "verified"
+    for version in (latest, previous):
+        assert version.owner_user_id == owner.id
+        assert version.updated_by_user_id == owner.id
+        assert version.registry_namespace == "io.github.abhi1693"
+        assert version.registry_namespace_type == "github"
+        assert version.registry_namespace_verification_status == "verified"
+        namespace_meta = version.server_json["_meta"]["registryNamespace"]
+        assert namespace_meta["namespace"] == "io.github.abhi1693"
+        assert namespace_meta["authority"] == "abhi1693"
+        assert namespace_meta["verificationStatus"] == "verified"
+        assert namespace_meta["verificationMethod"] == "github_login"
+
+    assert organization_owned_server.owner_user_id is None
+    assert organization_owned_version.owner_user_id is None
 
 
 @pytest.mark.asyncio

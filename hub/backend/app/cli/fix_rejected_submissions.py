@@ -292,7 +292,7 @@ Eligibility:
 
 Goal:
 - Validate the submission against any submit/review feedback and Wardn Hub review requirements.
-- Read the upstream source/docs needed to fix missing or incomplete metadata.
+- Read every `.md` file you can find in the upstream repository or selected subfolder before fixing metadata, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files.
 - Return a complete replacement serverJson object.
 - Do not approve, reject, publish, withdraw, delete, or otherwise moderate this submission.
 - Do not create a new submission.
@@ -304,7 +304,7 @@ Goal:
 Source review requirements:
 - Derive the registry namespace from serverJson.name. If the source is the official MCP registry, set serverJson._meta.registryNamespace with namespace, type, authority, verificationStatus "imported", verificationMethod "official_registry", evidenceUrl, and source "modelcontextprotocol-registry". Do not treat official registry provenance as namespace ownership verification.
 - For io.github.* names without official registry evidence, compare the namespace owner against the linked GitHub repository owner and record any uncertainty in sourceReview.llm.unknowns.
-- Fill serverJson._meta.sourceReview.llm.filesRead with every README/docs/source URL or file inspected.
+- Fill serverJson._meta.sourceReview.llm.filesRead with every inspected Markdown/source URL or file. If repository access limits prevent reading all discovered Markdown files, return decision "cannot_fix" and list the unread files or access limit in missingInformation.
 - Fill sourceReview.llm.installCommands with documented install/run commands when package targets exist.
 - Fill sourceReview.llm.commandArguments with documented CLI args/configurable flags.
 - Fill sourceReview.llm.environmentVariables with every documented environment variable, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.

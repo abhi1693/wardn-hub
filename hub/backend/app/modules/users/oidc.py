@@ -15,6 +15,7 @@ from joserfc.errors import JoseError
 
 from app.core.config import LOCAL_ENVIRONMENTS, Settings
 from app.modules.users.exceptions import OIDCAuthenticationError, OIDCConfigurationError
+from app.modules.users.github import normalize_github_username
 
 OIDC_STATE_TTL_SECONDS = 10 * 60
 OIDC_CLAIMS_LEEWAY_SECONDS = 60
@@ -42,6 +43,7 @@ class OIDCIdentity:
     last_name: str
     subject: str
     issuer: str
+    github_username: str = ""
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -416,6 +418,54 @@ def _names_from_claims(claims: dict[str, Any]) -> tuple[str, str]:
     return first.strip(), rest.strip()
 
 
+def _github_username_from_url(value: str) -> str:
+    parsed = urlparse(value.strip())
+    host = parsed.hostname.lower() if parsed.hostname else ""
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if host in {"github.com", "www.github.com"} and path_parts:
+        return normalize_github_username(path_parts[0])
+    if host == "api.github.com" and len(path_parts) >= 2 and path_parts[0] == "users":
+        return normalize_github_username(path_parts[1])
+    return ""
+
+
+def _has_github_provider_signal(settings: Settings, claims: dict[str, Any]) -> bool:
+    provider_name = settings.oidc_provider_name.casefold()
+    issuer_host = urlparse(issuer_url(settings)).hostname or ""
+    if "github" in provider_name or "github" in issuer_host.casefold():
+        return True
+    if isinstance(claims.get("login"), str):
+        return True
+    return any(
+        isinstance(claims.get(claim_name), str)
+        and bool(_github_username_from_url(str(claims[claim_name])))
+        for claim_name in ("profile", "html_url", "url")
+    )
+
+
+def _github_username_from_claims(settings: Settings, claims: dict[str, Any]) -> str:
+    for claim_name in ("profile", "html_url", "url"):
+        value = claims.get(claim_name)
+        if isinstance(value, str):
+            username = _github_username_from_url(value)
+            if username:
+                return username
+    login = claims.get("login")
+    if isinstance(login, str):
+        username = normalize_github_username(login)
+        if username:
+            return username
+    if not _has_github_provider_signal(settings, claims):
+        return ""
+    for claim_name in ("preferred_username", "nickname", "username"):
+        value = claims.get(claim_name)
+        if isinstance(value, str):
+            username = normalize_github_username(value)
+            if username:
+                return username
+    return ""
+
+
 def _identity_from_claims(settings: Settings, claims: dict[str, Any]) -> OIDCIdentity:
     raw_email = claims.get("email")
     if not isinstance(raw_email, str) or not raw_email.strip():
@@ -449,6 +499,7 @@ def _identity_from_claims(settings: Settings, claims: dict[str, Any]) -> OIDCIde
         last_name=last_name[:150],
         subject=subject,
         issuer=issuer_url(settings),
+        github_username=_github_username_from_claims(settings, claims),
     )
 
 

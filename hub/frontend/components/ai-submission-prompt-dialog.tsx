@@ -78,12 +78,13 @@ ${API_ACCESS_INSTRUCTIONS}
 Complete the full flow:
 1. Call POST /imports/server-source first with repositoryUrl and subfolder.
 2. Do not stop after import.
-3. Read the source README and any docs/files needed to verify install, launch, configuration, capabilities, limitations, and metadata.
-4. Merge the importer output with details found in the source review.
-5. Preserve imported package transport fields: command, args, env.
-6. Submit the Wardn Hub draft with POST /submissions/submit.
-7. If submit fails validation, fix the metadata and retry.
-8. Do not stop at a draft unless required information cannot be found after source review.
+3. Read every .md file you can find in the source repository or selected subfolder, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files.
+4. Record each inspected Markdown file in sourceReview.llm.filesRead. If repository access limits prevent reading all discovered Markdown files, do not submit; list the unread files or access limit in sourceReview.llm.unknowns.
+5. Merge the importer output with details found in the source review.
+6. Preserve imported package transport fields: command, args, env.
+7. Submit the Wardn Hub draft with POST /submissions/submit.
+8. If submit fails validation, fix the metadata and retry.
+9. Do not stop at a draft unless required information cannot be found after source review.
 
 Critical metadata rules:
 - Do not use environment placeholder values that wrap names in dollar signs and braces.

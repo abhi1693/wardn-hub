@@ -830,6 +830,91 @@ def test_validation_warns_when_transport_env_lacks_typed_metadata() -> None:
     )
 
 
+def test_validation_warns_when_documentation_env_vars_lack_metadata() -> None:
+    payload = complete_registry_payload()
+    payload.documentation = (
+        "## Installation\nUse `npx -y @example/weather-mcp`.\n\n"
+        "## Configuration\nSet `GITHUB_TOKEN` for authenticated API requests.\n\n"
+        "## Capabilities\nProvides weather tools.\n\n"
+        "## Limitations\nForecast availability depends on the upstream service."
+    )
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "warning"
+    assert any(
+        check["name"] == "documentedEnvironmentVariables"
+        and "GITHUB_TOKEN" in check["message"]
+        for check in result["checks"]
+    )
+
+
+def test_validation_accepts_documentation_env_vars_in_package_metadata() -> None:
+    payload = complete_registry_payload()
+    payload.documentation = (
+        "## Installation\nUse `npx -y @example/weather-mcp`.\n\n"
+        "## Configuration\nSet `GITHUB_TOKEN` for authenticated API requests.\n\n"
+        "## Capabilities\nProvides weather tools.\n\n"
+        "## Limitations\nForecast availability depends on the upstream service."
+    )
+    package = payload.packages[0]
+    package.environmentVariables = [
+        {
+            "name": "GITHUB_TOKEN",
+            "description": "GitHub token used for authenticated API requests.",
+            "isRequired": False,
+            "isSecret": True,
+            "format": "string",
+        }
+    ]
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["environmentVariables"] = [
+        {
+            "name": "GITHUB_TOKEN",
+            "description": "GitHub token used for authenticated API requests.",
+            "isRequired": False,
+            "isSecret": True,
+            "format": "string",
+        }
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "passed"
+    assert any(
+        check["name"] == "documentedEnvironmentVariables"
+        and check["status"] == "passed"
+        for check in result["checks"]
+    )
+
+
+def test_validation_warns_when_source_review_env_vars_lack_package_metadata() -> None:
+    payload = complete_registry_payload()
+    assert payload.meta is not None
+    source_review = payload.meta["sourceReview"]
+    assert isinstance(source_review, dict)
+    source_review["environmentVariables"] = [
+        {
+            "name": "GITHUB_TOKEN",
+            "description": "GitHub token used for authenticated API requests.",
+            "isRequired": False,
+            "isSecret": True,
+            "format": "string",
+        }
+    ]
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "warning"
+    assert any(
+        check["name"] == "sourceReviewEnvironmentMetadata"
+        and "GITHUB_TOKEN" in check["message"]
+        for check in result["checks"]
+    )
+
+
 def test_validation_rejects_unreadable_source_review_entries() -> None:
     payload = complete_registry_payload()
     assert payload.meta is not None

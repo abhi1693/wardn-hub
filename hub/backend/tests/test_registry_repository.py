@@ -274,6 +274,25 @@ async def test_public_registry_users_require_public_current_versions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_servers_for_github_namespace_includes_all_non_deleted_registry_rows() -> None:
+    session = CaptureSession()
+
+    rows = await repository.list_servers_for_github_namespace(
+        session,
+        "io.github.AbHi1693",
+    )
+
+    statement = sql(session.statements[0])
+    assert rows == []
+    assert "mcp_servers.status != 'deleted'" in statement
+    assert "lower(mcp_servers.registry_namespace) = 'io.github.abhi1693'" in statement
+    assert "lower(mcp_servers.name) LIKE 'io.github.abhi1693/%" in statement
+    assert "mcp_servers.visibility = 'public'" not in statement
+    assert "mcp_servers.current_version_id IS NOT NULL" not in statement
+    assert "mcp_server_versions" not in statement
+
+
+@pytest.mark.asyncio
 async def test_sync_server_categories_does_not_create_unknown_category_slugs() -> None:
     session = CaptureSession()
 

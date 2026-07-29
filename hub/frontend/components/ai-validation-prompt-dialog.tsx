@@ -50,9 +50,10 @@ Scope:
 Validation workflow for each submission:
 1. Read submission.serverJson, submission.validationResult, and submission.serverJson._meta.sourceReview.
 2. Identify the source repository from serverJson.repository.url and any source links in documentation/package metadata.
-3. Read the upstream README and relevant docs/files needed to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
-4. Compare the source review evidence against the upstream source. Treat flat sourceReview or sourceReview.human as human/legacy evidence, and sourceReview.llm as LLM-generated evidence. Do not assume importer output is complete.
-5. ${REGISTRY_METADATA_SCOPE_RULE}
+3. Read every .md file you can find in the upstream repository or selected subfolder, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files. Record each inspected Markdown file in sourceReview.llm.filesRead. If repository access limits prevent reading all discovered Markdown files, report cannot validate and list the unread files or access limit.
+4. Use that Markdown sweep plus package metadata to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
+5. Compare the source review evidence against the upstream source. Treat flat sourceReview or sourceReview.human as human/legacy evidence, and sourceReview.llm as LLM-generated evidence. Do not assume importer output is complete.
+6. ${REGISTRY_METADATA_SCOPE_RULE}
 
 Required checks:
 - Registry name, title, description, website, repository, version, icons, packages, remotes, and documentation are present and accurate where applicable.

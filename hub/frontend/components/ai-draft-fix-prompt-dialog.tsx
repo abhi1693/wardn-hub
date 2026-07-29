@@ -35,7 +35,7 @@ ${API_ACCESS_INSTRUCTIONS}
 Goal:
 - Fetch the draft with GET /submissions/${submissionId}.
 - Validate the draft against the submit/review feedback and Wardn Hub review requirements.
-- Read the upstream source/docs needed to fix missing or incomplete metadata.
+- Read every .md file you can find in the upstream repository or selected subfolder before fixing metadata, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files.
 - Update and submit the draft with POST /submissions/submit using submissionId "${submissionId}".
 - If submission still fails, repeat the fix/update/submit loop until it passes or the required information cannot be found.
 
@@ -46,7 +46,7 @@ Important:
 - ${REGISTRY_METADATA_SCOPE_RULE}
 
 Source review requirements:
-- Fill serverJson._meta.sourceReview.llm.filesRead with every README/docs/source URL or file inspected.
+- Fill serverJson._meta.sourceReview.llm.filesRead with every inspected Markdown/source URL or file. If repository access limits prevent reading all discovered Markdown files, stop and ask the user for the unread files or access limit.
 - Fill sourceReview.llm.installCommands with documented install/run commands when package targets exist.
 - Fill sourceReview.llm.commandArguments with documented CLI args/configurable flags.
 - Fill sourceReview.llm.environmentVariables with every documented environment variable, including optional variables that affect runtime, transport, auth, security, media/file access, tunnel mode, host/origin behavior, or feature flags.

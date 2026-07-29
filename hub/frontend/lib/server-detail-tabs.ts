@@ -7,6 +7,14 @@ import type {
   RegistryServerVersionRead,
   RegistryTrustReport,
 } from "@/lib/api/generated/model";
+import {
+  isRecord,
+  promptsFromServerJson,
+  records,
+  resourceTemplatesFromServerJson,
+  resourcesFromServerJson,
+  toolsFromServerJson,
+} from "@/lib/server-json-capabilities";
 
 export type DetailTab = "overview" | "tools" | "prompts" | "resources" | "schema" | "score";
 
@@ -73,6 +81,60 @@ export type ServerDetailTabResponse = {
   versions?: ServerTabVersion[];
   partnerSupport?: PartnerSupportSummary[];
 };
+
+export function serverTabVersionForDisplay(
+  versions?: ServerTabVersion[],
+  selectedVersionId = "",
+) {
+  const values = versions ?? [];
+  return (
+    values.find((version) => version.id === selectedVersionId) ??
+    values.find((version) => version.isLatest) ??
+    values[0]
+  );
+}
+
+export function versionTargets(version?: ServerTabVersion) {
+  const explicitTools = records(version?.tools);
+  const explicitPrompts = records(version?.prompts);
+  const explicitResources = records(version?.resources);
+  const explicitResourceTemplates = records(version?.resourceTemplates);
+  return {
+    packages: records(version?.packages),
+    prompts:
+      explicitPrompts.length > 0 ? explicitPrompts : promptsFromServerJson(version?.serverJson),
+    resourceTemplates:
+      explicitResourceTemplates.length > 0
+        ? explicitResourceTemplates
+        : resourceTemplatesFromServerJson(version?.serverJson),
+    resources:
+      explicitResources.length > 0
+        ? explicitResources
+        : resourcesFromServerJson(version?.serverJson),
+    remotes: records(version?.remotes),
+    tools: explicitTools.length > 0 ? explicitTools : toolsFromServerJson(version?.serverJson),
+  };
+}
+
+export function hasServerDetailTabData(tab: DetailTab, version?: ServerTabVersion) {
+  if (tab === "overview" || tab === "score") return true;
+  const targets = versionTargets(version);
+  if (tab === "tools") return targets.tools.length > 0;
+  if (tab === "prompts") return targets.prompts.length > 0;
+  if (tab === "resources") {
+    return targets.resources.length + targets.resourceTemplates.length > 0;
+  }
+  if (tab === "schema") {
+    const manifest = isRecord(version?.serverJson) ? version.serverJson : null;
+    const schema = typeof manifest?.$schema === "string" ? manifest.$schema.trim() : "";
+    return targets.packages.length + targets.remotes.length > 0 || Boolean(schema);
+  }
+  return false;
+}
+
+export function visibleDetailTabs(version?: ServerTabVersion) {
+  return detailTabs.filter((tab) => hasServerDetailTabData(tab.id, version));
+}
 
 export function serverTabApiPath(serverName: string, tab: DetailTab) {
   return `/mcp/servers/${serverName.split("/").map(encodeURIComponent).join("/")}/tabs/${tab}`;

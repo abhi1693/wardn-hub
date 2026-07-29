@@ -491,6 +491,26 @@ async def latest_visible_version(
     return result.scalar_one_or_none()
 
 
+async def list_servers_for_github_namespace(
+    session: AsyncSession,
+    namespace: str,
+) -> list[RegistryServer]:
+    normalized_namespace = namespace.strip().casefold()
+    if not normalized_namespace:
+        return []
+    result = await session.execute(
+        visible_servers_query(False)
+        .where(
+            or_(
+                func.lower(RegistryServer.registry_namespace) == normalized_namespace,
+                func.lower(RegistryServer.name).like(f"{normalized_namespace}/%"),
+            ),
+        )
+        .order_by(RegistryServer.name.asc())
+    )
+    return list(result.scalars().unique().all())
+
+
 async def list_users_by_ids(session: AsyncSession, user_ids: set[UUID]) -> dict[UUID, User]:
     if not user_ids:
         return {}

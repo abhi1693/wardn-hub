@@ -21,6 +21,7 @@ from app.modules.registry.service import (
     list_servers,
     list_versions,
     public_registry_json,
+    registry_packages_json,
     registry_remotes_json,
 )
 
@@ -83,7 +84,7 @@ def server_document(
             "name": version.name,
             "description": version.description,
             "version": version.version,
-            "packages": public_registry_json(version.packages),
+            "packages": public_registry_json(registry_packages_json(version.packages)),
             "remotes": public_registry_json(registry_remotes_json(version.remotes)),
         }
     )

@@ -173,6 +173,48 @@ def test_v01_servers_lists_official_registry_envelope(monkeypatch) -> None:
     assert captured["version"] == "latest"
 
 
+def test_v01_servers_normalizes_stale_package_file_environment_formats(monkeypatch) -> None:
+    app = create_app()
+
+    async def list_servers(*args, **kwargs):
+        detail = registry_detail()
+        return RegistryServerListResponse(
+            servers=[detail.server],
+            metadata=RegistryListMetadata(count=1, nextCursor=""),
+        )
+
+    async def get_version_detail(*args, **kwargs):
+        detail = registry_detail()
+        detail.version.packages = [
+            {
+                "registryType": "npm",
+                "identifier": "@example/weather",
+                "version": "1.0.0",
+                "transport": {"type": "stdio"},
+                "environmentVariables": [
+                    {
+                        "name": "SERVICE_ACCOUNT_JSON",
+                        "description": "Absolute path to the service account JSON key file.",
+                        "format": "string",
+                        "isRequired": True,
+                        "isSecret": True,
+                    }
+                ],
+            }
+        ]
+        return detail
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "list_servers", list_servers)
+    monkeypatch.setattr(router, "get_version_detail", get_version_detail)
+
+    response = TestClient(app).get("/v0.1/servers?limit=10&search=weather")
+
+    assert response.status_code == 200
+    environment = response.json()["servers"][0]["server"]["packages"][0]["environmentVariables"]
+    assert environment[0]["format"] == "file"
+
+
 def test_v01_server_version_accepts_encoded_server_name(monkeypatch) -> None:
     app = create_app()
     captured: dict[str, object] = {}

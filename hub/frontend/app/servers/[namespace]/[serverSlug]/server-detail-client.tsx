@@ -20,8 +20,13 @@ import type {
   RegistryTrustReportComponent,
   UserRead,
 } from "@/lib/api/generated/model";
-import type { DetailTab, ServerDetailTabResponse, ServerTabVersion } from "@/lib/server-detail-tabs";
-import { detailTabs, serverDetailTabPath } from "@/lib/server-detail-tabs";
+import type { DetailTab, ServerDetailTabResponse } from "@/lib/server-detail-tabs";
+import {
+  serverDetailTabPath,
+  serverTabVersionForDisplay,
+  versionTargets,
+  visibleDetailTabs,
+} from "@/lib/server-detail-tabs";
 import { publicRegistryUrl } from "@/lib/site";
 
 type LoadState = "loading" | "ready" | "error";
@@ -74,17 +79,6 @@ function strings(value: unknown) {
     : [];
 }
 
-function versionTargets(version?: ServerTabVersion) {
-  return {
-    packages: records(version?.packages),
-    prompts: records(version?.prompts),
-    resourceTemplates: records(version?.resourceTemplates),
-    resources: records(version?.resources),
-    remotes: records(version?.remotes),
-    tools: records(version?.tools),
-  };
-}
-
 function repositoryReference(repository: unknown): RepositoryReference | null {
   if (!repository || typeof repository !== "object") return null;
   const record = repository as Record<string, unknown>;
@@ -103,6 +97,33 @@ function githubRepositoryParts(repository: RepositoryReference | null) {
   const match = url.match(/^(?:https?:\/\/github\.com\/)?([^/\s]+)\/([^/\s#?]+)$/);
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
+}
+
+function repositorySourceUrl(repository: RepositoryReference | null) {
+  const rawUrl = repository?.url?.trim() ?? "";
+  if (!rawUrl) return "";
+  const parts = githubRepositoryParts(repository);
+  if (!parts) return isUrlValue(rawUrl) ? rawUrl : "";
+  const subfolder = repository?.subfolder?.replace(/^\/+|\/+$/g, "") ?? "";
+  if (!subfolder) return `https://github.com/${parts.owner}/${parts.repo}`;
+  return `https://github.com/${parts.owner}/${parts.repo}/tree/${encodePath(githubDisplayRef(repository))}/${encodePath(subfolder)}`;
+}
+
+function GitHubMark({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      height={size}
+      viewBox="0 0 24 24"
+      width={size}
+    >
+      <path
+        d="M12 2C6.48 2 2 6.58 2 12.22c0 4.5 2.86 8.32 6.84 9.67.5.09.68-.22.68-.49v-1.9c-2.78.62-3.37-1.22-3.37-1.22-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.56 2.35 1.11 2.92.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.88c.85 0 1.7.12 2.5.35 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.07.36.32.68.95.68 1.92v2.77c0 .27.18.59.69.49A10.12 10.12 0 0 0 22 12.22C22 6.58 17.52 2 12 2Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
 }
 
 function encodePath(value: string) {
@@ -534,6 +555,24 @@ function imageDimension(value: number | string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function isMarkdownBadgeImage({
+  alt,
+  src,
+  title,
+}: {
+  alt?: string;
+  src?: string;
+  title?: string;
+}) {
+  const text = `${src ?? ""} ${alt ?? ""} ${title ?? ""}`.toLowerCase();
+  return (
+    text.includes("shields.io") ||
+    text.includes("badgen.net") ||
+    text.includes("badge") ||
+    text.includes("license:")
+  );
+}
+
 function QualityBadgePanel({
   badgePreviewUrl,
   badgeUrl,
@@ -889,15 +928,21 @@ function DocumentationBlock({
             const imageSrc = typeof src === "string" ? src : undefined;
             const resolvedSrc = resolveRepositoryImageUrl(imageSrc, repository);
             if (!resolvedSrc) return null;
+            const isBadge = isMarkdownBadgeImage({
+              alt: alt ?? undefined,
+              src: imageSrc,
+              title: title ?? undefined,
+            });
             return (
               <Image
                 alt={alt ?? ""}
-                height={imageDimension(height, 400)}
+                className={isBadge ? "server-detail-doc-badge" : undefined}
+                height={imageDimension(height, isBadge ? 20 : 400)}
                 src={resolvedSrc}
                 style={{ height: "auto", maxWidth: "100%" }}
                 title={title}
                 unoptimized
-                width={imageDimension(width, 800)}
+                width={imageDimension(width, isBadge ? 140 : 800)}
               />
             );
           },
@@ -1686,17 +1731,22 @@ function EmptyDetailPanel({ detail, title }: { detail: string; title: string }) 
 export function ServerDetailClient({
   initialDetail,
   initialError = "",
+  initialOverviewDetail,
   initialTab,
   serverName,
 }: {
   initialDetail: ServerDetailTabResponse | null;
   initialError?: string;
+  initialOverviewDetail?: ServerDetailTabResponse | null;
   initialTab: DetailTab;
   serverName: string;
 }) {
   const router = useRouter();
   const [detailsByTab, setDetailsByTab] = useState<Partial<Record<DetailTab, ServerDetailTabResponse>>>(
-    () => (initialDetail ? { [initialTab]: initialDetail } : {}),
+    () => ({
+      ...(initialOverviewDetail ? { overview: initialOverviewDetail } : {}),
+      ...(initialDetail ? { [initialTab]: initialDetail } : {}),
+    }),
   );
   const [errorsByTab, setErrorsByTab] = useState<Partial<Record<DetailTab, string>>>(
     () => (initialError ? { [initialTab]: initialError } : {}),
@@ -1747,20 +1797,41 @@ export function ServerDetailClient({
 
   const server = detail?.server;
   const versions = useMemo(() => detail?.versions ?? [], [detail?.versions]);
-  const latestVersion = useMemo(
-    () => versions.find((version) => version.isLatest) ?? versions[0],
-    [versions],
-  );
   const selectedVersion = useMemo(
-    () => versions.find((version) => version.id === selectedVersionId) ?? latestVersion,
-    [latestVersion, selectedVersionId, versions],
+    () => serverTabVersionForDisplay(versions, selectedVersionId),
+    [selectedVersionId, versions],
   );
 
   const targets = useMemo(() => versionTargets(selectedVersion), [selectedVersion]);
-  const repository = repositoryReference(selectedVersion?.repository ?? server?.repository);
-  const title = selectedVersion?.title || server?.title || server?.name || "MCP Server";
+  const overviewDetail = detailsByTab.overview ?? initialOverviewDetail ?? null;
+  const navigationVersions = useMemo(
+    () => overviewDetail?.versions ?? versions,
+    [overviewDetail?.versions, versions],
+  );
+  const navigationVersion = useMemo(
+    () => serverTabVersionForDisplay(navigationVersions, selectedVersionId),
+    [navigationVersions, selectedVersionId],
+  );
+  const visibleTabs = useMemo(() => visibleDetailTabs(navigationVersion), [navigationVersion]);
+  const activeTabVisible = visibleTabs.some((tab) => tab.id === activeTab);
+  const navigationServer = overviewDetail?.server ?? server;
+  const repository = repositoryReference(
+    selectedVersion?.repository ??
+      navigationVersion?.repository ??
+      server?.repository ??
+      navigationServer?.repository,
+  );
+  const repositoryHref = repositorySourceUrl(repository);
+  const title =
+    selectedVersion?.title ||
+    navigationVersion?.title ||
+    server?.title ||
+    navigationServer?.title ||
+    server?.name ||
+    navigationServer?.name ||
+    "MCP Server";
   const documentation = selectedVersion?.documentation || "";
-  const category = server?.categories?.[0];
+  const category = server?.categories?.[0] ?? navigationServer?.categories?.[0];
   const categoryName = category?.name ?? "";
   const badgeVersion = selectedVersion && !selectedVersion.isLatest ? selectedVersion.version : "";
   const badgePreviewUrl = server?.name ? qualityBadgePath(server.name, badgeVersion) : "";
@@ -1770,10 +1841,17 @@ export function ServerDetailClient({
     : "";
   const qualityScore = selectedVersion?.qualityScore ?? null;
   const trustReport = selectedVersion?.trustReport ?? null;
-  const registryNamespace = selectedVersion?.registryNamespace ?? server?.registryNamespace ?? null;
+  const registryNamespace =
+    selectedVersion?.registryNamespace ??
+    navigationVersion?.registryNamespace ??
+    server?.registryNamespace ??
+    navigationServer?.registryNamespace ??
+    null;
   const partnerSupport = selectedVersion?.partnerSupport?.length
     ? selectedVersion.partnerSupport
-    : detail?.partnerSupport ?? [];
+    : navigationVersion?.partnerSupport?.length
+      ? navigationVersion.partnerSupport
+      : detail?.partnerSupport ?? overviewDetail?.partnerSupport ?? [];
   const manifest = isRecord(selectedVersion?.serverJson) ? selectedVersion.serverJson : null;
   const isOwnershipClaimed = isWardnOwnershipClaimed(trustReport);
   const hasDocumentation = Boolean(documentation.trim());
@@ -1786,6 +1864,11 @@ export function ServerDetailClient({
         version: version.version,
       }))
     : [];
+
+  useEffect(() => {
+    if (state !== "ready" || !server || activeTabVisible) return;
+    router.replace(serverDetailTabPath(serverName, "overview"), { scroll: false });
+  }, [activeTabVisible, router, server, serverName, state]);
 
   function navigateToTab(tab: DetailTab) {
     router.push(serverDetailTabPath(serverName, tab), { scroll: false });
@@ -1832,6 +1915,18 @@ export function ServerDetailClient({
                 <h1>{title}</h1>
                 <p>{server.name}</p>
               </div>
+              {repositoryHref ? (
+                <a
+                  className="server-detail-source-link"
+                  href={repositoryHref}
+                  rel="noreferrer"
+                  target="_blank"
+                  title="Open source repository"
+                >
+                  <GitHubMark size={18} />
+                  <span>Source</span>
+                </a>
+              ) : null}
               {versionPickerOptions.length > 0 ? (
                 <label className="server-version-picker" aria-label="Select version">
                   <select
@@ -1850,7 +1945,7 @@ export function ServerDetailClient({
             </section>
 
             <div className="server-detail-tabs" role="tablist" aria-label="Server detail views">
-              {detailTabs.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <button
                   aria-selected={activeTab === tab.id}
                   className={activeTab === tab.id ? "active" : ""}

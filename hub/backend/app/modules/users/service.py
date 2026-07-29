@@ -12,6 +12,7 @@ from app.core.security import (
     verify_api_token,
     verify_password,
 )
+from app.modules.registry import service as registry_service
 from app.modules.users import repository
 from app.modules.users.exceptions import (
     BootstrapUserExistsError,
@@ -107,6 +108,21 @@ def apply_oidc_profile(user: User, identity: OIDCIdentity) -> None:
         user.last_name = last_name
 
 
+async def assign_github_namespace_servers_from_identity(
+    session: AsyncSession,
+    *,
+    identity: OIDCIdentity,
+    user: User,
+) -> int:
+    if not identity.github_username:
+        return 0
+    return await registry_service.assign_github_namespace_servers_to_user(
+        session,
+        github_username=identity.github_username,
+        user=user,
+    )
+
+
 def list_auth_providers() -> AuthProviderListResponse:
     settings = get_settings()
     providers = enabled_auth_providers()
@@ -187,6 +203,11 @@ async def authenticate_oidc_identity(
         if promote_to_superuser:
             user.is_superuser = True
         user.last_login_at = datetime.now(UTC)
+        await assign_github_namespace_servers_from_identity(
+            session,
+            identity=oidc_identity,
+            user=user,
+        )
         await session.flush()
         return user
 
@@ -230,6 +251,11 @@ async def authenticate_oidc_identity(
     )
     session.add(identity)
     user.last_login_at = datetime.now(UTC)
+    await assign_github_namespace_servers_from_identity(
+        session,
+        identity=oidc_identity,
+        user=user,
+    )
     await session.flush()
     return user
 

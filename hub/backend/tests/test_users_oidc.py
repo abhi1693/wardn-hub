@@ -343,6 +343,41 @@ def test_oidc_identity_enforces_verified_email_and_domain_policy() -> None:
         )
 
 
+def test_oidc_identity_extracts_github_username_case_insensitively() -> None:
+    identity = oidc._identity_from_claims(
+        oidc_settings(),
+        {
+            "sub": "subject-1",
+            "email": "admin@example.com",
+            "email_verified": True,
+            "login": "AbHi1693",
+        },
+    )
+    assert identity.github_username == "abhi1693"
+
+    profile_identity = oidc._identity_from_claims(
+        oidc_settings(),
+        {
+            "sub": "subject-2",
+            "email": "member@example.com",
+            "email_verified": True,
+            "profile": "https://github.com/Crypto-Ninja",
+        },
+    )
+    assert profile_identity.github_username == "crypto-ninja"
+
+    generic_identity = oidc._identity_from_claims(
+        oidc_settings(),
+        {
+            "sub": "subject-3",
+            "email": "generic@example.com",
+            "email_verified": True,
+            "preferred_username": "abhi1693",
+        },
+    )
+    assert generic_identity.github_username == ""
+
+
 @pytest.mark.parametrize(
     ("claims", "message"),
     [

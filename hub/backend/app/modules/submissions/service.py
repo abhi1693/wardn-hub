@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -52,6 +53,9 @@ from app.modules.submissions.schemas import (
 from app.modules.users.models import User, UserAPIToken
 
 UNIQUE_ACTIVE_SUBMISSION_STATUSES = {"draft", "submitted", "approved", "rejected"}
+DOCUMENTED_ENVIRONMENT_VARIABLE_PATTERN = re.compile(
+    r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b"
+)
 
 
 def validation_check(name: str, status: str, message: str = "") -> dict[str, str]:
@@ -546,6 +550,124 @@ def environment_metadata_check(packages: list[Any]) -> dict[str, str]:
     )
 
 
+def documented_environment_variable_names(documentation: str) -> set[str]:
+    return {
+        match.group(0)
+        for match in DOCUMENTED_ENVIRONMENT_VARIABLE_PATTERN.finditer(documentation)
+    }
+
+
+def environment_variable_names(values: Any) -> set[str]:
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(model_or_dict(value).get("name") or "").strip()
+        for value in values
+        if str(model_or_dict(value).get("name") or "").strip()
+    }
+
+
+def package_environment_variable_names(payload: RegistryServerVersionCreate) -> set[str]:
+    names: set[str] = set()
+    for package_value in payload.packages:
+        package = model_or_dict(package_value)
+        names.update(environment_variable_names(package.get("environmentVariables")))
+    return names
+
+
+def transport_environment_variable_names(payload: RegistryServerVersionCreate) -> set[str]:
+    names: set[str] = set()
+    for package_value in payload.packages:
+        package = model_or_dict(package_value)
+        transport = package.get("transport")
+        transport_value = transport if isinstance(transport, dict) else {}
+        transport_env = transport_value.get("env")
+        if isinstance(transport_env, dict):
+            names.update(
+                name
+                for name in transport_env
+                if isinstance(name, str) and name.strip()
+            )
+    return names
+
+
+def source_review_environment_variable_names(payload: RegistryServerVersionCreate) -> set[str]:
+    names: set[str] = set()
+    meta = payload.meta if isinstance(payload.meta, dict) else {}
+    for _channel, source_review in source_review_channels(meta):
+        names.update(environment_variable_names(source_review.get("environmentVariables")))
+    return names
+
+
+def source_review_environment_schema_check(
+    payload: RegistryServerVersionCreate,
+) -> dict[str, str]:
+    if not has_local_package_target(payload.packages):
+        return validation_check(
+            "sourceReviewEnvironmentMetadata",
+            "passed",
+            "No local package targets need environment variable metadata.",
+        )
+
+    source_review_names = source_review_environment_variable_names(payload)
+    if not source_review_names:
+        return validation_check(
+            "sourceReviewEnvironmentMetadata",
+            "passed",
+            "Source review does not name environment variables.",
+        )
+
+    schema_names = (
+        package_environment_variable_names(payload)
+        | transport_environment_variable_names(payload)
+    )
+    missing_names = sorted(source_review_names - schema_names)
+    if missing_names:
+        return validation_check(
+            "sourceReviewEnvironmentMetadata",
+            "warning",
+            "Source review environment variables should be represented in package "
+            "environmentVariables metadata: "
+            + ", ".join(missing_names[:10]),
+        )
+    return validation_check(
+        "sourceReviewEnvironmentMetadata",
+        "passed",
+        "Source review environment variables are represented in package metadata.",
+    )
+
+
+def documented_environment_metadata_check(
+    payload: RegistryServerVersionCreate,
+) -> dict[str, str]:
+    documented_names = documented_environment_variable_names(payload.documentation)
+    if not documented_names:
+        return validation_check(
+            "documentedEnvironmentVariables",
+            "passed",
+            "Documentation does not name environment variables.",
+        )
+
+    schema_names = (
+        package_environment_variable_names(payload)
+        | transport_environment_variable_names(payload)
+    )
+    missing_names = sorted(documented_names - schema_names)
+    if missing_names:
+        return validation_check(
+            "documentedEnvironmentVariables",
+            "warning",
+            "Documentation mentions environment variables missing from package "
+            "environmentVariables metadata: "
+            + ", ".join(missing_names[:10]),
+        )
+    return validation_check(
+        "documentedEnvironmentVariables",
+        "passed",
+        "Documented environment variables are represented in package metadata.",
+    )
+
+
 def readable_review_item(value: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
@@ -872,6 +994,8 @@ def validation_result_for(
         env_placeholder_check(payload),
         duplicate_environment_check(payload),
         environment_metadata_check(payload.packages),
+        source_review_environment_schema_check(payload),
+        documented_environment_metadata_check(payload),
         source_review_list_quality_check(payload),
         package_registry_evidence_check(payload),
         package_targets_check(payload.packages),

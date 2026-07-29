@@ -6761,6 +6761,33 @@ button:disabled,
   background-size: 42px 42px;
 }
 
+.server-detail-source-link {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  padding: 0 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.server-detail-source-link:hover,
+.server-detail-source-link:focus-visible {
+  border-color: #111827;
+  background: #f3f4f6;
+}
+
+.server-detail-source-link:focus-visible {
+  outline: 3px solid rgb(17 24 39 / 24%);
+  outline-offset: 2px;
+}
+
 .server-detail-hero h1 {
   margin: 0;
   color: #000000;
@@ -8016,6 +8043,15 @@ button:disabled,
   height: auto;
 }
 
+.server-detail-doc img.server-detail-doc-badge {
+  display: inline-block;
+  width: auto;
+  max-width: 180px;
+  max-height: 24px;
+  margin-right: 4px;
+  vertical-align: text-bottom;
+}
+
 .server-detail-doc hr {
   height: 0.25em;
   margin: 24px 0;
@@ -8877,6 +8913,10 @@ button:disabled,
 		  .server-detail-hero {
 		    align-items: flex-start;
 	    flex-wrap: wrap;
+	  }
+
+	  .server-detail-source-link {
+	    min-height: 44px;
 	  }
 
 	  .server-version-picker {

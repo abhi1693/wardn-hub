@@ -84,9 +84,11 @@ from app.modules.registry.schemas import (
     RegistryUserDetailResponse,
     RegistryUserListResponse,
     RegistryUserRead,
+    environment_variable_uses_file,
     normalize_remote_mapping,
 )
 from app.modules.users.exceptions import UserNotFoundError
+from app.modules.users.github import github_namespace_for_username, normalize_github_username
 from app.modules.users.models import User, UserAPIToken
 
 RegistryServerSort = Literal["latest", "name"]
@@ -228,6 +230,48 @@ def registry_remotes_json(value):
     if isinstance(value, list):
         return [registry_json(normalize_remote_mapping(item)) for item in value]
     return registry_json(value)
+
+
+def registry_packages_json(value):
+    if isinstance(value, BaseModel):
+        return registry_json(value)
+    if not isinstance(value, list):
+        return registry_json(value)
+    packages = []
+    for item in value:
+        if not isinstance(item, dict):
+            packages.append(registry_json(item))
+            continue
+        package = registry_json(item)
+        if not isinstance(package, dict):
+            packages.append(package)
+            continue
+        for environment_key in ("environmentVariables", "environment_variables"):
+            environment = package.get(environment_key)
+            if not isinstance(environment, list):
+                continue
+            package = dict(package)
+            package[environment_key] = [
+                normalized_package_environment_variable(env_var) for env_var in environment
+            ]
+            break
+        packages.append(package)
+    return packages
+
+
+def normalized_package_environment_variable(value):
+    env_var = registry_json(value)
+    if not isinstance(env_var, dict):
+        return env_var
+    current_format = str(env_var.get("format") or "").strip().lower()
+    if current_format not in {"", "string"}:
+        return env_var
+    if not environment_variable_uses_file(
+        name=env_var.get("name"),
+        description=env_var.get("description"),
+    ):
+        return env_var
+    return {**env_var, "format": "file"}
 
 
 def normalized_metadata_key(value: str) -> str:
@@ -890,7 +934,7 @@ def document_values(payload: MCPServerDocument) -> dict:
         "version": payload.version,
         "website_url": payload.website_url,
         "repository": registry_json(payload.repository),
-        "packages": registry_json(payload.packages),
+        "packages": registry_packages_json(payload.packages),
         "remotes": registry_remotes_json(payload.remotes),
         "icons": registry_json(payload.icons),
         "server_json": payload.model_dump(by_alias=True, exclude_none=True),
@@ -2189,10 +2233,11 @@ def version_summary(
     include_private_metadata: bool = True,
     trust: RegistryTrustContext = EMPTY_TRUST_CONTEXT,
 ) -> RegistryServerVersionRead:
+    normalized_packages = registry_packages_json(version.packages)
     packages = (
-        version.packages
+        normalized_packages
         if include_private_metadata
-        else public_registry_json(version.packages)
+        else public_registry_json(normalized_packages)
     )
     normalized_remotes = registry_remotes_json(version.remotes)
     remotes = (
@@ -2258,7 +2303,7 @@ def published_version_summary(version: RegistryServerVersion) -> RegistryPublish
         version=version.version,
         quality_score=version.quality_score,
         trust_report=trust_report_for_version(version),
-        packages=public_registry_json(version.packages),
+        packages=public_registry_json(registry_packages_json(version.packages)),
         remotes=public_registry_json(registry_remotes_json(version.remotes)),
         status=version.status,
         status_message=version.status_message,
@@ -2901,6 +2946,93 @@ def same_ownership_website(left: str, right: str) -> bool:
     return bool(left_url and right_url and left_url == right_url)
 
 
+def attach_github_login_namespace_metadata(
+    version: RegistryServerVersion,
+    *,
+    github_username: str,
+    verified_at: datetime,
+) -> None:
+    namespace = github_namespace_for_username(github_username)
+    if not namespace:
+        return
+    server_json = registry_record(version.server_json).copy()
+    meta = registry_record(server_json.get("_meta")).copy()
+    namespace_meta = registry_record(meta.get("registryNamespace")).copy()
+    namespace_meta.update(
+        {
+            "namespace": namespace,
+            "type": "github",
+            "authority": github_username,
+            "displayName": f"github.com/{github_username}",
+            "verificationStatus": "verified",
+            "verificationMethod": "github_login",
+            "evidenceUrl": f"https://github.com/{github_username}",
+            "evidenceText": "Verified from the authenticated GitHub login username.",
+            "source": "wardn_hub_auth",
+            "verifiedAt": verified_at.isoformat(),
+        }
+    )
+    meta["registryNamespace"] = namespace_meta
+    server_json["_meta"] = meta
+    version.server_json = server_json
+
+
+async def assign_github_namespace_servers_to_user(
+    session,
+    *,
+    github_username: str,
+    user: User,
+) -> int:
+    normalized_username = normalize_github_username(github_username)
+    namespace = github_namespace_for_username(normalized_username)
+    if not namespace:
+        return 0
+
+    servers = await repository.list_servers_for_github_namespace(
+        session,
+        namespace,
+    )
+    if not servers:
+        return 0
+
+    assigned_count = 0
+    verified_at = datetime.now(UTC)
+    for server in servers:
+        versions = await repository.list_server_versions(
+            session,
+            server.name,
+            include_deleted=False,
+        )
+        if server.owner_organization_id is not None or any(
+            version.owner_organization_id is not None for version in versions
+        ):
+            continue
+
+        server.owner_user_id = user.id
+        server.registry_namespace = namespace
+        server.registry_namespace_type = "github"
+        server.registry_namespace_verification_status = "verified"
+        server.updated_by_user_id = user.id
+
+        for version in versions:
+            version.owner_user_id = user.id
+            version.registry_namespace = namespace
+            version.registry_namespace_type = "github"
+            version.registry_namespace_verification_status = "verified"
+            version.updated_by_user_id = user.id
+            attach_github_login_namespace_metadata(
+                version,
+                github_username=normalized_username,
+                verified_at=verified_at,
+            )
+
+        assigned_count += 1
+
+    if assigned_count:
+        await session.flush()
+    return assigned_count
+
+
 async def claim_server_ownership(
     session,
     name: str,
@@ -3102,7 +3234,7 @@ async def get_server_overview_tab(
                     verification_status=version.registry_namespace_verification_status,
                     server_json=version.server_json,
                 ),
-                packages=public_registry_json(version.packages),
+                packages=public_registry_json(registry_packages_json(version.packages)),
                 remotes=public_registry_json(registry_remotes_json(version.remotes)),
                 server_json=public_registry_json(version.server_json),
                 quality_score=version.quality_score,
@@ -3140,7 +3272,7 @@ async def get_server_schema_tab(
                 version=version.version,
                 title=version.title,
                 is_latest=version.is_latest,
-                packages=public_registry_json(version.packages),
+                packages=public_registry_json(registry_packages_json(version.packages)),
                 remotes=public_registry_json(registry_remotes_json(version.remotes)),
                 server_json=public_registry_json(version.server_json),
                 tools=registry_tools_from_server_json(version.server_json),

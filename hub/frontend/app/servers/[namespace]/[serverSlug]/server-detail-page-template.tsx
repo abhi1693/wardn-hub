@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import {
   getPublishedRegistryServerTab,
   isRegistryNotFoundError,
 } from "@/lib/public-registry";
-import type { DetailTab } from "@/lib/server-detail-tabs";
+import {
+  hasServerDetailTabData,
+  serverTabVersionForDisplay,
+  type DetailTab,
+} from "@/lib/server-detail-tabs";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, serverDetailJsonLd } from "@/lib/structured-data";
 
@@ -151,20 +155,41 @@ export async function generateServerDetailMetadata(
 
 export async function ServerDetailPageTemplate(props: ServerDetailTemplateProps) {
   const { canonical, serverName, tab } = await resolveServerDetailRoute(props);
-  const { initialDetail, initialError } = await (async () => {
+  const { initialDetail, initialError, initialOverviewDetail } = await (async () => {
     try {
+      if (tab !== "overview") {
+        const [tabDetail, overviewDetail] = await Promise.all([
+          getPublishedRegistryServerTab(serverName, tab),
+          getPublishedRegistryServerTab(serverName, "overview"),
+        ]);
+        return {
+          initialDetail: tabDetail,
+          initialError: "",
+          initialOverviewDetail: overviewDetail,
+        };
+      }
       return {
         initialDetail: await getPublishedRegistryServerTab(serverName, tab),
         initialError: "",
+        initialOverviewDetail: null,
       };
     } catch (caught) {
       if (isRegistryNotFoundError(caught)) notFound();
       return {
         initialDetail: null,
         initialError: caught instanceof Error ? caught.message : "Unable to load server.",
+        initialOverviewDetail: null,
       };
     }
   })();
+  const navigationVersion = serverTabVersionForDisplay(initialOverviewDetail?.versions);
+  if (
+    tab !== "overview" &&
+    initialOverviewDetail &&
+    !hasServerDetailTabData(tab, navigationVersion)
+  ) {
+    redirect(serverCanonicalPath(serverName, "overview"));
+  }
 
   return (
     <>
@@ -179,6 +204,7 @@ export async function ServerDetailPageTemplate(props: ServerDetailTemplateProps)
       <ServerDetailClient
         initialDetail={initialDetail}
         initialError={initialError}
+        initialOverviewDetail={initialOverviewDetail}
         initialTab={tab}
         key={`${serverName}:${tab}`}
         serverName={serverName}
