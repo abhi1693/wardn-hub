@@ -235,7 +235,13 @@ async def list_servers(
             or_(exact_match, prefix_match, contains_match, text_match)
         )
     if updated_since:
-        statement = statement.where(RegistryServer.updated_at >= updated_since)
+        statement = statement.where(
+            or_(
+                RegistryServer.updated_at >= updated_since,
+                RegistryServerVersion.updated_at >= updated_since,
+                RegistryServerVersion.published_at >= updated_since,
+            )
+        )
     if namespace:
         statement = statement.where(
             RegistryServer.registry_namespace == namespace.strip().casefold()

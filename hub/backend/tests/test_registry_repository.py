@@ -91,6 +91,11 @@ async def test_list_servers_uses_published_filters_when_syncing_updates() -> Non
     assert "mcp_servers.current_version_id IS NOT NULL" in statement
     assert "mcp_server_versions.status = 'active'" in statement
     assert "mcp_server_versions.is_latest IS true" in statement
+    assert (
+        "mcp_servers.updated_at >= '2026-06-01 00:00:00+00:00' "
+        "OR mcp_server_versions.updated_at >= '2026-06-01 00:00:00+00:00' "
+        "OR mcp_server_versions.published_at >= '2026-06-01 00:00:00+00:00'"
+    ) in statement
     assert "mcp_servers.status = 'deleted'" not in statement
 
 
