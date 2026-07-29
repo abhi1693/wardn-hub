@@ -1006,6 +1006,75 @@ async def test_new_version_submission_requires_published_server(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_metadata_edit_submission_requires_published_exact_version(monkeypatch) -> None:
+    owner = current_user()
+    server = registry_server(owner_user_id=owner.id)
+
+    async def existing_server(*args, **kwargs):
+        return server
+
+    async def active_versions(*args, **kwargs):
+        return [registry_version(server.id, version="1.0.1")]
+
+    async def missing_version(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(
+        service.registry_repository,
+        "list_published_server_versions",
+        active_versions,
+    )
+    monkeypatch.setattr(service.registry_repository, "get_server_version", missing_version)
+
+    with pytest.raises(SubmissionValidationError, match="metadata edit submissions"):
+        await service.create_submission(
+            FakeSession(),
+            owner,
+            SubmissionCreate(
+                submissionType="metadata_edit",
+                serverJson=complete_registry_payload(version="1.0.0"),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_metadata_edit_submission_allows_existing_exact_version(monkeypatch) -> None:
+    owner = current_user()
+    server = registry_server(owner_user_id=owner.id)
+    published_version = registry_version(server.id, version="1.0.0")
+
+    async def existing_server(*args, **kwargs):
+        return server
+
+    async def active_versions(*args, **kwargs):
+        return [published_version]
+
+    async def existing_version(*args, **kwargs):
+        return published_version
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(
+        service.registry_repository,
+        "list_published_server_versions",
+        active_versions,
+    )
+    monkeypatch.setattr(service.registry_repository, "get_server_version", existing_version)
+
+    response = await service.create_submission(
+        FakeSession(),
+        owner,
+        SubmissionCreate(
+            submissionType="metadata_edit",
+            serverJson=complete_registry_payload(version="1.0.0"),
+        ),
+    )
+
+    assert response.submission_type == "metadata_edit"
+    assert response.owner_user_id == owner.id
+
+
+@pytest.mark.asyncio
 async def test_new_server_submission_rejects_existing_server_name(monkeypatch) -> None:
     server = registry_server(owner_user_id=uuid4())
 
@@ -2183,6 +2252,72 @@ async def test_publish_submission_allows_orphaned_server_shell(monkeypatch) -> N
 
     assert published.status == "published"
     assert published.published_server_version_id == published_version_id
+
+
+@pytest.mark.asyncio
+async def test_publish_metadata_edit_updates_existing_version(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    server = registry_server(owner_user_id=submitter.id)
+    published_version = registry_version(server.id, version="1.0.0")
+    updated_payload = None
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+    submission.submission_type = "metadata_edit"
+    submission.server_json["description"] = "Updated weather tool metadata"
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def existing_server(*args, **kwargs):
+        return server
+
+    async def active_versions(*args, **kwargs):
+        return [published_version]
+
+    async def existing_version(*args, **kwargs):
+        return published_version
+
+    async def create_version(*args, **kwargs):
+        raise AssertionError("metadata edits must update the existing version")
+
+    async def update_version(_session, name, version, payload, **kwargs):
+        nonlocal updated_payload
+        assert name == submission.name
+        assert version == submission.version
+        assert kwargs["updated_by_user_id"] == moderator.id
+        updated_payload = payload
+        return SimpleNamespace(version=SimpleNamespace(id=published_version.id))
+
+    async def emit_event(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(
+        service.registry_repository,
+        "list_published_server_versions",
+        active_versions,
+    )
+    monkeypatch.setattr(service.registry_repository, "get_server_version", existing_version)
+    monkeypatch.setattr(service.registry_service, "create_server_version", create_version)
+    monkeypatch.setattr(service.registry_service, "update_server_version", update_version)
+    monkeypatch.setattr(
+        service,
+        "payload_with_verified_github_namespace_claim",
+        allow_github_namespace_claim,
+    )
+    monkeypatch.setattr(service, "emit_submission_event", emit_event)
+
+    published = await service.publish_submission(FakeSession(), moderator, submission.id)
+
+    assert published.status == "published"
+    assert published.published_server_version_id == published_version.id
+    assert updated_payload is not None
+    assert updated_payload.description == "Updated weather tool metadata"
 
 
 @pytest.mark.asyncio

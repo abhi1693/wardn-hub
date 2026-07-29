@@ -28,8 +28,12 @@ from app.modules.registry import service as registry_service
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
     RegistryOwnershipClaimError,
+    RegistryVersionNotFoundError,
 )
-from app.modules.registry.schemas import RegistryServerVersionCreate
+from app.modules.registry.schemas import (
+    RegistryServerVersionCreate,
+    RegistryServerVersionUpdate,
+)
 from app.modules.submissions import repository
 from app.modules.submissions.constants import MCP_REGISTRY_IMPORT_META_KEY
 from app.modules.submissions.exceptions import (
@@ -1479,6 +1483,35 @@ async def ensure_version_not_published(
         raise DuplicatePublishedVersionError("server version already published")
 
 
+async def ensure_metadata_edit_target_published(
+    session: AsyncSession,
+    name: str,
+    version: str,
+) -> None:
+    existing = await registry_repository.get_server_version(
+        session,
+        name,
+        version,
+        include_deleted=True,
+    )
+    if existing is None or existing.status == "deleted":
+        raise SubmissionValidationError(
+            "metadata edit submissions require a published server version"
+        )
+
+
+async def ensure_submission_version_target_allowed(
+    session: AsyncSession,
+    submission_type: str,
+    name: str,
+    version: str,
+) -> None:
+    if submission_type == "metadata_edit":
+        await ensure_metadata_edit_target_published(session, name, version)
+        return
+    await ensure_version_not_published(session, name, version)
+
+
 async def ensure_no_active_submission_for_version(
     session: AsyncSession,
     name: str,
@@ -1504,6 +1537,7 @@ async def ensure_submission_type_allowed(
     user: User | None,
     submission_type: str,
     name: str,
+    version: str,
     owner_user_id: uuid.UUID | None,
     owner_organization_id: uuid.UUID | None,
 ) -> None:
@@ -1521,6 +1555,9 @@ async def ensure_submission_type_allowed(
 
     if server is None or not published_versions:
         raise SubmissionValidationError("new version submissions require a published server")
+
+    if submission_type == "metadata_edit":
+        await ensure_metadata_edit_target_published(session, name, version)
 
     if server.owner_user_id is not None:
         if owner_user_id != server.owner_user_id:
@@ -1733,11 +1770,13 @@ async def create_submission(
         user,
         payload.submission_type,
         payload.server_json.name,
+        payload.server_json.version,
         owner_user_id,
         owner_organization_id,
     )
-    await ensure_version_not_published(
+    await ensure_submission_version_target_allowed(
         session,
+        payload.submission_type,
         payload.server_json.name,
         payload.server_json.version,
     )
@@ -1843,7 +1882,12 @@ async def update_submission(
             submission_type=next_submission_type,
         )
         ensure_validation_passed(validation_result)
-        await ensure_version_not_published(session, server_json.name, server_json.version)
+        await ensure_submission_version_target_allowed(
+            session,
+            next_submission_type,
+            server_json.name,
+            server_json.version,
+        )
         await ensure_no_active_submission_for_version(
             session,
             server_json.name,
@@ -1887,6 +1931,7 @@ async def update_submission(
         user,
         submission.submission_type,
         submission.name,
+        submission.version,
         next_owner_user_id,
         next_owner_organization_id,
     )
@@ -1950,10 +1995,16 @@ async def submit_submission_record(
         user,
         submission.submission_type,
         submission.name,
+        submission.version,
         submission.owner_user_id,
         submission.owner_organization_id,
     )
-    await ensure_version_not_published(session, submission.name, submission.version)
+    await ensure_submission_version_target_allowed(
+        session,
+        submission.submission_type,
+        submission.name,
+        submission.version,
+    )
     await ensure_no_active_submission_for_version(
         session,
         submission.name,
@@ -1997,7 +2048,12 @@ async def fix_submission_by_system(
         submission_type=submission.submission_type,
     )
     ensure_ready_for_review(validation_result)
-    await ensure_version_not_published(session, server_json.name, server_json.version)
+    await ensure_submission_version_target_allowed(
+        session,
+        submission.submission_type,
+        server_json.name,
+        server_json.version,
+    )
     await ensure_no_active_submission_for_version(
         session,
         server_json.name,
@@ -2079,6 +2135,7 @@ async def approve_submission_for_actor(
         None,
         submission.submission_type,
         submission.name,
+        submission.version,
         submission.owner_user_id,
         submission.owner_organization_id,
     )
@@ -2086,7 +2143,12 @@ async def approve_submission_for_actor(
     validation_result = validation_result_for(payload, submission_type=submission.submission_type)
     ensure_ready_for_review(validation_result)
     submission.validation_result = validation_result
-    await ensure_version_not_published(session, submission.name, submission.version)
+    await ensure_submission_version_target_allowed(
+        session,
+        submission.submission_type,
+        submission.name,
+        submission.version,
+    )
     await ensure_no_active_submission_for_version(
         session,
         submission.name,
@@ -2214,6 +2276,7 @@ async def publish_submission_for_actor(
         None,
         submission.submission_type,
         submission.name,
+        submission.version,
         submission.owner_user_id,
         submission.owner_organization_id,
     )
@@ -2229,15 +2292,28 @@ async def publish_submission_for_actor(
     payload = await payload_with_verified_github_namespace_claim(session, submission, payload)
     payload = await payload_with_github_readme_documentation(payload)
     try:
-        published = await registry_service.create_server_version(
-            session,
-            payload,
-            owner_user_id=submission.owner_user_id,
-            owner_organization_id=submission.owner_organization_id,
-            created_by_user_id=submission.submitter_user_id,
-            updated_by_user_id=actor_user_id,
-            publisher_user_id=actor_user_id,
-        )
+        if submission.submission_type == "metadata_edit":
+            published = await registry_service.update_server_version(
+                session,
+                payload.name,
+                payload.version,
+                RegistryServerVersionUpdate.model_validate(payload.to_json_dict()),
+                updated_by_user_id=actor_user_id,
+            )
+        else:
+            published = await registry_service.create_server_version(
+                session,
+                payload,
+                owner_user_id=submission.owner_user_id,
+                owner_organization_id=submission.owner_organization_id,
+                created_by_user_id=submission.submitter_user_id,
+                updated_by_user_id=actor_user_id,
+                publisher_user_id=actor_user_id,
+            )
+    except RegistryVersionNotFoundError as exc:
+        raise SubmissionValidationError(
+            "metadata edit submissions require a published server version"
+        ) from exc
     except DuplicateRegistryVersionError as exc:
         raise DuplicatePublishedVersionError("server version already published") from exc
     submission.status = "published"
