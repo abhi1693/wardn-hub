@@ -44,6 +44,7 @@ def test_cors_origins_parse_comma_separated_env(monkeypatch) -> None:
 
 def test_cors_origins_default_empty_without_env(monkeypatch) -> None:
     set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_CORS_ORIGINS", raising=False)
 
     settings = Settings(_env_file=None)
 

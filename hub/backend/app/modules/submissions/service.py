@@ -59,6 +59,10 @@ UNIQUE_ACTIVE_SUBMISSION_STATUSES = {"draft", "submitted", "approved", "rejected
 DOCUMENTED_ENVIRONMENT_VARIABLE_PATTERN = re.compile(
     r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b"
 )
+DOCUMENTED_ENVIRONMENT_CONTEXT_PATTERN = re.compile(
+    r"\b(?:configur(?:e|ed|ation|ing)|env|environment|export|set|variable|variables)\b",
+    re.IGNORECASE,
+)
 
 
 def validation_check(name: str, status: str, message: str = "") -> dict[str, str]:
@@ -554,10 +558,37 @@ def environment_metadata_check(packages: list[Any]) -> dict[str, str]:
 
 
 def documented_environment_variable_names(documentation: str) -> set[str]:
-    return {
-        match.group(0)
-        for match in DOCUMENTED_ENVIRONMENT_VARIABLE_PATTERN.finditer(documentation)
-    }
+    names: set[str] = set()
+    for match in DOCUMENTED_ENVIRONMENT_VARIABLE_PATTERN.finditer(documentation):
+        name = match.group(0)
+        line_start = documentation.rfind("\n", 0, match.start()) + 1
+        line_end = documentation.find("\n", match.end())
+        if line_end == -1:
+            line_end = len(documentation)
+        line = documentation[line_start:line_end]
+        before = documentation[max(0, match.start() - 32) : match.start()]
+        after = documentation[match.end() : min(len(documentation), match.end() + 32)]
+
+        if after.startswith(".md") or "/" in before[-8:]:
+            continue
+        if re.search(rf"['\"]{re.escape(name)}['\"]\s*:", line):
+            names.add(name)
+            continue
+        if re.search(rf"(?:^|[\s;])(?:export\s+)?{re.escape(name)}\s*=", line):
+            names.add(name)
+            continue
+        if re.search(rf"\$env:{re.escape(name)}\s*=", line, re.IGNORECASE):
+            names.add(name)
+            continue
+        if re.search(rf"process\.env\.{re.escape(name)}\b", line):
+            names.add(name)
+            continue
+        if "|" in line and f"`{name}`" in line:
+            names.add(name)
+            continue
+        if f"`{name}`" in line and DOCUMENTED_ENVIRONMENT_CONTEXT_PATTERN.search(line):
+            names.add(name)
+    return names
 
 
 def environment_variable_names(values: Any) -> set[str]:

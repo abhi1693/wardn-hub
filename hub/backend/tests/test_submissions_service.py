@@ -856,6 +856,33 @@ def test_validation_warns_when_documentation_env_vars_lack_metadata() -> None:
     )
 
 
+def test_validation_ignores_documentation_constants_and_markdown_paths() -> None:
+    payload = complete_registry_payload()
+    payload.documentation = (
+        "## Installation\nUse `npx -y @example/weather-mcp`.\n\n"
+        "See [Token Guide](docs/TOKEN_EFFICIENCY.md) and "
+        "[Error Handling](docs/ERROR_HANDLING.md).\n\n"
+        "Standard error codes include `INVALID_PARAMS` and `EXECUTION_ERROR`.\n\n"
+        "## Configuration\nSet `GITHUB_TOKEN` for authenticated API requests.\n\n"
+        "## Capabilities\nProvides weather tools.\n\n"
+        "## Limitations\nForecast availability depends on the upstream service."
+    )
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "warning"
+    documented_check = next(
+        check
+        for check in result["checks"]
+        if check["name"] == "documentedEnvironmentVariables"
+    )
+    assert "GITHUB_TOKEN" in documented_check["message"]
+    assert "TOKEN_EFFICIENCY" not in documented_check["message"]
+    assert "ERROR_HANDLING" not in documented_check["message"]
+    assert "INVALID_PARAMS" not in documented_check["message"]
+    assert "EXECUTION_ERROR" not in documented_check["message"]
+
+
 def test_validation_accepts_documentation_env_vars_in_package_metadata() -> None:
     payload = complete_registry_payload()
     payload.documentation = (
