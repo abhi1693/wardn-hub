@@ -435,25 +435,59 @@ def test_publish_submission_requires_superuser_even_with_publish_scope(monkeypat
     assert response.json() == {"detail": "superuser access required"}
 
 
-def test_system_review_publish_is_forbidden(monkeypatch) -> None:
+def test_system_review_publish_uses_system_route_without_user_auth(monkeypatch) -> None:
     app = create_app()
+    captured: dict[str, object] = {}
+    submission_id = uuid4()
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+
+    class FakeSession:
+        async def commit(self) -> None:
+            captured["committed"] = True
 
     async def fake_session():
-        yield object()
+        yield FakeSession()
+
+    async def publish_by_system(session, route_submission_id):
+        captured["session"] = session
+        captured["submission_id"] = route_submission_id
+        return {
+            "id": str(route_submission_id),
+            "name": "io.github.example/weather",
+            "version": "1.0.0",
+            "submitterUserId": str(uuid4()),
+            "ownerUserId": str(uuid4()),
+            "ownerOrganizationId": None,
+            "submissionType": "new_server",
+            "status": "published",
+            "serverJson": {
+                "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+                "name": "io.github.example/weather",
+                "description": "Weather tools for forecasts",
+                "version": "1.0.0",
+                "packages": [{"registryType": "mcpb", "identifier": "example.mcpb"}],
+                "_meta": {"categories": ["weather"]},
+            },
+            "validationResult": {"status": "passed", "checks": []},
+            "submittedAt": now.isoformat(),
+            "approvedAt": now.isoformat(),
+            "approverUserId": None,
+            "rejectionMessage": "",
+            "publishedServerVersionId": str(uuid4()),
+            "createdAt": now.isoformat(),
+            "updatedAt": now.isoformat(),
+        }
 
     app.dependency_overrides[get_db_session] = fake_session
-    monkeypatch.setattr(
-        submissions_router,
-        "get_settings",
-        lambda: SimpleNamespace(system_review_secret="secret"),
-    )
+    app.dependency_overrides[submissions_router.require_system_review_secret] = lambda: None
+    monkeypatch.setattr(submissions_router, "publish_submission_by_system", publish_by_system)
 
     response = TestClient(app).post(
-        f"/api/v1/system/review/submissions/{uuid4()}/publish",
-        headers={"X-Wardn-System-Review-Secret": "secret"},
+        f"/api/v1/system/review/submissions/{submission_id}/publish"
     )
 
-    assert response.status_code == 403
-    assert response.json() == {
-        "detail": "system publish is disabled; superuser access required",
-    }
+    assert response.status_code == 200
+    assert response.json()["id"] == str(submission_id)
+    assert response.json()["status"] == "published"
+    assert captured["submission_id"] == submission_id
+    assert captured["committed"] is True

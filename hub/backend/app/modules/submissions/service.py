@@ -1065,6 +1065,16 @@ async def submission_owned_by_superuser_or_partner(
     return False
 
 
+async def submission_owned_by_superuser(
+    session: AsyncSession,
+    submission: ServerSubmission,
+) -> bool:
+    if submission.owner_user_id is None:
+        return False
+    owner_user = await session.get(User, submission.owner_user_id)
+    return bool(owner_user and owner_user.is_active and owner_user.is_superuser)
+
+
 async def list_submissions_for_system_fix(session: AsyncSession) -> list[SubmissionRead]:
     submissions = await repository.list_repairable_submissions_for_system_fix(session)
     eligible: list[SubmissionRead] = []
@@ -1237,6 +1247,7 @@ def payload_with_github_namespace_claim_metadata(
 
 
 async def payload_with_verified_github_namespace_claim(
+    session: AsyncSession,
     submission: ServerSubmission,
     payload: RegistryServerVersionCreate,
 ) -> RegistryServerVersionCreate:
@@ -1245,6 +1256,9 @@ async def payload_with_verified_github_namespace_claim(
 
     authority = github_namespace_claim_authority(payload)
     if not authority:
+        return payload
+
+    if await submission_owned_by_superuser(session, submission):
         return payload
 
     claim_user_id = submission.owner_user_id or submission.submitter_user_id
@@ -2181,7 +2195,7 @@ async def publish_submission_for_actor(
     validation_result = validation_result_for(payload, submission_type=submission.submission_type)
     ensure_validation_passed(validation_result)
     submission.validation_result = validation_result
-    payload = await payload_with_verified_github_namespace_claim(submission, payload)
+    payload = await payload_with_verified_github_namespace_claim(session, submission, payload)
     payload = await payload_with_github_readme_documentation(payload)
     try:
         published = await registry_service.create_server_version(
@@ -2220,8 +2234,6 @@ async def publish_submission(
     *,
     api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
-    if not publisher.is_superuser:
-        raise SubmissionAccessDeniedError("submission publish requires superuser access")
     return await publish_submission_for_actor(
         session,
         submission_id,
@@ -2234,4 +2246,8 @@ async def publish_submission_by_system(
     session: AsyncSession,
     submission_id: uuid.UUID,
 ) -> SubmissionRead:
-    raise SubmissionAccessDeniedError("system publish is disabled; superuser access required")
+    return await publish_submission_for_actor(
+        session,
+        submission_id,
+        actor_user_id=None,
+    )

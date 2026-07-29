@@ -665,14 +665,42 @@ def test_database_review_client_does_not_retry_commit_transient_disconnect(
     assert attempts == 1
 
 
-def test_database_review_client_cannot_publish() -> None:
+def test_database_review_client_can_publish(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeSession:
+        async def __aenter__(self) -> FakeSession:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def commit(self) -> None:
+            committed["value"] = True
+
+        async def rollback(self) -> None:
+            return None
+
+    def fake_session_local() -> FakeSession:
+        return FakeSession()
+
+    submission_id = uuid.uuid4()
+    committed: dict[str, bool] = {}
+
+    async def publish_by_system(_session: object, route_submission_id: uuid.UUID) -> dict[str, Any]:
+        assert route_submission_id == submission_id
+        return {"id": str(route_submission_id), "status": "published"}
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", fake_session_local)
+    monkeypatch.setattr(submissions_service, "publish_submission_by_system", publish_by_system)
     client = cli.WardnHubDatabaseReviewClient()
     try:
-        assert client.probe_publish_access() is False
-        with pytest.raises(cli.UserFacingError, match="Database review cannot publish"):
-            client.publish_submission(str(uuid.uuid4()))
+        assert client.probe_publish_access() is True
+        assert client.publish_submission(str(submission_id)) == {
+            "id": str(submission_id),
+            "status": "published",
+        }
     finally:
         client._loop.close()
+    assert committed["value"] is True
 
 
 def test_pending_submissions_filters_status_and_skips() -> None:
@@ -1449,7 +1477,7 @@ def test_review_loop_auto_publish_leaves_pass_without_publish_access() -> None:
     assert "Decision (" not in output
 
 
-def test_review_loop_auto_publish_requires_superuser() -> None:
+def test_review_loop_auto_publish_uses_publish_access_without_superuser() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
             super().review(prompt, environment=environment)
@@ -1481,11 +1509,12 @@ def test_review_loop_auto_publish_requires_superuser() -> None:
     )
 
     assert result == 0
-    assert client.actions == []
+    assert client.actions == [
+        ("approve", "sub-1", None),
+        ("publish", "sub-1", None),
+    ]
     output = stdout.getvalue()
-    assert "Auto-publish requested" in output
-    assert "does not have publish access" in output
-    assert "Approved and published" not in output
+    assert "Approved and published" in output
 
 
 def test_review_loop_auto_approve_leaves_non_pass_for_manual_decision() -> None:
