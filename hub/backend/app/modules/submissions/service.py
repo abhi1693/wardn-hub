@@ -60,6 +60,11 @@ from app.modules.submissions.schemas import (
 from app.modules.users.models import User, UserAPIToken
 
 UNIQUE_ACTIVE_SUBMISSION_STATUSES = {"draft", "submitted", "approved", "rejected"}
+WARDN_AI_TOOL_INVENTORY_META_KEY = "wardnAiToolInventory"
+WARDN_AI_TOOL_INVENTORY_READY_WARNING_NAMES = {
+    "documentationDetails",
+    "sourceReview",
+}
 DOCUMENTED_ENVIRONMENT_VARIABLE_PATTERN = re.compile(
     r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b"
 )
@@ -1062,12 +1067,71 @@ def ensure_validation_passed(validation_result: dict) -> None:
     raise SubmissionValidationError(message)
 
 
-def ensure_ready_for_review(validation_result: dict) -> None:
+def has_wardn_ai_tool_inventory_metadata(
+    payload: RegistryServerVersionCreate,
+    *,
+    submission_type: str | None,
+) -> bool:
+    if submission_type != "metadata_edit":
+        return False
+    meta = payload.meta if isinstance(payload.meta, dict) else {}
+    inventory = meta.get(WARDN_AI_TOOL_INVENTORY_META_KEY)
+    if not isinstance(inventory, dict):
+        return False
+    if inventory.get("source") != "runtime_tools_list":
+        return False
+    if not is_non_empty_string(inventory.get("hubVersionId")):
+        return False
+    if not is_non_empty_string(inventory.get("inventoryHash")):
+        return False
+    tool_count = inventory.get("toolCount")
+    if not isinstance(tool_count, int) or tool_count < 1:
+        return False
+
+    document = payload.to_json_dict()
+    introspection = (
+        document.get("introspection")
+        if isinstance(document.get("introspection"), dict)
+        else {}
+    )
+    tools_list = (
+        introspection.get("tools/list")
+        if isinstance(introspection.get("tools/list"), dict)
+        else {}
+    )
+    tools = tools_list.get("tools") if isinstance(tools_list.get("tools"), list) else []
+    return len(tools) == tool_count
+
+
+def should_ignore_ready_warning_for_wardn_ai_tool_inventory(
+    check: dict[str, str],
+    payload: RegistryServerVersionCreate | None,
+    *,
+    submission_type: str | None,
+) -> bool:
+    if check.get("name") not in WARDN_AI_TOOL_INVENTORY_READY_WARNING_NAMES:
+        return False
+    if payload is None:
+        return False
+    return has_wardn_ai_tool_inventory_metadata(payload, submission_type=submission_type)
+
+
+def ensure_ready_for_review(
+    validation_result: dict,
+    *,
+    payload: RegistryServerVersionCreate | None = None,
+    submission_type: str | None = None,
+) -> None:
     ensure_validation_passed(validation_result)
     warnings = [
         check["message"]
         for check in validation_result.get("checks", [])
         if check.get("status") == "warning" and check.get("message")
+        and not should_ignore_ready_warning_for_wardn_ai_tool_inventory(
+            check,
+            payload,
+            submission_type=submission_type,
+        )
     ]
     if warnings:
         raise SubmissionValidationError(
@@ -2010,7 +2074,11 @@ async def submit_submission_record(
         raise InvalidSubmissionTransitionError("submission cannot be submitted")
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
     validation_result = validation_result_for(payload, submission_type=submission.submission_type)
-    ensure_ready_for_review(validation_result)
+    ensure_ready_for_review(
+        validation_result,
+        payload=payload,
+        submission_type=submission.submission_type,
+    )
     submission.validation_result = validation_result
     await ensure_submission_type_allowed(
         session,
@@ -2069,7 +2137,11 @@ async def fix_submission_by_system(
         server_json,
         submission_type=submission.submission_type,
     )
-    ensure_ready_for_review(validation_result)
+    ensure_ready_for_review(
+        validation_result,
+        payload=server_json,
+        submission_type=submission.submission_type,
+    )
     await ensure_submission_version_target_allowed(
         session,
         submission.submission_type,
@@ -2163,7 +2235,11 @@ async def approve_submission_for_actor(
     )
     payload = RegistryServerVersionCreate.model_validate(submission.server_json)
     validation_result = validation_result_for(payload, submission_type=submission.submission_type)
-    ensure_ready_for_review(validation_result)
+    ensure_ready_for_review(
+        validation_result,
+        payload=payload,
+        submission_type=submission.submission_type,
+    )
     submission.validation_result = validation_result
     await ensure_submission_version_target_allowed(
         session,

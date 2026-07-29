@@ -262,6 +262,63 @@ def test_validation_passes_with_source_review_and_transport_details() -> None:
     assert service.validation_result_for(complete_registry_payload())["status"] == "passed"
 
 
+def wardn_ai_tool_inventory_payload(
+    payload: RegistryServerVersionCreate,
+) -> RegistryServerVersionCreate:
+    data = payload.to_json_dict()
+    meta = data.setdefault("_meta", {})
+    meta.pop("sourceReview", None)
+    meta["wardnAiToolInventory"] = {
+        "source": "runtime_tools_list",
+        "hubVersionId": str(uuid4()),
+        "inventoryHash": "9d91f4ca3f8d3e798f8d2b412d8c9d2f",
+        "toolCount": 1,
+        "observedAt": "2026-07-30T00:00:00Z",
+    }
+    data["introspection"] = {
+        "tools/list": {
+            "tools": [
+                {
+                    "name": "get_forecast",
+                    "description": "Get weather forecast",
+                    "inputSchema": {"type": "object"},
+                }
+            ]
+        }
+    }
+    return RegistryServerVersionCreate.model_validate(data)
+
+
+def test_tool_inventory_metadata_edit_ready_ignores_stale_review_warnings() -> None:
+    payload = complete_registry_payload()
+    payload.documentation = "# Weather\n\nProvides weather tools."
+    payload = wardn_ai_tool_inventory_payload(payload)
+
+    result = service.validation_result_for(payload, submission_type="metadata_edit")
+
+    warning_names = {
+        check["name"] for check in result["checks"] if check["status"] == "warning"
+    }
+    assert {"documentationDetails", "sourceReview"} <= warning_names
+    service.ensure_ready_for_review(
+        result,
+        payload=payload,
+        submission_type="metadata_edit",
+    )
+
+
+def test_tool_inventory_metadata_edit_ready_keeps_unrelated_warnings_blocking() -> None:
+    payload = wardn_ai_tool_inventory_payload(registry_payload())
+    result = service.validation_result_for(payload, submission_type="metadata_edit")
+
+    with pytest.raises(SubmissionValidationError, match="Package transport details"):
+        service.ensure_ready_for_review(
+            result,
+            payload=payload,
+            submission_type="metadata_edit",
+        )
+
+
 def test_validation_passes_with_matching_package_registry_evidence() -> None:
     payload = complete_registry_payload()
     assert payload.meta is not None
