@@ -1196,6 +1196,25 @@ async def resolve_submission_owner(
     return owner_user_id, owner_organization_id
 
 
+async def default_metadata_edit_owner(
+    session: AsyncSession,
+    payload: SubmissionCreate,
+) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+    owner_user_id = payload.owner_user_id
+    owner_organization_id = payload.owner_organization_id
+    if (
+        payload.submission_type != "metadata_edit"
+        or owner_user_id is not None
+        or owner_organization_id is not None
+    ):
+        return owner_user_id, owner_organization_id
+
+    server = await registry_repository.get_server(session, payload.server_json.name)
+    if server is None:
+        return owner_user_id, owner_organization_id
+    return server.owner_user_id, server.owner_organization_id
+
+
 def submission_response(submission: ServerSubmission) -> SubmissionRead:
     return SubmissionRead(
         id=submission.id,
@@ -1757,11 +1776,14 @@ async def create_submission(
         submission_type=payload.submission_type,
     )
     ensure_validation_passed(validation_result)
+    requested_owner_user_id, requested_owner_organization_id = (
+        await default_metadata_edit_owner(session, payload)
+    )
     owner_user_id, owner_organization_id = await resolve_submission_owner(
         session,
         user,
-        owner_user_id=payload.owner_user_id,
-        owner_organization_id=payload.owner_organization_id,
+        owner_user_id=requested_owner_user_id,
+        owner_organization_id=requested_owner_organization_id,
         permission="servers.create",
         api_token=api_token,
     )

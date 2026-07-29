@@ -1075,6 +1075,46 @@ async def test_metadata_edit_submission_allows_existing_exact_version(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_metadata_edit_submission_defaults_to_existing_owner_for_superuser(
+    monkeypatch,
+) -> None:
+    owner = current_user()
+    superuser = current_user(is_superuser=True)
+    server = registry_server(owner_user_id=owner.id)
+    published_version = registry_version(server.id, version="1.0.0")
+
+    async def existing_server(*args, **kwargs):
+        return server
+
+    async def active_versions(*args, **kwargs):
+        return [published_version]
+
+    async def existing_version(*args, **kwargs):
+        return published_version
+
+    monkeypatch.setattr(service.registry_repository, "get_server", existing_server)
+    monkeypatch.setattr(
+        service.registry_repository,
+        "list_published_server_versions",
+        active_versions,
+    )
+    monkeypatch.setattr(service.registry_repository, "get_server_version", existing_version)
+
+    response = await service.create_submission(
+        FakeSession(),
+        superuser,
+        SubmissionCreate(
+            submissionType="metadata_edit",
+            serverJson=complete_registry_payload(version="1.0.0"),
+        ),
+    )
+
+    assert response.submission_type == "metadata_edit"
+    assert response.submitter_user_id == superuser.id
+    assert response.owner_user_id == owner.id
+
+
+@pytest.mark.asyncio
 async def test_new_server_submission_rejects_existing_server_name(monkeypatch) -> None:
     server = registry_server(owner_user_id=uuid4())
 
