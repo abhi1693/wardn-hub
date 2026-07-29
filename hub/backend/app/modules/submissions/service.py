@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -7,7 +8,14 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.events.service import emit_audit_and_event, subject_payload
+from app.modules.imports.exceptions import SourceNotFoundError, UnsupportedSourceError
 from app.modules.imports.package_registry import PACKAGE_REGISTRY_EVIDENCE_META_KEY
+from app.modules.imports.service import (
+    clean_subfolder,
+    fetch_github_readme,
+    github_source_subfolder,
+    parse_github_repository,
+)
 from app.modules.organizations import repository as organization_repository
 from app.modules.organizations.exceptions import (
     OrganizationAccessDeniedError,
@@ -68,6 +76,56 @@ def model_or_dict(value: Any) -> dict[str, Any]:
         payload = value.model_dump(by_alias=True, exclude_none=True)
         return payload if isinstance(payload, dict) else {}
     return {}
+
+
+def github_readme_sources_for_payload(
+    payload: RegistryServerVersionCreate,
+) -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_source(url: str, subfolder: str = "") -> None:
+        normalized_url = url.strip()
+        if not normalized_url:
+            return
+        normalized_subfolder = clean_subfolder(subfolder) or github_source_subfolder(normalized_url)
+        try:
+            repository = parse_github_repository(normalized_url)
+        except UnsupportedSourceError:
+            return
+        key = (f"{repository.owner}/{repository.repo}".casefold(), normalized_subfolder)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append((normalized_url, normalized_subfolder))
+
+    if payload.repository is not None:
+        add_source(payload.repository.url, payload.repository.subfolder)
+    add_source(payload.website_url)
+    return candidates
+
+
+def github_readme_documentation_for_payload(payload: RegistryServerVersionCreate) -> str:
+    for url, subfolder in github_readme_sources_for_payload(payload):
+        try:
+            repository = parse_github_repository(url)
+            readme = fetch_github_readme(repository, subfolder)
+        except (SourceNotFoundError, UnsupportedSourceError):
+            continue
+        if readme.strip():
+            return readme
+    return ""
+
+
+async def payload_with_github_readme_documentation(
+    payload: RegistryServerVersionCreate,
+) -> RegistryServerVersionCreate:
+    readme = await asyncio.to_thread(github_readme_documentation_for_payload, payload)
+    if not readme.strip() or readme == payload.documentation:
+        return payload
+    enriched = payload.to_json_dict()
+    enriched["documentation"] = readme
+    return RegistryServerVersionCreate.model_validate(enriched)
 
 
 def has_env_placeholder(value: Any) -> bool:
@@ -1880,6 +1938,7 @@ async def publish_submission_for_actor(
     validation_result = validation_result_for(payload, submission_type=submission.submission_type)
     ensure_validation_passed(validation_result)
     submission.validation_result = validation_result
+    payload = await payload_with_github_readme_documentation(payload)
     try:
         published = await registry_service.create_server_version(
             session,
@@ -1893,6 +1952,7 @@ async def publish_submission_for_actor(
     except DuplicateRegistryVersionError as exc:
         raise DuplicatePublishedVersionError("server version already published") from exc
     submission.status = "published"
+    submission.server_json = payload.to_json_dict()
     submission.published_server_version_id = published.version.id
     await session.flush()
     await session.refresh(submission)

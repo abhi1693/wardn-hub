@@ -1647,6 +1647,103 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_publish_submission_prefers_github_readme_documentation(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    published_version_id = uuid4()
+    published_payload = None
+    server_json = complete_registry_payload().to_json_dict()
+    server_json["documentation"] = "## Installation\nGenerated fallback docs."
+    server_json["repository"] = {
+        "source": "github",
+        "type": "github",
+        "url": "https://github.com/example/weather",
+        "subfolder": "",
+    }
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+    submission.server_json = server_json
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def publish_version(_session, payload, **_kwargs):
+        nonlocal published_payload
+        published_payload = payload
+        return SimpleNamespace(version=SimpleNamespace(id=published_version_id))
+
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(
+        service,
+        "fetch_github_readme",
+        lambda _repository, _subfolder: "# Weather README\n\nFull upstream docs.",
+    )
+
+    published = await service.publish_submission(FakeSession(), moderator, submission.id)
+
+    assert published.status == "published"
+    assert published_payload.documentation == "# Weather README\n\nFull upstream docs."
+    assert submission.server_json["documentation"] == "# Weather README\n\nFull upstream docs."
+
+
+@pytest.mark.asyncio
+async def test_publish_submission_keeps_approved_documentation_when_readme_fetch_fails(
+    monkeypatch,
+) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    published_version_id = uuid4()
+    published_payload = None
+    server_json = complete_registry_payload().to_json_dict()
+    server_json["documentation"] = "## Installation\nApproved docs."
+    server_json["repository"] = {
+        "source": "github",
+        "type": "github",
+        "url": "https://github.com/example/weather",
+        "subfolder": "",
+    }
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+    submission.server_json = server_json
+
+    async def no_published_version(*args, **kwargs):
+        return None
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def publish_version(_session, payload, **_kwargs):
+        nonlocal published_payload
+        published_payload = payload
+        return SimpleNamespace(version=SimpleNamespace(id=published_version_id))
+
+    def fail_readme_fetch(*_args, **_kwargs):
+        raise service.SourceNotFoundError("GitHub README could not be fetched")
+
+    monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(service, "fetch_github_readme", fail_readme_fetch)
+
+    published = await service.publish_submission(FakeSession(), moderator, submission.id)
+
+    assert published.status == "published"
+    assert published_payload.documentation == "## Installation\nApproved docs."
+    assert submission.server_json["documentation"] == "## Installation\nApproved docs."
+
+
+@pytest.mark.asyncio
 async def test_publish_submission_rejects_stale_new_server_for_existing_name(monkeypatch) -> None:
     submitter = current_user()
     moderator = current_user(is_superuser=True)
