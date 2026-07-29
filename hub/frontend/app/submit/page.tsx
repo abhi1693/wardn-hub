@@ -1,12 +1,14 @@
 "use client";
 
+import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ClipboardEvent, FormEvent } from "react";
-import { Suspense, useEffect, useState } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ClipboardCopy, KeyRound, Plus, Save, Trash2, X } from "lucide-react";
 
 import { AiDraftFixPromptDialog } from "@/components/ai-draft-fix-prompt-dialog";
+import { copyText } from "@/components/ai-prompt-shared";
 import { PageLoader } from "@/components/page-loader";
 import { PublicHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -79,6 +81,194 @@ function safeReturnTo(value: string | null) {
   return value;
 }
 
+function githubNamespaceAuthority(serverName: string) {
+  const [namespace] = serverName.trim().split("/");
+  const parts = namespace?.split(".") ?? [];
+  if (
+    parts.length === 3 &&
+    parts[0]?.toLowerCase() === "io" &&
+    parts[1]?.toLowerCase() === "github" &&
+    parts[2]
+  ) {
+    return parts[2];
+  }
+  return "";
+}
+
+function repositoryOwner(repositoryUrl: string) {
+  const repository = normalizeRepositoryReference(repositoryUrl);
+  const [owner] = repository.split("/");
+  return owner || "";
+}
+
+function buildClaimJson(serverName: string, claimUserId: string) {
+  const listedServerName = serverName.trim() || "io.github.username/server-name";
+  const listedUserId = claimUserId.trim() || "YOUR_WARDN_USER_UUID";
+  return JSON.stringify(
+    {
+      $schema: "https://wardn.ai/schemas/wardn.json",
+      servers: {
+        [listedServerName]: {
+          owners: [{ userId: listedUserId }],
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+function ClaimInfoDialog({
+  claimUserId,
+  onOpenChange,
+  open,
+  ownerOrganizationId,
+  repositoryUrl,
+  serverName,
+}: {
+  claimUserId: string;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  ownerOrganizationId: string;
+  repositoryUrl: string;
+  serverName: string;
+}) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const claimRef = useRef<HTMLTextAreaElement>(null);
+  const claimJson = useMemo(
+    () => buildClaimJson(serverName, claimUserId),
+    [claimUserId, serverName],
+  );
+  const authority = githubNamespaceAuthority(serverName);
+  const currentRepositoryOwner = repositoryOwner(repositoryUrl);
+  const repositoryMatchesNamespace = Boolean(
+    authority &&
+      currentRepositoryOwner &&
+      currentRepositoryOwner.toLowerCase() === authority.toLowerCase(),
+  );
+
+  async function copyClaimJson() {
+    setCopyState("idle");
+    try {
+      await copyText(claimJson, claimRef.current);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1800);
+    } catch {
+      setCopyState("failed");
+    }
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      setCopyState("idle");
+    }
+    onOpenChange(nextOpen);
+  }
+
+  return (
+    <Dialog.Root onOpenChange={handleOpenChange} open={open}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px]" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 grid max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] max-w-3xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border border-border bg-white shadow-2xl focus-visible:outline-none">
+          <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+            <div className="grid gap-1">
+              <Dialog.Title className="flex items-center gap-2 text-xl font-black tracking-normal text-foreground">
+                <KeyRound className="size-5 text-muted-foreground" />
+                Ownership claim
+              </Dialog.Title>
+              <Dialog.Description className="text-sm text-muted-foreground">
+                Publish requires this file for new servers in unconfirmed GitHub namespaces.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close asChild>
+              <Button aria-label="Close" size="icon" type="button" variant="ghost">
+                <X className="size-4" />
+              </Button>
+            </Dialog.Close>
+          </div>
+
+          <div className="grid max-h-[calc(100dvh-154px)] gap-5 overflow-y-auto px-5 py-5">
+            <div className="grid gap-3 rounded-md border bg-muted/30 p-4 text-sm">
+              <div className="grid gap-1">
+                <span className="font-medium text-foreground">Server name</span>
+                <code className="break-all rounded bg-white px-2 py-1 text-xs">
+                  {serverName.trim() || "io.github.username/server-name"}
+                </code>
+              </div>
+              <div className="grid gap-1">
+                <span className="font-medium text-foreground">Wardn user UUID</span>
+                <code className="break-all rounded bg-white px-2 py-1 text-xs">
+                  {claimUserId || "Sign in to see your UUID"}
+                </code>
+              </div>
+              <div className="grid gap-1">
+                <span className="font-medium text-foreground">Required file path</span>
+                <code className="break-all rounded bg-white px-2 py-1 text-xs">
+                  {authority ? `github.com/${authority}/REPOSITORY/wardn.json` : "wardn.json"}
+                </code>
+              </div>
+              {ownerOrganizationId ? (
+                <p className="text-muted-foreground">
+                  Organization submissions use the submitting Wardn user UUID for this repository
+                  control proof.
+                </p>
+              ) : null}
+            </div>
+
+            {authority ? (
+              <div
+                className={
+                  repositoryMatchesNamespace
+                    ? "rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                    : "rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                }
+              >
+                {repositoryMatchesNamespace
+                  ? `The current repository owner matches io.github.${authority}.`
+                  : currentRepositoryOwner
+                    ? `The current repository owner is ${currentRepositoryOwner}; io.github.${authority} requires a repository under ${authority}.`
+                    : `Link a GitHub repository under ${authority} before publishing this namespace.`}
+              </div>
+            ) : (
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                This publish gate applies to server names that start with io.github.
+              </div>
+            )}
+
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <ClipboardCopy className="size-4 text-muted-foreground" />
+                  wardn.json
+                </div>
+                <Button onClick={() => void copyClaimJson()} type="button">
+                  {copyState === "copied" ? (
+                    <Check className="size-4" />
+                  ) : (
+                    <ClipboardCopy className="size-4" />
+                  )}
+                  {copyState === "copied" ? "Copied" : "Copy file"}
+                </Button>
+              </div>
+              <textarea
+                className="min-h-56 resize-y rounded-[var(--radius)] border border-input bg-slate-50 px-3 py-3 font-mono text-xs leading-5 text-slate-800 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                readOnly
+                ref={claimRef}
+                value={claimJson}
+              />
+              {copyState === "failed" ? (
+                <p className="text-sm font-medium text-destructive">
+                  Copy failed. Select the file text and copy it manually.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 function SubmitServerPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -88,6 +278,7 @@ function SubmitServerPageContent() {
   const [user, setUser] = useState<UserRead | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState("");
+  const [claimInfoOpen, setClaimInfoOpen] = useState(false);
   const [draftFixPromptOpen, setDraftFixPromptOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const {
@@ -686,8 +877,12 @@ function SubmitServerPageContent() {
             </Card>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="flex items-center justify-between gap-3 space-y-0">
                 <CardTitle>Server</CardTitle>
+                <Button onClick={() => setClaimInfoOpen(true)} type="button" variant="outline">
+                  <KeyRound className="size-4" />
+                  Claim info
+                </Button>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
@@ -1476,6 +1671,14 @@ function SubmitServerPageContent() {
         open={draftFixPromptOpen}
         serverName={effectiveName}
         submissionId={editingSubmissionId}
+      />
+      <ClaimInfoDialog
+        claimUserId={ownerOrganizationId ? user?.id || "" : ownerUserId || user?.id || ""}
+        onOpenChange={setClaimInfoOpen}
+        open={claimInfoOpen}
+        ownerOrganizationId={ownerOrganizationId}
+        repositoryUrl={repositoryUrl}
+        serverName={effectiveName}
       />
     </>
   );

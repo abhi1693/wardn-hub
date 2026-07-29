@@ -334,6 +334,8 @@ async def approve_submission_record(
         )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
+    except SubmissionAccessDeniedError as exc:
+        raise forbidden(exc) from exc
     except (
         InvalidSubmissionTransitionError,
         DuplicatePublishedVersionError,
@@ -390,6 +392,8 @@ async def publish_submission_record(
         )
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
+    except SubmissionAccessDeniedError as exc:
+        raise forbidden(exc) from exc
     except (
         InvalidSubmissionTransitionError,
         DuplicatePublishedVersionError,
@@ -492,6 +496,8 @@ async def publish_system_review_submission_record(
         response = await publish_submission_by_system(session, submission_id)
     except SubmissionNotFoundError as exc:
         raise not_found(exc) from exc
+    except SubmissionAccessDeniedError as exc:
+        raise forbidden(exc) from exc
     except (
         InvalidSubmissionTransitionError,
         DuplicatePublishedVersionError,

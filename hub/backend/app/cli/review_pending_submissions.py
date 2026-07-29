@@ -224,17 +224,10 @@ class WardnHubDatabaseReviewClient:
         return self._run_database_operation(operation, commit=True)
 
     def publish_submission(self, submission_id: str) -> dict[str, Any]:
-        async def operation(session: Any) -> dict[str, Any]:
-            from app.modules.submissions.exceptions import SubmissionError
-            from app.modules.submissions.service import publish_submission_by_system
-
-            try:
-                submission = await publish_submission_by_system(session, uuid.UUID(submission_id))
-            except SubmissionError as exc:
-                raise UserFacingError(f"Unable to publish submission: {exc}") from exc
-            return submission_read_to_review_dict(submission)
-
-        return self._run_database_operation(operation, commit=True)
+        raise UserFacingError(
+            "Database review cannot publish submissions; use a superuser account with "
+            "submissions:publish instead."
+        )
 
     def reject_submission(self, submission_id: str, message: str) -> dict[str, Any]:
         async def operation(session: Any) -> dict[str, Any]:
@@ -257,7 +250,9 @@ class WardnHubDatabaseReviewClient:
         return None
 
     def probe_publish_access(self) -> bool:
-        return True
+        return False
+
+
 def bool_field(data: dict[str, Any], snake_case: str, camel_case: str) -> bool:
     return bool(data.get(snake_case) or data.get(camel_case))
 
@@ -723,7 +718,11 @@ def review_loop(
     skipped_ids: set[str] = set()
     completed_reviews = 0
     review_errors = 0
-    can_publish = bool(user.get("_wardnHubCanPublish"))
+    can_publish = bool(user.get("_wardnHubCanPublish")) and bool_field(
+        user,
+        "is_superuser",
+        "isSuperuser",
+    )
 
     while True:
         submission = next_submission_for_review(

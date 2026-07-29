@@ -665,6 +665,16 @@ def test_database_review_client_does_not_retry_commit_transient_disconnect(
     assert attempts == 1
 
 
+def test_database_review_client_cannot_publish() -> None:
+    client = cli.WardnHubDatabaseReviewClient()
+    try:
+        assert client.probe_publish_access() is False
+        with pytest.raises(cli.UserFacingError, match="Database review cannot publish"):
+            client.publish_submission(str(uuid.uuid4()))
+    finally:
+        client._loop.close()
+
+
 def test_pending_submissions_filters_status_and_skips() -> None:
     submissions = [
         {"id": "a", "status": "submitted"},
@@ -1437,6 +1447,45 @@ def test_review_loop_auto_publish_leaves_pass_without_publish_access() -> None:
     assert "Auto-publish requested" in output
     assert "does not have publish access" in output
     assert "Decision (" not in output
+
+
+def test_review_loop_auto_publish_requires_superuser() -> None:
+    class PassingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return review_result_json(
+                "pass",
+                suggested_approval_note="Approved.",
+            )
+
+    client = FakeClient([submitted_submission()])
+    user = client.current_user()
+    user["is_superuser"] = False
+    user["_wardnHubCanPublish"] = True
+    reviewer = PassingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=user,
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=False,
+        auto_approve=False,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+        auto_publish=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "Auto-publish requested" in output
+    assert "does not have publish access" in output
+    assert "Approved and published" not in output
 
 
 def test_review_loop_auto_approve_leaves_non_pass_for_manual_decision() -> None:

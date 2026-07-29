@@ -81,6 +81,10 @@ def restricted_api_token(*organization_ids) -> UserAPIToken:
     )
 
 
+async def allow_github_namespace_claim(submission, payload):
+    return payload
+
+
 def submission_record(
     *,
     submitter_user_id,
@@ -1685,6 +1689,11 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
     monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
     monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
     monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(
+        service,
+        "payload_with_verified_github_namespace_claim",
+        allow_github_namespace_claim,
+    )
 
     response = await service.create_submission(
         FakeSession(),
@@ -1732,6 +1741,20 @@ async def test_submission_lifecycle_publishes_approved_payload(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_publish_submission_rejects_non_superuser() -> None:
+    publisher = current_user(is_global_moderator=True)
+
+    with pytest.raises(SubmissionAccessDeniedError, match="superuser"):
+        await service.publish_submission(FakeSession(), publisher, uuid4())
+
+
+@pytest.mark.asyncio
+async def test_publish_submission_by_system_is_disabled() -> None:
+    with pytest.raises(SubmissionAccessDeniedError, match="system publish is disabled"):
+        await service.publish_submission_by_system(FakeSession(), uuid4())
+
+
+@pytest.mark.asyncio
 async def test_publish_submission_prefers_github_readme_documentation(monkeypatch) -> None:
     submitter = current_user()
     moderator = current_user(is_superuser=True)
@@ -1766,6 +1789,11 @@ async def test_publish_submission_prefers_github_readme_documentation(monkeypatc
     monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
     monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
     monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(
+        service,
+        "payload_with_verified_github_namespace_claim",
+        allow_github_namespace_claim,
+    )
     monkeypatch.setattr(
         service,
         "fetch_github_readme",
@@ -1819,6 +1847,11 @@ async def test_publish_submission_keeps_approved_documentation_when_readme_fetch
     monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
     monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
     monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(
+        service,
+        "payload_with_verified_github_namespace_claim",
+        allow_github_namespace_claim,
+    )
     monkeypatch.setattr(service, "fetch_github_readme", fail_readme_fetch)
 
     published = await service.publish_submission(FakeSession(), moderator, submission.id)
@@ -1826,6 +1859,122 @@ async def test_publish_submission_keeps_approved_documentation_when_readme_fetch
     assert published.status == "published"
     assert published_payload.documentation == "## Installation\nApproved docs."
     assert submission.server_json["documentation"] == "## Installation\nApproved docs."
+
+
+@pytest.mark.asyncio
+async def test_publish_submission_requires_github_namespace_claim_file(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def publish_version(*args, **kwargs):
+        raise AssertionError("publish should not be called")
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+
+    with pytest.raises(SubmissionValidationError, match="link the server"):
+        await service.publish_submission(FakeSession(), moderator, submission.id)
+
+
+@pytest.mark.asyncio
+async def test_publish_submission_requires_matching_github_namespace_repository(
+    monkeypatch,
+) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+    submission.server_json["repository"] = {
+        "source": "github",
+        "type": "git",
+        "url": "https://github.com/other/weather",
+    }
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def publish_version(*args, **kwargs):
+        raise AssertionError("publish should not be called")
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+
+    with pytest.raises(SubmissionValidationError, match="not github.com/example"):
+        await service.publish_submission(FakeSession(), moderator, submission.id)
+
+
+@pytest.mark.asyncio
+async def test_publish_submission_verifies_github_namespace_claim_metadata(monkeypatch) -> None:
+    submitter = current_user()
+    moderator = current_user(is_superuser=True)
+    published_version_id = uuid4()
+    published_payload = None
+    submission = submission_record(
+        submitter_user_id=submitter.id,
+        owner_user_id=submitter.id,
+        status="approved",
+    )
+    submission.server_json["repository"] = {
+        "source": "github",
+        "type": "git",
+        "url": "https://github.com/example/weather",
+    }
+
+    async def get_submission(*args, **kwargs):
+        return submission
+
+    async def ownership_manifest(repository_ref, *args, **kwargs):
+        assert repository_ref.owner == "example"
+        assert repository_ref.repo == "weather"
+        return service.registry_service.WardnOwnershipManifest(
+            payload={
+                "servers": {
+                    submission.name: {
+                        "owners": [{"userId": str(submitter.id)}],
+                    },
+                },
+            },
+            source_url="https://raw.githubusercontent.com/example/weather/main/wardn.json",
+        )
+
+    async def publish_version(_session, payload, **_kwargs):
+        nonlocal published_payload
+        published_payload = payload
+        return SimpleNamespace(version=SimpleNamespace(id=published_version_id))
+
+    def missing_readme(*_args, **_kwargs):
+        raise service.SourceNotFoundError("README unavailable")
+
+    monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
+    monkeypatch.setattr(
+        service.registry_service,
+        "fetch_wardn_ownership_manifest",
+        ownership_manifest,
+    )
+    monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(service, "fetch_github_readme", missing_readme)
+
+    published = await service.publish_submission(FakeSession(), moderator, submission.id)
+
+    assert published.status == "published"
+    assert published_payload is not None
+    assert published_payload.meta["registryNamespace"]["verificationStatus"] == "verified"
+    assert published_payload.meta["registryNamespace"]["verificationMethod"] == "wardn.json"
+    assert published_payload.meta["wardnOwnership"]["userId"] == str(submitter.id)
+    assert submission.server_json["_meta"]["registryNamespace"]["evidenceUrl"].endswith(
+        "/wardn.json"
+    )
 
 
 @pytest.mark.asyncio
@@ -1899,6 +2048,11 @@ async def test_publish_submission_allows_orphaned_server_shell(monkeypatch) -> N
         no_active_versions,
     )
     monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(
+        service,
+        "payload_with_verified_github_namespace_claim",
+        allow_github_namespace_claim,
+    )
     monkeypatch.setattr(service, "emit_submission_event", emit_event)
 
     published = await service.publish_submission(FakeSession(), moderator, submission.id)
@@ -1991,6 +2145,7 @@ async def test_create_submission_can_submit_for_review(monkeypatch) -> None:
 async def test_submission_catalog_event_types_emit_event_records(monkeypatch) -> None:
     submitter = current_user()
     moderator = current_user(is_global_moderator=True)
+    publisher = current_user(is_superuser=True)
     published_version_id = uuid4()
 
     async def no_published_version(*args, **kwargs):
@@ -2001,6 +2156,11 @@ async def test_submission_catalog_event_types_emit_event_records(monkeypatch) ->
 
     monkeypatch.setattr(service.registry_repository, "get_server_version", no_published_version)
     monkeypatch.setattr(service.registry_service, "create_server_version", publish_version)
+    monkeypatch.setattr(
+        service,
+        "payload_with_verified_github_namespace_claim",
+        allow_github_namespace_claim,
+    )
 
     async def assert_emits(event_type: str, callback, *, expected_status: str) -> None:
         session = FakeSession()
@@ -2096,7 +2256,7 @@ async def test_submission_catalog_event_types_emit_event_records(monkeypatch) ->
             return submission
 
         monkeypatch.setattr(service.repository, "get_submission_by_id", get_submission)
-        await service.publish_submission(session, moderator, submission.id)
+        await service.publish_submission(session, publisher, submission.id)
 
     await assert_emits("submission.published", publish_action, expected_status="published")
 

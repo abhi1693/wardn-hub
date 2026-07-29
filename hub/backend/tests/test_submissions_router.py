@@ -405,3 +405,55 @@ def test_publish_submission_validation_error_returns_bad_request(monkeypatch) ->
 
     assert response.status_code == 400
     assert response.json() == {"detail": "at least one category is required"}
+
+
+def test_publish_submission_requires_superuser_even_with_publish_scope(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    async def authenticate_api_token(*args, **kwargs):
+        return (
+            User(id=uuid4(), email="moderator@example.com", is_global_moderator=True),
+            SimpleNamespace(id=uuid4(), scopes=["submissions:publish"], organization_ids=[]),
+        )
+
+    async def publish(*args, **kwargs):
+        raise AssertionError("publish service should not be called")
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(dependencies, "authenticate_api_token", authenticate_api_token)
+    monkeypatch.setattr(submissions_router, "publish_submission", publish)
+
+    response = TestClient(app).post(
+        f"/api/v1/submissions/{uuid4()}/publish",
+        headers={"Authorization": "Bearer wardn_hub_key.secret"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "superuser access required"}
+
+
+def test_system_review_publish_is_forbidden(monkeypatch) -> None:
+    app = create_app()
+
+    async def fake_session():
+        yield object()
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(
+        submissions_router,
+        "get_settings",
+        lambda: SimpleNamespace(system_review_secret="secret"),
+    )
+
+    response = TestClient(app).post(
+        f"/api/v1/system/review/submissions/{uuid4()}/publish",
+        headers={"X-Wardn-System-Review-Secret": "secret"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "system publish is disabled; superuser access required",
+    }

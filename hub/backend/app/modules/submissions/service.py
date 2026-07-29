@@ -25,7 +25,10 @@ from app.modules.organizations.exceptions import (
 from app.modules.organizations.service import require_organization_permission
 from app.modules.registry import repository as registry_repository
 from app.modules.registry import service as registry_service
-from app.modules.registry.exceptions import DuplicateRegistryVersionError
+from app.modules.registry.exceptions import (
+    DuplicateRegistryVersionError,
+    RegistryOwnershipClaimError,
+)
 from app.modules.registry.schemas import RegistryServerVersionCreate
 from app.modules.submissions import repository
 from app.modules.submissions.constants import MCP_REGISTRY_IMPORT_META_KEY
@@ -1170,6 +1173,122 @@ def submission_response(submission: ServerSubmission) -> SubmissionRead:
     )
 
 
+def github_namespace_claim_authority(payload: RegistryServerVersionCreate) -> str:
+    namespace_values = registry_service.registry_namespace_storage_values(
+        payload.name,
+        payload.meta,
+    )
+    if namespace_values["registry_namespace_type"] != "github":
+        return ""
+    return registry_service.registry_namespace_authority(
+        namespace_values["registry_namespace"],
+        namespace_values["registry_namespace_type"],
+    )
+
+
+def github_namespace_claim_error(authority: str, message: str) -> SubmissionValidationError:
+    return SubmissionValidationError(
+        f"Publishing io.github.{authority} requires a wardn.json ownership file in a "
+        f"linked GitHub repository under github.com/{authority}: {message}"
+    )
+
+
+def payload_with_github_namespace_claim_metadata(
+    payload: RegistryServerVersionCreate,
+    *,
+    claim_user_id: uuid.UUID,
+    source_url: str,
+    verified_at: datetime,
+) -> RegistryServerVersionCreate:
+    data = payload.to_json_dict()
+    meta = dict(registry_service.registry_record(data.get("_meta")))
+    namespace_values = registry_service.registry_namespace_storage_values(
+        payload.name,
+        payload.meta,
+    )
+    namespace = namespace_values["registry_namespace"]
+    namespace_type = namespace_values["registry_namespace_type"]
+    authority = registry_service.registry_namespace_authority(namespace, namespace_type)
+    namespace_meta = dict(registry_service.registry_record(meta.get("registryNamespace")))
+    namespace_meta.update(
+        {
+            "namespace": namespace,
+            "type": "github",
+            "authority": authority,
+            "displayName": f"github.com/{authority}",
+            "verificationStatus": "verified",
+            "verificationMethod": "wardn.json",
+            "evidenceUrl": source_url,
+            "evidenceText": "wardn.json lists the Wardn user UUID allowed to publish this server.",
+            "source": "wardn_json",
+            "verifiedAt": verified_at.isoformat().replace("+00:00", "Z"),
+        }
+    )
+    meta["registryNamespace"] = namespace_meta
+    meta[registry_service.WARDN_OWNERSHIP_META_KEY] = {
+        "verified": True,
+        "method": "wardn.json",
+        "userId": str(claim_user_id),
+        "source": source_url,
+        "verifiedAt": verified_at.isoformat().replace("+00:00", "Z"),
+    }
+    data["_meta"] = meta
+    return RegistryServerVersionCreate.model_validate(data)
+
+
+async def payload_with_verified_github_namespace_claim(
+    submission: ServerSubmission,
+    payload: RegistryServerVersionCreate,
+) -> RegistryServerVersionCreate:
+    if submission.submission_type != "new_server":
+        return payload
+
+    authority = github_namespace_claim_authority(payload)
+    if not authority:
+        return payload
+
+    claim_user_id = submission.owner_user_id or submission.submitter_user_id
+    repository_payload = (
+        payload.repository.model_dump(by_alias=True, exclude_none=True)
+        if payload.repository is not None
+        else None
+    )
+    repository_ref = registry_service.github_repository_from_registry_repository(
+        repository_payload,
+    )
+    if repository_ref is None:
+        raise github_namespace_claim_error(
+            authority,
+            "link the server to its public GitHub repository and add wardn.json at the "
+            "repository root.",
+        )
+    if repository_ref.owner.casefold() != authority.casefold():
+        raise github_namespace_claim_error(
+            authority,
+            f"the linked repository is owned by github.com/{repository_ref.owner}, not "
+            f"github.com/{authority}.",
+        )
+
+    try:
+        manifest = await registry_service.fetch_wardn_ownership_manifest(repository_ref)
+    except RegistryOwnershipClaimError as exc:
+        raise github_namespace_claim_error(authority, str(exc)) from exc
+
+    owner_ids = registry_service.owner_user_ids_from_manifest(manifest.payload, payload.name)
+    if claim_user_id not in owner_ids:
+        raise github_namespace_claim_error(
+            authority,
+            f"wardn.json must list Wardn user UUID {claim_user_id} for {payload.name}.",
+        )
+
+    return payload_with_github_namespace_claim_metadata(
+        payload,
+        claim_user_id=claim_user_id,
+        source_url=manifest.source_url,
+        verified_at=datetime.now(UTC),
+    )
+
+
 def submission_event_payload(
     *,
     event_id: uuid.UUID,
@@ -2062,6 +2181,7 @@ async def publish_submission_for_actor(
     validation_result = validation_result_for(payload, submission_type=submission.submission_type)
     ensure_validation_passed(validation_result)
     submission.validation_result = validation_result
+    payload = await payload_with_verified_github_namespace_claim(submission, payload)
     payload = await payload_with_github_readme_documentation(payload)
     try:
         published = await registry_service.create_server_version(
@@ -2100,6 +2220,8 @@ async def publish_submission(
     *,
     api_token: UserAPIToken | None = None,
 ) -> SubmissionRead:
+    if not publisher.is_superuser:
+        raise SubmissionAccessDeniedError("submission publish requires superuser access")
     return await publish_submission_for_actor(
         session,
         submission_id,
@@ -2112,8 +2234,4 @@ async def publish_submission_by_system(
     session: AsyncSession,
     submission_id: uuid.UUID,
 ) -> SubmissionRead:
-    return await publish_submission_for_actor(
-        session,
-        submission_id,
-        actor_user_id=None,
-    )
+    raise SubmissionAccessDeniedError("system publish is disabled; superuser access required")
