@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from app.modules.events.models import EventRecord
 from app.modules.organizations.models import Organization
 from app.modules.partners.models import OrganizationServerSupport
-from app.modules.registry import service
+from app.modules.registry import repository, service
 from app.modules.registry.category_seed import MCP_SERVERS_CATEGORY_SEEDS
 from app.modules.registry.exceptions import (
     DuplicateRegistryVersionError,
@@ -18,7 +19,12 @@ from app.modules.registry.exceptions import (
     RegistryServerNotFoundError,
     RegistryVersionNotFoundError,
 )
-from app.modules.registry.models import RegistryCategory, RegistryServer, RegistryServerVersion
+from app.modules.registry.models import (
+    RegistryCategory,
+    RegistryServer,
+    RegistryServerInstallEvent,
+    RegistryServerVersion,
+)
 from app.modules.registry.schemas import (
     RegistryCategoryCreate,
     RegistryListMetadata,
@@ -173,6 +179,104 @@ def test_parse_cursor() -> None:
 
     with pytest.raises(InvalidRegistryCursorError):
         service.parse_cursor("not-a-cursor")
+
+
+async def test_record_server_install_event_increments_server_and_version() -> None:
+    class InstallSession:
+        def __init__(self) -> None:
+            self.added: list[object] = []
+            self.statements: list[str] = []
+            self.committed = False
+
+        def add(self, value: object) -> None:
+            self.added.append(value)
+
+        async def execute(self, statement: object) -> None:
+            self.statements.append(str(statement))
+
+        async def commit(self) -> None:
+            self.committed = True
+
+    server = SimpleNamespace(id=uuid4())
+    version = SimpleNamespace(id=uuid4(), version="1.0.0")
+    session = InstallSession()
+
+    await repository.record_server_install_event(
+        session,  # type: ignore[arg-type]
+        server=server,  # type: ignore[arg-type]
+        version=version,  # type: ignore[arg-type]
+        source="wardn-web-package",
+        client_version="1",
+    )
+
+    assert len(session.added) == 1
+    event = session.added[0]
+    assert isinstance(event, RegistryServerInstallEvent)
+    assert event.server_id == server.id
+    assert event.version_id == version.id
+    assert event.version == "1.0.0"
+    assert event.source == "wardn-web-package"
+    assert event.client_version == "1"
+    assert any("installs=(mcp_servers.installs +" in statement for statement in session.statements)
+    assert any(
+        "installs=(mcp_server_versions.installs +" in statement
+        for statement in session.statements
+    )
+    assert session.committed is True
+
+
+async def test_record_server_install_requires_current_published_version_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_version_id = uuid4()
+    server = SimpleNamespace(id=uuid4())
+    version = SimpleNamespace(id=current_version_id, version="1.0.0")
+    recorded: list[dict[str, object]] = []
+
+    async def get_published_server(*args: object) -> SimpleNamespace:
+        return server
+
+    async def get_published_server_version(*args: object) -> SimpleNamespace:
+        return version
+
+    async def record_server_install_event(*args: object, **kwargs: object) -> None:
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(service.repository, "get_published_server", get_published_server)
+    monkeypatch.setattr(
+        service.repository,
+        "get_published_server_version",
+        get_published_server_version,
+    )
+    monkeypatch.setattr(
+        service.repository,
+        "record_server_install_event",
+        record_server_install_event,
+    )
+
+    await service.record_server_install(
+        object(),
+        "io.github.example/weather",
+        version_id=current_version_id,
+        client="wardn-web-package",
+        client_version="1",
+    )
+
+    assert recorded == [
+        {
+            "server": server,
+            "version": version,
+            "source": "wardn-web-package",
+            "client_version": "1",
+        }
+    ]
+
+    with pytest.raises(RegistryVersionNotFoundError, match="server version"):
+        await service.record_server_install(
+            object(),
+            "io.github.example/weather",
+            version_id=uuid4(),
+        )
 
 
 def test_version_summary_normalizes_stored_remote_query_parameters() -> None:
@@ -501,6 +605,7 @@ def test_project_list_response_fields_keeps_only_requested_server_fields() -> No
                     "trustReport": service.trust_report_for_version(version).model_dump(
                         by_alias=True
                     ),
+                    "installs": 0,
                     "publishedAt": version.published_at,
                     "publishedBy": None,
                 },
@@ -1005,10 +1110,11 @@ async def test_list_published_servers_returns_full_version_data(monkeypatch) -> 
         "trustReport",
         "packages",
         "remotes",
-        "status",
-        "statusMessage",
-        "isLatest",
-        "publishedAt",
+            "status",
+            "statusMessage",
+            "isLatest",
+            "installs",
+            "publishedAt",
         "statusChangedAt",
         "createdAt",
         "updatedAt",

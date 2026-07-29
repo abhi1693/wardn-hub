@@ -7,6 +7,7 @@ export const PUBLIC_CARD_FIELDS = [
   "websiteUrl",
   "repository",
   "icons",
+  "installs",
   "status",
   "visibility",
   "latestVersion",

@@ -9,6 +9,7 @@ from app.modules.registry import router
 from app.modules.registry.exceptions import (
     DuplicateRegistryCategoryError,
     DuplicateRegistryVersionError,
+    RegistryVersionNotFoundError,
 )
 from app.modules.registry.schemas import (
     RegistryCategoryListResponse,
@@ -163,6 +164,7 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
         "/api/v1/mcp/catalog/stats",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/search",
+        "/api/v1/mcp/servers/telemetry/{server_name}",
         "/api/v1/mcp/servers/{server_name}",
         "/api/v1/mcp/servers/{server_name}/summary",
         "/api/v1/mcp/servers/{server_name}/tabs/overview",
@@ -190,6 +192,12 @@ def test_registry_openapi_exposes_phase_one_paths() -> None:
     assert (
         schema["paths"]["/api/v1/mcp/servers/search"]["get"]["operationId"]
         == "mcp_servers_search"
+    )
+    assert (
+        schema["paths"]["/api/v1/mcp/servers/telemetry/{server_name}"]["post"][
+            "operationId"
+        ]
+        == "mcp_servers_install_telemetry"
     )
     assert (
         schema["paths"]["/api/v1/mcp/servers/{server_name}/summary"]["get"]["operationId"]
@@ -481,6 +489,7 @@ def test_list_servers_route_projects_requested_fields(monkeypatch) -> None:
                 "status": "active",
                 "qualityScore": None,
                 "trustReport": None,
+                "installs": 0,
                 "publishedAt": "2026-06-23T00:00:00+00:00",
                 "publishedBy": None,
             },
@@ -574,6 +583,69 @@ def test_search_servers_route_forwards_query_and_filters(monkeypatch) -> None:
     assert captured["cursor"] == "0"
     assert captured["category"] == "weather"
     assert captured["partner"] is True
+
+
+def test_record_server_install_telemetry_accepts_valid_latest_version(
+    monkeypatch,
+) -> None:
+    app = create_app()
+    version_id = uuid4()
+    captured: dict[str, object] = {}
+
+    async def fake_session():
+        yield object()
+
+    async def record_server_install(*args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "record_server_install", record_server_install)
+
+    response = TestClient(app).post(
+        "/api/v1/mcp/servers/telemetry/io.github.example/weather"
+        f"?version_id={version_id}&client=wardn-web-package&client_version=1.2.3"
+    )
+
+    assert response.status_code == 204
+    assert captured["args"][1] == "io.github.example/weather"
+    assert captured["version_id"] == version_id
+    assert captured["client"] == "wardn-web-package"
+    assert captured["client_version"] == "1.2.3"
+
+
+def test_record_server_install_telemetry_rejects_invalid_version_id() -> None:
+    app = create_app()
+
+    response = TestClient(app).post(
+        "/api/v1/mcp/servers/telemetry/io.github.example/weather?version_id=not-a-uuid"
+    )
+
+    assert response.status_code == 422
+
+
+def test_record_server_install_telemetry_returns_404_for_stale_version(
+    monkeypatch,
+) -> None:
+    app = create_app()
+    version_id = uuid4()
+
+    async def fake_session():
+        yield object()
+
+    async def record_server_install(*args, **kwargs):
+        raise RegistryVersionNotFoundError("server version not found")
+
+    app.dependency_overrides[get_db_session] = fake_session
+    monkeypatch.setattr(router, "record_server_install", record_server_install)
+
+    response = TestClient(app).post(
+        "/api/v1/mcp/servers/telemetry/io.github.example/weather"
+        f"?version_id={version_id}&client=wardn-web-package"
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "server version not found"}
 
 
 def test_get_server_detail_route_allows_anonymous_access(monkeypatch) -> None:
@@ -813,7 +885,7 @@ def test_server_schema_tab_route_preserves_server_name(monkeypatch) -> None:
     assert captured["server_name"] == "io.github.example/weather"
     body = response.json()
     assert body["versions"][0]["serverJson"]["name"] == "io.github.example/weather"
-    assert set(body["server"]) == {"id", "name", "title", "icons"}
+    assert set(body["server"]) == {"id", "name", "title", "installs", "icons"}
 
 
 def test_server_tools_tab_route_preserves_server_name(monkeypatch) -> None:

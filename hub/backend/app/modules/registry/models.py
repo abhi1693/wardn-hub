@@ -7,6 +7,7 @@ from sqlalchemy import (
     Computed,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -74,6 +75,7 @@ class RegistryServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     repository: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     icons: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    installs: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     status_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
     visibility: Mapped[str] = mapped_column(
@@ -139,6 +141,7 @@ class RegistryServerVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     icons: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     server_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    installs: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     status_message: Mapped[str] = mapped_column(Text, default="", nullable=False)
     is_latest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
@@ -191,3 +194,33 @@ class RegistryServerCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     source: Mapped[str] = mapped_column(String(32), default="metadata", nullable=False)
+
+
+class RegistryServerInstallEvent(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "mcp_server_install_events"
+    __table_args__ = (
+        Index("ix_mcp_server_install_events_server_created", "server_id", "created_at"),
+        Index("ix_mcp_server_install_events_created_server", "created_at", "server_id"),
+    )
+
+    server_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mcp_servers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mcp_server_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="wardn-web", nullable=False)
+    client_version: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
+    )

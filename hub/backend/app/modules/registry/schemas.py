@@ -610,6 +610,7 @@ class RegistryLatestVersionSummary(BaseModel):
     status: RegistryVersionStatus
     quality_score: int | None = Field(default=None, alias="qualityScore")
     trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
+    installs: int = Field(default=0, ge=0)
     published_at: datetime = Field(alias="publishedAt")
     published_by: ActorSummary | None = Field(default=None, alias="publishedBy")
 
@@ -686,6 +687,7 @@ class RegistryServerRead(BaseModel):
     latest_version: RegistryLatestVersionSummary | None = Field(default=None, alias="latestVersion")
     quality_score: int | None = Field(default=None, alias="qualityScore")
     trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
+    installs: int = Field(default=0, ge=0)
     categories: list[RegistryCategoryRead] = Field(default_factory=list)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
@@ -717,6 +719,7 @@ class RegistryServerVersionRead(BaseModel):
     server_json: dict[str, Any] = Field(alias="serverJson")
     quality_score: int | None = Field(default=None, alias="qualityScore")
     trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
+    installs: int = Field(default=0, ge=0)
     status: RegistryVersionStatus
     status_message: str = Field(alias="statusMessage")
     is_latest: bool = Field(alias="isLatest")
@@ -748,6 +751,7 @@ class RegistryPublishedServerVersionRead(BaseModel):
     status: RegistryVersionStatus
     status_message: str = Field(alias="statusMessage")
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     published_at: datetime = Field(alias="publishedAt")
     status_changed_at: datetime = Field(alias="statusChangedAt")
     created_at: datetime = Field(alias="createdAt")
@@ -833,6 +837,7 @@ class RegistryServerTabServerRead(BaseModel):
     id: UUID
     name: str
     title: str
+    installs: int = Field(default=0, ge=0)
     icons: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -878,6 +883,7 @@ class RegistryServerOverviewVersionRead(BaseModel):
     quality_score: int | None = Field(default=None, alias="qualityScore")
     trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     partner_support: list[PartnerSupportSummary] = Field(
         default_factory=list,
         alias="partnerSupport",
@@ -961,6 +967,7 @@ class RegistryServerSchemaVersionRead(BaseModel):
     version: str
     title: str
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     packages: list[dict[str, Any]] = Field(default_factory=list)
     remotes: list[dict[str, Any]] = Field(default_factory=list)
     server_json: dict[str, Any] = Field(default_factory=dict, alias="serverJson")
@@ -974,6 +981,7 @@ class RegistryServerToolsVersionRead(BaseModel):
     version: str
     title: str
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     tools: list[RegistryToolRead] = Field(default_factory=list)
 
 
@@ -984,6 +992,7 @@ class RegistryServerPromptsVersionRead(BaseModel):
     version: str
     title: str
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     prompts: list[RegistryPromptRead] = Field(default_factory=list)
 
 
@@ -994,6 +1003,7 @@ class RegistryServerResourcesVersionRead(BaseModel):
     version: str
     title: str
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     resources: list[RegistryResourceRead] = Field(default_factory=list)
     resource_templates: list[RegistryResourceTemplateRead] = Field(
         default_factory=list,
@@ -1008,6 +1018,7 @@ class RegistryServerScoreVersionRead(BaseModel):
     version: str
     title: str
     is_latest: bool = Field(alias="isLatest")
+    installs: int = Field(default=0, ge=0)
     quality_score: int | None = Field(default=None, alias="qualityScore")
     trust_report: RegistryTrustReport | None = Field(default=None, alias="trustReport")
 

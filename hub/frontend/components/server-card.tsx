@@ -27,6 +27,11 @@ function displayCategoryName(value: string | undefined) {
   return value.replace(/\bModelcontextprotocol\b/g, "MCP");
 }
 
+function installCountLabel(value: number | null | undefined) {
+  const count = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+  return `${count.toLocaleString("en-US")} install${count === 1 ? "" : "s"}`;
+}
+
 function QualityScoreMeter({ score }: { score?: number | null }) {
   const value = typeof score === "number" ? `${score}/100` : "Pending";
   const percent = qualityScorePercent(score);
@@ -60,6 +65,7 @@ export function ServerCard({
   const listedCategoryName = displayCategoryName(server.categories?.[0]?.name);
   const categoryName =
     hideGenericCategory && listedCategoryName === "MCP Registry" ? "" : listedCategoryName;
+  const installs = server.installs ?? server.latestVersion?.installs ?? 0;
 
   return (
     <Link className="server-card" href={serverDetailHref(server.name)} prefetch={false}>
@@ -74,6 +80,7 @@ export function ServerCard({
       {showQualityScore ? (
         <span className="server-card-footer">
           <QualityScoreMeter score={server.qualityScore} />
+          <span className="server-card-installs">{installCountLabel(installs)}</span>
         </span>
       ) : null}
     </Link>

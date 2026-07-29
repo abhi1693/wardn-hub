@@ -11,6 +11,7 @@ from app.core.rate_limit import (
     PublicAPIRateLimitMiddleware,
     SkillTelemetryRateLimitMiddleware,
     client_identifier,
+    is_mcp_server_telemetry_rate_limited_request,
     is_public_rate_limited_request,
     is_skill_telemetry_rate_limited_request,
 )
@@ -69,6 +70,16 @@ def test_public_rate_limit_path_scoping() -> None:
     assert not is_skill_telemetry_rate_limited_request(
         "GET",
         "/api/v1/skills/telemetry/acme/skills/weather",
+        api_prefix="/api/v1",
+    )
+    assert is_mcp_server_telemetry_rate_limited_request(
+        "POST",
+        "/api/v1/mcp/servers/telemetry/io.github.example/weather",
+        api_prefix="/api/v1",
+    )
+    assert not is_mcp_server_telemetry_rate_limited_request(
+        "GET",
+        "/api/v1/mcp/servers/telemetry/io.github.example/weather",
         api_prefix="/api/v1",
     )
 
@@ -214,10 +225,18 @@ def test_skill_telemetry_middleware_fails_closed_when_valkey_check_fails() -> No
     async def telemetry() -> dict[str, bool]:
         return {"ok": True}
 
-    response = TestClient(app).post("/api/v1/skills/telemetry/acme/skills/weather")
+    @app.post("/api/v1/mcp/servers/telemetry/io.github.example/weather")
+    async def server_telemetry() -> dict[str, bool]:
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.post("/api/v1/skills/telemetry/acme/skills/weather")
+    server_response = client.post("/api/v1/mcp/servers/telemetry/io.github.example/weather")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "telemetry temporarily unavailable"}
+    assert server_response.status_code == 503
+    assert server_response.json() == {"detail": "telemetry temporarily unavailable"}
 
 
 async def test_client_identifier_uses_forwarded_for_when_trusted() -> None:

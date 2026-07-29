@@ -1,6 +1,7 @@
 from datetime import datetime
 from html import escape
 from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -74,6 +75,7 @@ from app.modules.registry.service import (
     list_servers,
     list_versions,
     project_list_response_fields,
+    record_server_install,
     set_latest_version,
     update_category,
     update_server_version,
@@ -345,6 +347,38 @@ async def search_mcp_servers(
         raise bad_request(exc, detail="invalid cursor") from exc
     except ValueError as exc:
         raise bad_request(exc, detail="invalid fields") from exc
+
+
+@public_router.post(
+    "/telemetry/{server_name:path}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="mcp_servers_install_telemetry",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+)
+async def record_mcp_server_install_telemetry(
+    server_name: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    version_id: Annotated[UUID, Query()],
+    client_version: Annotated[
+        str,
+        Query(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9._-]+$"),
+    ] = "unknown",
+    client: Annotated[
+        str,
+        Query(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9._-]+$"),
+    ] = "wardn-web",
+) -> Response:
+    try:
+        await record_server_install(
+            session,
+            server_name,
+            version_id=version_id,
+            client=client,
+            client_version=client_version,
+        )
+    except (RegistryServerNotFoundError, RegistryVersionNotFoundError) as exc:
+        raise not_found(exc, detail="server version not found") from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @catalog_router.get(

@@ -125,6 +125,10 @@ EMPTY_TRUST_CONTEXT = RegistryTrustContext(
 METADATA_FIELD = "metadata"
 
 
+def install_count(value: int | None) -> int:
+    return max(0, value or 0)
+
+
 def project_list_response_fields(
     response: RegistryServerListResponse | RegistryPublishedServerListResponse,
     *,
@@ -2179,6 +2183,7 @@ def server_summary(
             status=latest_version.status,
             quality_score=latest_version.quality_score,
             trust_report=trust_report_for_version(latest_version, trust=trust),
+            installs=install_count(latest_version.installs),
             published_at=latest_version.published_at,
             published_by=user_actor(latest_version.publisher_user_id, trust),
         )
@@ -2216,6 +2221,7 @@ def server_summary(
             if latest_version is not None
             else None
         ),
+        installs=install_count(server.installs),
         categories=categories_for_server(server.id, trust),
         partner_support=partner_support_summary(
             server.name,
@@ -2273,6 +2279,7 @@ def version_summary(
         server_json=server_json,
         quality_score=version.quality_score,
         trust_report=trust_report_for_version(version, trust=trust),
+        installs=install_count(version.installs),
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
@@ -2308,6 +2315,7 @@ def published_version_summary(version: RegistryServerVersion) -> RegistryPublish
         status=version.status,
         status_message=version.status_message,
         is_latest=version.is_latest,
+        installs=install_count(version.installs),
         published_at=version.published_at,
         status_changed_at=version.status_changed_at,
         created_at=version.created_at,
@@ -3150,6 +3158,29 @@ async def published_server_with_versions(
     return server, versions
 
 
+async def record_server_install(
+    session,
+    name: str,
+    *,
+    version_id: UUID,
+    client: str = "wardn-web",
+    client_version: str = "unknown",
+) -> None:
+    server = await repository.get_published_server(session, name)
+    if server is None:
+        raise RegistryServerNotFoundError("server not found")
+    version = await repository.get_published_server_version(session, server, "latest")
+    if version is None or version.id != version_id:
+        raise RegistryVersionNotFoundError("server version not found")
+    await repository.record_server_install_event(
+        session,
+        server=server,
+        version=version,
+        source=client,
+        client_version=client_version,
+    )
+
+
 def server_tab_summary(
     server: RegistryServer,
 ) -> RegistryServerTabServerRead:
@@ -3157,6 +3188,7 @@ def server_tab_summary(
         id=server.id,
         name=server.name,
         title=server.title,
+        installs=install_count(server.installs),
         icons=server.icons,
     )
 
@@ -3171,6 +3203,7 @@ def server_overview_tab_summary(
         id=server.id,
         name=server.name,
         title=server.title,
+        installs=install_count(server.installs),
         icons=server.icons,
         description=server.description,
         registry_namespace=registry_namespace_info(
@@ -3240,6 +3273,7 @@ async def get_server_overview_tab(
                 quality_score=version.quality_score,
                 trust_report=trust_report_for_version(version, trust=trust),
                 is_latest=version.is_latest,
+                installs=install_count(version.installs),
                 partner_support=partner_support_summary(
                     version.name,
                     trust,
@@ -3272,6 +3306,7 @@ async def get_server_schema_tab(
                 version=version.version,
                 title=version.title,
                 is_latest=version.is_latest,
+                installs=install_count(version.installs),
                 packages=public_registry_json(registry_packages_json(version.packages)),
                 remotes=public_registry_json(registry_remotes_json(version.remotes)),
                 server_json=public_registry_json(version.server_json),
@@ -3295,6 +3330,7 @@ async def get_server_tools_tab(
                 version=version.version,
                 title=version.title,
                 is_latest=version.is_latest,
+                installs=install_count(version.installs),
                 tools=registry_tools_from_server_json(version.server_json),
             )
             for version in versions
@@ -3315,6 +3351,7 @@ async def get_server_prompts_tab(
                 version=version.version,
                 title=version.title,
                 is_latest=version.is_latest,
+                installs=install_count(version.installs),
                 prompts=registry_prompts_from_server_json(version.server_json),
             )
             for version in versions
@@ -3335,6 +3372,7 @@ async def get_server_resources_tab(
                 version=version.version,
                 title=version.title,
                 is_latest=version.is_latest,
+                installs=install_count(version.installs),
                 resources=registry_resources_from_server_json(version.server_json),
                 resourceTemplates=registry_resource_templates_from_server_json(
                     version.server_json
@@ -3359,6 +3397,7 @@ async def get_server_score_tab(
                 version=version.version,
                 title=version.title,
                 is_latest=version.is_latest,
+                installs=install_count(version.installs),
                 quality_score=version.quality_score,
                 trust_report=trust_report_for_version(version, trust=trust),
             )

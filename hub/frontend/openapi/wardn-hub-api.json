@@ -2053,6 +2053,12 @@
             "title": "Id",
             "type": "string"
           },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "latestVersion": {
             "anyOf": [
               {
@@ -2481,6 +2487,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "publishedAt": {
             "format": "date-time",
@@ -2953,6 +2965,12 @@
             "title": "Id",
             "type": "string"
           },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "isLatest": {
             "title": "Islatest",
             "type": "boolean"
@@ -3418,6 +3436,12 @@
             "title": "Id",
             "type": "string"
           },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3503,6 +3527,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "isLatest": {
             "title": "Islatest",
@@ -3644,6 +3674,12 @@
             "title": "Id",
             "type": "string"
           },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "isLatest": {
             "title": "Islatest",
             "type": "boolean"
@@ -3718,6 +3754,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "latestVersion": {
             "anyOf": [
@@ -3884,6 +3926,12 @@
             "title": "Id",
             "type": "string"
           },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "isLatest": {
             "title": "Islatest",
             "type": "boolean"
@@ -3945,6 +3993,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "isLatest": {
             "title": "Islatest",
@@ -4021,6 +4075,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "isLatest": {
             "title": "Islatest",
@@ -4117,6 +4177,12 @@
             "title": "Id",
             "type": "string"
           },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4159,6 +4225,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "isLatest": {
             "title": "Islatest",
@@ -4443,6 +4515,12 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "installs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Installs",
+            "type": "integer"
           },
           "isLatest": {
             "title": "Islatest",
@@ -7697,7 +7775,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.161"
+    "version": "0.2.162"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10513,6 +10591,87 @@
           }
         },
         "summary": "Search Mcp Servers",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/v1/mcp/servers/telemetry/{server_name}": {
+      "post": {
+        "operationId": "mcp_servers_install_telemetry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client_version",
+            "required": false,
+            "schema": {
+              "default": "unknown",
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "title": "Client Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client",
+            "required": false,
+            "schema": {
+              "default": "wardn-web",
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "title": "Client",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Mcp Server Install Telemetry",
         "tags": [
           "mcp"
         ]

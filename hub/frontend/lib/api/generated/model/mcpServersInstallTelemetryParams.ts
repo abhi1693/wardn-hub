@@ -5,17 +5,14 @@
  * OpenAPI spec version: 0.2.162
  */
 
-export type SkillsInstallTelemetryParams = {
-/**
- * @pattern ^[a-f0-9]{64}$
- */
-content_hash: string;
+export type McpServersInstallTelemetryParams = {
+version_id: string;
 /**
  * @minLength 1
  * @maxLength 32
  * @pattern ^[A-Za-z0-9._-]+$
  */
-resolver_version?: string;
+client_version?: string;
 /**
  * @minLength 1
  * @maxLength 32

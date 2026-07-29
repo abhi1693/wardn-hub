@@ -275,6 +275,7 @@ function serverDetailTabFallback(
   const baseServer = {
     icons: server.icons,
     id: server.id,
+    installs: server.installs,
     name: server.name,
     title: server.title,
   };
@@ -284,6 +285,7 @@ function serverDetailTabFallback(
       server: baseServer,
       versions: detail.versions?.map((version) => ({
         id: version.id,
+        installs: version.installs,
         isLatest: version.isLatest,
         packages: version.packages,
         remotes: version.remotes,
@@ -299,6 +301,7 @@ function serverDetailTabFallback(
       server: baseServer,
       versions: detail.versions?.map((version) => ({
         id: version.id,
+        installs: version.installs,
         isLatest: version.isLatest,
         title: version.title,
         tools: toolsFromServerJson(version.serverJson),
@@ -312,6 +315,7 @@ function serverDetailTabFallback(
       server: baseServer,
       versions: detail.versions?.map((version) => ({
         id: version.id,
+        installs: version.installs,
         isLatest: version.isLatest,
         prompts: promptsFromServerJson(version.serverJson),
         title: version.title,
@@ -325,6 +329,7 @@ function serverDetailTabFallback(
       server: baseServer,
       versions: detail.versions?.map((version) => ({
         id: version.id,
+        installs: version.installs,
         isLatest: version.isLatest,
         resources: resourcesFromServerJson(version.serverJson),
         resourceTemplates: resourceTemplatesFromServerJson(version.serverJson),
@@ -339,6 +344,7 @@ function serverDetailTabFallback(
       server: baseServer,
       versions: detail.versions?.map((version) => ({
         id: version.id,
+        installs: version.installs,
         isLatest: version.isLatest,
         qualityScore: version.qualityScore,
         title: version.title,
@@ -361,6 +367,7 @@ function serverDetailTabFallback(
       description: version.description,
       documentation: version.documentation,
       id: version.id,
+      installs: version.installs,
       isLatest: version.isLatest,
       partnerSupport: version.partnerSupport,
       publishedAt: version.publishedAt,

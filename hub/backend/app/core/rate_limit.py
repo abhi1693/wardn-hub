@@ -29,6 +29,7 @@ DEFAULT_PUBLIC_RATE_LIMIT_PREFIXES = (
 ROOT_PUBLIC_RATE_LIMIT_PREFIXES = ("/v0.1/servers",)
 SKILL_TELEMETRY_RATE_LIMIT_METHODS = {"POST"}
 SKILL_TELEMETRY_RATE_LIMIT_PREFIX = "/skills/telemetry"
+MCP_SERVER_TELEMETRY_RATE_LIMIT_PREFIX = "/mcp/servers/telemetry"
 
 
 class ValkeyClient(Protocol):
@@ -76,6 +77,35 @@ def is_skill_telemetry_rate_limited_request(
         return False
     prefix = f"{api_prefix.rstrip('/')}{SKILL_TELEMETRY_RATE_LIMIT_PREFIX}"
     return path == prefix or path.startswith(f"{prefix}/")
+
+
+def is_mcp_server_telemetry_rate_limited_request(
+    method: str,
+    path: str,
+    *,
+    api_prefix: str,
+) -> bool:
+    if method.upper() not in SKILL_TELEMETRY_RATE_LIMIT_METHODS:
+        return False
+    prefix = f"{api_prefix.rstrip('/')}{MCP_SERVER_TELEMETRY_RATE_LIMIT_PREFIX}"
+    return path == prefix or path.startswith(f"{prefix}/")
+
+
+def is_install_telemetry_rate_limited_request(
+    method: str,
+    path: str,
+    *,
+    api_prefix: str,
+) -> bool:
+    return is_skill_telemetry_rate_limited_request(
+        method,
+        path,
+        api_prefix=api_prefix,
+    ) or is_mcp_server_telemetry_rate_limited_request(
+        method,
+        path,
+        api_prefix=api_prefix,
+    )
 
 
 def client_identifier(request: Request, *, trust_forwarded_for: bool) -> str:
@@ -268,7 +298,7 @@ class SkillTelemetryRateLimitMiddleware(RequestRateLimitMiddleware):
             app,
             settings=settings,
             limiter=limiter,
-            request_matcher=lambda method, path: is_skill_telemetry_rate_limited_request(
+            request_matcher=lambda method, path: is_install_telemetry_rate_limited_request(
                 method,
                 path,
                 api_prefix=settings.api_prefix,

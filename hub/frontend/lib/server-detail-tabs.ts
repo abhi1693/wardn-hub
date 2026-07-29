@@ -35,6 +35,7 @@ export type ServerTabServer = Pick<
   RegistryServerRead,
   | "icons"
   | "id"
+  | "installs"
   | "name"
   | "title"
 > &
@@ -52,7 +53,7 @@ export type ServerSummaryResponse = Pick<
 
 export type ServerTabVersion = Pick<
   RegistryServerVersionRead,
-  "id" | "isLatest" | "title" | "version"
+  "id" | "installs" | "isLatest" | "title" | "version"
 > & {
   description?: string;
   documentation?: string;

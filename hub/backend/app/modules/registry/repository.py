@@ -18,6 +18,7 @@ from app.modules.registry.models import (
     RegistryCategory,
     RegistryServer,
     RegistryServerCategory,
+    RegistryServerInstallEvent,
     RegistryServerVersion,
 )
 from app.modules.users.models import User
@@ -155,6 +156,36 @@ async def get_published_server_version(
         statement = statement.where(RegistryServerVersion.version == version)
     result = await session.execute(statement)
     return result.scalar_one_or_none()
+
+
+async def record_server_install_event(
+    session: AsyncSession,
+    *,
+    server: RegistryServer,
+    version: RegistryServerVersion,
+    source: str,
+    client_version: str,
+) -> None:
+    session.add(
+        RegistryServerInstallEvent(
+            server_id=server.id,
+            version_id=version.id,
+            version=version.version,
+            source=source,
+            client_version=client_version,
+        )
+    )
+    await session.execute(
+        update(RegistryServer)
+        .where(RegistryServer.id == server.id)
+        .values(installs=RegistryServer.installs + 1)
+    )
+    await session.execute(
+        update(RegistryServerVersion)
+        .where(RegistryServerVersion.id == version.id)
+        .values(installs=RegistryServerVersion.installs + 1)
+    )
+    await session.commit()
 
 
 async def list_servers(

@@ -144,6 +144,38 @@ function qualityBadgeUrl(serverName: string, version?: string) {
   return publicRegistryUrl(qualityBadgePath(serverName, version));
 }
 
+function apiBaseUrl() {
+  return process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "/api/v1";
+}
+
+function serverInstallTelemetryPath(serverName: string) {
+  return `/mcp/servers/telemetry/${encodePath(serverName)}`;
+}
+
+async function recordServerInstallTelemetry(
+  serverName: string,
+  versionId: string,
+  client: "wardn-web-package" | "wardn-web-remote",
+) {
+  const url = new URL(
+    `${apiBaseUrl()}${serverInstallTelemetryPath(serverName)}`,
+    window.location.origin,
+  );
+  url.searchParams.set("version_id", versionId);
+  url.searchParams.set("client", client);
+  url.searchParams.set("client_version", "unknown");
+  try {
+    await fetch(url, {
+      cache: "no-store",
+      keepalive: true,
+      method: "POST",
+      redirect: "error",
+    });
+  } catch (error) {
+    console.error("Unable to record server install telemetry.", error);
+  }
+}
+
 function wardnOwnershipSnippet(serverName: string, userId: string) {
   return JSON.stringify(
     {
@@ -161,6 +193,11 @@ function wardnOwnershipSnippet(serverName: string, userId: string) {
 
 function trustScoreLabel(score?: number | null) {
   return typeof score === "number" ? `${score}/100` : "Pending";
+}
+
+function installCountLabel(value?: number | null) {
+  const count = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+  return `${count.toLocaleString("en-US")} install${count === 1 ? "" : "s"}`;
 }
 
 function trustSourceLabel(source?: string) {
@@ -522,13 +559,22 @@ async function writeClipboardText(value: string) {
   }
 }
 
-function CopyButton({ label = "Copy target", value }: { label?: string; value: string }) {
+function CopyButton({
+  label = "Copy target",
+  onCopied,
+  value,
+}: {
+  label?: string;
+  onCopied?: () => void;
+  value: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copyValue() {
     try {
       await writeClipboardText(value);
       setCopied(true);
+      onCopied?.();
       window.setTimeout(() => setCopied(false), 1600);
     } catch (error) {
       console.error("Unable to copy value to the clipboard.", error);
@@ -1502,7 +1548,13 @@ function ResourcesPanel({
   );
 }
 
-function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
+function RemotesPanel({
+  onInstallTargetCopied,
+  remotes,
+}: {
+  onInstallTargetCopied?: () => void;
+  remotes: Record<string, unknown>[];
+}) {
   if (remotes.length === 0) return null;
 
   return (
@@ -1529,7 +1581,7 @@ function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
                     <label>Endpoint URL</label>
                     <div className="technical-code-field">
                       <span>{valueOrFallback(url)}</span>
-                      {url ? <CopyButton value={url} /> : null}
+                      {url ? <CopyButton onCopied={onInstallTargetCopied} value={url} /> : null}
                     </div>
                   </div>
                 </div>
@@ -1608,7 +1660,13 @@ function RemotesPanel({ remotes }: { remotes: Record<string, unknown>[] }) {
   );
 }
 
-function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown>[] }) {
+function PackageDefinitionPanel({
+  onInstallTargetCopied,
+  packages,
+}: {
+  onInstallTargetCopied?: () => void;
+  packages: Record<string, unknown>[];
+}) {
   if (packages.length === 0) return null;
 
   return (
@@ -1640,7 +1698,7 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                   <label>Identifier</label>
                   <div className="technical-code-field">
                     <span>{identifier}</span>
-                    <CopyButton value={identifier} />
+                    <CopyButton onCopied={onInstallTargetCopied} value={identifier} />
                   </div>
                 </div>
                 <div className="technical-pair-grid">
@@ -1665,7 +1723,7 @@ function PackageDefinitionPanel({ packages }: { packages: Record<string, unknown
                       <label>Command</label>
                       <div className="technical-code-field">
                         <span>{fullCommand}</span>
-                        <CopyButton value={fullCommand} />
+                        <CopyButton onCopied={onInstallTargetCopied} value={fullCommand} />
                       </div>
                     </div>
                   </div>
@@ -1841,6 +1899,7 @@ export function ServerDetailClient({
     : "";
   const qualityScore = selectedVersion?.qualityScore ?? null;
   const trustReport = selectedVersion?.trustReport ?? null;
+  const installs = selectedVersion?.installs ?? server?.installs ?? navigationServer?.installs ?? 0;
   const registryNamespace =
     selectedVersion?.registryNamespace ??
     navigationVersion?.registryNamespace ??
@@ -1872,6 +1931,11 @@ export function ServerDetailClient({
 
   function navigateToTab(tab: DetailTab) {
     router.push(serverDetailTabPath(serverName, tab), { scroll: false });
+  }
+
+  function recordInstallTargetCopied(client: "wardn-web-package" | "wardn-web-remote") {
+    if (!server?.name || !selectedVersion?.id || !selectedVersion.isLatest) return;
+    void recordServerInstallTelemetry(server.name, selectedVersion.id, client);
   }
 
   async function claimOwnership() {
@@ -2051,6 +2115,10 @@ export function ServerDetailClient({
                           <dd>{formatDate(selectedVersion?.updatedAt ?? server.updatedAt)}</dd>
                         </div>
                         <div>
+                          <dt>Installs</dt>
+                          <dd>{installCountLabel(installs)}</dd>
+                        </div>
+                        <div>
                           <dt>Published By</dt>
                           <dd>
                             <ActorValue actor={selectedVersion?.publishedBy} />
@@ -2066,8 +2134,14 @@ export function ServerDetailClient({
               {activeTab === "schema" ? (
                 <>
                   <div className="technical-main">
-                    <PackageDefinitionPanel packages={targets.packages} />
-                    <RemotesPanel remotes={targets.remotes} />
+                    <PackageDefinitionPanel
+                      onInstallTargetCopied={() => recordInstallTargetCopied("wardn-web-package")}
+                      packages={targets.packages}
+                    />
+                    <RemotesPanel
+                      onInstallTargetCopied={() => recordInstallTargetCopied("wardn-web-remote")}
+                      remotes={targets.remotes}
+                    />
                   </div>
 
                   <aside className="technical-sidebar">

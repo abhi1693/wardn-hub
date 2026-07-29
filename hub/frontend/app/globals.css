@@ -6581,6 +6581,8 @@ button:disabled,
 
 .server-card-footer {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .server-card-score-meter {
@@ -6636,6 +6638,13 @@ button:disabled,
 
 .server-card-score-meter.poor .server-card-score-fill {
   background: #dd4343;
+}
+
+.server-card-installs {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
 }
 
 @media (max-width: 1180px) {
