@@ -1900,6 +1900,9 @@ export function ServerDetailClient({
   const qualityScore = selectedVersion?.qualityScore ?? null;
   const trustReport = selectedVersion?.trustReport ?? null;
   const installs = selectedVersion?.installs ?? server?.installs ?? navigationServer?.installs ?? 0;
+  const hasInstalls = installs > 0;
+  const publishedBy = selectedVersion?.publishedBy ?? null;
+  const hasPublishedBy = actorLabel(publishedBy) !== "Not available";
   const registryNamespace =
     selectedVersion?.registryNamespace ??
     navigationVersion?.registryNamespace ??
@@ -2114,16 +2117,20 @@ export function ServerDetailClient({
                           <dt>Updated</dt>
                           <dd>{formatDate(selectedVersion?.updatedAt ?? server.updatedAt)}</dd>
                         </div>
-                        <div>
-                          <dt>Installs</dt>
-                          <dd>{installCountLabel(installs)}</dd>
-                        </div>
-                        <div>
-                          <dt>Published By</dt>
-                          <dd>
-                            <ActorValue actor={selectedVersion?.publishedBy} />
-                          </dd>
-                        </div>
+                        {hasInstalls ? (
+                          <div>
+                            <dt>Installs</dt>
+                            <dd>{installCountLabel(installs)}</dd>
+                          </div>
+                        ) : null}
+                        {hasPublishedBy ? (
+                          <div>
+                            <dt>Published By</dt>
+                            <dd>
+                              <ActorValue actor={publishedBy} />
+                            </dd>
+                          </div>
+                        ) : null}
                       </dl>
                     </section>
 

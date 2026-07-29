@@ -66,6 +66,7 @@ export function ServerCard({
   const categoryName =
     hideGenericCategory && listedCategoryName === "MCP Registry" ? "" : listedCategoryName;
   const installs = server.installs ?? server.latestVersion?.installs ?? 0;
+  const hasInstalls = installs > 0;
 
   return (
     <Link className="server-card" href={serverDetailHref(server.name)} prefetch={false}>
@@ -80,7 +81,9 @@ export function ServerCard({
       {showQualityScore ? (
         <span className="server-card-footer">
           <QualityScoreMeter score={server.qualityScore} />
-          <span className="server-card-installs">{installCountLabel(installs)}</span>
+          {hasInstalls ? (
+            <span className="server-card-installs">{installCountLabel(installs)}</span>
+          ) : null}
         </span>
       ) : null}
     </Link>
