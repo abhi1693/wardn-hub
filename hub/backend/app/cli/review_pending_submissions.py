@@ -905,6 +905,12 @@ def review_loop(
             else submission
         )
         validation_messages = validation_blocking_messages(review_submission)
+        suppress_runtime_tool_inventory_auto_reject = (
+            is_wardn_ai_runtime_tool_inventory_submission(review_submission)
+            and not validation_messages
+            and review_result is not None
+            and review_result.decision in {"needs_fixes", "reject"}
+        )
         if review_result is None:
             completed_reviews += 1
             skipped_ids.add(current_submission_id)
@@ -980,10 +986,30 @@ def review_loop(
                     return 1 if review_errors else 0
                 continue
 
+        if suppress_runtime_tool_inventory_auto_reject:
+            print(
+                "Reviewer requested fixes for a Wardn AI runtime tool inventory metadata edit, "
+                "but Wardn validation has no blocking messages; "
+                + (
+                    "leaving submission unchanged and skipping it for this run."
+                    if non_interactive
+                    else "leaving this submission for manual decision."
+                ),
+                file=stdout,
+            )
+            if non_interactive:
+                completed_reviews += 1
+                skipped_ids.add(current_submission_id)
+                if once or (max_reviews is not None and completed_reviews >= max_reviews):
+                    print("Review limit reached.", file=stdout)
+                    return 1 if review_errors else 0
+                continue
+
         if (
             auto_reject
             and review_result is not None
             and review_result.decision in {"needs_fixes", "reject"}
+            and not suppress_runtime_tool_inventory_auto_reject
         ):
             if suggested_rejection_message:
                 print(

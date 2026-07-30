@@ -1159,6 +1159,43 @@ def test_review_loop_auto_rejects_llm_rejection_with_suggested_message() -> None
     assert "Decision (" not in output
 
 
+def test_review_loop_skips_runtime_tool_inventory_llm_rejection() -> None:
+    class RejectingReviewer(FakeReviewer):
+        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+            super().review(prompt, environment=environment)
+            return review_result_json(
+                "needs_fixes",
+                suggested_rejection_message=(
+                    "Update wardnAiToolInventory.toolCount to match the observed tool list."
+                ),
+            )
+
+    client = FakeClient([submitted_wardn_ai_tool_inventory_metadata_edit()])
+    reviewer = RejectingReviewer()
+    stdout = StringIO()
+
+    result = cli.review_loop(
+        client=client,
+        reviewer=reviewer,
+        user=client.current_user(),
+        max_reviews=None,
+        once=True,
+        dry_run=False,
+        auto_reject=True,
+        auto_approve=False,
+        stdin=StringIO(),
+        stdout=stdout,
+        non_interactive=True,
+    )
+
+    assert result == 0
+    assert client.actions == []
+    output = stdout.getvalue()
+    assert "Wardn validation has no blocking messages" in output
+    assert "Auto-rejecting with suggested rejection message" not in output
+    assert "Decision (" not in output
+
+
 def test_review_loop_auto_rejects_llm_pass_when_validation_is_not_ready() -> None:
     class PassingReviewer(FakeReviewer):
         def review(self, prompt: str, *, environment: dict[str, str]) -> str:
