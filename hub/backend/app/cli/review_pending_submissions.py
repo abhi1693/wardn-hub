@@ -55,6 +55,11 @@ NEW_SERVER_INITIAL_VERSION_MESSAGE = (
     "New server submissions must start at Wardn registry version 1.0.0. "
     "Keep upstream package, image, or server versions in packages[].version."
 )
+WARDN_AI_TOOL_INVENTORY_META_KEY = "wardnAiToolInventory"
+WARDN_AI_TOOL_INVENTORY_READY_WARNING_NAMES = {
+    "documentationDetails",
+    "sourceReview",
+}
 
 
 class ReviewFinding(BaseModel):
@@ -327,6 +332,41 @@ def submitted_mcp_server_model_json(submission: dict[str, Any]) -> dict[str, Any
         return server_json
 
 
+def dict_value(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def wardn_ai_runtime_tool_inventory_tools(submission: dict[str, Any]) -> list[Any]:
+    submission_type = submission.get("submissionType") or submission.get("submission_type")
+    if submission_type != "metadata_edit":
+        return []
+
+    server_json = dict_value(submission.get("serverJson"))
+    meta = dict_value(server_json.get("_meta"))
+    inventory = dict_value(meta.get(WARDN_AI_TOOL_INVENTORY_META_KEY))
+    if inventory.get("source") != "runtime_tools_list":
+        return []
+    if not str(inventory.get("hubVersionId") or "").strip():
+        return []
+    if not str(inventory.get("inventoryHash") or "").strip():
+        return []
+
+    introspection = dict_value(server_json.get("introspection"))
+    tools_list = dict_value(introspection.get("tools/list"))
+    tools = tools_list.get("tools")
+    if not isinstance(tools, list) or not tools:
+        return []
+
+    tool_count = inventory.get("toolCount")
+    if isinstance(tool_count, int) and tool_count != len(tools):
+        return []
+    return tools
+
+
+def is_wardn_ai_runtime_tool_inventory_submission(submission: dict[str, Any]) -> bool:
+    return bool(wardn_ai_runtime_tool_inventory_tools(submission))
+
+
 def truncate_review_string(value: str, *, limit: int) -> str:
     if len(value) <= limit:
         return value
@@ -421,6 +461,75 @@ def _build_review_prompt(
     version = str(submission.get("version") or "")
     id_list = f"- {submission_id}" if submission_id else "- none"
     mcp_server_model = submitted_mcp_server_model_json(submission)
+    is_runtime_tool_inventory = is_wardn_ai_runtime_tool_inventory_submission(submission)
+    source_review_workflow = (
+        "Read the Wardn AI runtime tool inventory marker at "
+        'serverJson._meta.wardnAiToolInventory and the submitted introspection["tools/list"].tools '
+        "payload. This metadata edit proposes runtime-observed MCP tool schemas only; do not "
+        "require upstream sourceReview evidence for approval when validationResult.status is passed "
+        "and the tool inventory marker is internally consistent."
+        if is_runtime_tool_inventory
+        else "Read every `.md` file you can find in the upstream repository or selected subfolder, "
+        "including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files. "
+        "Record each inspected Markdown file in sourceReview.llm.filesRead. If repository access "
+        'limits prevent reading all discovered Markdown files, use "cannot_validate" and list '
+        "the unread files or access limit."
+    )
+    source_review_comparison = (
+        "Verify the runtime tool inventory marker is internally consistent and that the "
+        'submitted introspection["tools/list"].tools payload is well-formed. Do not require '
+        "upstream sourceReview evidence for this narrow runtime inventory metadata edit."
+        if is_runtime_tool_inventory
+        else "Use that Markdown sweep plus package metadata to verify installation, package "
+        "transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, "
+        "and version/package metadata."
+    )
+    source_review_evidence_check = (
+        "Confirm the proposal is limited to the Wardn AI tool inventory metadata and the observed "
+        "tools/list payload."
+        if is_runtime_tool_inventory
+        else "Compare the source review evidence against the upstream source. Do not assume "
+        "importer output is complete."
+    )
+    source_review_required_checks = (
+        "- For Wardn AI runtime tool inventory metadata edits, confirm "
+        "serverJson._meta.wardnAiToolInventory.source is runtime_tools_list, hubVersionId and "
+        "inventoryHash are present, toolCount matches the submitted tools length when provided, "
+        'and introspection["tools/list"].tools is non-empty.\n'
+        "- Do not reject this narrow metadata edit only because _meta.sourceReview is absent; "
+        "the runtime tools/list response is the evidence for the proposed tool metadata."
+        if is_runtime_tool_inventory
+        else "- sourceReview.filesRead, installCommands, commandArguments, environmentVariables, "
+        "prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns are complete.\n"
+        "- capabilitiesReviewed and limitationsReviewed are true.\n"
+        "- sourceReview.unknowns is empty unless there is a specific documented reason."
+    )
+    validation_status_check = (
+        "- validationResult.status is passed, or warning only because of sourceReview and "
+        "documentationDetails checks tolerated for this Wardn AI runtime inventory metadata edit; "
+        "other warning or failing checks mean the submission is not ready for approval."
+        if is_runtime_tool_inventory
+        else '- validationResult.status is "passed"; warning or failing checks mean the '
+        "submission is not ready for approval until resolved."
+    )
+    pass_decision_rule = (
+        "- Use \"pass\" only when the runtime inventory marker is internally consistent, "
+        'introspection["tools/list"].tools is well-formed, and validationResult is passed or has '
+        "only the tolerated sourceReview/documentationDetails warnings."
+        if is_runtime_tool_inventory
+        else '- Use "pass" only when the submitted metadata can be verified against source evidence '
+        'and validationResult.status is "passed".'
+    )
+    source_review_decision_rule = (
+        "Do not mark a Wardn AI runtime tool inventory metadata edit as failing only because "
+        "_meta.sourceReview is absent; reject only if validationResult has untolerated warning or "
+        "failing checks, the runtime inventory marker is inconsistent, or the tool inventory "
+        "payload is malformed."
+        if is_runtime_tool_inventory
+        else "Do not mark a submission as passing if source review evidence is incomplete, "
+        "validationResult has warning or failing checks, upstream docs mention an env "
+        "var/argument/prerequisite that is missing, or package transport details cannot be verified."
+    )
     submission_snapshot = (
         "\nWardn Hub submission JSON snapshot:\n"
         "```json\n"
@@ -448,9 +557,9 @@ Scope:
 Validation workflow for each submission:
 1. Read the Submitted MCP server model JSON from to_json_dict(), submission.validationResult, and the model _meta.sourceReview.
 2. Identify the source repository from serverJson.repository.url and any source links in documentation/package metadata.
-3. Read every `.md` file you can find in the upstream repository or selected subfolder, including README, QUICKSTART, CONFIGURATION, MCP_GUIDE, SECURITY, and docs/*.md files. Record each inspected Markdown file in sourceReview.llm.filesRead. If repository access limits prevent reading all discovered Markdown files, use "cannot_validate" and list the unread files or access limit.
-4. Use that Markdown sweep plus package metadata to verify installation, package transport, environment variables, CLI arguments, prerequisites, capabilities, limitations, and version/package metadata.
-5. Compare the source review evidence against the upstream source. Do not assume importer output is complete.
+3. {source_review_workflow}
+4. {source_review_comparison}
+5. {source_review_evidence_check}
 6. {REGISTRY_METADATA_SCOPE_RULE}
 7. If submissionType is "new_server", serverJson.version is the Wardn registry version and must be "1.0.0". Do not reject a new-server submission because serverJson.version differs from an upstream package, image, CLI, npm, PyPI, or MCP registry version. Verify those upstream artifact versions against packages[].version, remotes metadata, documentation, or _meta evidence instead.
 8. Prefer packageRegistryEvidence over repository documentation for exact PyPI/npm package identity, version existence, and publication status. Treat summaries, links, licenses, dependencies, engines, and binaries as registry-provided context rather than proof of MCP behavior.
@@ -473,10 +582,8 @@ Required checks:
 - Variables required at launch are also represented in packages[].transport.env with safe defaults.
 - CLI arguments and configurable flags are represented in sourceReview.commandArguments and packageArguments; only default launch args are represented in package transport args.
 - Prerequisites are represented in sourceReview.prerequisites.
-- sourceReview.filesRead, installCommands, commandArguments, environmentVariables, prerequisites, capabilitiesReviewed, limitationsReviewed, and unknowns are complete.
-- capabilitiesReviewed and limitationsReviewed are true.
-- sourceReview.unknowns is empty unless there is a specific documented reason.
-- validationResult.status is "passed"; warning or failing checks mean the submission is not ready for approval until resolved.
+{source_review_required_checks}
+{validation_status_check}
 - If submissionType is "new_server", serverJson.version must be "1.0.0"; upstream artifact versions belong in packages[].version, remotes metadata, documentation, or _meta evidence.
 
 Required output:
@@ -486,7 +593,7 @@ Required output:
 - Set suggestedApprovalNote to a concise source-backed note for "pass", otherwise null.
 
 Decision rules:
-- Use "pass" only when the submitted metadata can be verified against source evidence and validationResult.status is "passed".
+{pass_decision_rule}
 - Use "needs_fixes" or "reject" only when the submitted metadata is clearly wrong or incomplete.
 - If decision is "needs_fixes" or "reject", suggestedRejectionMessage must be a non-empty, user-facing message that explains the exact changes needed.
 - Use "cannot validate" when source evidence is unavailable, ambiguous, or insufficient to make a safe approval/rejection decision. This leaves the submission unchanged so it can be retried or reviewed manually later.
@@ -495,7 +602,7 @@ Decision rules:
 - Do not approve, reject, publish, update, or delete anything directly.
 - The database review controller will validate the schema-constrained JSON before any automatic action.
 
-Do not mark a submission as passing if source review evidence is incomplete, validationResult has warning or failing checks, upstream docs mention an env var/argument/prerequisite that is missing, or package transport details cannot be verified.
+{source_review_decision_rule}
 
 Submission context:
 Server: {server_name}
@@ -614,21 +721,39 @@ def validation_blocking_messages(submission: dict[str, Any]) -> list[str]:
     if not isinstance(validation_result, dict):
         return messages
 
+    is_runtime_tool_inventory = is_wardn_ai_runtime_tool_inventory_submission(submission)
     status = str(validation_result.get("status") or "").lower()
     checks = validation_result.get("checks")
+    blocking_checks: list[dict[str, Any]] = []
+    if isinstance(checks, list):
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            check_status = str(check.get("status") or "").lower()
+            if check_status not in {"failed", "warning"}:
+                continue
+            if (
+                is_runtime_tool_inventory
+                and check_status == "warning"
+                and check.get("name") in WARDN_AI_TOOL_INVENTORY_READY_WARNING_NAMES
+            ):
+                continue
+            blocking_checks.append(check)
+
     validation_messages = [
         str(check.get("message") or "").strip()
-        for check in checks
-        if isinstance(check, dict)
-        and str(check.get("status") or "").lower() in {"failed", "warning"}
-        and str(check.get("message") or "").strip()
-    ] if isinstance(checks, list) else []
+        or f"validationResult check {check.get('name') or 'unknown'} is "
+        f"{str(check.get('status') or '').lower() or 'not passed'}."
+        for check in blocking_checks
+    ]
     for message in validation_messages:
         if message not in messages:
             messages.append(message)
     if messages:
         return messages
     if status and status != "passed":
+        if status == "warning" and is_runtime_tool_inventory and isinstance(checks, list):
+            return []
         return [f"validationResult.status is {status}."]
     return []
 

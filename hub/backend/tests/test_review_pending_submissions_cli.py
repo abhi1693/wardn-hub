@@ -159,6 +159,36 @@ def submitted_submission_with_validation_warning() -> dict[str, Any]:
     return submission
 
 
+def submitted_wardn_ai_tool_inventory_metadata_edit() -> dict[str, Any]:
+    submission = submitted_submission()
+    submission["submissionType"] = "metadata_edit"
+    submission["serverJson"] = {
+        **submission["serverJson"],
+        "introspection": {
+            "tools/list": {
+                "tools": [
+                    {
+                        "name": "get_forecast",
+                        "description": "Get a weather forecast.",
+                        "inputSchema": {"type": "object"},
+                    }
+                ]
+            }
+        },
+        "_meta": {
+            "categories": ["developer-tools"],
+            "wardnAiToolInventory": {
+                "source": "runtime_tools_list",
+                "hubVersionId": str(uuid.uuid4()),
+                "inventoryHash": "a" * 64,
+                "toolCount": 1,
+            },
+        },
+    }
+    submission["validationResult"] = {"status": "passed", "checks": []}
+    return submission
+
+
 def submitted_new_server_with_non_initial_version() -> dict[str, Any]:
     submission = submitted_submission()
     submission["version"] = "0.1.0"
@@ -779,6 +809,21 @@ def test_build_review_prompt_includes_context_and_no_secret_token() -> None:
     assert prompt.index("Submission context:") < prompt.index("In-review submission ID shown in UI")
 
 
+def test_build_review_prompt_special_cases_wardn_ai_tool_inventory_metadata_edits() -> None:
+    context = {"submission": submitted_wardn_ai_tool_inventory_metadata_edit()}
+
+    prompt = cli.build_review_prompt(context)
+
+    assert "Wardn AI runtime tool inventory marker" in prompt
+    assert "runtime-observed MCP tool schemas only" in prompt
+    assert (
+        "Do not reject this narrow metadata edit only because _meta.sourceReview is absent"
+        in prompt
+    )
+    assert "toolCount matches the submitted tools length" in prompt
+    assert "source review evidence is incomplete" not in prompt
+
+
 def test_build_review_prompt_keeps_submission_data_after_stable_prefix() -> None:
     context = {"submission": submitted_submission_with_id("sub-cache-test")}
 
@@ -937,6 +982,57 @@ def test_validation_blocking_messages_rejects_new_server_non_initial_version() -
     )
 
     assert messages == [cli.NEW_SERVER_INITIAL_VERSION_MESSAGE]
+
+
+def test_validation_blocking_messages_ignores_wardn_ai_tool_inventory_warnings() -> None:
+    submission = submitted_wardn_ai_tool_inventory_metadata_edit()
+    submission["validationResult"] = {
+        "status": "warning",
+        "checks": [
+            {
+                "name": "documentationDetails",
+                "status": "warning",
+                "message": "Documentation may be missing: installation, configuration.",
+            },
+            {
+                "name": "sourceReview",
+                "status": "warning",
+                "message": "Source review evidence is incomplete: filesRead.",
+            },
+        ],
+    }
+
+    assert cli.validation_blocking_messages(submission) == []
+
+
+def test_validation_blocking_messages_blocks_other_wardn_ai_tool_inventory_warnings() -> None:
+    submission = submitted_wardn_ai_tool_inventory_metadata_edit()
+    submission["validationResult"] = {
+        "status": "warning",
+        "checks": [{"name": "registryNamespace", "status": "warning"}],
+    }
+
+    assert cli.validation_blocking_messages(submission) == [
+        "validationResult check registryNamespace is warning."
+    ]
+
+
+def test_validation_blocking_messages_blocks_failed_wardn_ai_tool_inventory_checks() -> None:
+    submission = submitted_wardn_ai_tool_inventory_metadata_edit()
+    submission["validationResult"] = {
+        "status": "failed",
+        "checks": [
+            {
+                "name": "sourceReview",
+                "status": "failed",
+                "message": "Source review payload is malformed.",
+            }
+        ],
+    }
+
+    assert cli.validation_blocking_messages(submission) == [
+        "Source review payload is malformed."
+    ]
 
 
 def test_apply_decision_approve_publish_uses_api_without_llm() -> None:
