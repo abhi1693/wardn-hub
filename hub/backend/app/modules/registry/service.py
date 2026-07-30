@@ -273,6 +273,8 @@ def normalized_package_environment_variable(value):
     if not environment_variable_uses_file(
         name=env_var.get("name"),
         description=env_var.get("description"),
+        default=env_var.get("default"),
+        value=env_var.get("value"),
     ):
         return env_var
     return {**env_var, "format": "file"}

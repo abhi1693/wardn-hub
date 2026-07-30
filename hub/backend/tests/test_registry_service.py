@@ -335,6 +335,14 @@ def test_version_summary_normalizes_stored_package_file_environment_formats() ->
                     "isSecret": True,
                 },
                 {
+                    "name": "AUTH_CONFIG",
+                    "description": "Configuration used for service authentication.",
+                    "default": "~/.provider/config",
+                    "format": "string",
+                    "isRequired": False,
+                    "isSecret": False,
+                },
+                {
                     "name": "ENABLE_CACHE",
                     "description": "Enable local cache.",
                     "format": "boolean",
@@ -349,7 +357,8 @@ def test_version_summary_normalizes_stored_package_file_environment_formats() ->
 
     environment = response.packages[0]["environmentVariables"]
     assert environment[0]["format"] == "file"
-    assert environment[1]["format"] == "boolean"
+    assert environment[1]["format"] == "file"
+    assert environment[2]["format"] == "boolean"
 
 
 def test_registry_tools_from_server_json_extracts_mcp_tool_metadata() -> None:

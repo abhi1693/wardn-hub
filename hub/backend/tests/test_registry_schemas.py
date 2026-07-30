@@ -157,6 +157,54 @@ def test_environment_variable_infers_file_format_from_documented_path() -> None:
     assert payload.packages[0].environment_variables[0].format == "file"
 
 
+def test_environment_variable_infers_file_format_from_file_like_default_path() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[
+                {
+                    "registryType": "npm",
+                    "identifier": "@example/weather-mcp",
+                    "transport": {"type": "stdio"},
+                    "environmentVariables": [
+                        {
+                            "name": "AUTH_CONFIG",
+                            "description": "Configuration used for service authentication.",
+                            "default": "~/.provider/config",
+                            "format": "string",
+                        }
+                    ],
+                }
+            ]
+        )
+    )
+
+    assert payload.packages[0].environment_variables[0].format == "file"
+
+
+def test_environment_variable_preserves_directory_like_default_path() -> None:
+    payload = RegistryServerVersionCreate(
+        **registry_payload(
+            packages=[
+                {
+                    "registryType": "npm",
+                    "identifier": "@example/weather-mcp",
+                    "transport": {"type": "stdio"},
+                    "environmentVariables": [
+                        {
+                            "name": "APP_HOME",
+                            "description": "Application state directory.",
+                            "default": "~/.example-app",
+                            "format": "string",
+                        }
+                    ],
+                }
+            ]
+        )
+    )
+
+    assert payload.packages[0].environment_variables[0].format == "string"
+
+
 def test_environment_variable_preserves_non_file_format() -> None:
     payload = RegistryServerVersionCreate(
         **registry_payload(

@@ -56,6 +56,19 @@ FILE_ENVIRONMENT_DESCRIPTION_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+FILE_ENVIRONMENT_DIRECTORY_DESCRIPTION_PATTERN = re.compile(
+    r"\b(?:directory|dir|folder|home)\b", re.IGNORECASE
+)
+FILE_PATH_NAME_HINT_PATTERN = re.compile(
+    r"^(?:[A-Za-z0-9_-]+[-_.])?"
+    r"(?:config|configuration|credentials?|credential|settings|key|cert|certificate|ca)"
+    r"(?:[-_.][A-Za-z0-9_-]+)?$",
+    re.IGNORECASE,
+)
+FILE_PATH_EXTENSION_PATTERN = re.compile(
+    r"\.(?:cfg|conf|ini|json|ya?ml|toml|pem|crt|cer|cert|key|p12|pfx)$",
+    re.IGNORECASE,
+)
 
 
 def split_argument_value_placeholder(flag: str) -> tuple[str, bool]:
@@ -191,16 +204,44 @@ def environment_variable_uses_file(
     *,
     name: Any,
     description: Any,
+    default: Any = None,
+    value: Any = None,
 ) -> bool:
     normalized_name = str(name or "").strip().upper()
     normalized_description = str(description or "").strip()
-    return bool(
+    if (
         FILE_ENVIRONMENT_NAME_PATTERN.search(normalized_name)
         or any(
             pattern.search(normalized_description)
             for pattern in FILE_ENVIRONMENT_DESCRIPTION_PATTERNS
         )
+    ):
+        return True
+    if FILE_ENVIRONMENT_DIRECTORY_DESCRIPTION_PATTERN.search(normalized_description):
+        return False
+    return any(file_path_value_uses_file(candidate) for candidate in (value, default))
+
+
+def file_path_value_uses_file(value: Any) -> bool:
+    raw_value = str(value or "").strip()
+    if not raw_value or "\n" in raw_value or "\r" in raw_value:
+        return False
+    if "://" in raw_value:
+        return False
+    path_parts = [
+        part for part in re.split(r"[/\\]+", raw_value) if part and part not in {".", "~"}
+    ]
+    if not path_parts:
+        return False
+    name = path_parts[-1]
+    path_like = (
+        raw_value.startswith(("/", "~/", "./", "../", "$HOME/", "${HOME}/"))
+        or "/" in raw_value
+        or "\\" in raw_value
     )
+    if not path_like and not FILE_PATH_EXTENSION_PATTERN.search(name):
+        return False
+    return bool(FILE_PATH_EXTENSION_PATTERN.search(name) or FILE_PATH_NAME_HINT_PATTERN.match(name))
 
 
 class RegistryRepository(BaseModel):
@@ -261,6 +302,8 @@ class RegistryEnvironmentVariable(BaseModel):
         if not environment_variable_uses_file(
             name=data.get("name"),
             description=data.get("description"),
+            default=data.get("default"),
+            value=data.get("value"),
         ):
             return data
         return {**data, "format": "file"}
