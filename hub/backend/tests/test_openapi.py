@@ -47,6 +47,7 @@ def test_openapi_exposes_phase_zero_paths() -> None:
             "/api/v1/mcp/catalog/stats",
             "/api/v1/mcp/categories",
         "/api/v1/mcp/categories/{category_slug}",
+        "/api/v1/mcp-server",
         "/api/v1/mcp/servers",
         "/api/v1/mcp/servers/search",
         "/api/v1/mcp/servers/telemetry/{server_name}",

@@ -7124,6 +7124,7 @@
                 "partners:write",
                 "registry:score",
                 "registry:write",
+                "skills:read",
                 "submissions:read",
                 "submissions:write",
                 "submissions:moderate",
@@ -7245,6 +7246,7 @@
                 "partners:write",
                 "registry:score",
                 "registry:write",
+                "skills:read",
                 "submissions:read",
                 "submissions:write",
                 "submissions:moderate",
@@ -7369,6 +7371,7 @@
                     "partners:write",
                     "registry:score",
                     "registry:write",
+                    "skills:read",
                     "submissions:read",
                     "submissions:write",
                     "submissions:moderate",
@@ -7775,7 +7778,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.169"
+    "version": "0.2.170"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -9708,6 +9711,348 @@
         "summary": "Import Server Source Endpoint",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/v1/mcp-server": {
+      "post": {
+        "description": "Streamable HTTP MCP endpoint for read-only Wardn Hub skill discovery.\n\nSend one JSON-RPC 2.0 message per HTTP POST. The endpoint requires a bearer\nWardn Hub API token with the `skills:read` scope. It accepts initialization,\ntool discovery, tool calls, pings, notifications, and client JSON-RPC responses.\n\nThis endpoint only reads Wardn Hub skill catalog data. It never installs skills,\nexecutes skill scripts, invokes registered MCP servers, mutates registry records,\nor proxies third-party tools.",
+        "operationId": "mcp_skills_endpoint",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "MCP-Protocol-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mcp-Protocol-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "getSkillAudit": {
+                  "summary": "Read a hash-pinned skill audit",
+                  "value": {
+                    "id": 4,
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {
+                      "arguments": {
+                        "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "skillId": "owner/repository/skill-slug"
+                      },
+                      "name": "get_skill_audit"
+                    }
+                  }
+                },
+                "initialize": {
+                  "summary": "Initialize the MCP session",
+                  "value": {
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                    "method": "initialize",
+                    "params": {
+                      "capabilities": {},
+                      "clientInfo": {
+                        "name": "example-client",
+                        "version": "1.0.0"
+                      },
+                      "protocolVersion": "2025-11-25"
+                    }
+                  }
+                },
+                "initializedNotification": {
+                  "summary": "Initialized notification",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized"
+                  }
+                },
+                "searchSkills": {
+                  "summary": "Search Wardn Hub skills",
+                  "value": {
+                    "id": 3,
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {
+                      "arguments": {
+                        "auditStatus": "pass",
+                        "limit": 5,
+                        "query": "code review"
+                      },
+                      "name": "search_skills"
+                    }
+                  }
+                },
+                "toolsList": {
+                  "summary": "List available read-only tools",
+                  "value": {
+                    "id": 2,
+                    "jsonrpc": "2.0",
+                    "method": "tools/list"
+                  }
+                }
+              },
+              "schema": {
+                "additionalProperties": true,
+                "description": "A single JSON-RPC 2.0 request, notification, or response.",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "initialize": {
+                    "summary": "Initialize response",
+                    "value": {
+                      "id": 1,
+                      "jsonrpc": "2.0",
+                      "result": {
+                        "capabilities": {
+                          "tools": {
+                            "listChanged": false
+                          }
+                        },
+                        "instructions": "Use this server only for read-only Wardn Hub skill discovery and inspection. It does not install skills, invoke registered MCP servers, or mutate Wardn Hub records.",
+                        "protocolVersion": "2025-11-25",
+                        "serverInfo": {
+                          "name": "wardn-hub-skills",
+                          "title": "Wardn Hub Skills",
+                          "version": "0.2.169"
+                        }
+                      }
+                    }
+                  },
+                  "toolCall": {
+                    "summary": "Tool call response",
+                    "value": {
+                      "id": 3,
+                      "jsonrpc": "2.0",
+                      "result": {
+                        "content": [
+                          {
+                            "text": "{\n  \"count\": 1,\n  \"data\": []\n}",
+                            "type": "text"
+                          }
+                        ],
+                        "isError": false,
+                        "structuredContent": {
+                          "count": 1,
+                          "data": []
+                        }
+                      }
+                    }
+                  },
+                  "toolsList": {
+                    "summary": "Tools list response",
+                    "value": {
+                      "id": 2,
+                      "jsonrpc": "2.0",
+                      "result": {
+                        "tools": [
+                          {
+                            "annotations": {
+                              "readOnlyHint": true
+                            },
+                            "description": "Search the public Wardn Hub skill catalog.",
+                            "inputSchema": {
+                              "properties": {
+                                "query": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "query"
+                              ],
+                              "type": "object"
+                            },
+                            "name": "search_skills",
+                            "title": "Search Wardn Hub Skills"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "id": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "jsonrpc": {
+                      "const": "2.0",
+                      "type": "string"
+                    },
+                    "result": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "jsonrpc",
+                    "id"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "JSON-RPC response."
+          },
+          "202": {
+            "description": "Accepted JSON-RPC notification or client response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalidRequest": {
+                    "summary": "Invalid JSON-RPC request",
+                    "value": {
+                      "error": {
+                        "code": -32600,
+                        "message": "request must be a JSON-RPC 2.0 object"
+                      },
+                      "jsonrpc": "2.0"
+                    }
+                  },
+                  "parseError": {
+                    "summary": "Malformed JSON",
+                    "value": {
+                      "error": {
+                        "code": -32700,
+                        "message": "Parse error"
+                      },
+                      "jsonrpc": "2.0"
+                    }
+                  },
+                  "unsupportedProtocol": {
+                    "summary": "Unsupported MCP protocol header",
+                    "value": {
+                      "detail": "unsupported MCP protocol version"
+                    }
+                  }
+                },
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "JSON-RPC error response or FastAPI detail response.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid MCP transport request."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missingBearer": {
+                    "summary": "Missing or invalid bearer token",
+                    "value": {
+                      "detail": "API token authentication required"
+                    }
+                  }
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "API token authentication required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "missingScope": {
+                    "summary": "Token missing skills:read",
+                    "value": {
+                      "detail": "API token missing required scope: skills:read"
+                    }
+                  }
+                },
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "API token missing skills:read scope."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Wardn Hub read-only skills MCP server",
+        "tags": [
+          "mcp-server"
         ]
       }
     },

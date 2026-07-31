@@ -34,9 +34,9 @@ content-addressed snapshots, provenance, security analysis, and a safe delivery
 path through the `@wardn-ai/skills` CLI.
 
 > [!IMPORTANT]
-> Wardn Hub is a registry and governance system. It does not run MCP servers,
-> invoke MCP tools, install workspace MCP configuration, or provide an execution
-> gateway.
+> Wardn Hub is a registry and governance system. It does not run registered MCP
+> servers, invoke registered server tools, install workspace MCP configuration,
+> or provide an execution gateway.
 
 ## Why Wardn Hub
 
@@ -106,6 +106,26 @@ never fail or roll back an install.
 
 See the [Skills CLI guide](hub/cli/README.md) for lifecycle commands, custom
 targets, snapshot pinning, and telemetry controls.
+
+## Connect through MCP
+
+Wardn Hub also exposes a read-only MCP endpoint for skill discovery:
+
+```text
+POST /api/v1/mcp-server
+Authorization: Bearer <Wardn Hub API token>
+```
+
+The token must include the `skills:read` scope. The endpoint implements
+Streamable HTTP JSON-RPC responses for `initialize`, `tools/list`, and
+`tools/call`, and exposes only read-only tools:
+
+- `search_skills` for compact catalog search results;
+- `get_skill` for a retained skill snapshot;
+- `get_skill_audit` for the current or hash-pinned Cisco audit result.
+
+This endpoint does not install skills, mutate registry records, invoke
+registered MCP servers, or proxy third-party tools.
 
 ## Architecture
 
@@ -251,6 +271,7 @@ Primary API groups:
 | Authentication and API tokens | `/api/v1/auth` |
 | Users and organizations | `/api/v1/users`, `/api/v1/organizations` |
 | MCP catalog and categories | `/api/v1/mcp`, `/api/v1/mcp/categories` |
+| Read-only skills MCP server | `/api/v1/mcp-server` |
 | Imports and submissions | `/api/v1/imports`, `/api/v1/submissions` |
 | Skills | `/api/v1/skills` |
 | Partners and support | `/api/v1/partners` |
@@ -484,7 +505,7 @@ automation rather than MCP execution.
 Wardn Hub deliberately excludes execution-plane responsibilities:
 
 - workspace MCP installation;
-- MCP tool invocation;
+- registered MCP server execution or tool invocation;
 - Kubernetes runtime management;
 - proxying or gateway execution for registered servers.
 

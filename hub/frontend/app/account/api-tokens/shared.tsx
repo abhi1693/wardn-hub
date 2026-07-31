@@ -30,6 +30,11 @@ export const scopeOptions: { description: string; label: string; value: APIToken
     value: "catalog:read",
   },
   {
+    description: "Use the read-only skills MCP server and skill catalog tools.",
+    label: "Skills read",
+    value: "skills:read",
+  },
+  {
     description: "Read event rules and webhook delivery history.",
     label: "Events read",
     value: "events:read",
@@ -108,6 +113,7 @@ export const scopeOptions: { description: string; label: string; value: APIToken
 
 const baseUserScopes: APITokenScope[] = [
   "catalog:read",
+  "skills:read",
   "events:read",
   "events:write",
   "submissions:read",
@@ -124,6 +130,7 @@ export const defaultScopes: APITokenScope[] = [
 
 export const readOnlyScopes: APITokenScope[] = [
   "catalog:read",
+  "skills:read",
   "submissions:read",
   "tokens:read",
 ];

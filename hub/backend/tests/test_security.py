@@ -177,6 +177,13 @@ def test_api_token_rotate_returns_one_time_token(monkeypatch) -> None:
         ),
         (
             "POST",
+            "/api/v1/mcp-server",
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+            {},
+            "skills:read",
+        ),
+        (
+            "POST",
             f"/api/v1/submissions/{uuid4()}/approve",
             None,
             {"is_global_moderator": True},

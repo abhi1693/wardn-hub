@@ -42,6 +42,7 @@ BASE_API_TOKEN_SCOPES: set[APITokenScope] = {
     "catalog:read",
     "events:read",
     "events:write",
+    "skills:read",
     "submissions:read",
     "submissions:write",
     "tokens:read",

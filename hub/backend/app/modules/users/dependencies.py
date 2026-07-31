@@ -104,6 +104,50 @@ async def get_current_user(
         return user
 
 
+async def get_current_api_token_user(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> User:
+    with tracer.start_as_current_span("auth.current_api_token_user") as span:
+        setattr(request.state, API_TOKEN_STATE_KEY, None)
+        has_bearer = bool(authorization and authorization.lower().startswith("bearer "))
+        span.set_attribute("auth.has_authorization_bearer", has_bearer)
+        if not has_bearer:
+            span.set_attribute("auth.result", "unauthorized")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API token authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        plaintext_token = authorization.split(" ", 1)[1].strip()
+        if not plaintext_token:
+            span.set_attribute("auth.result", "unauthorized")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API token authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        with tracer.start_as_current_span("auth.api_token_lookup") as token_span:
+            authenticated = await authenticate_api_token(session, plaintext_token)
+            token_span.set_attribute("auth.api_token.matched", authenticated is not None)
+        if authenticated is None:
+            span.set_attribute("auth.result", "unauthorized")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API token authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user, api_token = authenticated
+        setattr(request.state, API_TOKEN_STATE_KEY, api_token)
+        span.set_attribute("auth.result", "api_token")
+        set_user_id_attribute(span, user)
+        return user
+
+
 async def get_optional_current_user(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -128,6 +172,20 @@ def require_api_token_scopes(
         return current_user
 
     return dependency
+
+
+def require_bearer_api_token_scopes(
+    *required_scopes: APITokenScope,
+):
+    async def dependency(
+        request: Request,
+        current_user: Annotated[User, Depends(get_current_api_token_user)],
+    ) -> User:
+        require_request_api_token_scopes(request, *required_scopes)
+        return current_user
+
+    return dependency
+
 
 def ensure_superuser(current_user: User) -> None:
     if not current_user.is_superuser:

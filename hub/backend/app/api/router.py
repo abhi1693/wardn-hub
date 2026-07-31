@@ -4,6 +4,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.events.router import router as events_router
 from app.modules.health.router import router as health_router
 from app.modules.imports.router import router as imports_router
+from app.modules.mcp_skills.router import router as mcp_skills_router
 from app.modules.organizations.router import router as organizations_router
 from app.modules.partners.router import router as partners_router
 from app.modules.registry.router import admin_router as registry_admin_router
@@ -34,3 +35,4 @@ api_router.include_router(registry_categories_router)
 api_router.include_router(registry_public_router)
 api_router.include_router(registry_admin_router)
 api_router.include_router(skills_router)
+api_router.include_router(mcp_skills_router)
