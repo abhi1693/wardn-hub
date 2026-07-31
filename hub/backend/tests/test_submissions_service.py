@@ -913,6 +913,82 @@ def test_validation_warns_when_documentation_env_vars_lack_metadata() -> None:
     )
 
 
+def test_validation_allows_remote_only_documented_env_vars_without_package_metadata() -> None:
+    payload = RegistryServerVersionCreate(
+        **{
+            "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+            "name": "io.github.example/remote-skills-mcp",
+            "title": "Remote Skills MCP",
+            "description": "Read-only remote MCP endpoint for skill discovery.",
+            "documentation": (
+                "## Installation\nConnect your MCP client to the hosted "
+                "streamable HTTP endpoint.\n\n"
+                "## Configuration\nThe hosted service uses `WARDN_HUB_API_TOKEN_SECRET`, "
+                "`WARDN_HUB_AUTH_PROVIDERS`, and `NEXT_PUBLIC_API_BASE_URL` internally. "
+                "Clients provide an Authorization bearer token header.\n\n"
+                "## Capabilities\nProvides read-only skill search and audit lookup tools.\n\n"
+                "## Limitations\nThe hosted endpoint does not execute third-party MCP servers."
+            ),
+            "version": "1.0.0",
+            "websiteUrl": "https://hub.wardnai.dev/docs/api",
+            "repository": {
+                "source": "github",
+                "url": "example/remote-skills-mcp",
+            },
+            "packages": [],
+            "remotes": [
+                {
+                    "type": "streamable-http",
+                    "url": "https://hub.wardnai.dev/api/v1/mcp-server",
+                    "headers": [
+                        {
+                            "name": "Authorization",
+                            "description": "Bearer API token for the remote endpoint.",
+                            "isRequired": True,
+                            "isSecret": True,
+                        }
+                    ],
+                    "queryParameters": [],
+                }
+            ],
+            "_meta": {
+                "categories": ["developer-tools"],
+                "sourceReview": {
+                    "filesRead": ["README.md"],
+                    "environmentVariables": [
+                        {
+                            "name": "WARDN_HUB_API_TOKEN_SECRET",
+                            "description": "Internal hosted service secret, not client config.",
+                            "isRequired": False,
+                            "isSecret": True,
+                        }
+                    ],
+                    "prerequisites": ["Wardn Hub API token with skills:read scope."],
+                    "capabilitiesReviewed": True,
+                    "limitationsReviewed": True,
+                    "unknowns": [],
+                },
+            },
+        }
+    )
+
+    result = service.validation_result_for(payload)
+
+    assert result["status"] == "passed"
+    assert any(
+        check["name"] == "documentedEnvironmentVariables"
+        and check["status"] == "passed"
+        and "No local package targets" in check["message"]
+        for check in result["checks"]
+    )
+    assert any(
+        check["name"] == "sourceReviewEnvironmentMetadata"
+        and check["status"] == "passed"
+        and "No local package targets" in check["message"]
+        for check in result["checks"]
+    )
+
+
 def test_validation_ignores_documentation_constants_and_markdown_paths() -> None:
     payload = complete_registry_payload()
     payload.documentation = (

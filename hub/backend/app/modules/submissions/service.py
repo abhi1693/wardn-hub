@@ -683,6 +683,13 @@ def source_review_environment_schema_check(
 def documented_environment_metadata_check(
     payload: RegistryServerVersionCreate,
 ) -> dict[str, str]:
+    if not has_local_package_target(payload.packages):
+        return validation_check(
+            "documentedEnvironmentVariables",
+            "passed",
+            "No local package targets need documented environment variable metadata.",
+        )
+
     documented_names = documented_environment_variable_names(payload.documentation)
     if not documented_names:
         return validation_check(
