@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { PublicHeader } from "@/components/site-header";
 import { groupSkillsByOwner, listPublicSkills } from "@/lib/public-skills";
+import { JsonLdScript, skillIndexJsonLd } from "@/lib/structured-data";
 import { OfficialCreatorsTable, SkillsBreadcrumbs, SkillsPageHeader } from "../skills-ui";
 
 export const metadata: Metadata = {
@@ -28,6 +29,10 @@ export default async function OfficialSkillsPage() {
 
   return (
     <main className="site-shell">
+      <JsonLdScript
+        data={skillIndexJsonLd(state.skills, "/skills/official")}
+        id="skills-official-json-ld"
+      />
       <PublicHeader />
       <section className="skills-page-shell">
         <SkillsBreadcrumbs items={[{ label: "official" }]} />

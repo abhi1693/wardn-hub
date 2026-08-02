@@ -13,5 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default function HotSkillsPage({ searchParams }: { searchParams?: SkillsSearchParams }) {
-  return <SkillsPageView searchParams={searchParams} view="hot" />;
+  return (
+    <SkillsPageView canonicalPath="/skills/hot" searchParams={searchParams} view="hot" />
+  );
 }

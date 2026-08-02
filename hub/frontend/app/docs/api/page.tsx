@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { PublicHeader } from "@/components/site-header";
-import { absoluteUrl, siteConfig } from "@/lib/site";
-import { JsonLdScript } from "@/lib/structured-data";
+import { siteConfig } from "@/lib/site";
+import { apiDocumentationJsonLd, JsonLdScript } from "@/lib/structured-data";
 
 export const revalidate = 3600;
 
@@ -67,23 +67,6 @@ const faqItems = [
   },
 ];
 
-function apiDocsFaqJsonLd() {
-  const url = absoluteUrl("/docs/api");
-  return {
-    "@context": "https://schema.org",
-    "@id": `${url}#faq`,
-    "@type": "FAQPage",
-    mainEntity: faqItems.map((item) => ({
-      "@type": "Question",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: item.answer,
-      },
-      name: item.question,
-    })),
-  };
-}
-
 export const metadata: Metadata = {
   alternates: {
     canonical: "/docs/api",
@@ -105,7 +88,7 @@ export const metadata: Metadata = {
 export default function ApiDocumentationPage() {
   return (
     <div className="server-detail-page">
-      <JsonLdScript data={apiDocsFaqJsonLd()} id="api-docs-faq-jsonld" />
+      <JsonLdScript data={apiDocumentationJsonLd()} id="api-docs-json-ld" />
       <PublicHeader />
       <main className="server-detail-main">
         <section className="category-page-header">

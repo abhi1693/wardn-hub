@@ -17,5 +17,11 @@ export default function TrendingSkillsPage({
 }: {
   searchParams?: SkillsSearchParams;
 }) {
-  return <SkillsPageView searchParams={searchParams} view="trending" />;
+  return (
+    <SkillsPageView
+      canonicalPath="/skills/trending"
+      searchParams={searchParams}
+      view="trending"
+    />
+  );
 }

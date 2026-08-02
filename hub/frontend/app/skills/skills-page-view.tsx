@@ -3,6 +3,7 @@ import type { RegistryCategoryRead, SkillPagination, SkillRead } from "@/lib/api
 import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { listPublicSkillsPage, searchPublicSkillsPage } from "@/lib/public-skills";
 import { listPublicCategories } from "@/lib/public-registry";
+import { JsonLdScript, skillIndexJsonLd } from "@/lib/structured-data";
 import { SkillsClient } from "./skills-client";
 
 export type SkillView = "all-time" | "hot" | "latest" | "oldest" | "trending";
@@ -39,9 +40,11 @@ function officialFilterParam(value: string | string[] | undefined): boolean | un
 }
 
 export async function SkillsPageView({
+  canonicalPath = "/skills",
   searchParams,
   view,
 }: {
+  canonicalPath?: string;
   searchParams?: SkillsSearchParams;
   view: SkillView;
 }) {
@@ -114,6 +117,10 @@ export async function SkillsPageView({
 
   return (
     <main className="site-shell skills-index-page">
+      <JsonLdScript
+        data={skillIndexJsonLd(state.skills, canonicalPath)}
+        id="skills-index-json-ld"
+      />
       <PublicHeader />
       <SkillsClient
         auditEnabled={state.auditEnabled}

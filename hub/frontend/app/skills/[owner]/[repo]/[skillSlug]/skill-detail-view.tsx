@@ -25,10 +25,12 @@ import {
   listPublicSkills,
   publishedSkillFiles,
   skillDetailPath,
+  skillFilePath,
   skillOwnerPath,
   skillSourcePath,
   stripMarkdownFrontmatter,
 } from "@/lib/public-skills";
+import { JsonLdScript, skillDetailJsonLd } from "@/lib/structured-data";
 import {
   OfficialBadge,
   RelatedSkills,
@@ -180,6 +182,10 @@ export async function SkillDetailView({
   const packageReady = skill.bundleFormatVersion === 2 && skill.resolutionStatus === "complete";
   const packageIssue = (skill.resolutionIssues ?? [])[0]?.reason;
   const skillCategories = skill.categories ?? [];
+  const canonicalPath =
+    selectedFile.path === "SKILL.md"
+      ? skillDetailPath(id)
+      : (skillFilePath(id, selectedFile.path) ?? skillDetailPath(id));
   const viewingRetainedSnapshot = Boolean(
     snapshotHash &&
       !displayedAuditHistory?.data.some(
@@ -189,6 +195,15 @@ export async function SkillDetailView({
 
   return (
     <main className="site-shell">
+      <JsonLdScript
+        data={skillDetailJsonLd({
+          canonicalPath,
+          filePath: selectedFile.path === "SKILL.md" ? undefined : selectedFile.path,
+          listing,
+          skill,
+        })}
+        id="skill-detail-json-ld"
+      />
       <PublicHeader />
       <section className="skill-detail-hero" aria-labelledby="skill-detail-title">
         <div className="skill-detail-hero-inner">

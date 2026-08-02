@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { PublicHeader } from "@/components/site-header";
 import { listPublicSkills } from "@/lib/public-skills";
+import { JsonLdScript, skillIndexJsonLd } from "@/lib/structured-data";
 import {
   OfficialBadge,
   SkillSourceTable,
@@ -42,9 +43,14 @@ export default async function SkillOwnerPage({ params }: SkillOwnerPageProps) {
   })();
   const groups = sourceGroupsForSkills(state.skills);
   const isOfficial = state.skills.some((skill) => skill.isOfficial);
+  const canonicalPath = `/skills/${encodeURIComponent(owner)}`;
 
   return (
     <main className="site-shell">
+      <JsonLdScript
+        data={skillIndexJsonLd(state.skills, canonicalPath)}
+        id="skills-owner-json-ld"
+      />
       <PublicHeader />
       <section className="skills-page-shell">
         <SkillsBreadcrumbs items={[{ label: owner }]} />

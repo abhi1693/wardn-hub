@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { PublicHeader } from "@/components/site-header";
 import { listPublicSkillsPage, skillOwnerPath } from "@/lib/public-skills";
+import { JsonLdScript, skillIndexJsonLd } from "@/lib/structured-data";
 import {
   OfficialBadge,
   SkillLeaderboard,
@@ -46,9 +47,14 @@ export default async function SkillSourcePage({ params }: SkillSourcePageProps) 
   })();
   const isOfficial = state.skills.some((skill) => skill.isOfficial);
   const sourceUrl = state.skills[0]?.sourceUrl;
+  const canonicalPath = `/skills/${[owner, repo].map(encodeURIComponent).join("/")}`;
 
   return (
     <main className="site-shell">
+      <JsonLdScript
+        data={skillIndexJsonLd(state.skills, canonicalPath)}
+        id="skills-source-json-ld"
+      />
       <PublicHeader />
       <section className="skills-page-shell">
         <SkillsBreadcrumbs

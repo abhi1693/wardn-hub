@@ -17,5 +17,11 @@ export default function OldestSkillsPage({
 }: {
   searchParams?: SkillsSearchParams;
 }) {
-  return <SkillsPageView searchParams={searchParams} view="oldest" />;
+  return (
+    <SkillsPageView
+      canonicalPath="/skills/oldest"
+      searchParams={searchParams}
+      view="oldest"
+    />
+  );
 }
