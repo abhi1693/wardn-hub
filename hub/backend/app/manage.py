@@ -16,6 +16,14 @@ from app.cli.audit_skills import (
     audit_skills_from_args,
     skill_id_argument,
 )
+from app.cli.categorize_skills import (
+    DEFAULT_CATEGORIZATION_LIMIT,
+    DEFAULT_CATEGORIZATION_TIMEOUT_SECONDS,
+    categorize_skills_from_options,
+)
+from app.cli.categorize_skills import (
+    UserFacingError as CategorizationUserFacingError,
+)
 from app.cli.skills import (
     DEFAULT_IMPORT_TIMEOUT_SECONDS,
     GITHUB_IMPORT_OUTPUT_FORMATS,
@@ -494,6 +502,60 @@ def skills_audit(
             )
         )
     except UserFacingError as exc:
+        raise click.exceptions.UsageError(str(exc)) from exc
+
+
+@skills_app.command("categorize", help="Ask Codex app-server to assign existing categories.")
+def skills_categorize(
+    skill_id: Annotated[
+        str | None,
+        typer.Option(
+            "--skill-id",
+            help="Categorize exactly one catalog skill ID in owner/repository/slug form.",
+        ),
+    ] = None,
+    max_skills: Annotated[
+        str,
+        typer.Option("--max-skills", help="Stop after categorizing this many skills."),
+    ] = str(DEFAULT_CATEGORIZATION_LIMIT),
+    include_categorized: Annotated[
+        bool,
+        typer.Option(
+            "--include-categorized",
+            help="Reconsider skills that already have a category assignment.",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Ask the LLM but do not write category assignments."),
+    ] = False,
+    timeout_seconds: Annotated[
+        str,
+        typer.Option("--timeout-seconds", help="Seconds to wait for each Codex response."),
+    ] = str(DEFAULT_CATEGORIZATION_TIMEOUT_SECONDS),
+    codex_app_server_url: Annotated[
+        str,
+        typer.Option(
+            "--codex-app-server-url",
+            help=(
+                "Codex app-server WebSocket URL used for skill categorization. "
+                f"Defaults to ${CODEX_APP_SERVER_URL_ENV}."
+            ),
+        ),
+    ] = os.getenv(CODEX_APP_SERVER_URL_ENV, ""),
+) -> int:
+    try:
+        return asyncio.run(
+            categorize_skills_from_options(
+                codex_app_server_url=codex_app_server_url,
+                dry_run=dry_run,
+                include_categorized=include_categorized,
+                max_skills=_parse_argument(positive_int_argument, max_skills),
+                skill_id=_parse_optional_argument(skill_id_argument, skill_id),
+                timeout_seconds=_parse_argument(positive_int_argument, timeout_seconds),
+            )
+        )
+    except CategorizationUserFacingError as exc:
         raise click.exceptions.UsageError(str(exc)) from exc
 
 

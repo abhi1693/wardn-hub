@@ -60,6 +60,7 @@
         "auditRank": "A",
         "auditScore": 79,
         "auditStatus": "warn",
+        "categories": [],
         "description": "Review source safely.",
         "id": "acme/skills/code-audit",
         "installUrl": "https://github.com/acme/skills/tree/main/code-audit",

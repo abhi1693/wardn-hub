@@ -234,6 +234,7 @@ export function groupSkillsByOwner(skills: SkillRead[]) {
 }
 
 export async function listPublicSkills(params?: {
+  category?: string;
   limit?: number;
   official?: boolean;
   owner?: string;
@@ -260,6 +261,7 @@ export async function countPublicSkills() {
 
 export async function listPublicSkillsPage(params?: {
   auditStatus?: "fail" | "pass" | "warn";
+  category?: string;
   limit?: number;
   official?: boolean;
   owner?: string;
@@ -275,6 +277,7 @@ export async function listPublicSkillsPage(params?: {
     view: params?.view ?? "all-time",
   };
   if (params?.auditStatus) listParams.audit_status = params.auditStatus;
+  if (params?.category) listParams.category = params.category;
   if (query) listParams.q = query;
   if (params?.owner) listParams.owner = params.owner;
   if (params?.source) listParams.source = params.source;
@@ -290,6 +293,7 @@ export async function listPublicSkillsPage(params?: {
 
 export async function searchPublicSkillsPage(params: {
   auditStatus?: "fail" | "pass" | "warn";
+  category?: string;
   cursor?: string;
   limit?: number;
   official?: boolean;
@@ -310,6 +314,7 @@ export async function searchPublicSkillsPage(params: {
     q: query,
   };
   if (params.auditStatus) searchParams.audit_status = params.auditStatus;
+  if (params.category) searchParams.category = params.category;
   if (params.cursor) searchParams.cursor = params.cursor;
   if (params.official !== undefined) searchParams.official = params.official;
   if (params.owner) searchParams.owner = params.owner;

@@ -26,6 +26,8 @@ from app.cli.skills import (
     validate_unique_imported_skill_slugs,
 )
 from app.core.config import get_settings
+from app.modules.registry.models import RegistryCategory
+from app.modules.registry.schemas import RegistryCategoryRead
 from app.modules.skills import repository
 from app.modules.skills.exceptions import SkillAuditNotFoundError, SkillNotFoundError
 from app.modules.skills.models import Skill, SkillAudit
@@ -75,6 +77,16 @@ def name_from_skill(skill: Skill) -> str:
 def skill_url(skill: Skill) -> str:
     base_url = get_settings().registry_public_base_url.rstrip("/")
     return f"{base_url}/skills/{skill.source}/{skill.slug}"
+
+
+def category_read(category: RegistryCategory) -> RegistryCategoryRead:
+    return RegistryCategoryRead(
+        id=category.id,
+        slug=category.slug,
+        name=category.name,
+        description=category.description,
+        sortOrder=category.sort_order,
+    )
 
 
 def github_import_subfolder_from_url_path(path: str) -> str:
@@ -149,9 +161,11 @@ def skill_read(
     skill: Skill,
     *,
     audit_results: dict[uuid.UUID, repository.CurrentSkillAudit] | None = None,
+    category_results: dict[uuid.UUID, list[RegistryCategory]] | None = None,
     official_owner_keys: set[tuple[str, str]] | None = None,
 ) -> SkillRead:
     audit = (audit_results or {}).get(skill.id)
+    categories = (category_results or {}).get(skill.id, [])
     return SkillRead(
         id=f"{skill.source}/{skill.slug}",
         slug=skill.slug,
@@ -171,6 +185,7 @@ def skill_read(
         auditStatus=audit.status if audit else None,
         auditScore=audit.score if audit else None,
         auditRank=audit.rank if audit else None,
+        categories=[category_read(category) for category in categories],
     )
 
 
@@ -183,6 +198,7 @@ async def list_skills(
     per_page: int = 100,
     query: str | None = None,
     owner: str | None = None,
+    category: str | None = None,
     source: str | None = None,
     official: bool | None = None,
 ) -> SkillListResponse:
@@ -204,16 +220,19 @@ async def list_skills(
         audit_status=normalized_audit_status,
         search=search_query,
         owner=owner,
+        category=category,
         source=source,
         official=official,
     )
     official_keys = await repository.official_owner_keys(session, skills)
+    category_results = await repository.categories_for_skills(session, skills)
     audit_results = await repository.current_skill_audits(session, skills) if audit_enabled else {}
     return SkillListResponse(
         data=[
             skill_read(
                 skill,
                 audit_results=audit_results,
+                category_results=category_results,
                 official_owner_keys=official_keys,
             )
             for skill in skills
@@ -234,6 +253,7 @@ async def search_skills(
     query: str,
     limit: int = 50,
     owner: str | None = None,
+    category: str | None = None,
     audit_status: str | None = None,
     official: bool | None = None,
     cursor: str | None = None,
@@ -248,6 +268,7 @@ async def search_skills(
     cursor_fingerprint = skill_search_cursor_fingerprint(
         query=search_query,
         owner=owner,
+        category=category,
         audit_status=normalized_audit_status,
         official=official,
     )
@@ -258,18 +279,21 @@ async def search_skills(
         query=search_query,
         limit=limit,
         owner=owner,
+        category=category,
         audit_status=normalized_audit_status,
         official=official,
         cursor=decoded_cursor,
     )
     skills = page.skills
     official_keys = await repository.official_owner_keys(session, skills)
+    category_results = await repository.categories_for_skills(session, skills)
     audit_results = await repository.current_skill_audits(session, skills) if audit_enabled else {}
     return SkillSearchResponse(
         data=[
             skill_read(
                 skill,
                 audit_results=audit_results,
+                category_results=category_results,
                 official_owner_keys=official_keys,
             )
             for skill in skills
@@ -292,12 +316,14 @@ def skill_search_cursor_fingerprint(
     *,
     query: str,
     owner: str | None,
+    category: str | None,
     audit_status: str | None,
     official: bool | None,
 ) -> str:
     material = json.dumps(
         {
             "auditStatus": audit_status or "",
+            "category": (category or "").strip().casefold(),
             "official": official,
             "owner": (owner or "").strip().casefold(),
             "query": query.strip().casefold(),
@@ -385,6 +411,8 @@ async def get_skill_detail(
         content_hash=content_hash,
         include_files=include_bundle,
     )
+    category_results = await repository.categories_for_skills(session, [skill])
+    categories = [category_read(category) for category in category_results.get(skill.id, [])]
     if snapshot is None:
         if content_hash is not None:
             raise SkillNotFoundError("skill snapshot not found")
@@ -404,6 +432,7 @@ async def get_skill_detail(
             sourceEntrypoint=None,
             resolutionStatus=None,
             resolutionIssues=[],
+            categories=categories,
             auditEnabled=audit_enabled,
         )
     snapshot_files = (
@@ -427,6 +456,7 @@ async def get_skill_detail(
         sourceEntrypoint=snapshot.source_entrypoint,
         resolutionStatus=snapshot.resolution_status,
         resolutionIssues=snapshot.resolution_issues or [],
+        categories=categories,
         auditEnabled=audit_enabled,
     )
 
@@ -564,6 +594,7 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
         official=True,
     )
     official_keys = await repository.official_owner_keys(session, skills)
+    category_results = await repository.categories_for_skills(session, skills)
     audit_results = await repository.current_skill_audits(session, skills) if audit_enabled else {}
     groups: dict[str, list[Skill]] = defaultdict(list)
     for skill in skills:
@@ -583,6 +614,7 @@ async def list_official_skills(session: AsyncSession) -> SkillOfficialResponse:
                     skill_read(
                         skill,
                         audit_results=audit_results,
+                        category_results=category_results,
                         official_owner_keys=official_keys,
                     )
                     for skill in owner_skills

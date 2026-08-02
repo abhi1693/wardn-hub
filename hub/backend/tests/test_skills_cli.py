@@ -2534,6 +2534,45 @@ def test_manage_dispatches_skills_import_github(monkeypatch: pytest.MonkeyPatch)
     }
 
 
+def test_manage_dispatches_skills_categorize(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: dict[str, object] = {}
+
+    async def fake_categorize_skills_from_options(**kwargs: object) -> int:
+        called.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(
+        manage,
+        "categorize_skills_from_options",
+        fake_categorize_skills_from_options,
+    )
+
+    result = manage.main(
+        [
+            "skills",
+            "categorize",
+            "--skill-id",
+            "acme/agent-skills/weather",
+            "--max-skills",
+            "2",
+            "--dry-run",
+            "--include-categorized",
+            "--timeout-seconds",
+            "30",
+            "--codex-app-server-url",
+            "ws://127.0.0.1:41237",
+        ]
+    )
+
+    assert result == 0
+    assert called["skill_id"] == "acme/agent-skills/weather"
+    assert called["max_skills"] == 2
+    assert called["dry_run"] is True
+    assert called["include_categorized"] is True
+    assert called["timeout_seconds"] == 30
+    assert called["codex_app_server_url"] == "ws://127.0.0.1:41237"
+
+
 def test_manage_audits_pending_snapshots_immediately_after_github_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2576,6 +2615,88 @@ def test_manage_audits_pending_snapshots_immediately_after_github_import(
         "import-completed",
         "dispose",
     ]
+
+
+def test_post_import_command_categorizes_imported_skills(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        events.append("import-started")
+        categorization_queue = getattr(args, skills.GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE)
+        await categorization_queue.put("acme/skills/weather")
+        await asyncio.sleep(0)
+        events.append("import-completed")
+        return 0
+
+    async def fake_categorizer(skill_id: str) -> int:
+        events.append(f"categorize:{skill_id}")
+        return 0
+
+    async def fake_dispose() -> None:
+        events.append("dispose")
+
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(
+            skill_audit_enabled=False,
+            skill_categorization_enabled=False,
+        ),
+    )
+    monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
+
+    result = skills.run_import_github_command(
+        Namespace(),
+        importer=fake_import_github_from_args,
+        categorizer=fake_categorizer,
+    )
+
+    assert result == 0
+    assert events == [
+        "import-started",
+        "categorize:acme/skills/weather",
+        "import-completed",
+        "dispose",
+    ]
+
+
+def test_post_import_command_ignores_categorization_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    categorized: list[str] = []
+
+    async def fake_import_github_from_args(args: Namespace) -> int:
+        categorization_queue = getattr(args, skills.GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE)
+        await categorization_queue.put("acme/skills/broken")
+        return 0
+
+    async def fake_categorizer(skill_id: str) -> int:
+        categorized.append(skill_id)
+        raise RuntimeError("categorizer unavailable")
+
+    async def fake_dispose() -> None:
+        return None
+
+    monkeypatch.setattr(
+        skills,
+        "get_settings",
+        lambda: SimpleNamespace(
+            skill_audit_enabled=False,
+            skill_categorization_enabled=False,
+        ),
+    )
+    monkeypatch.setattr(skills, "engine", SimpleNamespace(dispose=fake_dispose))
+
+    result = skills.run_import_github_command(
+        Namespace(),
+        importer=fake_import_github_from_args,
+        categorizer=fake_categorizer,
+    )
+
+    assert result == 0
+    assert categorized == ["acme/skills/broken"]
 
 
 def test_manage_does_not_run_post_import_audit_when_gate_is_disabled(
@@ -3070,11 +3191,17 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
 
     args = Namespace(github_token="", timeout_seconds=3.0)
     audit_queue: asyncio.Queue[str] = asyncio.Queue()
+    categorization_queue: asyncio.Queue[str] = asyncio.Queue()
     setattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+    setattr(args, skills.GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE, categorization_queue)
     result = await skills.refresh_github_from_args(args)
 
     assert result == 0
     assert [await audit_queue.get(), await audit_queue.get()] == [
+        "acme/agent-skills/one",
+        "acme/agent-skills/two",
+    ]
+    assert [await categorization_queue.get(), await categorization_queue.get()] == [
         "acme/agent-skills/one",
         "acme/agent-skills/two",
     ]
@@ -3105,6 +3232,15 @@ async def test_refresh_github_groups_repository_reads_and_refreshes_exact_target
         if record.message == "github skill refresh queued audit"
     ]
     assert [record.skill_id for record in queued_records] == [
+        "acme/agent-skills/one",
+        "acme/agent-skills/two",
+    ]
+    category_queued_records = [
+        record
+        for record in caplog.records
+        if record.message == "github skill refresh queued categorization"
+    ]
+    assert [record.skill_id for record in category_queued_records] == [
         "acme/agent-skills/one",
         "acme/agent-skills/two",
     ]
@@ -3794,11 +3930,14 @@ async def test_import_github_logs_progress(
 
     args = github_import_args(subfolder="skills/weather")
     audit_queue: asyncio.Queue[str] = asyncio.Queue()
+    categorization_queue: asyncio.Queue[str] = asyncio.Queue()
     setattr(args, skills.GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+    setattr(args, skills.GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE, categorization_queue)
     result = await skills.import_github_from_args(args)
 
     assert result == 0
     assert await audit_queue.get() == "acme/agent-skills/weather"
+    assert await categorization_queue.get() == "acme/agent-skills/weather"
     records = [record for record in caplog.records if record.name == skills.logger.name]
     assert [record.message for record in records] == [
         "github skills import started",
@@ -3808,6 +3947,7 @@ async def test_import_github_logs_progress(
         "github skill import fetched skill file",
         "github skill import saved skill",
         "github skill import queued audit",
+        "github skill import queued categorization",
         "github skills import completed",
     ]
     start_record = records[0]
@@ -3826,7 +3966,10 @@ async def test_import_github_logs_progress(
     queued_record = records[6]
     assert queued_record.skill_id == "acme/agent-skills/weather"
     assert queued_record.snapshot_hash == "sha256:abc123"
-    completed_record = records[7]
+    category_queued_record = records[7]
+    assert category_queued_record.skill_id == "acme/agent-skills/weather"
+    assert category_queued_record.snapshot_hash == "sha256:abc123"
+    completed_record = records[8]
     assert completed_record.skill_count == 1
     assert completed_record.active_repository_count == 1
     assert completed_record.imported_repository_count == 1

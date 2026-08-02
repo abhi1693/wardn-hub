@@ -30,7 +30,7 @@ from app.modules.skills.service import (
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"])
-SKILL_SEARCH_CACHE_VERSION = 3
+SKILL_SEARCH_CACHE_VERSION = 4
 
 
 @router.get("", response_model=SkillListResponse, operation_id="skills_list")
@@ -47,6 +47,7 @@ async def list_skill_catalog(
     per_page: Annotated[int, Query(ge=1, le=500)] = 100,
     q: str | None = None,
     owner: str | None = None,
+    category: str | None = None,
     source: str | None = None,
     official: bool | None = None,
 ) -> SkillListResponse:
@@ -59,6 +60,7 @@ async def list_skill_catalog(
             per_page=per_page,
             query=q,
             owner=owner,
+            category=category,
             source=source,
             official=official,
         )
@@ -73,6 +75,7 @@ async def search_skill_catalog(
     q: Annotated[str, Query(min_length=3, max_length=200)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     owner: str | None = None,
+    category: str | None = None,
     audit_status: Annotated[
         str | None,
         Query(description="Filter by current audit status: pass, warn, or fail."),
@@ -87,6 +90,7 @@ async def search_skill_catalog(
         material={
             "auditEnabled": request.app.state.settings.skill_audit_enabled,
             "auditStatus": (audit_status or "").strip().lower(),
+            "category": (category or "").strip().casefold(),
             "cursor": cursor or "",
             "limit": limit,
             "official": official,
@@ -108,6 +112,7 @@ async def search_skill_catalog(
             query=q,
             limit=limit,
             owner=owner,
+            category=category,
             audit_status=audit_status,
             official=official,
             cursor=cursor,

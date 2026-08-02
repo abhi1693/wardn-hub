@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldX,
+  Tags,
   UsersRound,
   X,
 } from "lucide-react";
@@ -21,7 +22,11 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
-import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
+import type {
+  RegistryCategoryRead,
+  SkillPagination,
+  SkillRead,
+} from "@/lib/api/generated/model";
 import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
 import {
   importPublicGitHubSkill,
@@ -84,6 +89,11 @@ function sourceFilterLabel(value: SkillOfficialFilter) {
   if (value === "true") return "Official skills";
   if (value === "false") return "Community skills";
   return "All skills";
+}
+
+function categoryFilterLabel(value: string, categories: RegistryCategoryRead[]) {
+  if (!value) return "";
+  return categories.find((category) => category.slug === value)?.name ?? value;
 }
 
 function SkillsFilterGroup<T extends string>({
@@ -246,6 +256,8 @@ export function SkillsClient({
   auditEnabled,
   initialError,
   initialAuditStatus,
+  initialCategories,
+  initialCategory,
   initialOfficial,
   initialPagination,
   initialQuery,
@@ -256,6 +268,8 @@ export function SkillsClient({
   auditEnabled: boolean;
   initialError: string;
   initialAuditStatus?: SkillAuditFilter;
+  initialCategories: RegistryCategoryRead[];
+  initialCategory: string;
   initialOfficial?: boolean;
   initialPagination: SkillPagination;
   initialQuery: string;
@@ -273,6 +287,7 @@ export function SkillsClient({
   const [auditStatus, setAuditStatus] = useState<SkillAuditFilter | "">(
     auditEnabled ? (initialAuditStatus ?? "") : "",
   );
+  const [category, setCategory] = useState(initialCategory);
   const [official, setOfficial] = useState<SkillOfficialFilter>(
     initialOfficial === undefined ? "" : String(initialOfficial) as SkillOfficialFilter,
   );
@@ -285,7 +300,9 @@ export function SkillsClient({
   const hasSearchQuery = trimmedQuery.length > 0;
   const canSearch = trimmedQuery.length >= 3;
   const hasMore = canSearch ? Boolean(searchCursor) : !hasSearchQuery && pagination.hasMore;
-  const resultSummaryTitle = sourceFilterLabel(official);
+  const resultSummaryTitle = category
+    ? categoryFilterLabel(category, initialCategories)
+    : sourceFilterLabel(official);
   const resultSummaryDetail = hasSearchQuery
     ? canSearch
       ? `${skills.length.toLocaleString("en-US")}${searchCursor ? "+" : ""} ${
@@ -299,12 +316,13 @@ export function SkillsClient({
     (view: SkillView) => {
       const params = new URLSearchParams();
       if (auditEnabled && auditStatus) params.set("audit_status", auditStatus);
+      if (category) params.set("category", category);
       if (official) params.set("official", official);
       if (hasSearchQuery) params.set("q", trimmedQuery);
       const queryString = params.toString();
       return `${SKILL_VIEW_PATHS[view]}${queryString ? `?${queryString}` : ""}`;
     },
-    [auditEnabled, auditStatus, hasSearchQuery, official, trimmedQuery],
+    [auditEnabled, auditStatus, category, hasSearchQuery, official, trimmedQuery],
   );
   const updateView = useCallback(
     (view: SkillView) => {
@@ -327,6 +345,7 @@ export function SkillsClient({
         }
         const response = await searchPublicSkillsPage({
           auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+          category: category || undefined,
           limit: SKILLS_PAGE_SIZE,
           official: official ? official === "true" : undefined,
           query: trimmedQuery,
@@ -338,6 +357,7 @@ export function SkillsClient({
       }
       const response = await listPublicSkillsPage({
         auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+        category: category || undefined,
         limit: SKILLS_PAGE_SIZE,
         official: official ? official === "true" : undefined,
         query: hasSearchQuery ? trimmedQuery : undefined,
@@ -359,6 +379,7 @@ export function SkillsClient({
     auditEnabled,
     auditStatus,
     canSearch,
+    category,
     hasSearchQuery,
     initialView,
     official,
@@ -375,6 +396,13 @@ export function SkillsClient({
   const updateAuditStatus = useCallback((nextAuditStatus: SkillAuditFilter | "") => {
     latestRequestId.current += 1;
     setAuditStatus(nextAuditStatus);
+    setError("");
+    setLoading(true);
+  }, []);
+
+  const updateCategory = useCallback((nextCategory: string) => {
+    latestRequestId.current += 1;
+    setCategory(nextCategory);
     setError("");
     setLoading(true);
   }, []);
@@ -410,6 +438,11 @@ export function SkillsClient({
     } else {
       url.searchParams.delete("audit_status");
     }
+    if (category) {
+      url.searchParams.set("category", category);
+    } else {
+      url.searchParams.delete("category");
+    }
     if (official) {
       url.searchParams.set("official", official);
     } else {
@@ -420,7 +453,7 @@ export function SkillsClient({
       "",
       `${url.pathname}${url.search}${url.hash}`,
     );
-  }, [auditEnabled, auditStatus, hasSearchQuery, official, trimmedQuery]);
+  }, [auditEnabled, auditStatus, category, hasSearchQuery, official, trimmedQuery]);
 
   useEffect(() => {
     if (!didMountRef.current) {
@@ -445,6 +478,7 @@ export function SkillsClient({
             }
             const response = await searchPublicSkillsPage({
               auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+              category: category || undefined,
               limit: SKILLS_PAGE_SIZE,
               official: official ? official === "true" : undefined,
               query: trimmedQuery,
@@ -456,6 +490,7 @@ export function SkillsClient({
           }
           const response = await listPublicSkillsPage({
             auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+            category: category || undefined,
             limit: SKILLS_PAGE_SIZE,
             official: official ? official === "true" : undefined,
             query: hasSearchQuery ? trimmedQuery : undefined,
@@ -482,6 +517,7 @@ export function SkillsClient({
     auditEnabled,
     auditStatus,
     canSearch,
+    category,
     hasSearchQuery,
     initialView,
     official,
@@ -500,6 +536,7 @@ export function SkillsClient({
         if (!searchCursor) return;
         const response = await searchPublicSkillsPage({
           auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+          category: category || undefined,
           cursor: searchCursor,
           limit: SKILLS_PAGE_SIZE,
           official: official ? official === "true" : undefined,
@@ -512,6 +549,7 @@ export function SkillsClient({
       }
       const response = await listPublicSkillsPage({
         auditStatus: auditEnabled ? auditStatus || undefined : undefined,
+        category: category || undefined,
         limit: SKILLS_PAGE_SIZE,
         official: official ? official === "true" : undefined,
         page: pagination.page + 1,
@@ -531,6 +569,7 @@ export function SkillsClient({
     auditEnabled,
     auditStatus,
     canSearch,
+    category,
     hasMore,
     hasSearchQuery,
     initialView,
@@ -595,6 +634,25 @@ export function SkillsClient({
                 value={auditStatus}
               />
             ) : null}
+            <div className="skills-filter-group">
+              <h2>Category</h2>
+              <label className="skills-filter-select">
+                <Tags aria-hidden="true" size={14} />
+                <span className="sr-only">Category</span>
+                <select
+                  aria-label="Category"
+                  onChange={(event) => updateCategory(event.currentTarget.value)}
+                  value={category}
+                >
+                  <option value="">All categories</option>
+                  {initialCategories.map((item) => (
+                    <option key={item.slug} value={item.slug}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </aside>
           <div className="registry-results-shell">
             <div className="skills-results-toolbar">

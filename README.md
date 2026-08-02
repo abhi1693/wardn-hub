@@ -378,6 +378,11 @@ configuration changes are retained as audit provenance and do not enqueue
 unchanged snapshots for another paid scan; use `--reaudit` when a deliberate
 policy change requires replacement results.
 
+When `WARDN_HUB_SKILL_CATEGORIZATION_ENABLED=true`, imports and refreshes also
+queue each saved skill for Codex app-server categorization. The categorizer uses
+the existing MCP category catalog only; if no existing category clearly fits, the
+skill remains uncategorized until a later manual or automatic categorization run.
+
 ## Configuration
 
 Copy [`hub/backend/.env.example`](hub/backend/.env.example) for local defaults.
@@ -396,6 +401,7 @@ high-entropy session and API-token keys.
 | `WARDN_HUB_OIDC_*` | Issuer, client, callback, scope, domain, and account-provisioning settings |
 | `WARDN_HUB_SKILL_AUDIT_ENABLED` | Master gate for skill auditing and audit exposure |
 | `WARDN_HUB_SKILL_AUDIT_LLM_ENABLED` | Separate gate for the scanner's semantic LLM analyzer |
+| `WARDN_HUB_SKILL_CATEGORIZATION_ENABLED` | Enables Codex app-server category assignment for imported and refreshed skills |
 | `WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES` | Conservative client-input ceiling for scanner requests sent through Codex app-server |
 | `WARDN_HUB_WORKER_SKILL_AUDIT_BACKFILL_MIN_AGE_SECONDS` | Grace period before an unaudited snapshot enters the scalable oldest-first backfill lane |
 | `WARDN_HUB_CODEX_APP_SERVER_URL` | Codex app-server WebSocket URL used by review, repair, and skill-audit LLM analysis |

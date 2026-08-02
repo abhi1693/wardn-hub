@@ -9,6 +9,7 @@ from sqlalchemy import (
     and_,
     case,
     cast,
+    delete,
     exists,
     func,
     literal,
@@ -21,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, load_only
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.modules.registry.models import RegistryCategory
 from app.modules.skills.models import (
     Skill,
     SkillAudit,
+    SkillCategory,
     SkillInstallEvent,
     SkillSearchDocument,
     SkillSnapshot,
@@ -59,6 +62,20 @@ class CurrentSkillAudit:
     status: str
     score: int
     rank: str
+
+
+@dataclass(frozen=True)
+class SkillCategorizationTarget:
+    skill_id: uuid.UUID
+    source: str
+    slug: str
+    name: str
+    description: str
+    skill_md: str
+
+    @property
+    def catalog_id(self) -> str:
+        return f"{self.source}/{self.slug}"
 
 
 @dataclass(frozen=True)
@@ -290,6 +307,22 @@ def audited_skill_condition(skill_id):
     return skill_id.in_(select(current_audit_statuses.c.skill_id))
 
 
+def category_filter_condition(category: str, skill_id=Skill.id):
+    category_value = category.strip()
+    return exists(
+        select(SkillCategory.id)
+        .join(RegistryCategory, RegistryCategory.id == SkillCategory.category_id)
+        .where(
+            SkillCategory.skill_id == skill_id,
+            RegistryCategory.status == "active",
+            or_(
+                RegistryCategory.slug == category_value,
+                RegistryCategory.name.ilike(category_value),
+            ),
+        )
+    )
+
+
 def _search_after_condition(
     cursor: SkillSearchCursor,
     *,
@@ -323,6 +356,7 @@ async def search_skill_documents(
     query: str,
     limit: int,
     owner: str | None = None,
+    category: str | None = None,
     official: bool | None = None,
     audit_status: str | None = None,
     cursor: SkillSearchCursor | None = None,
@@ -431,6 +465,10 @@ async def search_skill_documents(
                 SkillSearchDocument.source.ilike(f"{owner_value}/%"),
             )
         )
+    if category:
+        statement = statement.where(
+            category_filter_condition(category, SkillSearchDocument.skill_id)
+        )
     if official is not None:
         condition = official_owner_condition(
             SkillSearchDocument.source_type,
@@ -514,6 +552,7 @@ async def list_skills(
     audit_status: str | None = None,
     search: str | None = None,
     owner: str | None = None,
+    category: str | None = None,
     source: str | None = None,
     official: bool | None = None,
 ) -> tuple[list[Skill], int]:
@@ -547,6 +586,11 @@ async def list_skills(
             Skill.source_owner.ilike(owner_value),
             Skill.source.ilike(owner_prefix),
         )
+        statement = statement.where(condition)
+        total_statement = total_statement.where(condition)
+
+    if category:
+        condition = category_filter_condition(category)
         statement = statement.where(condition)
         total_statement = total_statement.where(condition)
 
@@ -648,6 +692,33 @@ async def official_owner_keys(session: AsyncSession, skills: list[Skill]) -> set
     return {(source_type, source_owner) for source_type, source_owner in result.all()}
 
 
+async def categories_for_skills(
+    session: AsyncSession,
+    skills: list[Skill],
+) -> dict[uuid.UUID, list[RegistryCategory]]:
+    skill_ids = [skill.id for skill in skills]
+    if not skill_ids:
+        return {}
+
+    result = await session.execute(
+        select(SkillCategory.skill_id, RegistryCategory)
+        .join(RegistryCategory, RegistryCategory.id == SkillCategory.category_id)
+        .where(
+            SkillCategory.skill_id.in_(skill_ids),
+            RegistryCategory.status == "active",
+        )
+        .order_by(
+            SkillCategory.skill_id,
+            RegistryCategory.sort_order.asc(),
+            RegistryCategory.name.asc(),
+        )
+    )
+    categories_by_skill: dict[uuid.UUID, list[RegistryCategory]] = {}
+    for skill_id, category in result.all():
+        categories_by_skill.setdefault(skill_id, []).append(category)
+    return categories_by_skill
+
+
 async def current_skill_audits(
     session: AsyncSession,
     skills: list[Skill],
@@ -683,6 +754,102 @@ async def current_skill_audits(
         skill_id: CurrentSkillAudit(status=status, score=score, rank=rank)
         for skill_id, status, score, rank in result.all()
     }
+
+
+async def list_active_categories(session: AsyncSession) -> list[RegistryCategory]:
+    result = await session.execute(
+        select(RegistryCategory)
+        .where(RegistryCategory.status == "active")
+        .order_by(RegistryCategory.sort_order.asc(), RegistryCategory.name.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_skill_categorization_targets(
+    session: AsyncSession,
+    *,
+    limit: int,
+    skill_id: str | None = None,
+    include_categorized: bool = False,
+) -> list[SkillCategorizationTarget]:
+    statement = (
+        select(
+            Skill.id,
+            Skill.source,
+            Skill.slug,
+            Skill.name,
+            Skill.description,
+            SkillSnapshot.skill_md,
+        )
+        .select_from(Skill)
+        .join(
+            SkillSnapshot,
+            and_(
+                SkillSnapshot.id == Skill.current_snapshot_id,
+                SkillSnapshot.skill_id == Skill.id,
+            ),
+        )
+        .where(
+            Skill.status == "active",
+            Skill.visibility == "public",
+            Skill.current_snapshot_id.is_not(None),
+            SkillSnapshot.status == "active",
+            SkillSnapshot.is_latest.is_(True),
+            SkillSnapshot.bundle_format_version == 2,
+            SkillSnapshot.resolution_status == "complete",
+        )
+        .order_by(Skill.updated_at.asc(), Skill.id.asc())
+        .limit(limit)
+    )
+    if not include_categorized:
+        statement = statement.where(
+            ~exists(select(SkillCategory.id).where(SkillCategory.skill_id == Skill.id))
+        )
+    if skill_id:
+        source, separator, slug = skill_id.strip().rpartition("/")
+        if not separator or not source or not slug:
+            return []
+        statement = statement.where(Skill.source == source, Skill.slug == slug)
+
+    result = await session.execute(statement)
+    return [SkillCategorizationTarget(*row) for row in result.all()]
+
+
+async def replace_skill_categories(
+    session: AsyncSession,
+    *,
+    skill_id: uuid.UUID,
+    category_slugs: list[str],
+    source: str = "llm",
+) -> list[RegistryCategory]:
+    normalized_slugs = list(dict.fromkeys(slug.strip() for slug in category_slugs if slug.strip()))
+    if not normalized_slugs:
+        await session.execute(delete(SkillCategory).where(SkillCategory.skill_id == skill_id))
+        return []
+
+    result = await session.execute(
+        select(RegistryCategory).where(
+            RegistryCategory.slug.in_(normalized_slugs),
+            RegistryCategory.status == "active",
+        )
+    )
+    categories_by_slug = {category.slug: category for category in result.scalars().all()}
+    missing_slugs = [slug for slug in normalized_slugs if slug not in categories_by_slug]
+    if missing_slugs:
+        raise ValueError(f"unknown category slug: {missing_slugs[0]}")
+
+    await session.execute(delete(SkillCategory).where(SkillCategory.skill_id == skill_id))
+    assignments = [
+        SkillCategory(
+            skill_id=skill_id,
+            category_id=categories_by_slug[slug].id,
+            source=source,
+        )
+        for slug in normalized_slugs
+    ]
+    session.add_all(assignments)
+    await session.flush()
+    return [categories_by_slug[slug] for slug in normalized_slugs]
 
 
 async def get_skill(session: AsyncSession, source: str, slug: str) -> Skill | None:

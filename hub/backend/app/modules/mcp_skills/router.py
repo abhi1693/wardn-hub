@@ -269,6 +269,7 @@ class SearchSkillsArguments(BaseModel):
     query: str = Field(min_length=3, max_length=200)
     limit: int = Field(default=8, ge=1, le=25)
     owner: str | None = Field(default=None, min_length=1, max_length=120)
+    category: str | None = Field(default=None, min_length=1, max_length=120)
     audit_status: Literal["pass", "warn", "fail"] | None = Field(
         default=None,
         alias="auditStatus",
@@ -335,6 +336,12 @@ def tools() -> list[dict[str, Any]]:
                         "minLength": 1,
                         "maxLength": 120,
                         "description": "Optional publisher or source owner filter.",
+                    },
+                    "category": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "description": "Optional existing Wardn category slug or name filter.",
                     },
                     "auditStatus": {
                         "type": "string",
@@ -507,6 +514,7 @@ async def call_tool(
             query=args.query,
             limit=args.limit,
             owner=args.owner,
+            category=args.category,
             audit_status=args.audit_status,
             official=args.official,
             cursor=args.cursor,

@@ -6044,6 +6044,13 @@
             ],
             "title": "Bundleformatversion"
           },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
           "files": {
             "anyOf": [
               {
@@ -6396,6 +6403,13 @@
               }
             ],
             "title": "Auditstatus"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryCategoryRead"
+            },
+            "title": "Categories",
+            "type": "array"
           },
           "description": {
             "default": "",
@@ -7778,7 +7792,7 @@
   },
   "info": {
     "title": "Wardn Hub API",
-    "version": "0.2.173"
+    "version": "0.2.174"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12961,6 +12975,22 @@
           },
           {
             "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
             "name": "source",
             "required": false,
             "schema": {
@@ -13268,6 +13298,22 @@
                 }
               ],
               "title": "Owner"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
             }
           },
           {

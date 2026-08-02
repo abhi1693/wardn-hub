@@ -185,6 +185,7 @@ def test_mcp_server_search_skills_tool_delegates_to_catalog(monkeypatch) -> None
                 "arguments": {
                     "query": "code review",
                     "limit": 5,
+                    "category": "developer-tools",
                     "auditStatus": "pass",
                     "official": False,
                 },
@@ -201,6 +202,7 @@ def test_mcp_server_search_skills_tool_delegates_to_catalog(monkeypatch) -> None
         "query": "code review",
         "limit": 5,
         "owner": None,
+        "category": "developer-tools",
         "audit_status": "pass",
         "official": False,
         "cursor": None,

@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import type {
   SkillAuditRead,
   SkillAuditResponse,
+  SkillDetailResponse,
   SkillFileRead,
   SkillRead,
 } from "@/lib/api/generated/model";
@@ -158,6 +159,23 @@ export function SkillAuditBadge({
         : compact
           ? skillAuditCompactLabel(status)
           : label}
+    </span>
+  );
+}
+
+export function SkillCategoryPills({
+  categories,
+}: {
+  categories?: SkillDetailResponse["categories"] | SkillRead["categories"];
+}) {
+  if (!categories?.length) return null;
+  return (
+    <span className="skill-category-pills">
+      {categories.map((category) => (
+        <span key={category.slug} title={category.description || category.name}>
+          {category.name}
+        </span>
+      ))}
     </span>
   );
 }
@@ -322,6 +340,7 @@ export function SkillLeaderboard({
                 ) : null}
               </span>
               <small>{skill.description || skill.slug}</small>
+              <SkillCategoryPills categories={skill.categories} />
               <span className="skills-table-mobile-meta">
                 {skill.source} · {skill.installs.toLocaleString("en-US")} installs
               </span>
@@ -381,6 +400,7 @@ export function SkillCardGrid({
             </span>
           </span>
           <span className="skill-card-description">{skill.description || skill.slug}</span>
+          <SkillCategoryPills categories={skill.categories} />
           {auditEnabled ? (
             <span className="skill-card-audit">
               <SkillAuditBadge

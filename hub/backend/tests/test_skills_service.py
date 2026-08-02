@@ -9,6 +9,10 @@ from app.modules.skills import repository, service
 from app.modules.skills.models import Skill, SkillInstallEvent
 
 
+async def async_empty_dict(*args: object, **kwargs: object) -> dict[object, object]:
+    return {}
+
+
 async def test_indexed_skill_search_uses_bounded_ranked_candidates() -> None:
     class FakeSession:
         statement = ""
@@ -71,6 +75,28 @@ async def test_indexed_skill_search_broadens_long_natural_language_queries() -> 
     assert 4 in session.params.values()
     assert 5 in session.params.values()
     assert "skill_audits" in session.statement
+
+
+async def test_indexed_skill_search_can_filter_existing_categories() -> None:
+    class FakeSession:
+        statement = ""
+
+        async def execute(self, statement: object) -> SimpleNamespace:
+            self.statement = str(statement.compile(dialect=postgresql.dialect()))
+            return SimpleNamespace(all=list)
+
+    session = FakeSession()
+    await repository.search_skill_documents(  # type: ignore[arg-type]
+        session,
+        query="code review",
+        limit=8,
+        category="developer-tools",
+    )
+
+    assert "skill_categories" in session.statement
+    assert "mcp_categories" in session.statement
+    assert "mcp_categories.status" in session.statement
+    assert "mcp_categories.slug" in session.statement
 
 
 @pytest.mark.parametrize(
@@ -137,11 +163,15 @@ async def test_search_skills_returns_and_accepts_stable_cursor(
     async def official_owner_keys(*args: object):
         return {("github", "acme")}
 
+    async def categories_for_skills(*args: object):
+        return {}
+
     async def current_skill_audits(*args: object):
         return {}
 
     monkeypatch.setattr(service.repository, "search_skill_documents", search_documents)
     monkeypatch.setattr(service.repository, "official_owner_keys", official_owner_keys)
+    monkeypatch.setattr(service.repository, "categories_for_skills", categories_for_skills)
     monkeypatch.setattr(service.repository, "current_skill_audits", current_skill_audits)
 
     first_page = await service.search_skills(
@@ -182,6 +212,7 @@ def test_search_cursor_rejects_filter_changes_and_non_finite_ranks() -> None:
     fingerprint = service.skill_search_cursor_fingerprint(
         query="document skill",
         owner=None,
+        category=None,
         audit_status=None,
         official=None,
     )
@@ -210,6 +241,48 @@ def test_search_cursor_rejects_filter_changes_and_non_finite_ranks() -> None:
     invalid_cursor = service.encode_skill_search_cursor(invalid, fingerprint)
     with pytest.raises(ValueError, match="cursor"):
         service.decode_skill_search_cursor(invalid_cursor, fingerprint)
+
+
+def test_skill_read_includes_existing_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(registry_public_base_url="https://hub.example"),
+    )
+    skill_id = uuid.uuid4()
+    category_id = uuid.uuid4()
+    skill = SimpleNamespace(
+        id=skill_id,
+        source="acme/skills",
+        slug="code-review",
+        name="Code Review",
+        source_type="github",
+        source_owner="acme",
+        source_name="skills",
+        source_owner_url="",
+        source_owner_icon_url="",
+        source_url="",
+        install_url="",
+        description="Review code.",
+        installs=1,
+    )
+    category = SimpleNamespace(
+        id=category_id,
+        slug="developer-tools",
+        name="Developer Tools",
+        description="Developer productivity.",
+        sort_order=260,
+    )
+
+    read = service.skill_read(
+        skill,  # type: ignore[arg-type]
+        category_results={skill_id: [category]},  # type: ignore[list-item]
+    )
+
+    assert read.categories[0].slug == "developer-tools"
+    assert read.categories[0].name == "Developer Tools"
 
 
 async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
@@ -455,11 +528,15 @@ async def test_disabled_audit_gate_hides_statuses_and_ignores_filter(
     async def official_owner_keys(*args: object):
         return set()
 
+    async def categories_for_skills(*args: object):
+        return {}
+
     async def unexpected_status_lookup(*args: object):
         raise AssertionError("audit statuses must not be queried while the gate is disabled")
 
     monkeypatch.setattr(service.repository, "list_skills", list_skills)
     monkeypatch.setattr(service.repository, "official_owner_keys", official_owner_keys)
+    monkeypatch.setattr(service.repository, "categories_for_skills", categories_for_skills)
     monkeypatch.setattr(
         service.repository,
         "current_skill_audits",
@@ -863,6 +940,7 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     skill = SimpleNamespace(
+        id=uuid.uuid4(),
         source="acme/agent-skills",
         slug="weather",
         source_owner="acme",
@@ -906,6 +984,7 @@ async def test_get_skill_detail_only_expands_bundle_when_requested(
 
     monkeypatch.setattr(service.repository, "get_skill", get_skill)
     monkeypatch.setattr(service.repository, "get_skill_snapshot", get_skill_snapshot)
+    monkeypatch.setattr(service.repository, "categories_for_skills", async_empty_dict)
 
     default_detail = await service.get_skill_detail(object(), "acme/agent-skills/weather")
     bundle_detail = await service.get_skill_detail(
@@ -937,6 +1016,7 @@ async def test_get_skill_detail_selects_retained_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     skill = SimpleNamespace(
+        id=uuid.uuid4(),
         source="acme/skills",
         slug="weather",
         source_owner="acme",
@@ -965,6 +1045,7 @@ async def test_get_skill_detail_selects_retained_snapshot(
 
     monkeypatch.setattr(service.repository, "get_skill", get_skill)
     monkeypatch.setattr(service.repository, "get_skill_snapshot", get_skill_snapshot)
+    monkeypatch.setattr(service.repository, "categories_for_skills", async_empty_dict)
 
     detail = await service.get_skill_detail(
         object(),  # type: ignore[arg-type]

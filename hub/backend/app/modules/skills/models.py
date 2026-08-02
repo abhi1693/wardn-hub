@@ -84,7 +84,29 @@ Index(
     Skill.repository_subfolder,
     unique=True,
     postgresql_where=Skill.repository_subfolder.is_not(None),
-)
+    )
+
+
+class SkillCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "skill_categories"
+    __table_args__ = (
+        UniqueConstraint("skill_id", "category_id", name="uq_skill_categories_skill_category"),
+        Index("ix_skill_categories_category_skill", "category_id", "skill_id"),
+    )
+
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mcp_categories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[str] = mapped_column(String(32), default="llm", nullable=False)
 
 
 class SkillSearchDocument(Base):

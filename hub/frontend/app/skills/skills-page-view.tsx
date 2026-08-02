@@ -1,13 +1,15 @@
 import { PublicHeader } from "@/components/site-header";
-import type { SkillPagination, SkillRead } from "@/lib/api/generated/model";
+import type { RegistryCategoryRead, SkillPagination, SkillRead } from "@/lib/api/generated/model";
 import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { listPublicSkillsPage, searchPublicSkillsPage } from "@/lib/public-skills";
+import { listPublicCategories } from "@/lib/public-registry";
 import { SkillsClient } from "./skills-client";
 
 export type SkillView = "all-time" | "hot" | "latest" | "oldest" | "trending";
 export type SkillAuditFilter = "fail" | "pass" | "warn";
 export type SkillsSearchParams = Promise<{
   audit_status?: string | string[];
+  category?: string | string[];
   official?: string | string[];
   q?: string | string[];
 }>;
@@ -46,12 +48,15 @@ export async function SkillsPageView({
   const resolvedSearchParams = await searchParams;
   const searchQuery = firstSearchParam(resolvedSearchParams?.q);
   const auditStatus = auditFilterParam(resolvedSearchParams?.audit_status);
+  const category = firstSearchParam(resolvedSearchParams?.category);
   const official = officialFilterParam(resolvedSearchParams?.official);
+  const categories = await listPublicCategories().catch(() => [] as RegistryCategoryRead[]);
   const state = await (async () => {
     try {
       if (searchQuery.length >= 3) {
         const response = await searchPublicSkillsPage({
           auditStatus,
+          category: category || undefined,
           limit: SKILLS_PAGE_SIZE,
           official,
           query: searchQuery,
@@ -76,6 +81,7 @@ export async function SkillsPageView({
       }
       const response = await listPublicSkillsPage({
         auditStatus,
+        category: category || undefined,
         limit: SKILLS_PAGE_SIZE,
         official,
         query: searchQuery,
@@ -107,6 +113,8 @@ export async function SkillsPageView({
         initialError={state.error}
         initialPagination={state.pagination}
         initialAuditStatus={auditStatus}
+        initialCategories={categories}
+        initialCategory={category}
         initialOfficial={official}
         initialQuery={searchQuery}
         initialSearchCursor={state.searchCursor}

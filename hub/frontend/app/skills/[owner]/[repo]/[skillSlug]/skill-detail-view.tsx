@@ -34,6 +34,7 @@ import {
   RelatedSkills,
   SkillAuditBadge,
   SkillAuditPanel,
+  SkillCategoryPills,
   SkillFiles,
   SkillFilesDisclosure,
   SkillsBreadcrumbs,
@@ -178,6 +179,7 @@ export async function SkillDetailView({
   const contentHash = audit?.contentHash ?? skill.hash ?? undefined;
   const packageReady = skill.bundleFormatVersion === 2 && skill.resolutionStatus === "complete";
   const packageIssue = (skill.resolutionIssues ?? [])[0]?.reason;
+  const skillCategories = skill.categories ?? [];
   const viewingRetainedSnapshot = Boolean(
     snapshotHash &&
       !displayedAuditHistory?.data.some(
@@ -224,6 +226,12 @@ export async function SkillDetailView({
                 </div>
                 <div className="skill-detail-byline">
                   <Link href={skillSourcePath(source)}>{source}</Link>
+                  {skillCategories.length ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <SkillCategoryPills categories={skillCategories} />
+                    </>
+                  ) : null}
                   {skill.auditEnabled ? (
                     <>
                       <span aria-hidden="true">·</span>

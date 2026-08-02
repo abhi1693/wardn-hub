@@ -69,6 +69,15 @@ def test_skill_audit_llm_gate_defaults_off_and_can_be_enabled(monkeypatch) -> No
     assert Settings(_env_file=None).skill_audit_llm_enabled is True
 
 
+def test_skill_categorization_gate_defaults_off_and_can_be_enabled(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.delenv("WARDN_HUB_SKILL_CATEGORIZATION_ENABLED", raising=False)
+    assert Settings(_env_file=None).skill_categorization_enabled is False
+
+    monkeypatch.setenv("WARDN_HUB_SKILL_CATEGORIZATION_ENABLED", "true")
+    assert Settings(_env_file=None).skill_categorization_enabled is True
+
+
 def test_codex_bridge_input_limit_defaults_and_validates(monkeypatch) -> None:
     set_required_settings(monkeypatch)
     monkeypatch.delenv("WARDN_HUB_CODEX_BRIDGE_MAX_INPUT_BYTES", raising=False)

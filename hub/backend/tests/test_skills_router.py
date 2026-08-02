@@ -86,6 +86,7 @@ def test_skills_openapi_exposes_public_paths() -> None:
     )
     skill_properties = schema["components"]["schemas"]["SkillRead"]["properties"]
     assert "auditStatus" in skill_properties
+    assert "categories" in skill_properties
     assert "isDuplicate" not in skill_properties
     audit_response_properties = schema["components"]["schemas"]["SkillAuditResponse"][
         "properties"
@@ -107,6 +108,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
             "per_page": 10,
             "query": "find",
             "owner": "vercel-labs",
+            "category": "developer-tools",
             "source": "vercel-labs/skills",
             "official": True,
         }
@@ -125,6 +127,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
         "&per_page=10"
         "&q=find"
         "&owner=vercel-labs"
+        "&category=developer-tools"
         "&source=vercel-labs/skills"
         "&official=true"
     )
@@ -151,6 +154,7 @@ def test_list_skills_returns_skills_sh_style_payload(monkeypatch) -> None:
                 "auditStatus": "warn",
                 "auditScore": 79,
                 "auditRank": "A",
+                "categories": [],
             }
         ],
         "pagination": {"page": 0, "perPage": 10, "total": 1, "hasMore": False},
@@ -164,6 +168,7 @@ def test_search_skills_returns_search_metadata(monkeypatch) -> None:
             "query": "react native",
             "limit": 5,
             "owner": "expo",
+            "category": "developer-tools",
             "audit_status": None,
             "official": None,
             "cursor": None,
@@ -182,7 +187,7 @@ def test_search_skills_returns_search_metadata(monkeypatch) -> None:
     monkeypatch.setattr(router, "search_skills", search_skills)
 
     response = TestClient(create_app()).get(
-        "/api/v1/skills/search?q=react%20native&owner=expo&limit=5"
+        "/api/v1/skills/search?q=react%20native&owner=expo&category=developer-tools&limit=5"
     )
 
     assert response.status_code == 200

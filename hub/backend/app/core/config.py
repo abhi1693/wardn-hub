@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     cache_max_connections: int = 10
     skill_audit_enabled: bool = False
     skill_audit_llm_enabled: bool = False
+    skill_categorization_enabled: bool = False
     codex_bridge_max_input_bytes: int = 200_000
     worker_metrics_port: int = 8092
     worker_lock_retry_seconds: float = 5.0

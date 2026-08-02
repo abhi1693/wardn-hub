@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.registry.schemas import RegistryCategoryRead
+
 SkillSourceType = Literal["github", "well-known"]
 SkillStatus = Literal["active", "deprecated", "deleted", "quarantined"]
 SkillVisibility = Literal["public", "unlisted", "private_preview"]
@@ -35,6 +37,7 @@ class SkillRead(BaseModel):
     audit_status: SkillAuditStatus | None = Field(default=None, alias="auditStatus")
     audit_score: int | None = Field(default=None, alias="auditScore", ge=0, le=100)
     audit_rank: SkillAuditRank | None = Field(default=None, alias="auditRank")
+    categories: list[RegistryCategoryRead] = Field(default_factory=list)
 
 
 class SkillPagination(BaseModel):
@@ -106,6 +109,7 @@ class SkillDetailResponse(BaseModel):
     resolution_issues: list[SkillResolutionIssueRead] = Field(
         default_factory=list, alias="resolutionIssues"
     )
+    categories: list[RegistryCategoryRead] = Field(default_factory=list)
     audit_enabled: bool = Field(alias="auditEnabled")
 
 

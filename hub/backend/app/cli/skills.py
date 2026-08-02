@@ -30,6 +30,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.codex import CODEX_APP_SERVER_URL_ENV
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import AsyncSessionLocal, engine
@@ -89,6 +90,8 @@ MAX_BUNDLE_FETCH_CONCURRENCY = 8
 MAX_GITHUB_IMPORT_BYTES = 256 * 1024 * 1024
 GITHUB_AUDIT_QUEUE_ATTRIBUTE = "_wardn_github_audit_queue"
 GITHUB_AUDIT_QUEUE_MAX_SIZE = 128
+GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE = "_wardn_github_categorization_queue"
+GITHUB_CATEGORIZATION_QUEUE_MAX_SIZE = 128
 WINDOWS_1252_EM_DASH_BYTE = b"\x97"
 WINDOWS_1252_EM_DASH_SENTINEL = "\udc97"
 GITHUB_TEXT_DECODE_ERRORS = "wardn_github_text_decode"
@@ -4417,6 +4420,23 @@ async def import_github_from_args(args: argparse.Namespace) -> int:
                             "snapshot_hash": saved_record.content_hash,
                         },
                     )
+                categorization_queue = getattr(
+                    args,
+                    GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE,
+                    None,
+                )
+                if categorization_queue is not None:
+                    await categorization_queue.put(saved_record.skill_id)
+                    logger.info(
+                        "github skill import queued categorization",
+                        extra={
+                            **repo_context,
+                            "resolved_ref": resolved_ref,
+                            "skill_id": saved_record.skill_id,
+                            "source_path": saved_record.source_path,
+                            "snapshot_hash": saved_record.content_hash,
+                        },
+                    )
 
             if repository_failed or not saved_records:
                 continue
@@ -4444,11 +4464,13 @@ def run_import_github_command(
     *,
     importer: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
     auditor: Callable[[str], Awaitable[int]] | None = None,
+    categorizer: Callable[[str], Awaitable[int]] | None = None,
 ) -> int:
     return run_github_command_with_concurrent_audit(
         args,
         operation=importer or import_github_from_args,
         auditor=auditor,
+        categorizer=categorizer,
         operation_name="import",
     )
 
@@ -4458,11 +4480,13 @@ def run_refresh_github_command(
     *,
     refresher: Callable[[argparse.Namespace], Awaitable[int]] | None = None,
     auditor: Callable[[str], Awaitable[int]] | None = None,
+    categorizer: Callable[[str], Awaitable[int]] | None = None,
 ) -> int:
     return run_github_command_with_concurrent_audit(
         args,
         operation=refresher or refresh_github_from_args,
         auditor=auditor,
+        categorizer=categorizer,
         operation_name="refresh",
     )
 
@@ -4472,12 +4496,25 @@ def run_github_command_with_concurrent_audit(
     *,
     operation: Callable[[argparse.Namespace], Awaitable[int]],
     auditor: Callable[[str], Awaitable[int]] | None,
+    categorizer: Callable[[str], Awaitable[int]] | None,
     operation_name: str,
 ) -> int:
-    audit_enabled = get_settings().skill_audit_enabled
+    settings = get_settings()
+    audit_enabled = bool(getattr(settings, "skill_audit_enabled", False))
+    categorization_enabled = bool(
+        getattr(settings, "skill_categorization_enabled", False)
+    )
+    if categorizer is not None:
+        categorization_enabled = True
+    elif categorization_enabled and not os.getenv(CODEX_APP_SERVER_URL_ENV, "").strip():
+        logger.info(
+            "github skill categorization skipped; Codex app-server URL is not configured",
+            extra={"github_operation": operation_name},
+        )
+        categorization_enabled = False
 
     async def run_operation() -> int:
-        if not audit_enabled:
+        if not audit_enabled and not categorization_enabled:
             return await operation(args)
 
         if auditor is None:
@@ -4486,13 +4523,21 @@ def run_github_command_with_concurrent_audit(
             audit_one = audit_pending_skill_snapshot_async
         else:
             audit_one = auditor
+        if categorizer is None:
+            from app.cli.categorize_skills import categorize_skill_id_async
 
-        audit_queue: asyncio.Queue[str | None] = asyncio.Queue(
-            maxsize=GITHUB_AUDIT_QUEUE_MAX_SIZE
-        )
-        setattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+            categorize_one = categorize_skill_id_async
+        else:
+            categorize_one = categorizer
+
+        audit_queue: asyncio.Queue[str | None] | None = None
+        categorization_queue: asyncio.Queue[str | None] | None = None
+        audit_task: asyncio.Task[int] | None = None
+        categorization_task: asyncio.Task[int] | None = None
 
         async def consume_audits() -> int:
+            if audit_queue is None:
+                return 0
             failed = False
             while True:
                 skill_id = await audit_queue.get()
@@ -4513,17 +4558,66 @@ def run_github_command_with_concurrent_audit(
                 finally:
                     audit_queue.task_done()
 
-        audit_task = asyncio.create_task(consume_audits())
+        async def consume_categorizations() -> int:
+            if categorization_queue is None:
+                return 0
+            while True:
+                skill_id = await categorization_queue.get()
+                try:
+                    if skill_id is None:
+                        return 0
+                    try:
+                        status = await categorize_one(skill_id)
+                        if status:
+                            logger.warning(
+                                "github skill categorization did not assign category",
+                                extra={
+                                    "skill_id": skill_id,
+                                    "github_operation": operation_name,
+                                },
+                            )
+                    except Exception:
+                        logger.exception(
+                            "github skill categorization worker failed",
+                            extra={
+                                "skill_id": skill_id,
+                                "github_operation": operation_name,
+                            },
+                        )
+                finally:
+                    categorization_queue.task_done()
+
+        if audit_enabled:
+            audit_queue = asyncio.Queue(maxsize=GITHUB_AUDIT_QUEUE_MAX_SIZE)
+            setattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE, audit_queue)
+            audit_task = asyncio.create_task(consume_audits())
+        if categorization_enabled:
+            categorization_queue = asyncio.Queue(
+                maxsize=GITHUB_CATEGORIZATION_QUEUE_MAX_SIZE
+            )
+            setattr(args, GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE, categorization_queue)
+            categorization_task = asyncio.create_task(consume_categorizations())
+
         try:
             operation_status = await operation(args)
         finally:
-            delattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE)
-            await audit_queue.put(None)
-            audit_status = await audit_task
+            if audit_queue is not None:
+                delattr(args, GITHUB_AUDIT_QUEUE_ATTRIBUTE)
+                await audit_queue.put(None)
+                audit_status = await audit_task if audit_task is not None else 0
+            else:
+                audit_status = 0
+            if categorization_queue is not None:
+                delattr(args, GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE)
+                await categorization_queue.put(None)
+                if categorization_task is not None:
+                    await categorization_task
             await engine.dispose()
         return 1 if operation_status or audit_status else 0
 
     return asyncio.run(run_operation())
+
+
 def log_github_refresh_failure(
     message: str,
     exc: Exception,
@@ -4772,6 +4866,25 @@ async def refresh_github_from_args(args: argparse.Namespace) -> int:
                             await audit_queue.put(target.id)
                             logger.info(
                                 "github skill refresh queued audit",
+                                extra={
+                                    "skill_id": target.id,
+                                    "source": target.source,
+                                    "source_path": target.skill_path,
+                                    "requested_ref": requested_ref,
+                                    "resolved_ref": resolved_ref,
+                                    "snapshot_hash": snapshot_hash,
+                                    "snapshot_changed": changed,
+                                },
+                            )
+                        categorization_queue = getattr(
+                            args,
+                            GITHUB_CATEGORIZATION_QUEUE_ATTRIBUTE,
+                            None,
+                        )
+                        if categorization_queue is not None:
+                            await categorization_queue.put(target.id)
+                            logger.info(
+                                "github skill refresh queued categorization",
                                 extra={
                                     "skill_id": target.id,
                                     "source": target.source,
