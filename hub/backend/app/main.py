@@ -6,14 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from app.api.router import api_router
-from app.core.cache import ValkeyByteCache
+from app.core.cache import RedisSDKByteCache
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.rate_limit import (
-    FixedWindowValkeyRateLimiter,
     PublicAPIRateLimitMiddleware,
     SkillTelemetryRateLimitMiddleware,
 )
+from app.core.redis_sdk import RedisSDKResources
 from app.core.telemetry import configure_telemetry
 from app.modules.mcp_registry_v01.router import router as mcp_registry_v01_router
 from app.modules.metrics.router import router as metrics_router
@@ -25,8 +25,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        for resource in getattr(app.state, "managed_valkey_resources", []):
-            await resource.close()
+        redis_resources = getattr(app.state, "redis_sdk_resources", None)
+        if redis_resources is not None:
+            await redis_resources.close()
 
 
 def create_app() -> FastAPI:
@@ -50,36 +51,29 @@ def create_app() -> FastAPI:
     async def redoc_redirect() -> RedirectResponse:
         return RedirectResponse(f"{settings.api_prefix}/redoc")
 
-    rate_limiter = FixedWindowValkeyRateLimiter.from_settings(settings)
-    managed_valkey_resources = []
-    if rate_limiter is not None:
-        app.state.public_rate_limiter = rate_limiter
-        telemetry_rate_limiter = FixedWindowValkeyRateLimiter.from_settings(
-            settings,
-            limit=settings.skill_telemetry_rate_limit_requests,
-            window_seconds=settings.skill_telemetry_rate_limit_window_seconds,
-            key_prefix=settings.skill_telemetry_rate_limit_key_prefix,
-            client=rate_limiter.client,
-        )
-        app.state.skill_telemetry_rate_limiter = telemetry_rate_limiter
-        managed_valkey_resources.append(rate_limiter)
+    redis_resources = RedisSDKResources.from_settings(settings)
+    app.state.redis_sdk_resources = redis_resources
+    if redis_resources.rate_limit_backend is not None:
+        app.state.rate_limit_backend = redis_resources.rate_limit_backend
         app.add_middleware(
             PublicAPIRateLimitMiddleware,
             settings=settings,
-            limiter=rate_limiter,
+            backend=redis_resources.rate_limit_backend,
         )
         app.add_middleware(
             SkillTelemetryRateLimitMiddleware,
             settings=settings,
-            limiter=telemetry_rate_limiter,
+            backend=redis_resources.rate_limit_backend,
         )
 
     app.state.cache = None
-    if settings.cache_enabled:
-        cache = ValkeyByteCache.from_settings(settings)
-        app.state.cache = cache
-        managed_valkey_resources.append(cache)
-    app.state.managed_valkey_resources = managed_valkey_resources
+    if redis_resources.cache_backend is not None:
+        app.state.cache = RedisSDKByteCache(
+            backend_factory=lambda: redis_resources.cache_backend,
+            default_ttl_seconds=settings.cache_default_ttl_seconds,
+            max_value_bytes=settings.cache_max_value_bytes,
+            eviction_group="skill-search",
+        )
 
     app.add_middleware(
         CORSMiddleware,

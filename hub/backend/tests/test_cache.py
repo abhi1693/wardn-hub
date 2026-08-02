@@ -1,39 +1,45 @@
 from __future__ import annotations
 
-from app.core.cache import ValkeyByteCache, cache_key
+from typing import Any
+
+from app.core.cache import RedisSDKByteCache, cache_key
 
 
-class FakeValkeyCacheClient:
+class FakeCacheBackend:
     def __init__(self) -> None:
-        self.values: dict[str, bytes] = {}
-        self.expirations: dict[str, int] = {}
-        self.closed = False
+        self.values: dict[tuple[str, str], str] = {}
+        self.expirations: dict[tuple[str, str], int] = {}
         self.fail = False
 
-    async def get(self, name: str) -> bytes | None:
+    async def get(
+        self,
+        key: str,
+        *,
+        default: Any = None,
+        eviction_group: str | None = None,
+    ) -> str | None:
         if self.fail:
-            raise RuntimeError("valkey unavailable")
-        return self.values.get(name)
+            raise RuntimeError("redis unavailable")
+        return self.values.get((key, eviction_group or ""), default)
 
-    async def set(self, name: str, value: bytes, *, ex: int) -> bool:
+    async def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        ttl: int | None = None,
+        eviction_group: str | None = None,
+    ) -> None:
         if self.fail:
-            raise RuntimeError("valkey unavailable")
-        self.values[name] = value
-        self.expirations[name] = ex
-        return True
+            raise RuntimeError("redis unavailable")
+        self.values[(key, eviction_group or "")] = value
+        self.expirations[(key, eviction_group or "")] = ttl or 0
 
-    async def delete(self, *names: str) -> int:
+    async def delete(self, key: str, *, eviction_group: str | None = None) -> bool:
         if self.fail:
-            raise RuntimeError("valkey unavailable")
-        deleted = 0
-        for name in names:
-            if name in self.values:
-                deleted += 1
-                del self.values[name]
-        return deleted
+            raise RuntimeError("redis unavailable")
+        return self.values.pop((key, eviction_group or ""), None) is not None
 
-    async def aclose(self) -> None:
-        self.closed = True
 
 
 def test_cache_key_is_stable_versioned_and_hides_material() -> None:
@@ -54,40 +60,39 @@ def test_cache_key_is_stable_versioned_and_hides_material() -> None:
     assert cache_key("skill-search", version=2, material={"limit": 8}) != first
 
 
-async def test_valkey_cache_retains_only_remote_bytes_with_native_ttl() -> None:
-    client = FakeValkeyCacheClient()
-    cache = ValkeyByteCache(
-        client=client,
-        key_prefix="wardn-hub:cache:test",
+async def test_redis_sdk_cache_retains_remote_bytes_with_sdk_ttl() -> None:
+    backend = FakeCacheBackend()
+    cache = RedisSDKByteCache(
+        backend_factory=lambda: backend,  # type: ignore[return-value]
         default_ttl_seconds=60,
         max_value_bytes=8,
+        eviction_group="skill-search",
     )
 
     assert await cache.get("search:key") is None
     assert await cache.set("search:key", b"payload") is True
     assert await cache.get("search:key") == b"payload"
-    assert client.values == {"wardn-hub:cache:test:search:key": b"payload"}
-    assert client.expirations == {"wardn-hub:cache:test:search:key": 60}
+    assert backend.values == {("search:key", "skill-search"): "payload"}
+    assert backend.expirations == {("search:key", "skill-search"): 60}
 
     await cache.delete("search:key")
-    assert client.values == {}
+    assert backend.values == {}
     await cache.close()
-    assert client.closed is True
 
 
-async def test_valkey_cache_skips_oversized_values_and_fails_open() -> None:
-    client = FakeValkeyCacheClient()
-    cache = ValkeyByteCache(
-        client=client,
-        key_prefix="wardn-hub:cache:test",
+async def test_redis_sdk_cache_skips_oversized_values_and_fails_open() -> None:
+    backend = FakeCacheBackend()
+    cache = RedisSDKByteCache(
+        backend_factory=lambda: backend,  # type: ignore[return-value]
         default_ttl_seconds=60,
         max_value_bytes=4,
+        eviction_group="skill-search",
     )
 
     assert await cache.set("key", b"oversized") is False
-    assert client.values == {}
+    assert backend.values == {}
 
-    client.fail = True
+    backend.fail = True
     assert await cache.get("key") is None
     assert await cache.set("key", b"safe") is False
     await cache.delete("key")

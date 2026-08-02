@@ -3,23 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Mapping
-from typing import Protocol
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol
 
-from app.core.config import Settings
-from app.core.valkey import connection_config_from_settings, create_async_valkey_client
+from redis_fastapi import CacheBackend
 
 logger = logging.getLogger(__name__)
-
-
-class AsyncValkeyCacheClient(Protocol):
-    async def get(self, name: str) -> bytes | None: ...
-
-    async def set(self, name: str, value: bytes, *, ex: int) -> object: ...
-
-    async def delete(self, *names: str) -> object: ...
-
-    async def aclose(self) -> object: ...
 
 
 class ByteCache(Protocol):
@@ -48,48 +37,35 @@ def cache_key(namespace: str, *, version: int, material: Mapping[str, object]) -
     return f"{normalized_namespace}:v{version}:{digest}"
 
 
-class ValkeyByteCache:
+class RedisSDKByteCache:
     def __init__(
         self,
         *,
-        client: AsyncValkeyCacheClient,
-        key_prefix: str,
+        backend_factory: Callable[[], CacheBackend],
         default_ttl_seconds: int,
         max_value_bytes: int,
+        eviction_group: str,
     ) -> None:
-        self.client = client
-        self.key_prefix = key_prefix.strip().strip(":")
+        self.backend_factory = backend_factory
         self.default_ttl_seconds = default_ttl_seconds
         self.max_value_bytes = max_value_bytes
-
-    @classmethod
-    def from_settings(cls, settings: Settings) -> ValkeyByteCache:
-        client = create_async_valkey_client(
-            connection_config_from_settings(
-                settings,
-                db=settings.cache_valkey_db,
-                socket_timeout_seconds=settings.cache_command_timeout_seconds,
-                max_connections=settings.cache_max_connections,
-            )
-        )
-        return cls(
-            client=client,
-            key_prefix=f"{settings.cache_key_prefix}:{settings.environment.strip().lower()}",
-            default_ttl_seconds=settings.cache_default_ttl_seconds,
-            max_value_bytes=settings.cache_max_value_bytes,
-        )
+        self.eviction_group = eviction_group.strip().strip(":")
 
     async def get(self, key: str) -> bytes | None:
         try:
-            value = await self.client.get(self._key(key))
+            value = await self.backend_factory().get(
+                key,
+                eviction_group=self.eviction_group,
+            )
             if value is None:
                 return None
-            if not isinstance(value, bytes) or len(value) > self.max_value_bytes:
-                logger.debug("valkey cache returned an invalid or oversized value")
+            payload = self._to_bytes(value)
+            if payload is None or len(payload) > self.max_value_bytes:
+                logger.debug("redis sdk cache returned an invalid or oversized value")
                 return None
-            return value
+            return payload
         except Exception:
-            logger.debug("valkey cache read failed; treating as a miss", exc_info=True)
+            logger.debug("redis sdk cache read failed; treating as a miss", exc_info=True)
             return None
 
     async def set(
@@ -105,20 +81,31 @@ class ValkeyByteCache:
         if ttl <= 0:
             raise ValueError("cache TTL must be positive")
         try:
-            await self.client.set(self._key(key), value, ex=ttl)
+            payload = value.decode("utf-8")
+            await self.backend_factory().set(
+                key,
+                payload,
+                ttl=ttl,
+                eviction_group=self.eviction_group,
+            )
             return True
         except Exception:
-            logger.debug("valkey cache write failed; continuing without caching", exc_info=True)
+            logger.debug("redis sdk cache write failed; continuing without caching", exc_info=True)
             return False
 
     async def delete(self, key: str) -> None:
         try:
-            await self.client.delete(self._key(key))
+            await self.backend_factory().delete(key, eviction_group=self.eviction_group)
         except Exception:
-            logger.debug("valkey cache delete failed; relying on TTL", exc_info=True)
+            logger.debug("redis sdk cache delete failed; relying on TTL", exc_info=True)
 
     async def close(self) -> None:
-        await self.client.aclose()
+        return None
 
-    def _key(self, key: str) -> str:
-        return f"{self.key_prefix}:{key.strip().strip(':')}"
+    @staticmethod
+    def _to_bytes(value: Any) -> bytes | None:
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        return None

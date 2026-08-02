@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wardn-hub-api"
-version = "0.2.172"
+version = "0.2.173"
 description = "Wardn Hub backend API"
 requires-python = ">=3.12"
 dependencies = [
@@ -34,6 +34,8 @@ dependencies = [
   "opentelemetry-instrumentation-sqlalchemy>=0.51b0",
   "opentelemetry-sdk>=1.30.0",
   "pyyaml>=6.0.0",
+  "fastapi-redis-sdk==0.8.0",
+  "typer>=0.27.0",
 ]
 
 [project.optional-dependencies]

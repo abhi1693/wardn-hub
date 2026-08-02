@@ -2,20 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import time
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
 
+from redis_fastapi import RateLimitBackend, RateLimitResult
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import Settings
-from app.core.valkey import (
-    connection_config_from_settings,
-    create_async_valkey_client,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -30,23 +24,6 @@ ROOT_PUBLIC_RATE_LIMIT_PREFIXES = ("/v0.1/servers",)
 SKILL_TELEMETRY_RATE_LIMIT_METHODS = {"POST"}
 SKILL_TELEMETRY_RATE_LIMIT_PREFIX = "/skills/telemetry"
 MCP_SERVER_TELEMETRY_RATE_LIMIT_PREFIX = "/mcp/servers/telemetry"
-
-
-class ValkeyClient(Protocol):
-    async def incr(self, name: str) -> int: ...
-
-    async def expire(self, name: str, time: int) -> object: ...
-
-    async def aclose(self) -> object: ...
-
-
-@dataclass(frozen=True)
-class RateLimitDecision:
-    allowed: bool
-    limit: int
-    remaining: int
-    reset_at: int
-    retry_after: int
 
 
 def public_rate_limit_path_prefixes(api_prefix: str) -> tuple[str, ...]:
@@ -123,92 +100,21 @@ def client_identifier(request: Request, *, trust_forwarded_for: bool) -> str:
     return "unknown"
 
 
-def rate_limit_headers(decision: RateLimitDecision) -> dict[str, str]:
+def rate_limit_headers(result: RateLimitResult) -> dict[str, str]:
     return {
-        "X-RateLimit-Limit": str(decision.limit),
-        "X-RateLimit-Remaining": str(decision.remaining),
-        "X-RateLimit-Reset": str(decision.reset_at),
+        "X-RateLimit-Limit": str(result.limit),
+        "X-RateLimit-Remaining": str(result.remaining),
+        "X-RateLimit-Reset": str(result.reset_at),
     }
 
 
-class FixedWindowValkeyRateLimiter:
-    def __init__(
-        self,
-        *,
-        client: ValkeyClient,
-        limit: int,
-        window_seconds: int,
-        key_prefix: str,
-    ) -> None:
-        self.client = client
-        self.limit = limit
-        self.window_seconds = window_seconds
-        self.key_prefix = key_prefix.rstrip(":")
+def rate_limit_scope(value: str) -> str:
+    return value.strip().strip(":")
 
-    @classmethod
-    def from_settings(
-        cls,
-        settings: Settings,
-        *,
-        limit: int | None = None,
-        window_seconds: int | None = None,
-        key_prefix: str | None = None,
-        client: ValkeyClient | None = None,
-    ) -> FixedWindowValkeyRateLimiter | None:
-        if not settings.public_rate_limit_enabled:
-            return None
 
-        if client is None:
-            client = create_async_valkey_client(
-                connection_config_from_settings(
-                    settings,
-                    db=settings.public_rate_limit_valkey_db,
-                    socket_timeout_seconds=(
-                        settings.public_rate_limit_valkey_socket_timeout_seconds
-                    ),
-                    max_connections=settings.public_rate_limit_valkey_max_connections,
-                )
-            )
-
-        return cls(
-            client=client,
-            limit=limit if limit is not None else settings.public_rate_limit_requests,
-            window_seconds=(
-                window_seconds
-                if window_seconds is not None
-                else settings.public_rate_limit_window_seconds
-            ),
-            key_prefix=(
-                key_prefix if key_prefix is not None else settings.public_rate_limit_key_prefix
-            ),
-        )
-
-    async def check(self, identifier: str, *, now: float | None = None) -> RateLimitDecision:
-        current_time = time.time() if now is None else now
-        window_start = int(current_time // self.window_seconds) * self.window_seconds
-        reset_at = window_start + self.window_seconds
-        retry_after = max(1, reset_at - int(current_time))
-        key = self._key(identifier, window_start)
-
-        count = await self.client.incr(key)
-        if count == 1:
-            await self.client.expire(key, self.window_seconds + 1)
-
-        remaining = max(0, self.limit - count)
-        return RateLimitDecision(
-            allowed=count <= self.limit,
-            limit=self.limit,
-            remaining=remaining,
-            reset_at=reset_at,
-            retry_after=retry_after,
-        )
-
-    async def close(self) -> None:
-        await self.client.aclose()
-
-    def _key(self, identifier: str, window_start: int) -> str:
-        identifier_hash = hashlib.sha256(identifier.encode("utf-8")).hexdigest()
-        return f"{self.key_prefix}:{window_start}:{identifier_hash}"
+def rate_limit_identifier(request: Request, *, trust_forwarded_for: bool) -> str:
+    identifier = client_identifier(request, trust_forwarded_for=trust_forwarded_for)
+    return hashlib.sha256(identifier.encode("utf-8")).hexdigest()
 
 
 class RequestRateLimitMiddleware(BaseHTTPMiddleware):
@@ -217,15 +123,21 @@ class RequestRateLimitMiddleware(BaseHTTPMiddleware):
         app: object,
         *,
         settings: Settings,
-        limiter: FixedWindowValkeyRateLimiter,
+        backend: RateLimitBackend,
         request_matcher: Callable[[str, str], bool],
-        fail_open: bool,
+        limit: int,
+        window_seconds: int,
+        scope: str,
+        fail_closed: bool,
     ) -> None:
         super().__init__(app)
         self.settings = settings
-        self.limiter = limiter
+        self.backend = backend
         self.request_matcher = request_matcher
-        self.fail_open = fail_open
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self.scope = rate_limit_scope(scope)
+        self.fail_closed = fail_closed
 
     async def dispatch(
         self,
@@ -235,24 +147,32 @@ class RequestRateLimitMiddleware(BaseHTTPMiddleware):
         if not self.request_matcher(request.method, request.url.path):
             return await call_next(request)
 
-        identifier = client_identifier(
+        identifier = rate_limit_identifier(
             request,
             trust_forwarded_for=self.settings.public_rate_limit_trust_forwarded_for,
         )
         try:
-            decision = await self.limiter.check(identifier)
+            result = await self.backend.hit(
+                identifier,
+                limit=self.limit,
+                window=self.window_seconds,
+                scope=self.scope,
+                fail_closed=self.fail_closed,
+            )
         except Exception:
             logger.warning("request rate limit check failed", exc_info=True)
-            if self.fail_open:
-                return await call_next(request)
-            return JSONResponse(
-                {"detail": "telemetry temporarily unavailable"},
-                status_code=503,
-            )
+            if self.fail_closed:
+                return self._backend_unavailable_response()
+            return await call_next(request)
 
-        headers = rate_limit_headers(decision)
-        if not decision.allowed:
-            headers["Retry-After"] = str(decision.retry_after)
+        if result.degraded:
+            if self.fail_closed:
+                return self._backend_unavailable_response()
+            return await call_next(request)
+
+        headers = rate_limit_headers(result)
+        if not result.allowed:
+            headers["Retry-After"] = str(result.retry_after)
             return JSONResponse(
                 {"detail": "rate limit exceeded"},
                 status_code=429,
@@ -264,6 +184,13 @@ class RequestRateLimitMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(name, value)
         return response
 
+    @staticmethod
+    def _backend_unavailable_response() -> JSONResponse:
+        return JSONResponse(
+            {"detail": "telemetry temporarily unavailable"},
+            status_code=503,
+        )
+
 
 class PublicAPIRateLimitMiddleware(RequestRateLimitMiddleware):
     def __init__(
@@ -271,18 +198,21 @@ class PublicAPIRateLimitMiddleware(RequestRateLimitMiddleware):
         app: object,
         *,
         settings: Settings,
-        limiter: FixedWindowValkeyRateLimiter,
+        backend: RateLimitBackend,
     ) -> None:
         super().__init__(
             app,
             settings=settings,
-            limiter=limiter,
+            backend=backend,
             request_matcher=lambda method, path: is_public_rate_limited_request(
                 method,
                 path,
                 api_prefix=settings.api_prefix,
             ),
-            fail_open=True,
+            limit=settings.public_rate_limit_requests,
+            window_seconds=settings.public_rate_limit_window_seconds,
+            scope=settings.public_rate_limit_key_prefix,
+            fail_closed=False,
         )
 
 
@@ -292,16 +222,19 @@ class SkillTelemetryRateLimitMiddleware(RequestRateLimitMiddleware):
         app: object,
         *,
         settings: Settings,
-        limiter: FixedWindowValkeyRateLimiter,
+        backend: RateLimitBackend,
     ) -> None:
         super().__init__(
             app,
             settings=settings,
-            limiter=limiter,
+            backend=backend,
             request_matcher=lambda method, path: is_install_telemetry_rate_limited_request(
                 method,
                 path,
                 api_prefix=settings.api_prefix,
             ),
-            fail_open=False,
+            limit=settings.skill_telemetry_rate_limit_requests,
+            window_seconds=settings.skill_telemetry_rate_limit_window_seconds,
+            scope=settings.skill_telemetry_rate_limit_key_prefix,
+            fail_closed=True,
         )
