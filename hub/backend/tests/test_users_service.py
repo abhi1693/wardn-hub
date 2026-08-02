@@ -539,7 +539,7 @@ async def test_first_oidc_login_preserves_legacy_identity_roles_and_api_tokens(m
     user.id = uuid4()
     legacy_identity = UserExternalIdentity(
         user_id=user.id,
-        provider="clerk",
+        provider="legacy-auth",
         subject="legacy-subject",
         email=user.email,
     )
@@ -593,7 +593,7 @@ async def test_first_oidc_login_preserves_legacy_identity_roles_and_api_tokens(m
     assert result is user
     assert user.is_superuser is True
     assert user.is_global_moderator is True
-    assert legacy_identity.provider == "clerk"
+    assert legacy_identity.provider == "legacy-auth"
     assert api_token.token_hash == "existing-hash"
     assert new_identities[0].provider == service.oidc_identity_provider_key(
         "https://issuer.example.com"
