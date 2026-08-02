@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   GitBranch,
   Globe2,
+  ListFilter,
   Loader2,
   PackagePlus,
   Search,
@@ -17,11 +18,18 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import type {
   RegistryCategoryRead,
   SkillPagination,
@@ -33,9 +41,11 @@ import {
   listPublicSkillsPage,
   searchPublicSkillsPage,
 } from "@/lib/public-skills";
-import { SkillLeaderboard } from "./skills-ui";
+import { SkillCardGrid } from "./skills-ui";
 
 const SEARCH_DEBOUNCE_MS = 250;
+const CATEGORY_ALL_SELECT_VALUE = "__all_categories__";
+const UNCATEGORIZED_CATEGORY_VALUE = "uncategorized";
 type SkillAuditFilter = "fail" | "pass" | "warn";
 type SkillView = "all-time" | "hot" | "latest" | "oldest" | "trending";
 const SKILL_VIEW_PATHS: Record<SkillView, string> = {
@@ -91,8 +101,14 @@ function sourceFilterLabel(value: SkillOfficialFilter) {
   return "All skills";
 }
 
+function officialFilterValue(value?: boolean): SkillOfficialFilter {
+  if (value === undefined) return "";
+  return value ? "true" : "false";
+}
+
 function categoryFilterLabel(value: string, categories: RegistryCategoryRead[]) {
   if (!value) return "";
+  if (value === UNCATEGORIZED_CATEGORY_VALUE) return "Uncategorized";
   return categories.find((category) => category.slug === value)?.name ?? value;
 }
 
@@ -126,6 +142,45 @@ function SkillsFilterGroup<T extends string>({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function SkillsFilterSelect<T extends string>({
+  ariaLabel,
+  icon: Icon,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel: string;
+  icon: LucideIcon;
+  label: string;
+  onChange: (value: T) => void;
+  options: Array<{ label: string; value: T }>;
+  value: T;
+}) {
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? "";
+
+  return (
+    <div className="skills-filter-group">
+      <h2>{label}</h2>
+      <Select onValueChange={(nextValue) => onChange(nextValue as T)} value={value}>
+        <SelectTrigger aria-label={ariaLabel} className="skills-filter-select-trigger">
+          <span className="skills-filter-select-content">
+            <Icon aria-hidden="true" size={14} />
+            <span>{selectedLabel}</span>
+          </span>
+        </SelectTrigger>
+        <SelectContent className="skills-filter-select-content-menu">
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -252,6 +307,232 @@ function RequestSkillDialog({ onImported }: { onImported: () => void }) {
   );
 }
 
+const SKILLS_SCORECARD_ROWS = [
+  {
+    label: "Job",
+    value: "The skill names the repeatable work, not only a persona.",
+  },
+  {
+    label: "Scope",
+    value: "Inputs, outputs, and boundaries are clear before you apply it.",
+  },
+  {
+    label: "Evidence",
+    value: "Source, snapshot, files, and audit result all point to the same use case.",
+  },
+  {
+    label: "Fit",
+    value: "It improves one workflow you already run, not every task in your backlog.",
+  },
+];
+
+const SKILLS_REVIEW_FLOW = [
+  {
+    phase: "Search",
+    title: "Start with the outcome",
+    copy:
+      "Use the job you want done: debugging, writing, browser automation, Kubernetes review, research synthesis, or another concrete workflow.",
+    output: "A short list of skills with matching names and descriptions.",
+  },
+  {
+    phase: "Compare",
+    title: "Check the package behind the promise",
+    copy:
+      "Open the detail page and read the source, bundled files, snapshot metadata, categories, and audit status before trusting the summary.",
+    output: "One candidate that matches the actual files, not just the pitch.",
+  },
+  {
+    phase: "Adopt",
+    title: "Use the narrowest useful skill",
+    copy:
+      "Prefer a skill that handles one repeatable workflow well. Broad assistants are harder to review, test, and replace.",
+    output: "A reusable workflow you can explain to another operator.",
+  },
+  {
+    phase: "Revisit",
+    title: "Treat updates like dependency changes",
+    copy:
+      "When a skill changes source, snapshot, audit status, or category, inspect it again before letting it shape production work.",
+    output: "A maintained skill set that stays understandable over time.",
+  },
+];
+
+const SKILLS_TRUST_ROWS = [
+  {
+    signal: "Source",
+    strong: "Repository, owner, and bundled files are visible.",
+    weak: "The source is vague, forked without context, or hard to inspect.",
+  },
+  {
+    signal: "Category",
+    strong: "The category describes the primary workflow outcome.",
+    weak: "Several unrelated categories are mixed together, or no category fits.",
+  },
+  {
+    signal: "Audit",
+    strong: "Pass, warning, or failure is easy to interpret from the skill page.",
+    weak: "A warning is ignored, or a failed audit is treated like a popularity issue.",
+  },
+  {
+    signal: "Description",
+    strong: "The copy explains when to use the skill and what it produces.",
+    weak: "It promises expertise without naming inputs, outputs, or limits.",
+  },
+];
+
+const SKILLS_FAQS = [
+  {
+    question: "What is an agent skill?",
+    answer:
+      "An agent skill is a packaged set of instructions and supporting files that helps an AI agent perform a specific kind of work more consistently, such as debugging, writing, research, or operating a domain-specific workflow.",
+  },
+  {
+    question: "How should I compare two similar skills?",
+    answer:
+      "Compare the stated outcome, source repository, install count, categories, and audit result. The better fit is usually the skill with the narrower workflow and clearer maintenance trail, not simply the one with the broadest description.",
+  },
+  {
+    question: "What do official and community sources mean?",
+    answer:
+      "Official sources identify publishers that Wardn Hub marks as trusted or canonical for that catalog entry. Community sources can still be useful, but they deserve closer inspection before use in production agent workflows.",
+  },
+  {
+    question: "Why do some skills have warnings or no category?",
+    answer:
+      "A warning means the automated audit found something worth reviewing. A missing category usually means the primary use case is ambiguous or the taxonomy does not yet have a defensible bucket for that skill.",
+  },
+];
+
+function categorySkillDescription(category: RegistryCategoryRead) {
+  const description = category.description?.trim();
+  if (!description) {
+    return `Skills for ${category.name.toLowerCase()} workflows and related operating tasks.`;
+  }
+  return description
+    .replace(/\bMCP servers\b/g, "agent workflows")
+    .replace(/\bMCP server\b/g, "agent workflow");
+}
+
+function SkillsLibraryGuide({ categories }: { categories: RegistryCategoryRead[] }) {
+  const guideCategories = categories.slice(0, 12);
+
+  return (
+    <section className="skills-guide-content" aria-label="Agent skills guide">
+      <section className="skills-guide-opener" aria-labelledby="skills-guide-title">
+        <div className="skills-guide-opener-copy">
+          <span>Skill selection field guide</span>
+          <h2 id="skills-guide-title">Pick skills by the work they make repeatable.</h2>
+          <p>
+            The right skill is closer to a dependency than a prompt snippet. It should have a
+            specific job, inspectable source, a current snapshot, and enough audit context to decide
+            whether it belongs in your agent setup.
+          </p>
+        </div>
+        <div className="skills-guide-scorecard" aria-label="Skill fit scorecard">
+          <div className="skills-guide-scorecard-head">
+            <span>Before install</span>
+            <strong>Fit check</strong>
+          </div>
+          {SKILLS_SCORECARD_ROWS.map((item) => (
+            <div className="skills-guide-scorecard-row" key={item.label}>
+              <span>{item.label}</span>
+              <p>{item.value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="skills-playbook-section" aria-labelledby="skills-playbook-title">
+        <div className="skills-guide-section-heading">
+          <span>Review workflow</span>
+          <h2 id="skills-playbook-title">Evaluate a skill before it shapes an agent response</h2>
+          <p>
+            Popularity can help you discover candidates, but it should not decide adoption. Use a
+            repeatable review path so every skill is judged by the same signals.
+          </p>
+        </div>
+        <ol className="skills-playbook-flow" aria-label="Skill review workflow">
+          {SKILLS_REVIEW_FLOW.map((item, index) => (
+            <li key={item.phase}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <small>{item.phase}</small>
+                <h3>{item.title}</h3>
+                <p>{item.copy}</p>
+              </div>
+              <strong>{item.output}</strong>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="skills-trust-section" aria-labelledby="skills-trust-title">
+        <div className="skills-guide-section-heading">
+          <span>Trust signals</span>
+          <h2 id="skills-trust-title">Separate useful workflow packages from prompt dumps</h2>
+        </div>
+        <div className="skills-trust-matrix" role="table" aria-label="Skill trust signals">
+          <div className="skills-trust-row header" role="row">
+            <span role="columnheader">Signal</span>
+            <span role="columnheader">Looks strong</span>
+            <span role="columnheader">Needs caution</span>
+          </div>
+          {SKILLS_TRUST_ROWS.map((item) => (
+            <div className="skills-trust-row" role="row" key={item.signal}>
+              <strong role="cell">{item.signal}</strong>
+              <p role="cell">{item.strong}</p>
+              <p role="cell">{item.weak}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {guideCategories.length ? (
+        <section className="skills-category-guide" aria-labelledby="skills-category-guide-title">
+          <div className="skills-guide-section-heading">
+            <span>Category field guide</span>
+            <h2 id="skills-category-guide-title">Browse the top 12 skill categories</h2>
+            <p>
+              Categories should help you start with intent. Search by the kind of work you need
+              done, then use the skill detail page to confirm that the bundle really supports it.
+            </p>
+          </div>
+          <div className="skills-category-guide-list">
+            {guideCategories.map((item, index) => (
+              <Link
+                className="skills-category-guide-card"
+                href={`/skills?category=${encodeURIComponent(item.slug)}`}
+                key={item.slug}
+              >
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <h3>{item.name}</h3>
+                  <p>{categorySkillDescription(item)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="skills-faq-section" aria-labelledby="skills-faq-title">
+        <div className="skills-guide-section-heading">
+          <span>Skill review basics</span>
+          <h2 id="skills-faq-title">Questions to answer before adopting a skill</h2>
+        </div>
+        <div className="skills-faq-list">
+          {SKILLS_FAQS.map((item) => (
+            <details className="skills-faq-item" key={item.question}>
+              <summary>{item.question}</summary>
+              <p>{item.answer}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export function SkillsClient({
   auditEnabled,
   initialError,
@@ -289,7 +570,7 @@ export function SkillsClient({
   );
   const [category, setCategory] = useState(initialCategory);
   const [official, setOfficial] = useState<SkillOfficialFilter>(
-    initialOfficial === undefined ? "" : String(initialOfficial) as SkillOfficialFilter,
+    officialFilterValue(initialOfficial),
   );
   const [skills, setSkills] = useState<SkillRead[]>(initialSkills);
   const [pagination, setPagination] = useState<SkillPagination>(initialPagination);
@@ -584,11 +865,15 @@ export function SkillsClient({
     <>
       <section className="registry-hero-section" aria-labelledby="skills-title">
         <div className="registry-hero-inner">
-          <div className="registry-hero-copy">
-            <h1 id="skills-title">Skills</h1>
-            <p>
-              Browse reusable agent skills, inspect published files, and follow trusted sources.
-            </p>
+          <div className="skills-product-hero-grid">
+            <div className="skills-product-hero-copy skills-hero-copy">
+              <span className="registry-hero-eyebrow">Agent Skills Library</span>
+              <h1 id="skills-title">Discover agent skills for real workflows</h1>
+              <p>
+                Search reusable agent workflows, compare source and audit signals, and inspect the
+                bundle before it becomes part of your setup.
+              </p>
+            </div>
             <div className="skills-hero-search-row">
               <form
                 className="registry-hero-search-form"
@@ -604,20 +889,22 @@ export function SkillsClient({
                     id={searchInputId}
                     name="q"
                     onChange={(event) => updateQuery(event.currentTarget.value)}
-                    placeholder="Search skills"
+                    placeholder="Search debugging, writing, browser automation..."
                     ref={searchInputRef}
                     type="search"
                     value={query}
                   />
                 </label>
               </form>
-              <RequestSkillDialog onImported={reloadFirstPage} />
             </div>
+            <p className="skills-hero-proofline">
+              Browse by outcome, audit status, maintenance signal, and install activity.
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="content-section" aria-label="Skills">
+      <section className="content-section skills-library-section" aria-label="Skills">
         <div className="skills-results-layout">
           <aside className="skills-filter-panel" aria-label="Skill filters">
             <SkillsFilterGroup<SkillOfficialFilter>
@@ -634,25 +921,33 @@ export function SkillsClient({
                 value={auditStatus}
               />
             ) : null}
-            <div className="skills-filter-group">
-              <h2>Category</h2>
-              <label className="skills-filter-select">
-                <Tags aria-hidden="true" size={14} />
-                <span className="sr-only">Category</span>
-                <select
-                  aria-label="Category"
-                  onChange={(event) => updateCategory(event.currentTarget.value)}
-                  value={category}
-                >
-                  <option value="">All categories</option>
-                  {initialCategories.map((item) => (
-                    <option key={item.slug} value={item.slug}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <SkillsFilterSelect
+              ariaLabel="Category"
+              icon={Tags}
+              label="Category"
+              onChange={(nextCategory) =>
+                updateCategory(
+                  nextCategory === CATEGORY_ALL_SELECT_VALUE ? "" : nextCategory,
+                )
+              }
+              options={[
+                { label: "All categories", value: CATEGORY_ALL_SELECT_VALUE },
+                { label: "Uncategorized", value: UNCATEGORIZED_CATEGORY_VALUE },
+                ...initialCategories.map((item) => ({
+                  label: item.name,
+                  value: item.slug,
+                })),
+              ]}
+              value={category || CATEGORY_ALL_SELECT_VALUE}
+            />
+            <SkillsFilterSelect
+              ariaLabel="Skill leaderboard view"
+              icon={ListFilter}
+              label="View"
+              onChange={(nextView) => updateView(nextView)}
+              options={SKILL_VIEW_OPTIONS}
+              value={initialView}
+            />
           </aside>
           <div className="registry-results-shell">
             <div className="skills-results-toolbar">
@@ -660,20 +955,7 @@ export function SkillsClient({
                 <h2>{resultSummaryTitle}</h2>
                 <p aria-live="polite">{loading ? "Updating results…" : resultSummaryDetail}</p>
               </div>
-              <label className="skills-view-select">
-                <span>View</span>
-                <select
-                  aria-label="Skill leaderboard view"
-                  onChange={(event) => updateView(event.currentTarget.value as SkillView)}
-                  value={initialView}
-                >
-                  {SKILL_VIEW_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <RequestSkillDialog onImported={reloadFirstPage} />
             </div>
             {error && skills.length === 0 ? (
               <EmptyState detail={error} title="Unable to load skills" />
@@ -686,7 +968,7 @@ export function SkillsClient({
             ) : null}
             {skills.length > 0 ? (
               <>
-                <SkillLeaderboard auditEnabled={auditEnabled} skills={skills} />
+                <SkillCardGrid auditEnabled={auditEnabled} skills={skills} variant="directory" />
                 <InfiniteScrollTrigger
                   error={error}
                   hasMore={hasMore}
@@ -697,6 +979,7 @@ export function SkillsClient({
             ) : null}
           </div>
         </div>
+        <SkillsLibraryGuide categories={initialCategories} />
       </section>
     </>
   );

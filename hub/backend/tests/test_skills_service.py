@@ -315,10 +315,8 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
         limit=10,
         view="all-time",
     )
+    assert "skills.is_featured DESC" in all_time_session.statements[-1]
     assert "skills.installs DESC" in all_time_session.statements[-1]
-    assert "CASE WHEN" in all_time_session.statements[-1]
-    assert "lower(skills.source_name)" in all_time_session.statements[-1]
-    assert "lower(skills.name)" in all_time_session.statements[-1]
     assert "skills_1.install_url !=" in all_time_session.statements[-1]
     assert "skills_1.installs DESC" in all_time_session.statements[-1]
     assert "length(skills_1.slug)" in all_time_session.statements[-1]
@@ -326,7 +324,7 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "skill_audits" in all_time_session.statements[-1]
     assert "canonical_rank" not in all_time_session.statements[-1]
     assert "NOT (EXISTS" not in all_time_session.statements[-1]
-    assert "ORDER BY CASE WHEN" in all_time_session.statements[-1]
+    assert ") ORDER BY skills.is_featured DESC" in all_time_session.statements[-1]
 
     trending_session = FakeSession()
     await repository.list_skills(
@@ -338,7 +336,7 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "skill_install_events" in trending_session.statements[-1]
     assert "count(skill_install_events.id)" in trending_session.statements[-1]
     assert "recent_installs" in trending_session.statements[-1]
-    assert "ORDER BY CASE WHEN" in trending_session.statements[-1]
+    assert ") ORDER BY skills.is_featured DESC" in trending_session.statements[-1]
 
     latest_session = FakeSession()
     await repository.list_skills(
@@ -348,7 +346,7 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
         view="latest",
     )
     assert "skill_snapshots.published_at DESC" in latest_session.statements[-1]
-    assert "ORDER BY CASE WHEN" in latest_session.statements[-1]
+    assert ") ORDER BY skills.is_featured DESC" in latest_session.statements[-1]
 
     oldest_session = FakeSession()
     await repository.list_skills(
@@ -358,7 +356,7 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
         view="oldest",
     )
     assert "skill_snapshots.published_at ASC" in oldest_session.statements[-1]
-    assert "ORDER BY CASE WHEN" in oldest_session.statements[-1]
+    assert ") ORDER BY skills.is_featured DESC" in oldest_session.statements[-1]
 
 
 async def test_list_skills_applies_identifier_match_and_exact_id_ordering() -> None:
@@ -406,6 +404,7 @@ async def test_list_skills_applies_identifier_match_and_exact_id_ordering() -> N
     assert "skills.source ILIKE 'abhi1693/wardn-hub'" in sql
     assert "skills.slug ILIKE 'find-skills'" in sql
     assert "ORDER BY CASE WHEN (lower(skills.source)" in sql
+    assert "skills.is_featured DESC" in sql
 
 
 async def test_list_skills_filters_by_current_audit_status() -> None:
@@ -490,6 +489,15 @@ def test_canonical_skill_filter_uses_postgresql_distinct_on() -> None:
     assert "DISTINCT ON (skills_1.source_type, skills_1.source" in compiled
     assert "skills_1.installs DESC" in compiled
     assert "row_number()" not in compiled
+
+
+def test_uncategorized_skill_filter_selects_skills_without_category_links() -> None:
+    condition = repository.category_filter_condition("uncategorized")
+    compiled = str(condition.compile(dialect=postgresql.dialect()))
+
+    assert "NOT (EXISTS" in compiled
+    assert "skill_categories.skill_id = skills.id" in compiled
+    assert "mcp_categories" not in compiled
 
 
 @pytest.mark.parametrize("audit_status", ["unaudited", "unknown"])
@@ -704,13 +712,12 @@ async def test_skill_audit_history_query_includes_noncurrent_snapshots() -> None
     assert "LIMIT" in session.statement
 
 
-def test_wardn_find_skills_pin_targets_repository_and_skill_name() -> None:
-    expression = repository.wardn_find_skills_order().compile(
+def test_featured_skill_order_uses_persisted_feature_flag() -> None:
+    expression = repository.featured_skill_order().compile(
         compile_kwargs={"literal_binds": True}
     )
 
-    assert "wardn-hub" in str(expression)
-    assert "find-skills" in str(expression)
+    assert str(expression) == "skills.is_featured DESC"
 
 
 @pytest.mark.parametrize(

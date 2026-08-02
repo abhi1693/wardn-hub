@@ -104,12 +104,20 @@ export async function SkillsPageView({
       };
     }
   })();
+  const clientStateKey = [
+    view,
+    searchQuery,
+    auditStatus ?? "",
+    category,
+    official === undefined ? "" : String(official),
+  ].join(":");
 
   return (
     <main className="site-shell skills-index-page">
       <PublicHeader />
       <SkillsClient
         auditEnabled={state.auditEnabled}
+        key={clientStateKey}
         initialError={state.error}
         initialPagination={state.pagination}
         initialAuditStatus={auditStatus}

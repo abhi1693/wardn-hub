@@ -55,6 +55,7 @@ _SEARCH_FALLBACK_STOP_WORDS = {
     "using",
     "with",
 }
+UNCATEGORIZED_CATEGORY_FILTER = "uncategorized"
 
 
 @dataclass(frozen=True)
@@ -181,17 +182,8 @@ def canonical_skill_condition():
     return Skill.id.in_(select(canonical_candidates.c.skill_id))
 
 
-def wardn_find_skills_order():
-    return case(
-        (
-            and_(
-                func.lower(Skill.source_name) == "wardn-hub",
-                func.lower(Skill.name) == "find-skills",
-            ),
-            0,
-        ),
-        else_=1,
-    )
+def featured_skill_order():
+    return Skill.is_featured.desc()
 
 
 def skill_identifier_parts(search: str) -> tuple[str, str] | None:
@@ -309,6 +301,8 @@ def audited_skill_condition(skill_id):
 
 def category_filter_condition(category: str, skill_id=Skill.id):
     category_value = category.strip()
+    if category_value.casefold() == UNCATEGORIZED_CATEGORY_FILTER:
+        return ~exists(select(SkillCategory.id).where(SkillCategory.skill_id == skill_id))
     return exists(
         select(SkillCategory.id)
         .join(RegistryCategory, RegistryCategory.id == SkillCategory.category_id)
@@ -616,7 +610,7 @@ async def list_skills(
     if view == "all-time":
         statement = statement.order_by(
             *identifier_ordering,
-            wardn_find_skills_order(),
+            featured_skill_order(),
             Skill.installs.desc(),
             Skill.name.asc(),
             Skill.source.asc(),
@@ -637,7 +631,7 @@ async def list_skills(
             recent_installs.c.skill_id == Skill.id,
         ).order_by(
             *identifier_ordering,
-            wardn_find_skills_order(),
+            featured_skill_order(),
             func.coalesce(recent_installs.c.recent_installs, 0).desc(),
             Skill.installs.desc(),
             Skill.name.asc(),
@@ -646,7 +640,7 @@ async def list_skills(
     elif view == "latest":
         statement = statement.order_by(
             *identifier_ordering,
-            wardn_find_skills_order(),
+            featured_skill_order(),
             SkillSnapshot.published_at.desc(),
             Skill.name.asc(),
             Skill.source.asc(),
@@ -654,7 +648,7 @@ async def list_skills(
     elif view == "oldest":
         statement = statement.order_by(
             *identifier_ordering,
-            wardn_find_skills_order(),
+            featured_skill_order(),
             SkillSnapshot.published_at.asc(),
             Skill.name.asc(),
             Skill.source.asc(),
@@ -662,7 +656,7 @@ async def list_skills(
     else:
         statement = statement.order_by(
             *identifier_ordering,
-            wardn_find_skills_order(),
+            featured_skill_order(),
             Skill.name.asc(),
         )
 

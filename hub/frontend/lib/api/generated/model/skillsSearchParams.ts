@@ -17,6 +17,9 @@ q: string;
  */
 limit?: number;
 owner?: string | null;
+/**
+ * Filter by category slug/name, or uncategorized for skills without categories.
+ */
 category?: string | null;
 /**
  * Filter by current audit status: pass, warn, or fail.

@@ -357,10 +357,12 @@ export function SkillLeaderboard({
 export function SkillCardGrid({
   auditEnabled = true,
   emptyLabel = "No skills found",
+  variant = "default",
   skills,
 }: {
   auditEnabled?: boolean;
   emptyLabel?: string;
+  variant?: "default" | "directory";
   skills: SkillRead[];
 }) {
   if (!skills.length) {
@@ -371,11 +373,13 @@ export function SkillCardGrid({
     );
   }
 
+  const directory = variant === "directory";
+
   return (
-    <div className="skill-grid">
+    <div className={`skill-grid${directory ? " directory" : ""}`}>
       {skills.map((skill) => (
         <Link
-          className="skill-card"
+          className={`skill-card${directory ? " directory" : ""}`}
           href={skillDetailPath(skill.id)}
           key={skill.id}
           prefetch={false}
@@ -397,11 +401,22 @@ export function SkillCardGrid({
                 {skill.name}
                 {skill.isOfficial ? <OfficialBadge /> : null}
               </strong>
+              {directory ? <small>{skill.sourceOwner || skill.source}</small> : null}
             </span>
+            {directory && auditEnabled ? (
+              <span className="skill-card-status-slot">
+                <SkillAuditBadge
+                  compact
+                  rank={skill.auditRank}
+                  score={skill.auditScore}
+                  status={skill.auditStatus}
+                />
+              </span>
+            ) : null}
           </span>
           <span className="skill-card-description">{skill.description || skill.slug}</span>
-          <SkillCategoryPills categories={skill.categories} />
-          {auditEnabled ? (
+          {directory ? null : <SkillCategoryPills categories={skill.categories} />}
+          {auditEnabled && !directory ? (
             <span className="skill-card-audit">
               <SkillAuditBadge
                 compact
@@ -412,8 +427,11 @@ export function SkillCardGrid({
             </span>
           ) : null}
           <span className="skill-card-footer">
-            <span>{skill.sourceOwner || skill.source}</span>
-            <span>{skill.installs.toLocaleString("en-US")} installs</span>
+            {directory ? <SkillCategoryPills categories={skill.categories} /> : null}
+            {directory ? null : <span>{skill.sourceOwner || skill.source}</span>}
+            <span className={directory ? "skill-card-install-count" : undefined}>
+              {skill.installs.toLocaleString("en-US")} installs
+            </span>
           </span>
         </Link>
       ))}

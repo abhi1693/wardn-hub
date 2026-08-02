@@ -65,6 +65,7 @@
         "id": "acme/skills/code-audit",
         "installUrl": "https://github.com/acme/skills/tree/main/code-audit",
         "installs": 42,
+        "isFeatured": false,
         "isOfficial": false,
         "name": "Code Audit",
         "slug": "code-audit",

@@ -18,6 +18,7 @@ export interface SkillRead {
   installUrl?: string | null;
   /** @minimum 0 */
   installs: number;
+  isFeatured?: boolean;
   isOfficial?: boolean;
   name: string;
   slug: string;

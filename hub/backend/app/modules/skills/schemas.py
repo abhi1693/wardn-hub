@@ -34,6 +34,7 @@ class SkillRead(BaseModel):
     description: str = ""
     installs: int = Field(ge=0)
     is_official: bool = Field(default=False, alias="isOfficial")
+    is_featured: bool = Field(default=False, alias="isFeatured")
     audit_status: SkillAuditStatus | None = Field(default=None, alias="auditStatus")
     audit_score: int | None = Field(default=None, alias="auditScore", ge=0, le=100)
     audit_rank: SkillAuditRank | None = Field(default=None, alias="auditRank")
@@ -100,6 +101,7 @@ class SkillDetailResponse(BaseModel):
     source_owner_url: str | None = Field(default=None, alias="sourceOwnerUrl")
     source_owner_icon_url: str | None = Field(default=None, alias="sourceOwnerIconUrl")
     source_url: str | None = Field(default=None, alias="sourceUrl")
+    is_featured: bool = Field(default=False, alias="isFeatured")
     hash: str | None = None
     files: list[SkillFileRead] | None = None
     bundle_format_version: int | None = Field(default=None, alias="bundleFormatVersion")

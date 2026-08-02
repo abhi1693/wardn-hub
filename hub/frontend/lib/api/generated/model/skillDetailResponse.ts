@@ -16,6 +16,7 @@ export interface SkillDetailResponse {
   files?: SkillFileRead[] | null;
   hash?: string | null;
   id: string;
+  isFeatured?: boolean;
   resolutionIssues?: SkillResolutionIssueRead[];
   resolutionStatus?: SkillDetailResponseResolutionStatus;
   slug: string;

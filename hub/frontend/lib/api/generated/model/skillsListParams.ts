@@ -22,6 +22,9 @@ page?: number;
 per_page?: number;
 q?: string | null;
 owner?: string | null;
+/**
+ * Filter by category slug/name, or uncategorized for skills without categories.
+ */
 category?: string | null;
 source?: string | null;
 official?: boolean | null;
