@@ -29,6 +29,7 @@ const MAX_BUNDLE_FILES = 256;
 const REQUEST_RETRY_DELAYS_MS = [200, 800] as const;
 const AUDIT_TIME_PATTERN = /^(?<whole>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.(?<fraction>[0-9]{1,9}))?(?:Z|\+00:00)$/;
 const OWNER_PATTERN = /^[A-Za-z0-9._-]+$/;
+const CATEGORY_PATTERN = /^[^\u0000-\u001f\u007f]+$/;
 const SKILL_SLUG_PATTERN = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/;
 const TRANSIENT_REQUEST_ERROR_CODES = new Set([
   'EAI_AGAIN',
@@ -454,8 +455,14 @@ export class HubClient {
     }
   }
 
-  async search(query: string, owner?: string, limit = 8): Promise<SkillSearchResult> {
+  async search(
+    query: string,
+    owner?: string,
+    limit = 8,
+    category?: string,
+  ): Promise<SkillSearchResult> {
     const normalizedQuery = query.trim();
+    const normalizedCategory = category?.trim();
     if (normalizedQuery.length < 3 || normalizedQuery.length > 200) {
       throw new Error('search query must contain between 3 and 200 characters');
     }
@@ -468,10 +475,19 @@ export class HubClient {
     ) {
       throw new Error('search owner is invalid');
     }
+    if (
+      normalizedCategory !== undefined &&
+      (normalizedCategory.length === 0 ||
+        normalizedCategory.length > 120 ||
+        !CATEGORY_PATTERN.test(normalizedCategory))
+    ) {
+      throw new Error('search category is invalid');
+    }
     const url = new URL(`${this.apiBaseUrl}/skills/search`);
     url.searchParams.set('q', normalizedQuery);
     url.searchParams.set('limit', String(limit));
     if (owner !== undefined) url.searchParams.set('owner', owner);
+    if (normalizedCategory !== undefined) url.searchParams.set('category', normalizedCategory);
     const { response, payload } = await this.#requestJson(
       url,
       'Wardn skill search',

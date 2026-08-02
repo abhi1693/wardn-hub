@@ -72,6 +72,7 @@ The published CLI runs directly with `npx`; no global installation is required.
 
 ```sh
 npx -y @wardn-ai/skills search "postgres" --limit 5
+npx -y @wardn-ai/skills search "code audit" --category developer-tools --limit 8 --json
 ```
 
 Resolve a skill through the complete audit and inspection flow:

@@ -9,17 +9,20 @@ The CLI includes the full resolver workflow used by Wardn's `find-skills` skill:
 
 ```sh
 npx -y @wardn-ai/skills search "code audit" --limit 8 --json
+npx -y @wardn-ai/skills search "code audit" --category developer-tools --limit 8 --json
 npx -y @wardn-ai/skills audit owner/repository/skill-slug --json
 npx -y @wardn-ai/skills inspect owner/repository/skill-slug --json
 npx -y @wardn-ai/skills fetch-bundle owner/repository/skill-slug --json
 ```
 
 These examples use the latest published release. Append an exact version, for
-example `@wardn-ai/skills@0.1.7`, when you want to pin the CLI.
+example `@wardn-ai/skills@0.1.8`, when you want to pin the CLI.
 
 `search` returns a bounded compact result set including current audit status; its
 `installs` value is a weak popularity signal because temporary materializations
-also increment it. When Hub auditing is enabled, `audit` reports the current
+also increment it. Pass `--category <slug-or-name>` to filter discovery to an
+existing Wardn category when the task clearly maps to one. When Hub auditing is
+enabled, `audit` reports the current
 snapshot-bound Cisco scanner decision, its 0–100 score, GitHub-style rank,
 category deductions, and audited content hash in one `audit` object. When the Hub
 gate is disabled or a snapshot has not been scanned, it reports the skill as

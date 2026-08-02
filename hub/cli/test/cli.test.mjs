@@ -9,6 +9,7 @@ import { runCli } from '../dist/cli.js';
 
 let apiBaseUrl;
 let currentHash = 'a'.repeat(64);
+const searchRequestUrls = [];
 let telemetryRequests = 0;
 let server;
 let target;
@@ -34,6 +35,7 @@ before(async () => {
   target = await mkdtemp(join(tmpdir(), 'wardn-cli-integration.'));
   server = createServer((request, response) => {
     if (request.method === 'GET' && request.url?.startsWith('/api/v1/skills/search?')) {
+      searchRequestUrls.push(request.url);
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(
         JSON.stringify({
@@ -156,8 +158,14 @@ test('CLI exposes the complete script-free resolver workflow', async () => {
   console.log = (...values) => output.push(values.join(' '));
   const bundleDirectories = [];
   try {
-    assert.equal(await runCli(['search', 'weather', '--json'], runtime), 0);
+    searchRequestUrls.length = 0;
+    assert.equal(
+      await runCli(['search', 'weather', '--category', 'developer-tools', '--json'], runtime),
+      0,
+    );
     assert.equal(JSON.parse(output.pop()).data[0].id, 'acme/skills/weather');
+    const searchUrl = new URL(searchRequestUrls.at(-1), 'http://localhost');
+    assert.equal(searchUrl.searchParams.get('category'), 'developer-tools');
 
     assert.equal(await runCli(['audit', 'acme/skills/weather', '--json'], runtime), 0);
     const audit = JSON.parse(output.pop());

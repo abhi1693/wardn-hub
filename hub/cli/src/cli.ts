@@ -27,6 +27,7 @@ import { skillSlug, validateHash, validateSkillId } from './validation.js';
 interface ParsedOptions {
   agentNames: string[];
   all: boolean;
+  category?: string;
   global: boolean;
   hash?: string;
   help: boolean;
@@ -110,6 +111,12 @@ function parseOptions(args: string[]): ParsedOptions {
       index = nextIndex;
     } else if (argument.startsWith('--owner=')) {
       parsed.owner = argument.slice('--owner='.length);
+    } else if (argument === '--category') {
+      const [value, nextIndex] = takeOptionValue(args, index, argument);
+      parsed.category = value;
+      index = nextIndex;
+    } else if (argument.startsWith('--category=')) {
+      parsed.category = argument.slice('--category='.length);
     } else if (argument === '--limit') {
       const [value, nextIndex] = takeOptionValue(args, index, argument);
       parsed.limit = parseCanonicalInteger(value, argument);
@@ -166,7 +173,7 @@ function showHelp(): void {
   console.log(`Wardn Skills CLI
 
 Usage:
-  wardn-skills search <query> [owner] [--limit 8]
+  wardn-skills search <query> [owner] [--category CATEGORY] [--limit 8]
   wardn-skills audit <skill-id>
   wardn-skills inspect <skill-id>
   wardn-skills fetch <skill-id>
@@ -194,6 +201,7 @@ Options:
       --target <directory>    Use an explicit absolute skills directory
       --hash <sha256>         Require an exact snapshot; latest when omitted
       --owner <owner>         Restrict a search to one owner
+      --category <category>   Restrict a search to one existing category slug or name
       --limit <count>         Return 1-200 search results (default: 8)
       --offset <characters>   Root content offset for fetch-chunk
       --length <characters>   Root content length for fetch-chunk (1-8000)
@@ -231,6 +239,7 @@ function rejectManagementOptions(options: ParsedOptions, command: string): void 
 
 function rejectResolverOptions(options: ParsedOptions, command: string): void {
   if (
+    options.category !== undefined ||
     options.owner !== undefined ||
     options.limit !== undefined ||
     options.offset !== undefined ||
@@ -347,7 +356,7 @@ async function searchCommand(client: HubClient, options: ParsedOptions): Promise
   const query = options.positionals[0];
   if (query === undefined) throw new Error('search requires a query');
   const owner = options.owner ?? options.positionals[1];
-  const result = await client.search(query, owner, options.limit ?? 8);
+  const result = await client.search(query, owner, options.limit ?? 8, options.category);
   printSearchResult(result, options.json);
 }
 
@@ -395,7 +404,12 @@ async function fetchCommand(client: HubClient, options: ParsedOptions): Promise<
 
 async function fetchChunkCommand(client: HubClient, options: ParsedOptions): Promise<void> {
   rejectManagementOptions(options, 'fetch-chunk');
-  if (options.owner !== undefined || options.limit !== undefined || options.noTelemetry) {
+  if (
+    options.category !== undefined ||
+    options.owner !== undefined ||
+    options.limit !== undefined ||
+    options.noTelemetry
+  ) {
     throw new Error('unsupported option for fetch-chunk');
   }
   if (options.positionals.length !== 1) {
@@ -444,6 +458,7 @@ async function fetchBundleCommand(
 ): Promise<void> {
   rejectManagementOptions(options, 'fetch-bundle');
   if (
+    options.category !== undefined ||
     options.owner !== undefined ||
     options.limit !== undefined ||
     options.offset !== undefined ||

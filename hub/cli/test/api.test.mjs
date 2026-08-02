@@ -251,7 +251,7 @@ test('HubClient validates compact skill search results', async () => {
     },
   });
 
-  const result = await client.search(' code audit ', 'acme', 8);
+  const result = await client.search(' code audit ', 'acme', 8, ' Developer Tools ');
 
   assert.equal(result.count, 1);
   assert.equal(result.data[0].id, 'acme/skills/code-audit');
@@ -262,7 +262,22 @@ test('HubClient validates compact skill search results', async () => {
   assert.equal(url.pathname, '/api/v1/skills/search');
   assert.equal(url.searchParams.get('q'), 'code audit');
   assert.equal(url.searchParams.get('owner'), 'acme');
+  assert.equal(url.searchParams.get('category'), 'Developer Tools');
   assert.equal(url.searchParams.get('limit'), '8');
+});
+
+test('HubClient rejects invalid skill search category filters', async () => {
+  const client = new HubClient({
+    version: '0.1.0',
+    fetchImplementation: async () => {
+      throw new Error('fetch should not be called');
+    },
+  });
+
+  await assert.rejects(
+    () => client.search('code audit', undefined, 8, ' \n '),
+    /search category is invalid/,
+  );
 });
 
 test('HubClient accepts backend-generated skill API contract fixtures', async () => {
