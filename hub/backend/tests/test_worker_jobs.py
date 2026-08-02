@@ -117,6 +117,22 @@ def test_weekly_schedule_rolls_to_the_next_matching_weekday() -> None:
     assert next_run == datetime(2026, 7, 25, 23, 13, tzinfo=UTC)
 
 
+def test_weekly_schedule_respects_interval_after_matching_weekday_passes() -> None:
+    schedule = WeeklySchedule(
+        weekday=6,
+        hour=4,
+        minute=43,
+        timezone=ZoneInfo("Asia/Kolkata"),
+        interval_weeks=2,
+    )
+
+    before = schedule.next_after(datetime(2026, 7, 25, 22, 0, tzinfo=UTC))
+    after = schedule.next_after(datetime(2026, 7, 26, 1, 0, tzinfo=UTC))
+
+    assert before == datetime(2026, 7, 25, 23, 13, tzinfo=UTC)
+    assert after == datetime(2026, 8, 8, 23, 13, tzinfo=UTC)
+
+
 def test_registry_selects_all_or_named_jobs_and_rejects_unknown_names() -> None:
     jobs = build_job_definitions(get_settings())
 
@@ -150,6 +166,35 @@ def test_registry_adds_skill_import_only_when_enabled() -> None:
 
     assert "skill-import" not in {job.name for job in disabled}
     assert "skill-import" in {job.name for job in enabled}
+
+
+@pytest.mark.asyncio
+async def test_registry_passes_configured_skill_refresh_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    captured: list[WeeklySchedule] = []
+    settings = get_settings().model_copy(
+        update={"worker_skill_refresh_interval_weeks": 2}
+    )
+    jobs = build_job_definitions(settings)
+    skill_refresh = next(job for job in jobs if job.name == "skill-maintenance")
+
+    async def run_skill_refresh(
+        _stop: asyncio.Event,
+        *,
+        settings: object,
+        schedule: WeeklySchedule,
+    ) -> None:
+        assert settings is not None
+        captured.append(schedule)
+        stop.set()
+
+    monkeypatch.setattr(tasks, "run_skill_refresh", run_skill_refresh)
+
+    await skill_refresh.run(stop)
+
+    assert captured[0].interval_weeks == 2
 
 
 @pytest.mark.asyncio

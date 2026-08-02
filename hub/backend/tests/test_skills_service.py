@@ -267,6 +267,26 @@ async def test_skill_leaderboard_views_sort_by_install_activity() -> None:
     assert "recent_installs" in trending_session.statements[-1]
     assert "ORDER BY CASE WHEN" in trending_session.statements[-1]
 
+    latest_session = FakeSession()
+    await repository.list_skills(
+        latest_session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        view="latest",
+    )
+    assert "skill_snapshots.published_at DESC" in latest_session.statements[-1]
+    assert "ORDER BY CASE WHEN" in latest_session.statements[-1]
+
+    oldest_session = FakeSession()
+    await repository.list_skills(
+        oldest_session,  # type: ignore[arg-type]
+        offset=0,
+        limit=10,
+        view="oldest",
+    )
+    assert "skill_snapshots.published_at ASC" in oldest_session.statements[-1]
+    assert "ORDER BY CASE WHEN" in oldest_session.statements[-1]
+
 
 async def test_list_skills_applies_identifier_match_and_exact_id_ordering() -> None:
     class FakeSession:

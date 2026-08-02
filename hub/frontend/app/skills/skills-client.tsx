@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -32,12 +32,21 @@ import { SkillLeaderboard } from "./skills-ui";
 
 const SEARCH_DEBOUNCE_MS = 250;
 type SkillAuditFilter = "fail" | "pass" | "warn";
-type SkillView = "all-time" | "hot" | "trending";
+type SkillView = "all-time" | "hot" | "latest" | "oldest" | "trending";
 const SKILL_VIEW_PATHS: Record<SkillView, string> = {
   "all-time": "/skills",
   hot: "/skills/hot",
+  latest: "/skills/latest",
+  oldest: "/skills/oldest",
   trending: "/skills/trending",
 };
+const SKILL_VIEW_OPTIONS: Array<{ label: string; value: SkillView }> = [
+  { label: "All time", value: "all-time" },
+  { label: "Latest", value: "latest" },
+  { label: "Oldest", value: "oldest" },
+  { label: "Trending 7d", value: "trending" },
+  { label: "Hot 24h", value: "hot" },
+];
 type SkillFilterOption<T extends string> = {
   icon: LucideIcon;
   label: string;
@@ -254,6 +263,7 @@ export function SkillsClient({
   initialSkills: SkillRead[];
   initialView: SkillView;
 }) {
+  const router = useRouter();
   const searchInputId = useId();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const didMountRef = useRef(false);
@@ -285,6 +295,23 @@ export function SkillsClient({
     : `${pagination.total.toLocaleString("en-US")} ${
         pagination.total === 1 ? "result" : "results"
       }`;
+  const viewPath = useCallback(
+    (view: SkillView) => {
+      const params = new URLSearchParams();
+      if (auditEnabled && auditStatus) params.set("audit_status", auditStatus);
+      if (official) params.set("official", official);
+      if (hasSearchQuery) params.set("q", trimmedQuery);
+      const queryString = params.toString();
+      return `${SKILL_VIEW_PATHS[view]}${queryString ? `?${queryString}` : ""}`;
+    },
+    [auditEnabled, auditStatus, hasSearchQuery, official, trimmedQuery],
+  );
+  const updateView = useCallback(
+    (view: SkillView) => {
+      if (view !== initialView) router.push(viewPath(view));
+    },
+    [initialView, router, viewPath],
+  );
 
   const reloadFirstPage = useCallback(async () => {
     const requestId = latestRequestId.current + 1;
@@ -575,31 +602,20 @@ export function SkillsClient({
                 <h2>{resultSummaryTitle}</h2>
                 <p aria-live="polite">{loading ? "Updating results…" : resultSummaryDetail}</p>
               </div>
-              <nav className="skills-view-tabs" aria-label="Skill leaderboard view">
-                {(
-                  [
-                    ["all-time", "All time"],
-                    ["trending", "Trending 7d"],
-                    ["hot", "Hot 24h"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <Link
-                    aria-current={initialView === value ? "page" : undefined}
-                    href={{
-                      pathname: SKILL_VIEW_PATHS[value],
-                      query: {
-                        ...(auditEnabled && auditStatus ? { audit_status: auditStatus } : {}),
-                        ...(official ? { official } : {}),
-                        ...(hasSearchQuery ? { q: trimmedQuery } : {}),
-                      },
-                    }}
-                    key={value}
-                    prefetch={false}
-                  >
-                    {label}
-                  </Link>
-                ))}
-              </nav>
+              <label className="skills-view-select">
+                <span>View</span>
+                <select
+                  aria-label="Skill leaderboard view"
+                  onChange={(event) => updateView(event.currentTarget.value as SkillView)}
+                  value={initialView}
+                >
+                  {SKILL_VIEW_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
             {error && skills.length === 0 ? (
               <EmptyState detail={error} title="Unable to load skills" />

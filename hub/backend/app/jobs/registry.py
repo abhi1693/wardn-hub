@@ -32,6 +32,7 @@ def build_job_definitions(settings: Settings) -> tuple[JobDefinition, ...]:
         hour=settings.worker_skill_refresh_hour,
         minute=settings.worker_skill_refresh_minute,
         timezone=timezone,
+        interval_weeks=settings.worker_skill_refresh_interval_weeks,
     )
     skill_import_schedule = WeeklySchedule(
         weekday=settings.worker_skill_import_weekday,

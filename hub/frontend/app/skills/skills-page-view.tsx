@@ -4,7 +4,7 @@ import { SKILLS_PAGE_SIZE } from "@/lib/public-listing-limits";
 import { listPublicSkillsPage, searchPublicSkillsPage } from "@/lib/public-skills";
 import { SkillsClient } from "./skills-client";
 
-export type SkillView = "all-time" | "hot" | "trending";
+export type SkillView = "all-time" | "hot" | "latest" | "oldest" | "trending";
 export type SkillAuditFilter = "fail" | "pass" | "warn";
 export type SkillsSearchParams = Promise<{
   audit_status?: string | string[];

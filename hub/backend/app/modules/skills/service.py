@@ -45,7 +45,7 @@ from app.modules.skills.schemas import (
     SkillSearchResponse,
 )
 
-VALID_SKILL_VIEWS = {"all-time", "trending", "hot"}
+VALID_SKILL_VIEWS = {"all-time", "trending", "hot", "latest", "oldest"}
 VALID_SKILL_AUDIT_FILTERS = {"pass", "warn", "fail"}
 
 
@@ -188,7 +188,7 @@ async def list_skills(
 ) -> SkillListResponse:
     audit_enabled = get_settings().skill_audit_enabled
     if view not in VALID_SKILL_VIEWS:
-        raise ValueError("view must be one of all-time, trending, or hot")
+        raise ValueError("view must be one of all-time, trending, hot, latest, or oldest")
     normalized_audit_status = audit_status.strip().lower() if audit_status else None
     if normalized_audit_status and normalized_audit_status not in VALID_SKILL_AUDIT_FILTERS:
         raise ValueError("audit_status must be one of pass, warn, or fail")

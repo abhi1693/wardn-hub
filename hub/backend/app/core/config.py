@@ -141,6 +141,7 @@ class Settings(BaseSettings):
     worker_skill_refresh_weekday: int = 6
     worker_skill_refresh_hour: int = 4
     worker_skill_refresh_minute: int = 43
+    worker_skill_refresh_interval_weeks: int = 1
     worker_skill_import_enabled: bool = False
     worker_skill_import_weekday: int = 5
     worker_skill_import_hour: int = 3
@@ -155,7 +156,6 @@ class Settings(BaseSettings):
         "--min-stars",
         "1000",
         "--exclude-existing-owners",
-        "--verified-orgs-only",
     ]
 
     @field_validator("environment", mode="before")
@@ -347,6 +347,13 @@ class Settings(BaseSettings):
     def validate_worker_schedule_weekday(cls, value: int) -> int:
         if value < 0 or value > 6:
             raise ValueError("worker schedule weekdays must be between 0 and 6")
+        return value
+
+    @field_validator("worker_skill_refresh_interval_weeks")
+    @classmethod
+    def validate_worker_schedule_interval_weeks(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("worker schedule interval weeks must be positive")
         return value
 
     @field_validator("worker_schedule_timezone")

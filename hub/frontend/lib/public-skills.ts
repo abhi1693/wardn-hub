@@ -240,7 +240,7 @@ export async function listPublicSkills(params?: {
   page?: number;
   query?: string;
   source?: string;
-  view?: "all-time" | "hot" | "trending";
+  view?: "all-time" | "hot" | "latest" | "oldest" | "trending";
 }) {
   const response = await listPublicSkillsPage(params);
   return response.skills;
@@ -266,7 +266,7 @@ export async function listPublicSkillsPage(params?: {
   page?: number;
   query?: string;
   source?: string;
-  view?: "all-time" | "hot" | "trending";
+  view?: "all-time" | "hot" | "latest" | "oldest" | "trending";
 }): Promise<{ auditEnabled: boolean; pagination: SkillPagination; skills: SkillRead[] }> {
   const query = params?.query?.trim();
   const listParams: Record<string, boolean | number | string> = {

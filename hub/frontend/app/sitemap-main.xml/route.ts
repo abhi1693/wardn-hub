@@ -14,6 +14,8 @@ export async function GET() {
     { changefreq: "weekly", lastmod: now, loc: absoluteUrl("/categories"), priority: 0.8 },
     { changefreq: "monthly", lastmod: now, loc: absoluteUrl("/docs/api"), priority: 0.75 },
     { changefreq: "daily", lastmod: now, loc: absoluteUrl("/skills"), priority: 0.85 },
+    { changefreq: "daily", lastmod: now, loc: absoluteUrl("/skills/latest"), priority: 0.8 },
+    { changefreq: "weekly", lastmod: now, loc: absoluteUrl("/skills/oldest"), priority: 0.6 },
     { changefreq: "daily", lastmod: now, loc: absoluteUrl("/skills/trending"), priority: 0.8 },
     { changefreq: "daily", lastmod: now, loc: absoluteUrl("/skills/hot"), priority: 0.8 },
     { changefreq: "weekly", lastmod: now, loc: absoluteUrl("/skills/official"), priority: 0.7 },

@@ -39,6 +39,7 @@ class WeeklySchedule:
     hour: int
     minute: int
     timezone: ZoneInfo
+    interval_weeks: int = 1
 
     def next_after(self, now: datetime | None = None) -> datetime:
         local_now = normalized_now(now).astimezone(self.timezone)
@@ -50,5 +51,5 @@ class WeeklySchedule:
             microsecond=0,
         )
         if candidate <= local_now:
-            candidate += timedelta(days=7)
+            candidate += timedelta(weeks=self.interval_weeks)
         return candidate.astimezone(UTC)

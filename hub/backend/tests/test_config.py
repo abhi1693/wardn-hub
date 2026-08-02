@@ -99,14 +99,23 @@ def test_skill_import_arguments_parse_shell_style_env(monkeypatch) -> None:
     ]
 
 
-def test_skill_import_defaults_to_verified_github_organizations(monkeypatch) -> None:
+def test_skill_import_defaults_match_scheduled_github_discovery(monkeypatch) -> None:
     set_required_settings(monkeypatch)
     monkeypatch.delenv("WARDN_HUB_WORKER_SKILL_IMPORT_ARGUMENTS", raising=False)
 
     settings = Settings(_env_file=None)
 
-    assert "--verified-orgs-only" in settings.worker_skill_import_arguments
+    assert "--verified-orgs-only" not in settings.worker_skill_import_arguments
     assert "--max-repositories" not in settings.worker_skill_import_arguments
+
+
+def test_skill_refresh_interval_weeks_reads_env(monkeypatch) -> None:
+    set_required_settings(monkeypatch)
+    monkeypatch.setenv("WARDN_HUB_WORKER_SKILL_REFRESH_INTERVAL_WEEKS", "2")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.worker_skill_refresh_interval_weeks == 2
 
 
 def test_skill_import_arguments_reject_secrets_and_managed_output(monkeypatch) -> None:

@@ -599,6 +599,22 @@ async def list_skills(
             Skill.name.asc(),
             Skill.source.asc(),
         )
+    elif view == "latest":
+        statement = statement.order_by(
+            *identifier_ordering,
+            wardn_find_skills_order(),
+            SkillSnapshot.published_at.desc(),
+            Skill.name.asc(),
+            Skill.source.asc(),
+        )
+    elif view == "oldest":
+        statement = statement.order_by(
+            *identifier_ordering,
+            wardn_find_skills_order(),
+            SkillSnapshot.published_at.asc(),
+            Skill.name.asc(),
+            Skill.source.asc(),
+        )
     else:
         statement = statement.order_by(
             *identifier_ordering,
