@@ -41,7 +41,7 @@ async def test_categorize_skill_targets_writes_llm_category(
     current_target = target()
 
     class FakeReviewer:
-        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+        async def review_async(self, prompt: str, *, environment: dict[str, str]) -> str:
             assert "categoryCatalog" in prompt
             assert "developer-tools" in prompt
             assert environment == {"WARDN_HUB_SKILL_ID": current_target.catalog_id}
@@ -73,13 +73,51 @@ async def test_categorize_skill_targets_writes_llm_category(
     assert writes == [(current_target.catalog_id, "developer-tools")]
 
 
+async def test_categorize_skill_targets_uses_async_reviewer_from_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writes: list[tuple[str, str]] = []
+    current_target = target()
+
+    class FakeAsyncReviewer:
+        async def review_async(self, prompt: str, *, environment: dict[str, str]) -> str:
+            assert "categoryCatalog" in prompt
+            assert environment == {"WARDN_HUB_SKILL_ID": current_target.catalog_id}
+            return json.dumps(
+                {
+                    "decision": "assign",
+                    "categorySlug": "developer-tools",
+                    "confidence": "high",
+                    "rationale": "The skill is primarily for developer workflow automation.",
+                }
+            )
+
+    async def fake_write(
+        write_target: repository.SkillCategorizationTarget,
+        category_slug: str,
+    ) -> None:
+        writes.append((write_target.catalog_id, category_slug))
+
+    monkeypatch.setattr(cli, "write_category_assignment", fake_write)
+
+    stats = await cli.categorize_skill_targets(
+        reviewer=FakeAsyncReviewer(),  # type: ignore[arg-type]
+        targets=[current_target],
+        categories=[category("developer-tools")],  # type: ignore[list-item]
+    )
+
+    assert stats.categorized == 1
+    assert stats.failed == 0
+    assert writes == [(current_target.catalog_id, "developer-tools")]
+
+
 async def test_categorize_skill_targets_leaves_skipped_skill_uncategorized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     writes: list[tuple[str, str]] = []
 
     class FakeReviewer:
-        def review(self, prompt: str, *, environment: dict[str, str]) -> str:
+        async def review_async(self, prompt: str, *, environment: dict[str, str]) -> str:
             return json.dumps(
                 {
                     "decision": "skip",

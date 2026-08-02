@@ -53,7 +53,33 @@ class CodexAppServerReviewer:
             output_schema=self.structured_output_schema,
         )
 
+    async def review_async(self, prompt: str, *, environment: dict[str, str]) -> str:
+        del environment
+        return await self.complete_async(
+            prompt,
+            output_schema=self.structured_output_schema,
+        )
+
     def complete(
+        self,
+        prompt: str,
+        *,
+        output_schema: dict[str, Any] | None = None,
+    ) -> str:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise UserFacingError(
+                "Codex app-server review cannot run synchronously from a running event loop; "
+                "use review_async()."
+            )
+        return asyncio.run(
+            self.complete_async(prompt, output_schema=output_schema)
+        )
+
+    async def complete_async(
         self,
         prompt: str,
         *,
@@ -66,11 +92,9 @@ class CodexAppServerReviewer:
                 flush=True,
             )
         try:
-            return asyncio.run(
-                asyncio.wait_for(
-                    self._review_async(prompt, output_schema=output_schema),
-                    timeout=self.timeout_seconds,
-                )
+            return await asyncio.wait_for(
+                self._review_async(prompt, output_schema=output_schema),
+                timeout=self.timeout_seconds,
             )
         except TimeoutError as exc:
             raise UserFacingError(

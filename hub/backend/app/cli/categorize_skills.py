@@ -37,8 +37,8 @@ class SkillCategoryDecisionPayload(BaseModel):
 
 
 class Reviewer(Protocol):
-    def review(self, prompt: str, *, environment: dict[str, str]) -> str:
-        """Return a schema-constrained category decision."""
+    async def review_async(self, prompt: str, *, environment: dict[str, str]) -> str:
+        """Return a schema-constrained category decision from async code."""
 
 
 @dataclass
@@ -176,7 +176,7 @@ async def categorize_skill_targets(
     for target in targets:
         stats.seen += 1
         try:
-            raw_response = reviewer.review(
+            raw_response = await reviewer.review_async(
                 categorization_prompt(target, categories),
                 environment={"WARDN_HUB_SKILL_ID": target.catalog_id},
             )
