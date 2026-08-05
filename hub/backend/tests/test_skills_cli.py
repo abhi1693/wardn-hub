@@ -132,6 +132,21 @@ description: Helps with weather APIs.
     }
 
 
+def test_parse_frontmatter_escapes_yaml_decoded_control_characters() -> None:
+    assert skills.parse_frontmatter(
+        """---
+name: "file-upload\\u001B"
+description: "Use shell.php\\0.jpg and \\u008F marker."
+---
+
+# File Upload
+"""
+    ) == {
+        "name": r"file-upload\u001B",
+        "description": r"Use shell.php\0.jpg and \u008F marker.",
+    }
+
+
 def test_read_skill_add_input_infers_fields(tmp_path: Path) -> None:
     skill_file = tmp_path / "SKILL.md"
     skill_file.write_text(
@@ -4034,6 +4049,32 @@ async def test_imported_skill_slug_is_stable_across_frontmatter_changes() -> Non
         import_subfolder="skills",
     )
     assert special.payload.install_url.endswith("/skills/my%20%23skill")
+
+
+def test_skill_import_metadata_preserves_visible_yaml_nul_escape() -> None:
+    repo = skills.GitHubRepository(
+        owner="uphiago",
+        repo="recon-skills",
+        url="https://github.com/uphiago/recon-skills",
+    )
+    root, name, slug, description = skills.skill_import_metadata(
+        repo=repo,
+        skill_path="redteam/hunt-file-upload/SKILL.md",
+        import_subfolder="",
+        skill_md=(
+            "---\n"
+            "name: hunt-file-upload\n"
+            'description: "Null byte payload: shell.php\\0.jpg."\n'
+            "---\n\n"
+            "# File Upload\n"
+        ),
+    )
+
+    assert root == "redteam/hunt-file-upload"
+    assert name == "hunt-file-upload"
+    assert slug == "redteam-hunt-file-upload"
+    assert description == r"Null byte payload: shell.php\0.jpg."
+    assert "\x00" not in description
 
 
 async def test_import_github_scans_same_subfolder_across_repositories(

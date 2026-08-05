@@ -802,12 +802,35 @@ async def validate_github_request(request: httpx.Request) -> None:
         raise GitHubSystemicError(f"refusing unsafe GitHub request URL: {request.url.host}")
 
 
+def is_unsupported_text_control(character: str) -> bool:
+    codepoint = ord(character)
+    return (codepoint < 32 and character not in "\t\n\r") or 127 <= codepoint <= 159
+
+
 def unsupported_text_control(contents: str) -> tuple[int, str] | None:
     for offset, character in enumerate(contents):
-        codepoint = ord(character)
-        if (codepoint < 32 and character not in "\t\n\r") or 127 <= codepoint <= 159:
+        if is_unsupported_text_control(character):
             return offset, character
     return None
+
+
+def escape_unsupported_text_control(character: str) -> str:
+    if character == "\0":
+        return r"\0"
+    if character == "\b":
+        return r"\b"
+    if character == "\f":
+        return r"\f"
+    return f"\\u{ord(character):04X}"
+
+
+def escape_unsupported_text_controls(contents: str) -> str:
+    return "".join(
+        escape_unsupported_text_control(character)
+        if is_unsupported_text_control(character)
+        else character
+        for character in contents
+    )
 
 
 def github_text_decode_error(error: UnicodeError) -> tuple[str, int]:
@@ -874,11 +897,14 @@ def parse_frontmatter(contents: str) -> dict[str, str]:
         return {}
     if not isinstance(value, dict):
         return {}
-    return {
-        str(key): item.strip()
-        for key, item in value.items()
-        if isinstance(key, str) and isinstance(item, str) and item.strip()
-    }
+    frontmatter: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            continue
+        normalized_item = escape_unsupported_text_controls(item).strip()
+        if normalized_item:
+            frontmatter[str(key)] = normalized_item
+    return frontmatter
 
 
 def slug_from_name(name: str) -> str:
