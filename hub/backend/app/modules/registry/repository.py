@@ -44,6 +44,13 @@ def normalize_registry_search_query(query: str) -> str:
     return " ".join(meaningful_tokens or tokens) or normalized_query.strip()
 
 
+def registry_identifier_search_query(query: str) -> str | None:
+    normalized_query = query.strip().casefold()
+    if "/" not in normalized_query:
+        return None
+    return normalized_query or None
+
+
 def visible_servers_query(include_deleted: bool) -> Select[tuple[RegistryServer]]:
     statement = select(RegistryServer)
     if not include_deleted:
@@ -213,6 +220,7 @@ async def list_servers(
         return [], ""
 
     statement = published_server_current_version_query(RegistryServer)
+    identifier_search = registry_identifier_search_query(search) if search else None
     normalized_search = normalize_registry_search_query(search) if search else ""
     if normalized_search:
         escaped_search = (
@@ -233,10 +241,13 @@ async def list_servers(
         text_match = or_(english_match, simple_match)
         normalized_name = func.lower(RegistryServer.name)
         normalized_title = func.lower(RegistryServer.title)
-        exact_match = or_(
+        exact_match_conditions = [
             normalized_name == normalized_search,
             normalized_title == normalized_search,
-        )
+        ]
+        if identifier_search and identifier_search != normalized_search:
+            exact_match_conditions.insert(0, normalized_name == identifier_search)
+        exact_match = or_(*exact_match_conditions)
         prefix_pattern = f"{escaped_search}%"
         prefix_match = or_(
             normalized_name.ilike(prefix_pattern, escape="\\"),

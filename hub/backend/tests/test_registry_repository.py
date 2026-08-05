@@ -113,6 +113,16 @@ def test_registry_search_normalization_drops_only_generic_catalog_terms() -> Non
     )
 
 
+def test_registry_identifier_search_query_preserves_exact_server_ids() -> None:
+    assert (
+        repository.registry_identifier_search_query(
+            "  io.github.GitHub/github-mcp-server  "
+        )
+        == "io.github.github/github-mcp-server"
+    )
+    assert repository.registry_identifier_search_query("ArgoCD MCP Server") is None
+
+
 @pytest.mark.asyncio
 async def test_list_servers_uses_indexed_ranked_search_with_normalized_terms() -> None:
     session = CaptureSession()
@@ -139,6 +149,32 @@ async def test_list_servers_uses_indexed_ranked_search_with_normalized_terms() -
     assert "mcp_servers.description ILIKE" not in statement
     assert "ORDER BY CASE" in statement
     assert "mcp_server_versions.published_at DESC" not in statement
+
+
+@pytest.mark.asyncio
+async def test_list_servers_prioritizes_exact_server_identifier_search() -> None:
+    session = CaptureSession()
+
+    await repository.list_servers(
+        session,
+        offset=0,
+        limit=25,
+        include_deleted=False,
+        search="io.github.github/github-mcp-server",
+    )
+
+    statement = sql(session.statements[0])
+    assert "lower(mcp_servers.name) = 'io.github.github/github-mcp-server'" in statement
+    assert (
+        "mcp_servers.search_vector @@ "
+        "websearch_to_tsquery('english'::regconfig, 'io github github github')"
+        in statement
+    )
+    assert (
+        "ORDER BY CASE WHEN "
+        "(lower(mcp_servers.name) = 'io.github.github/github-mcp-server'"
+        in statement
+    )
 
 
 @pytest.mark.asyncio
