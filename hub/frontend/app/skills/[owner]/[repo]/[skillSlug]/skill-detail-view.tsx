@@ -127,14 +127,17 @@ export async function SkillDetailView({
 }: SkillDetailViewProps) {
   const source = `${owner}/${repo}`;
   const id = `${source}/${skillSlug}`;
+  const activeTab = selectedFilePath === "SKILL.md" ? (initialTab ?? "overview") : "files";
+  const bundleLoaded = activeTab === "files";
+  const securityLoaded = activeTab === "security";
   const [skill, sourceSkills] = await Promise.all([
-    getPublicSkill(id, { contentHash: snapshotHash, includeBundle: true }).catch((error) => {
+    getPublicSkill(id, { contentHash: snapshotHash, includeBundle: bundleLoaded }).catch((error) => {
       if (isSkillsNotFoundError(error)) notFound();
       throw error;
     }),
     listPublicSkills({ limit: 100, source }).catch(() => []),
   ]);
-  const [audit, auditHistory] = skill.auditEnabled
+  const [audit, auditHistory] = skill.auditEnabled && securityLoaded
     ? await Promise.all([
         getPublicSkillAudit(id, snapshotHash),
         getPublicSkillAuditHistory(id),
@@ -250,7 +253,12 @@ export async function SkillDetailView({
                   {skill.auditEnabled ? (
                     <>
                       <span aria-hidden="true">·</span>
-                      <SkillAuditBadge audit={audit} />
+                      <SkillAuditBadge
+                        audit={audit}
+                        rank={audit ? undefined : listing?.auditRank}
+                        score={audit ? undefined : listing?.auditScore}
+                        status={audit ? undefined : listing?.auditStatus}
+                      />
                     </>
                   ) : null}
                   {contentHash ? (
@@ -316,35 +324,40 @@ export async function SkillDetailView({
       ) : null}
 
       <SkillDetailTabs
-        fileCount={files.length}
-        files={
-          <div className="skill-tab-files-layout">
-            <aside className="skill-files-desktop" aria-label="Bundle files">
-              <div className="skill-files-index">
-                <SkillFiles activePath={selectedFile.path} files={files} skillId={id} />
-              </div>
-            </aside>
-            <div className="skill-files-mobile">
-              <SkillFilesDisclosure
-                activePath={selectedFile.path}
-                files={files}
-                skillId={id}
-              />
-            </div>
-            <article className="skill-file-panel">
-              <header className="skill-file-header">
-                <SkillFileTypeIcon file={selectedFile} />
-                <h2>{selectedFile.path}</h2>
-                {selectedFile.executable ? (
-                  <span className="skill-file-executable">Executable</span>
-                ) : null}
-              </header>
-              <SkillFileContents file={selectedFile} />
-            </article>
-          </div>
-        }
-        initialTab={viewingSkillMd ? (initialTab ?? "overview") : "files"}
         auditEnabled={skill.auditEnabled}
+        fileCount={bundleLoaded ? files.length : undefined}
+        files={
+          bundleLoaded ? (
+            <div className="skill-tab-files-layout">
+              <aside className="skill-files-desktop" aria-label="Bundle files">
+                <div className="skill-files-index">
+                  <SkillFiles activePath={selectedFile.path} files={files} skillId={id} />
+                </div>
+              </aside>
+              <div className="skill-files-mobile">
+                <SkillFilesDisclosure
+                  activePath={selectedFile.path}
+                  files={files}
+                  skillId={id}
+                />
+              </div>
+              <article className="skill-file-panel">
+                <header className="skill-file-header">
+                  <SkillFileTypeIcon file={selectedFile} />
+                  <h2>{selectedFile.path}</h2>
+                  {selectedFile.executable ? (
+                    <span className="skill-file-executable">Executable</span>
+                  ) : null}
+                </header>
+                <SkillFileContents file={selectedFile} />
+              </article>
+            </div>
+          ) : (
+            <SkillTabLoading label="Loading bundle files" />
+          )
+        }
+        initialTab={activeTab}
+        key={`${activeTab}:${selectedFile.path}`}
         overview={
           <div className="skill-tab-overview-layout">
             <section className="skill-overview-summary" aria-labelledby="skill-summary-heading">
@@ -368,25 +381,38 @@ export async function SkillDetailView({
         }
         overviewPath={skillDetailPath(id)}
         security={skill.auditEnabled ? (
-          <div className="skill-tab-security-layout">
-            <div className="skill-security-intro">
-              <span className="registry-hero-eyebrow">Snapshot security</span>
-              <h2>Audit evidence for this exact bundle</h2>
-              <p>
-                The local Cisco scanner result applies to the content hash shown here. Review its
-                score deductions and findings before installation.
-              </p>
+          securityLoaded ? (
+            <div className="skill-tab-security-layout">
+              <div className="skill-security-intro">
+                <span className="registry-hero-eyebrow">Snapshot security</span>
+                <h2>Audit evidence for this exact bundle</h2>
+                <p>
+                  The local Cisco scanner result applies to the content hash shown here. Review its
+                  score deductions and findings before installation.
+                </p>
+              </div>
+              <SkillAuditPanel audit={audit} />
+              <SkillAuditHistory
+                history={displayedAuditHistory}
+                selectedContentHash={skill.hash ?? undefined}
+              />
             </div>
-            <SkillAuditPanel audit={audit} />
-            <SkillAuditHistory
-              history={displayedAuditHistory}
-              selectedContentHash={skill.hash ?? undefined}
-            />
-          </div>
+          ) : (
+            <SkillTabLoading label="Loading security evidence" />
+          )
         ) : undefined}
         skillId={id}
         skillSlug={skill.slug}
       />
     </main>
+  );
+}
+
+function SkillTabLoading({ label }: { label: string }) {
+  return (
+    <div aria-live="polite" className="skill-tab-loading" role="status">
+      <span aria-hidden="true" className="skill-loading-spinner" />
+      <span>{label}…</span>
+    </div>
   );
 }

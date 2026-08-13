@@ -13,6 +13,7 @@ import { resolveSiteUrl } from "@/lib/site";
 
 const API_PREFIX = "/api/v1";
 const DEFAULT_SKILLS_LIMIT = 100;
+const PUBLIC_SKILLS_REVALIDATE_SECONDS = 60;
 const PUBLIC_SKILL_COUNT_REVALIDATE_SECONDS = 3600;
 
 class SkillsRequestError extends Error {
@@ -85,10 +86,11 @@ async function skillsJsonRequest<T>(
     url.searchParams.set(key, String(value));
   }
 
+  const method = options?.method ?? "GET";
   const cacheOptions =
-    options?.revalidate === undefined
-      ? { cache: "no-store" as const }
-      : { next: { revalidate: options.revalidate } };
+    typeof window === "undefined" && method === "GET"
+      ? { next: { revalidate: options?.revalidate ?? PUBLIC_SKILLS_REVALIDATE_SECONDS } }
+      : { cache: "no-store" as const };
   const response = await fetch(url, {
     ...cacheOptions,
     body: options?.body === undefined ? undefined : JSON.stringify(options.body),
@@ -96,7 +98,7 @@ async function skillsJsonRequest<T>(
       Accept: "application/json",
       ...(options?.body === undefined ? {} : { "Content-Type": "application/json" }),
     },
-    method: options?.method ?? "GET",
+    method,
     signal: options?.signal,
   });
 

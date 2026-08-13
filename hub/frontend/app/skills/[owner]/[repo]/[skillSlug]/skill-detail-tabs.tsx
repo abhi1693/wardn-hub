@@ -379,7 +379,7 @@ export function SkillDetailTabs({
   skillSlug,
 }: {
   auditEnabled: boolean;
-  fileCount: number;
+  fileCount?: number;
   files: ReactNode;
   initialTab: SkillDetailTab;
   overview: ReactNode;
@@ -390,7 +390,7 @@ export function SkillDetailTabs({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<SkillDetailTab>(
-    initialTab === "security" && !security ? "overview" : initialTab,
+    initialTab === "security" && !auditEnabled ? "overview" : initialTab,
   );
   const tabs: Array<{
     icon: ReactNode;
@@ -406,9 +406,9 @@ export function SkillDetailTabs({
     {
       icon: <FolderTree aria-hidden="true" size={16} />,
       id: "files",
-      label: `Files ${fileCount}`,
+      label: fileCount === undefined ? "Files" : `Files ${fileCount}`,
     },
-    ...(security
+    ...(auditEnabled
       ? [
           {
             icon: <ShieldCheck aria-hidden="true" size={16} />,
