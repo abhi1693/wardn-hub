@@ -1,74 +1,26 @@
 name: Security Checks
-
 on:
-  pull_request:
+  pull_request: null
   push:
-    branches: [master]
-
+    branches:
+      - master
 permissions:
   contents: read
   pull-requests: read
-
 jobs:
-  secret-scan:
-    name: Secret Scan (gitleaks)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-
-  frontend-dependency-audit:
-    name: Dependency Audit (npm audit)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - name: Install deps (ignore scripts)
-        run: npm ci --ignore-scripts
-
-      - name: npm audit (high+; omit dev)
-        run: npm audit --audit-level=high --omit=dev
-
-  backend-dependency-audit:
-    name: Dependency Audit (pip-audit)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: hub/backend
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-
-      - name: Export dependencies
-        run: uv export --extra dev --format requirements-txt --no-hashes --no-emit-project --output-file requirements-audit.txt
-
-      - name: pip-audit (project dependencies)
-        run: uvx pip-audit --progress-spinner off -r requirements-audit.txt
+  security:
+    uses: abhi1693/actions/.github/workflows/security.yml@v1
+    with:
+      runs-on: ubuntu-latest
+      node-version: '24'
+      workflow-lint: false
+      secret-scan-scope: event
+      gitleaks-config: .gitleaks.toml
+      npm-audit: true
+      npm-severity: high
+      npm-include-dev: false
+      python-audit: true
+      python-directory: hub/backend
+      python-version: '3.13'
+      python-extras: '["dev"]'
+      python-include-dev: true

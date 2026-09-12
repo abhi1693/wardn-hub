@@ -30,8 +30,7 @@ RUN apt-get update \
   && groupadd --system --gid 1001 nodejs \
   && useradd --system --uid 1001 --gid nodejs --home /app nextjs
 
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=deps --chown=nextjs:nodejs /app/package.json /app/package-lock.json ./
+COPY --from=deps --chown=nextjs:nodejs /app ./
 COPY --chown=nextjs:nodejs hub/frontend ./hub/frontend
 
 RUN install -d -o nextjs -g nodejs /app/hub/frontend/.next \

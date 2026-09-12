@@ -1,87 +1,35 @@
 name: Tests
-
 on:
-  pull_request:
+  pull_request: null
   push:
-    branches: [master]
-
+    branches:
+      - master
 permissions:
   contents: read
-
 jobs:
   backend:
+    uses: abhi1693/actions/.github/workflows/python-ci.yml@v1
+    with:
+      runs-on: ubuntu-latest
+      timeout-minutes: 10
+      python-version: '3.13'
+      working-directory: hub/backend
+      enable-cache: true
+      sync-command: uv sync --locked --extra dev
+      lint-command: uv run ruff check .
+      test-command: uv run pytest
+      validation-command: bash ../../.github/scripts/check-openapi.sh
+      project-env: '{"WARDN_HUB_ENVIRONMENT":"test","WARDN_HUB_API_PREFIX":"/api/v1","WARDN_HUB_LOG_LEVEL":"INFO","WARDN_HUB_API_TOKEN_SECRET":"test-token-secret","WARDN_HUB_API_TOKEN_PREFIX":"wardn_hub","WARDN_HUB_SESSION_COOKIE_NAME":"wardn_hub_session","WARDN_HUB_SESSION_SECRET":"test-session-secret","WARDN_HUB_SESSION_TTL_SECONDS":"43200","WARDN_HUB_REGISTRY_PUBLIC_BASE_URL":"http://localhost:3000","WARDN_HUB_DATABASE_URL":"postgresql+asyncpg://user:pass@localhost:5432/wardn_hub"}'
     name: Backend
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: hub/backend
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-
-      - name: Install deps
-        run: uv sync --extra dev
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Run tests
-        run: uv run pytest
-
-      - name: Verify generated OpenAPI is current
-        env:
-          WARDN_HUB_ENVIRONMENT: test
-          WARDN_HUB_API_PREFIX: /api/v1
-          WARDN_HUB_LOG_LEVEL: INFO
-          WARDN_HUB_API_TOKEN_SECRET: test-token-secret
-          WARDN_HUB_API_TOKEN_PREFIX: wardn_hub
-          WARDN_HUB_SESSION_COOKIE_NAME: wardn_hub_session
-          WARDN_HUB_SESSION_SECRET: test-session-secret
-          WARDN_HUB_SESSION_TTL_SECONDS: "43200"
-          WARDN_HUB_REGISTRY_PUBLIC_BASE_URL: http://localhost:3000
-          WARDN_HUB_DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/wardn_hub
-        run: |
-          uv run python -m app.openapi --output ../frontend/openapi/wardn-hub-api.json
-          git diff --exit-code -- ../frontend/openapi/wardn-hub-api.json
-
   frontend:
+    uses: abhi1693/actions/.github/workflows/node-ci.yml@v1
+    with:
+      checks: '["generate", "lint", "build"]'
+      scripts: '{"generate": "ci:frontend-generate", "lint": "web:lint", "build": "web:build"}'
+      timeout-minutes: 10
+      runs-on: ubuntu-latest
+      node-version: '24'
+      cache-dependency-path: package-lock.json
+      ignore-scripts: true
+      generated-paths: '["hub/frontend/lib/api/generated"]'
     name: Frontend
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - name: Install deps (ignore scripts)
-        run: npm ci --ignore-scripts
-
-      - name: Verify generated API client is current
-        run: |
-          npm --workspace hub/frontend run api:generate
-          git diff --exit-code -- hub/frontend/lib/api/generated
-
-      - name: Check CLI package
-        run: npm run cli:check
-
-      - name: Lint
-        run: npm run web:lint
-
-      - name: Build
-        run: npm run web:build
