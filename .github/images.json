@@ -1,0 +1,42 @@
+{
+  "schema-version": 1,
+  "images": [
+    {
+      "id": "backend",
+      "image": "ghcr.io/abhi1693/wardn-hub-backend",
+      "context": "hub/backend",
+      "file": "hub/backend/Dockerfile",
+      "platforms": [
+        "linux/arm64"
+      ],
+      "build-args": {
+        "APP_VERSION": "{version}"
+      }
+    },
+    {
+      "id": "frontend",
+      "image": "ghcr.io/abhi1693/wardn-hub-frontend",
+      "context": ".",
+      "file": "hub/frontend/Dockerfile",
+      "platforms": [
+        "linux/arm64"
+      ],
+      "build-args": {
+        "APP_VERSION": "{version}"
+      }
+    },
+    {
+      "id": "codex-app-server",
+      "image": "ghcr.io/abhi1693/wardn-hub-codex-app-server",
+      "context": "hub/codex-app-server",
+      "file": "hub/codex-app-server/Dockerfile",
+      "platforms": [
+        "linux/arm64"
+      ],
+      "build-args": {
+        "APP_VERSION": "{version}",
+        "CODEX_VERSION": "0.144.0"
+      }
+    }
+  ]
+}

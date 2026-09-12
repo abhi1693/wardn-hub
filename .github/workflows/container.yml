@@ -1,82 +1,26 @@
 name: Container Image
-
 on:
   release:
-    types: [published]
+    types:
+      - published
   workflow_dispatch:
     inputs:
       version:
         description: Semver image version without a leading v
         required: true
-
 permissions:
   contents: read
   packages: write
-
 jobs:
-  backend:
-    name: Backend linux/arm64
-    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
-    uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
+  images:
+    uses: abhi1693/actions/.github/workflows/container-images.yml@34e92ba1eee6a47e9b10f13e2180114fc01b6027
     with:
-      runs-on: ubuntu-24.04-arm
-      image: ghcr.io/abhi1693/wardn-hub-backend
-      context: hub/backend
-      file: hub/backend/Dockerfile
-      platforms: linux/arm64
-      cache-scope: wardn-hub-backend-arm64
-      build-args: |
-        APP_VERSION=${{ github.event.release.tag_name || inputs.version }}
-      tags: |
-        type=semver,pattern={{version}}
-        type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
-      labels: |
-        org.opencontainers.image.source=https://github.com/abhi1693/wardn-hub
-        org.opencontainers.image.title=wardn-hub-backend
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
-
-  frontend:
-    name: Frontend linux/arm64
+      manifest: .github/images.json
+      publish: true
+      version: ${{ inputs.version }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
-    uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
-    with:
-      runs-on: ubuntu-24.04-arm
-      image: ghcr.io/abhi1693/wardn-hub-frontend
-      context: .
-      file: hub/frontend/Dockerfile
-      platforms: linux/arm64
-      cache-scope: wardn-hub-frontend-arm64
-      build-args: |
-        APP_VERSION=${{ github.event.release.tag_name || inputs.version }}
-      tags: |
-        type=semver,pattern={{version}}
-        type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
-      labels: |
-        org.opencontainers.image.source=https://github.com/abhi1693/wardn-hub
-        org.opencontainers.image.title=wardn-hub-frontend
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
-
-  codex-app-server:
-    name: Codex app-server linux/arm64
-    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
-    uses: abhi1693/actions/.github/workflows/docker-build-push.yml@master
-    with:
-      runs-on: ubuntu-24.04-arm
-      image: ghcr.io/abhi1693/wardn-hub-codex-app-server
-      context: hub/codex-app-server
-      file: hub/codex-app-server/Dockerfile
-      platforms: linux/arm64
-      cache-scope: wardn-hub-codex-app-server-arm64
-      build-args: |
-        APP_VERSION=${{ github.event.release.tag_name || inputs.version }}
-        CODEX_VERSION=0.144.0
-      tags: |
-        type=semver,pattern={{version}}
-        type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
-      labels: |
-        org.opencontainers.image.source=https://github.com/abhi1693/wardn-hub
-        org.opencontainers.image.title=wardn-hub-codex-app-server
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}

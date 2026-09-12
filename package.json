@@ -16,7 +16,8 @@
     "cli:test": "npm --workspace hub/cli test",
     "cli:check": "npm --workspace hub/cli run check",
     "backend:test": "cd hub/backend && uv run --extra dev pytest",
-    "backend:lint": "cd hub/backend && uv run --extra dev ruff check ."
+    "backend:lint": "cd hub/backend && uv run --extra dev ruff check .",
+    "ci:frontend-generate": "bash .github/scripts/frontend-generate.sh"
   },
   "overrides": {
     "@hono/node-server": "2.0.11",
