@@ -13,7 +13,7 @@ permissions:
   packages: write
 jobs:
   images:
-    uses: abhi1693/actions/.github/workflows/container-images.yml@34e92ba1eee6a47e9b10f13e2180114fc01b6027
+    uses: abhi1693/actions/.github/workflows/container-images.yml@2e99f8c45aeb1df32579cf960c3f0faab8ce16a5
     with:
       manifest: .github/images.json
       publish: true

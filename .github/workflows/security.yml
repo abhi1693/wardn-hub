@@ -9,11 +9,12 @@ permissions:
   pull-requests: read
 jobs:
   security:
-    uses: abhi1693/actions/.github/workflows/security.yml@34e92ba1eee6a47e9b10f13e2180114fc01b6027
+    uses: abhi1693/actions/.github/workflows/security.yml@2e99f8c45aeb1df32579cf960c3f0faab8ce16a5
     with:
       runs-on: ubuntu-latest
       node-version: '24'
       workflow-lint: false
+      secret-scan-scope: event
       gitleaks-config: .gitleaks.toml
       npm-audit: true
       npm-severity: high
