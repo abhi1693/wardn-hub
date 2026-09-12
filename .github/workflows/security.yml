@@ -9,7 +9,7 @@ permissions:
   pull-requests: read
 jobs:
   security:
-    uses: abhi1693/actions/.github/workflows/security.yml@2e99f8c45aeb1df32579cf960c3f0faab8ce16a5
+    uses: abhi1693/actions/.github/workflows/security.yml@59178a1adfb1547da9ba94fdd46962c510b8eb1f
     with:
       runs-on: ubuntu-latest
       node-version: '24'
