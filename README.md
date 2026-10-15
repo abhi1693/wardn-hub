@@ -38,6 +38,24 @@ path through the `@wardn-ai/skills` CLI.
 > servers, invoke registered server tools, install workspace MCP configuration,
 > or provide an execution gateway.
 
+## Sponsored by
+
+<table>
+  <tr>
+    <td width="180" align="center" valign="middle">
+      <a href="https://devfeed.tech">
+        <img src=".github/assets/devfeed-mark.png" alt="DevFeed logo" width="160" height="160" />
+      </a>
+    </td>
+    <td valign="middle">
+      <h3><a href="https://devfeed.tech">DevFeed</a></h3>
+      <p>A personal reading feed for developer news, tutorials, and releases. Follow your favorite sources and topics in one place.</p>
+      <p>Proud sponsor of Wardn Hub.</p>
+      <p><a href="https://devfeed.tech">Explore DevFeed →</a></p>
+    </td>
+  </tr>
+</table>
+
 ## Why Wardn Hub
 
 - **Useful discovery, not a link collection.** Compare installation metadata,
