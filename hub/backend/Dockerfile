@@ -11,7 +11,7 @@ COPY --from=uv /uv /uvx /bin/
 COPY --from=codex /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates curl git jq && \
+    apt-get install -y --no-install-recommends ca-certificates curl git jq libatomic1 libstdc++6 && \
     rm -rf /var/lib/apt/lists/* && \
     ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
 

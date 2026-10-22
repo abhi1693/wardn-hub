@@ -32,3 +32,6 @@ newest patched version within its own compatible API range. Refresh the retained
 PostCSS, Sharp and Hono security overrides within their existing major lines.
 The Python resolver retains protobuf 6 and python-dateutil 2 where the current
 OpenTelemetry and AWS SDK dependency ranges exclude newer major versions.
+
+Declare the C++/atomic runtime libraries explicitly in the backend image that
+copies the Node 26 executable from the official Node image.
