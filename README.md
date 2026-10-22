@@ -187,7 +187,7 @@ Core conventions:
 - API prefix: `/api/v1`
 - Settings prefix: `WARDN_HUB_`
 - Backend: Python 3.12+, FastAPI, SQLAlchemy, Alembic, PostgreSQL
-- Frontend: Node.js 24, Next.js 16, React 19
+- Frontend: Node.js 26.12.1, Next.js 16, React 19
 - API client: OpenAPI plus Orval
 - Container platform: `linux/arm64`
 
@@ -197,7 +197,7 @@ Core conventions:
 
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 24 and npm
+- Node.js 26.12.1 and npm
 - PostgreSQL
 
 The repository intentionally does not include a Docker Compose stack. Run
@@ -540,3 +540,10 @@ boundary and makes the catalog useful across runtimes and deployment models.
 ## License
 
 Wardn Hub is available under the [Apache License 2.0](LICENSE).
+
+## Next patch release
+
+Version 0.2.182 is prepared in [the changelog](CHANGELOG.md). Dependency updates
+include the complete package locks and the tested local brace-depth security fix.
+Use Node.js 26.12.1 for frontend/CLI checks. ESLint 9 and TypeScript 6 remain at
+the latest versions supported by the current lint plugins.

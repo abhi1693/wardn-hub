@@ -24,11 +24,11 @@ jobs:
   frontend:
     uses: abhi1693/actions/.github/workflows/node-ci.yml@v1
     with:
-      checks: '["generate", "lint", "build"]'
-      scripts: '{"generate": "ci:frontend-generate", "lint": "web:lint", "build": "web:build"}'
+      checks: '["generate", "lint", "test", "build"]'
+      scripts: '{"generate": "ci:frontend-generate", "lint": "web:lint", "test": "test:dependency-security", "build": "web:build"}'
       timeout-minutes: 10
       runs-on: ubuntu-latest
-      node-version: '24'
+      node-version: '26'
       cache-dependency-path: package-lock.json
       ignore-scripts: true
       generated-paths: '["hub/frontend/lib/api/generated"]'

@@ -596,7 +596,7 @@ def main(argv: list[str] | None = None) -> int:
             prog_name="python -m app.manage",
             standalone_mode=False,
         )
-    except click.exceptions.Exit as exc:
+    except typer.Exit as exc:
         return int(exc.exit_code)
     except click.exceptions.ClickException as exc:
         exc.show()

@@ -49,7 +49,8 @@ def configure_redis_sdk_settings(
     redis_settings.rate_limit_fail_closed = False
     redis_settings.rate_limit_emit_headers = True
     redis_settings.rate_limit_ietf_headers = False
-    redis_settings.rate_limit_trust_proxy = settings.public_rate_limit_trust_forwarded_for
+    # The SDK no longer parses proxy headers. Our middleware passes the explicit
+    # client identifier to RateLimitBackend.hit(), preserving the app policy.
     redis_settings.otel_enabled = settings.otel_enabled
     redis_settings.otel_redis_enabled = settings.otel_enabled
 

@@ -1,8 +1,8 @@
 FROM buildpack-deps:noble-curl
 
 ARG APP_VERSION=0.0.0
-ARG CODEX_VERSION=0.144.0
-ARG NODE_MAJOR=24
+ARG CODEX_VERSION=0.163.0
+ARG NODE_MAJOR=26
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CODEX_WORKDIR=/tmp/codex-work \
