@@ -35,3 +35,5 @@ OpenTelemetry and AWS SDK dependency ranges exclude newer major versions.
 
 Declare the C++/atomic runtime libraries explicitly in the backend image that
 copies the Node 26 executable from the official Node image.
+
+Pin the backend to the current official Python 3.13.17 Bookworm patch image.

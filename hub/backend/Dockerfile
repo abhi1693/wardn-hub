@@ -5,7 +5,7 @@ ARG CODEX_VERSION=0.163.0
 RUN npm install -g @openai/codex@${CODEX_VERSION} && \
     codex --version
 
-FROM python:3.13-slim-bookworm
+FROM python:3.13.17-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530
 
 COPY --from=uv /uv /uvx /bin/
 COPY --from=codex /usr/local/bin/node /usr/local/bin/node
