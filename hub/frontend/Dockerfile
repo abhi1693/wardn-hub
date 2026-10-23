@@ -22,7 +22,7 @@ ENV HOSTNAME=0.0.0.0 \
     PORT=3000 \
     WARDN_HUB_API_INTERNAL_BASE_URL=http://localhost:8000
 
-RUN apk upgrade --no-cache && apk add --no-cache ca-certificates \
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tar \
   && rm -rf /usr/local/lib/node_modules/npm /opt/yarn-* \
   && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
   && addgroup --system --gid 1001 nodejs \
