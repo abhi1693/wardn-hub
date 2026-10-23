@@ -30,6 +30,10 @@ authenticated Codex app-server initialization with no turn or tool requests.
 Failed synthetic runtime logs join the private image-report artifact. The app
 version comes from `hub/backend/pyproject.toml`; tool versions and distrusted CA
 fingerprints live in `scripts/runtime-policy.json`.
+Frontend smoke also executes Fleet's GNU tar archive/restore flags on disposable
+files with whitespace/newline names, dotfiles and a symlink. It verifies bytes,
+ownership and safe restored permissions; BusyBox tar cannot satisfy this runtime
+contract.
 
 The only secret classification is the exact upstream public Cisco scanner test
 constant in `trivy-secret.yaml`. There are no path/rule-family exclusions.

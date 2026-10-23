@@ -64,3 +64,8 @@ Require an immutable matching `vVERSION` tag and exact tag/HEAD/workflow-source
 commit equality before release or manual container publication. Add real local
 Git-history regression cases, and replace the retired local-publisher fallback
 with durable hosted-native workflow repair and an atomic Hub runtime cohort.
+
+Include GNU tar in the frontend runtime for Fleet's NUL-delimited build-cache
+archive and restore contract. Exercise the exact flags with unusual filenames,
+dotfiles, symlinks, byte comparisons and safe ownership/permission checks in the
+native PR and release image smoke.

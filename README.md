@@ -524,6 +524,10 @@ assets. The monorepo root is explicit for both Turbopack and standalone tracing.
 An external builder must call `/app/hub/frontend/docker-build-next.sh` instead
 of `npm run build`; coordinate that command with its image change. Keep its
 cache key sensitive to this script and `scripts/prepare-faro-sourcemaps.mjs`.
+The frontend runtime includes GNU tar for Fleet's NUL-delimited cache archive
+and restore options. Native PR and release smoke runs those exact flags as UID
+1001 with spaces, newlines, dotfiles and a symlink, and verifies restored bytes,
+ownership and umask-restricted permissions before publication.
 
 The backend installs its own package metadata in the final image so the
 OpenAPI version agrees with the release version. Only the Codex packages are

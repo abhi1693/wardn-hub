@@ -137,6 +137,67 @@ assert.equal(maps('.next/static').length, 0, 'Public source maps remain');
 assert.equal(fs.existsSync('.next/standalone/hub/frontend/server.js'), true);
 """
 
+FRONTEND_CACHE_ARCHIVE = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createHash } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
+const policy = JSON.parse(process.argv[1]);
+assert.equal(process.getuid(), policy.uids.frontend);
+assert.match(execFileSync('tar', ['--version'], { encoding: 'utf8' }), /GNU tar/);
+const root = fs.mkdtempSync('/tmp/wardn-hub-cache-archive-');
+try {
+  const source = path.join(root, 'source'), restored = path.join(root, 'restored');
+  const artifact = path.join(root, 'cache.tar.gz');
+  fs.mkdirSync(source); fs.mkdirSync(restored);
+  for (const directory of ['dir with space', '.hidden dir']) {
+    fs.mkdirSync(path.join(source, directory));
+    fs.chmodSync(path.join(source, directory), 0o777);
+  }
+  for (const [name, mode] of [
+    ['space file.txt', 0o640], ['line\nname.txt', 0o666], ['.hidden', 0o600],
+    ['--dash-file', 0o644], ['dir with space/executable', 0o755],
+    ['.hidden dir/data', 0o640],
+  ]) {
+    fs.writeFileSync(path.join(source, name), Buffer.from([0, 255, 10, 13, 65, 0]));
+    fs.chmodSync(path.join(source, name), mode);
+  }
+  fs.symlinkSync('dir with space/executable', path.join(source, 'relative link'));
+  // Keep these archive/restore options identical to the Fleet builder and init.
+  execFileSync('/bin/sh', ['-ec',
+    'umask 022; cd "$1"; find . -mindepth 1 -maxdepth 1 -print0 | tar --null --create --gzip --file "$2" --files-from -',
+    'cache-archive-smoke', source, artifact]);
+  execFileSync('/bin/sh', ['-ec',
+    'umask 022; tar --extract --gzip --file "$1" --directory "$2" --no-same-owner --no-same-permissions --delay-directory-restore --touch',
+    'cache-restore-smoke', artifact, restored]);
+  function snapshot(directory, relative = '') {
+    return fs.readdirSync(path.join(directory, relative)).sort().flatMap(name => {
+      const key = path.join(relative, name), full = path.join(directory, key);
+      const stat = fs.lstatSync(full);
+      const kind = stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ? 'directory' : 'file';
+      const entry = { path: key, kind, mode: stat.mode & 0o777, uid: stat.uid, gid: stat.gid };
+      if (kind === 'file') entry.sha256 = createHash('sha256').update(fs.readFileSync(full)).digest('hex');
+      if (kind === 'symlink') entry.target = fs.readlinkSync(full);
+      return [entry, ...(kind === 'directory' ? snapshot(directory, key) : [])];
+    });
+  }
+  const expected = snapshot(source), actual = snapshot(restored);
+  assert.equal(actual.length, expected.length);
+  for (let index = 0; index < expected.length; index++) {
+    const before = expected[index], after = actual[index];
+    assert.deepEqual({ path: after.path, kind: after.kind, sha256: after.sha256, target: after.target },
+      { path: before.path, kind: before.kind, sha256: before.sha256, target: before.target });
+    assert.equal(after.uid, process.getuid()); assert.equal(after.gid, process.getgid());
+    assert.equal(after.mode, before.kind === 'symlink' ? before.mode : before.mode & ~0o022);
+  }
+  assert.deepEqual(fs.readFileSync(path.join(restored, 'relative link')),
+    fs.readFileSync(path.join(source, 'dir with space/executable')));
+} finally {
+  fs.rmSync(root, { recursive: true, force: true });
+}
+"""
+
 CODEX_CHECK = r"""
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -372,6 +433,7 @@ def main():
                     raise RuntimeError("Secret scanning negative controls failed")
                 probe = ["python", "-c", BACKEND_HTTP, version]
             elif component == "frontend":
+                execute("node", "-e", FRONTEND_CACHE_ARCHIVE, json.dumps(POLICY))
                 probe = ["node", "--input-type=module", "-e", "const r=await fetch('http://127.0.0.1:3000'); if(r.status!==200)process.exit(1)"]
             else:
                 probe = ["node", "-e", "require('node:net').connect(41237,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
@@ -388,6 +450,8 @@ def main():
                 execute("node", "--input-type=commonjs", "-e",
                         "(async()=>{" + CODEX_CHECK + "})().catch(e=>{console.error(e.message);process.exit(1)})")
             print(f"PASS {component}: {target}, app {version}; offline native runtime and HTTP checks")
+            if component == "frontend":
+                print("PASS frontend cache archive/restore: GNU tar, NUL filenames, bytes, symlink and safe permissions")
         except (RuntimeError, subprocess.SubprocessError):
             # This container receives only generated synthetic configuration. Keep
             # its logs in the shared workflow's private reports, never print them.
