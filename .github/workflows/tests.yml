@@ -7,6 +7,16 @@ on:
 permissions:
   contents: read
 jobs:
+  release-identity:
+    name: Container release identity guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Exercise immutable-tag and source-version guards
+        run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
   backend:
     uses: abhi1693/actions/.github/workflows/python-ci.yml@v1
     with:
@@ -24,12 +34,28 @@ jobs:
   frontend:
     uses: abhi1693/actions/.github/workflows/node-ci.yml@v1
     with:
-      checks: '["generate", "lint", "build"]'
-      scripts: '{"generate": "ci:frontend-generate", "lint": "web:lint", "build": "web:build"}'
+      checks: '["generate", "lint", "test", "build"]'
+      scripts: '{"generate": "ci:frontend-generate", "lint": "web:lint", "test": "test:dependency-security", "build": "web:build"}'
       timeout-minutes: 10
       runs-on: ubuntu-latest
-      node-version: '24'
+      node-version: '26.12.1'
       cache-dependency-path: package-lock.json
       ignore-scripts: true
       generated-paths: '["hub/frontend/lib/api/generated"]'
     name: Frontend
+  images:
+    name: Native runtime images
+    if: github.event_name == 'pull_request'
+    uses: abhi1693/actions/.github/workflows/container-images.yml@v1
+    with:
+      manifest: .github/images.json
+      version-file: hub/backend/pyproject.toml
+      publish: false
+      changed-only: false
+      scan: true
+      scan-ignore-unfixed: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write

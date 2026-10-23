@@ -13,7 +13,7 @@ from app.core.config import get_settings
 
 SCANNER_DISTRIBUTION = "cisco-ai-skill-scanner"
 SCANNER_NAME = "Cisco AI Skill Scanner"
-SCANNER_VERSION = "2.0.12"
+SCANNER_VERSION = "2.3.1"
 SCANNER_POLICY = "wardn-balanced-expanded-context"
 SCANNER_POLICY_PATH = Path(__file__).with_name("scanner-policy.yaml")
 SCANNER_POLICY_CONTENT_HASH = hashlib.sha256(SCANNER_POLICY_PATH.read_bytes()).hexdigest()

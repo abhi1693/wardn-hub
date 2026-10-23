@@ -833,10 +833,12 @@ def test_cisco_llm_scanner_smoke_routes_through_codex_bridge(monkeypatch) -> Non
         def complete(self, prompt, *, output_schema=None) -> str:
             assert "SYSTEM MESSAGE:" in prompt
             assert output_schema is not None
+            assert "verdict" in output_schema["required"]
             return json.dumps(
                 {
                     "findings": [],
                     "overall_assessment": "No semantic threats found.",
+                    "verdict": "SAFE",
                     "primary_threats": [],
                 }
             )

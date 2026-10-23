@@ -1,18 +1,16 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-bookworm-slim AS base
+FROM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS base
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
 FROM base AS deps
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
 
 COPY package.json package-lock.json ./
+COPY packages/braces ./packages/braces
 COPY hub/frontend/package.json ./hub/frontend/package.json
 RUN npm ci --ignore-scripts
 
@@ -24,11 +22,11 @@ ENV HOSTNAME=0.0.0.0 \
     PORT=3000 \
     WARDN_HUB_API_INTERNAL_BASE_URL=http://localhost:8000
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && groupadd --system --gid 1001 nodejs \
-  && useradd --system --uid 1001 --gid nodejs --home /app nextjs
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates \
+  && rm -rf /usr/local/lib/node_modules/npm /opt/yarn-* \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+  && addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 --ingroup nodejs --home /app nextjs
 
 COPY --from=deps --chown=nextjs:nodejs /app ./
 COPY --chown=nextjs:nodejs hub/frontend ./hub/frontend

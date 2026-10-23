@@ -12,10 +12,30 @@ permissions:
   contents: read
   packages: write
 jobs:
+  release-identity:
+    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.release.tag_name, 'skills-v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the exact Hub release tag and source
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+        run: bash .github/scripts/check-container-release-identity.sh
   images:
+    needs: release-identity
     uses: abhi1693/actions/.github/workflows/container-images.yml@v1
     with:
       manifest: .github/images.json
+      version-file: hub/backend/pyproject.toml
+      scan: true
+      scan-ignore-unfixed: false
       publish: true
       version: ${{ inputs.version }}
     permissions:

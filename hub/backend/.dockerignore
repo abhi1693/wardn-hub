@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 .pytest_cache
+.cache
 .ruff_cache
 .venv
 __pycache__

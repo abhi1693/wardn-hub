@@ -17,17 +17,20 @@
     "cli:check": "npm --workspace hub/cli run check",
     "backend:test": "cd hub/backend && uv run --extra dev pytest",
     "backend:lint": "cd hub/backend && uv run --extra dev ruff check .",
-    "ci:frontend-generate": "bash .github/scripts/frontend-generate.sh"
+    "ci:frontend-generate": "bash .github/scripts/frontend-generate.sh",
+    "test:dependency-security": "node --test tests/braces.test.cjs"
   },
   "overrides": {
-    "@hono/node-server": "2.0.11",
-    "js-yaml": "4.3.2",
-    "nanoid": "3.3.18",
+    "@hono/node-server": "2.1.5",
     "next": {
-      "postcss": "8.5.23",
-      "sharp": "0.35.4"
+      "postcss": "8.5.31",
+      "sharp": "0.35.5"
     },
-    "postcss": "8.5.23",
-    "sharp": "0.35.4"
+    "postcss": "8.5.31",
+    "sharp": "0.35.5",
+    "braces": "$braces"
+  },
+  "devDependencies": {
+    "braces": "file:packages/braces"
   }
 }

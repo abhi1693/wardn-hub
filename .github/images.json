@@ -9,6 +9,7 @@
       "platforms": [
         "linux/arm64"
       ],
+      "smoke-script": "scripts/runtime-smoke.sh",
       "build-args": {
         "APP_VERSION": "{version}"
       }
@@ -21,6 +22,7 @@
       "platforms": [
         "linux/arm64"
       ],
+      "smoke-script": "scripts/runtime-smoke.sh",
       "build-args": {
         "APP_VERSION": "{version}"
       }
@@ -33,9 +35,10 @@
       "platforms": [
         "linux/arm64"
       ],
+      "smoke-script": "scripts/runtime-smoke.sh",
       "build-args": {
         "APP_VERSION": "{version}",
-        "CODEX_VERSION": "0.144.0"
+        "CODEX_VERSION": "0.163.0"
       }
     }
   ]

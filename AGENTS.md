@@ -47,6 +47,8 @@ npm exec --yes --prefix /tmp --package=@wardn-ai/skills -- \
 ## Release Checklist
 
 Use this checklist when asked to release Wardn Hub and related home-lab workloads.
+Source-preparation and pull-request tasks stop before publication or deployment
+unless those actions are explicitly authorized.
 
 1. Verify the Hub repo before release:
    - Run `npm run backend:lint`.
@@ -54,7 +56,8 @@ Use this checklist when asked to release Wardn Hub and related home-lab workload
    - Run `npm run web:lint`.
    - Run `npm run web:build`.
    - After changing the Hub version, run `npm run web:api:generate` before committing.
-   - Commit and push Hub changes to `master`.
+   - Require the source pull request and native image checks to pass before the
+     authorized merge to `master`.
 
 2. Verify the scoring app when the change depends on scoring behavior:
    - Work in `/home/asaharan/PycharmProjects/wardn-hub-scoring`.
@@ -67,15 +70,35 @@ Use this checklist when asked to release Wardn Hub and related home-lab workload
    - Create the next Hub GitHub release tag, for example `v0.2.x`.
    - Create the next scoring GitHub release tag, for example `v0.1.x`, when scoring changed.
    - Watch the container image workflow for Hub until it succeeds.
-   - For scoring, prefer the configured ARM runner. If GitHub refuses the ARM runner because of billing or runner availability, build and push the `linux/arm64` scoring image from the local system instead of changing the workflow to a standard runner.
+   - Use the available hosted native runners declared by the shared image
+     manifest. Missing runners or failed checks block publication. Repair the
+     permanent workflow through a reviewed source change; do not publish from a
+     local system or introduce a temporary runner fallback.
+   - Preserve existing immutable release tags and images. If released source
+     needs a repair, prepare the next patch version rather than moving its tag.
+   - Publish `@wardn-ai/skills` independently using its own package version and
+     matching `skills-vVERSION` tag, after verifying compatibility with the live
+     Hub API. Its version is not the Hub or scoring application version.
 
 4. Confirm images before updating workloads:
-   - Check the expected GHCR tags exist for Hub backend, Hub frontend, and scoring.
-   - Check the `registry.home/ghcr.io/...` mirror resolves those same tags.
+   - Verify Hub backend, frontend, and Codex app-server as one application-version
+     cohort, including native ARM64 availability and immutable digests. Scoring
+     retains its independently released version.
+   - Require strict scans including unfixed HIGH/CRITICAL findings, SBOMs, native
+     application smoke and release/source-version parity before promotion. Keep
+     signed GitHub artifact attestations enabled for this public Hub repository;
+     a private component's explicit capability setting does not apply here.
+   - Check the `registry.home/ghcr.io/...` mirror resolves the verified digests.
 
 5. Update home-lab workloads:
    - Work in `/home/asaharan/PycharmProjects/home-lab`.
-   - Update only Wardn Hub related image tags under `kubernetes/projects/applications/apps/wardn-hub`.
+   - Update all 14 Hub cohort image occurrences atomically under
+     `kubernetes/projects/applications/apps/wardn-hub`, including backend init
+     containers and paused worker/Codex deployments. Preserve paused replicas.
+   - Coordinate the frontend image with its dedicated `docker-build-next.sh`
+     command and consistent builder/restore/cleanup cache-key version. Do not
+     combine a new image runtime contract with the previous builder command.
+   - Update scoring's main image only to its separately verified release.
    - Run `kubectl kustomize kubernetes/projects/applications/apps/wardn-hub`.
    - Commit and push home-lab changes to `master`.
 
