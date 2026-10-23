@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
+const workspaceRoot = path.resolve(__dirname, "../..");
 const apiProxyTarget = process.env.WARDN_HUB_API_INTERNAL_BASE_URL ?? "http://localhost:8000";
 const privatePaths = [
   "account",
@@ -22,6 +24,10 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.1.101"],
   devIndicators: false,
   output: "standalone",
+  // Runtime containers keep HOME=/app. Explicitly include the hoisted workspace
+  // dependencies instead of relying on Next's home-directory boundary detection.
+  outputFileTracingRoot: workspaceRoot,
+  turbopack: { root: workspaceRoot },
   productionBrowserSourceMaps: true,
   async headers() {
     return [

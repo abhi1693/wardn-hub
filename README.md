@@ -514,11 +514,91 @@ docker build --tag wardn-hub-backend --file hub/backend/Dockerfile hub/backend
 docker build --tag wardn-hub-frontend --file hub/frontend/Dockerfile .
 ```
 
+Pass `--build-arg APP_VERSION=0.2.182` to build release-versioned local images.
+The frontend uses the pinned official Node.js 26.12.1 Alpine runtime as UID
+1001. Its source and locked dependencies remain in the image because the
+frontend builds with the environment provided at startup. Global npm/Yarn are
+excluded from that runtime: `hub/frontend/docker-build-next.sh` invokes the
+locked Next CLI, prepares private Faro source maps, and copies standalone
+assets. The monorepo root is explicit for both Turbopack and standalone tracing.
+An external builder must call `/app/hub/frontend/docker-build-next.sh` instead
+of `npm run build`; coordinate that command with its image change. Keep its
+cache key sensitive to this script and `scripts/prepare-faro-sourcemaps.mjs`.
+
+The backend installs its own package metadata in the final image so the
+OpenAPI version agrees with the release version. Only the Codex packages are
+copied from the Node build stage; its global npm is excluded. The backend
+scanner's ONNX wheel and the complete Codex distribution require a compatible
+glibc runtime. Do not move these images to Alpine by copying GNU libraries or
+removing scanner functionality.
+
+Backend and Codex app-server runtimes use pinned Ubuntu 26.04 LTS with signed
+Ubuntu security updates. The pinned official CPython 3.13.17 prefix and Node.js
+26.12.1 executable use Ubuntu's GNU libraries; no Debian OS libraries or package
+database are copied. These are headless, installer-free application images:
+Tkinter/IDLE/Turtle and pip/ensurepip are excluded. Non-GUI standard-library
+extensions remain, including TLS, compression, SQLite, DBM and ctypes. Backend
+environments use uv 0.13.5 with managed Python downloads disabled; use `uv venv`
+or `python -m venv --without-pip` for any additional disposable environment.
+The unused, unowned Pebble service-manager binary is removed from the Ubuntu
+base; application entrypoints use uvicorn or tini directly. Package inventory
+and strict security checks remain intact.
+
+The backend builds the locked Cisco scanner 2.3.1 source distribution through
+its upstream Hatch hook with pinned Go 1.27.3 and `GOTOOLCHAIN=local`. The SDK
+is mounted only while building; the runtime contains the verified native CEL
+helper and upstream generated integrity manifest. Offline smoke exercises true
+and false CEL results and invalid-input rejection, and verifies the patched
+toolchain, scanner version and exact upstream policy hashes.
+
+`trivy-secret.yaml` classifies one exact published Cisco 2.3.1 test constant from
+`credentials.known_test_values[0]`; it does not exempt paths, token families or
+vulnerabilities. The source distribution SHA256 is
+`9d7f7ee5503a2694aab6f963203ded30976bfb36282217d12713cffbbacbc4f9`.
+The four complete upstream policy hashes and fixture digest are pinned in
+`scripts/runtime-policy.json`. Updating them requires reviewing the upstream
+public fixture again. Trivy combines path/regex allowances as independent OR
+checks, so this configuration uses only an anchored exact-literal rule with the
+single nonword boundary Trivy includes in its match. Each ASCII character uses
+an exact `\xHH` regex escape, preserving the identical match while keeping the
+credential-shaped public test literal out of source configuration. Push
+protection remains enabled. The smoke checks the complete expected encoding
+against the hash-verified upstream value. Backend smoke also runs
+real Trivy negative controls: different Stripe-shaped values remain findings in
+the same policy filename and elsewhere, and another credential family remains
+blocked. Prefix, suffix and character mutations fail the allowance.
+
+All three images run native ARM64 checks on pull requests without publishing.
+Release builds repeat the same strict HIGH/CRITICAL scan, SBOM and offline
+application smoke before promotion; unfixed findings remain blocking. To run
+the smoke on a matching local architecture (backend also needs Trivy 0.76.0
+on PATH, or its verified executable selected through `TRIVY_BIN`):
+
+```sh
+CI_IMAGE_COMPONENT=frontend scripts/runtime-smoke.sh wardn-hub-frontend linux/amd64 0.2.182
+# Set CI_IMAGE_COMPONENT=backend or codex-app-server for the other images.
+```
+
+The smoke checks pinned tool versions, expected user IDs, system and Node trust
+roots, backend health and version/native imports, frontend HTTP/assets/image
+optimization and private source maps, and Codex's authenticated WebSocket
+initialization. They use fresh synthetic configuration with container networking
+disabled and make no database, registry, tool or model calls. See
+[repository automation](.github/README.md) for the workflow contract.
+
 Published GitHub releases produce `linux/arm64` images:
 
 - `ghcr.io/abhi1693/wardn-hub-backend:<version>`
 - `ghcr.io/abhi1693/wardn-hub-frontend:<version>`
 - `ghcr.io/abhi1693/wardn-hub-codex-app-server:<version>`
+
+Container publication, including manual dispatch, requires the exact
+`vVERSION` tag matching the backend package version. The resolved tag commit,
+checked-out HEAD and workflow source SHA must agree before images are built;
+moving branch dispatches fail closed. The three components retain one Hub
+version, while the `@wardn-ai/skills` npm CLI uses its own `skills-vVERSION`
+release and package version. Public Hub images retain signed GitHub artifact
+attestations in addition to their SBOMs and embedded BuildKit provenance.
 
 The backend listens on port `8080`; the frontend listens on port `3000`.
 Database migrations must complete before new backend code begins serving

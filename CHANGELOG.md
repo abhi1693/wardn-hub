@@ -36,4 +36,31 @@ OpenTelemetry and AWS SDK dependency ranges exclude newer major versions.
 Declare the C++/atomic runtime libraries explicitly in the backend image that
 copies the Node 26 executable from the official Node image.
 
-Pin the backend to the current official Python 3.13.17 Bookworm patch image.
+Pin the application runtime to the current official CPython 3.13.17 prefix.
+
+Require native ARM64 runtime smoke, release-version parity, SBOMs and strict
+runtime scans for all three images on pull requests and publication. Align the
+Codex app-server build argument with its 0.163.0 runtime. Install backend package
+metadata so its API reports the release version. Move the frontend to pinned
+Node 26.12.1 Alpine, replace its global npm build dependency with the dedicated
+Next/Faro entrypoint, and explicitly trace the workspace's hoisted dependencies.
+These checks remain blocking if a compatible runtime image has unfixed findings.
+
+Use the maintained Ubuntu 26.04 LTS GNU runtime for backend and Codex app-server,
+with official Python 3.13.17/Node 26.12.1 prefixes and signed Ubuntu libraries.
+Exclude unused GUI/installers and the base's unused unowned service manager;
+preserve non-GUI native modules and require their runtime linking/TLS checks.
+
+Build the locked Cisco scanner 2.3.1 CEL helper from its verified upstream source
+with pinned Go 1.27.3 and automatic toolchain downloads disabled. Keep the SDK
+out of the runtime; require native true/false CEL evaluation and invalid-input
+rejection alongside scanner, ONNX and API checks.
+
+Classify only the verified upstream scanner public test constant, retaining
+all vulnerability checks and secret-rule families. Pin policy bytes and require
+real secret-scanner negative controls in the native backend smoke.
+
+Require an immutable matching `vVERSION` tag and exact tag/HEAD/workflow-source
+commit equality before release or manual container publication. Add real local
+Git-history regression cases, and replace the retired local-publisher fallback
+with durable hosted-native workflow repair and an atomic Hub runtime cohort.
