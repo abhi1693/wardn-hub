@@ -28,7 +28,6 @@ const nextConfig: NextConfig = {
   // dependencies instead of relying on Next's home-directory boundary detection.
   outputFileTracingRoot: workspaceRoot,
   turbopack: { root: workspaceRoot },
-  productionBrowserSourceMaps: true,
   async headers() {
     return [
       {

@@ -483,7 +483,7 @@ npm run web:api:generate
 | `npm run backend:test` | Complete pytest suite |
 | `npm run cli:check` | Typecheck, tests, build, and npm package dry-run |
 | `npm run web:lint` | Frontend ESLint validation |
-| `npm run web:build` | Next.js production build and Faro source-map preparation |
+| `npm run web:build` | Next.js production build |
 | `npm run web:api:generate` | OpenAPI export and Orval client generation |
 
 CI repeats these checks and adds gitleaks, `npm audit`, and `pip-audit` security
@@ -519,11 +519,11 @@ The frontend uses the pinned official Node.js 26.12.1 Alpine runtime as UID
 1001. Its source and locked dependencies remain in the image because the
 frontend builds with the environment provided at startup. Global npm/Yarn are
 excluded from that runtime: `hub/frontend/docker-build-next.sh` invokes the
-locked Next CLI, prepares private Faro source maps, and copies standalone
+locked Next CLI and copies standalone
 assets. The monorepo root is explicit for both Turbopack and standalone tracing.
 An external builder must call `/app/hub/frontend/docker-build-next.sh` instead
 of `npm run build`; coordinate that command with its image change. Keep its
-cache key sensitive to this script and `scripts/prepare-faro-sourcemaps.mjs`.
+cache key sensitive to this script.
 The frontend runtime includes GNU tar for Fleet's NUL-delimited cache archive
 and restore options. Native PR and release smoke runs those exact flags as UID
 1001 with spaces, newlines, dotfiles and a symlink, and verifies restored bytes,
@@ -631,3 +631,10 @@ Version 0.2.182 is prepared in [the changelog](CHANGELOG.md). Dependency updates
 include the complete package locks and the tested local brace-depth security fix.
 Use Node.js 26.12.1 for frontend/CLI checks. ESLint 9 and TypeScript 6 remain at
 the latest versions supported by the current lint plugins.
+
+## Browser telemetry
+
+Faro browser monitoring has been retired. The browser SDK, collector credentials,
+private source-map endpoint, and source-map build stage are no longer required.
+Production browser source maps remain disabled. Existing application analytics
+and backend observability are preserved.
