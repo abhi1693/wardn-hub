@@ -7,7 +7,6 @@ import { DeferredGoogleAnalytics } from "@/components/analytics/deferred-google-
 import { SiteFooter } from "@/components/site-footer";
 import { siteConfig } from "@/lib/site";
 import { JsonLdScript, websiteJsonLd } from "@/lib/structured-data";
-import { FaroRum } from "./faro-rum";
 
 const defaultGoogleAnalyticsId = "G-GYYSYTBZTD";
 
@@ -73,7 +72,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <FaroRum />
         <JsonLdScript data={websiteJsonLd()} id="website-json-ld" />
         {children}
         <SiteFooter />

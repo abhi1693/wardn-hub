@@ -132,7 +132,6 @@ function maps(path) {
   return fs.readdirSync(path, { withFileTypes: true }).flatMap(x =>
     x.isDirectory() ? maps(path + '/' + x.name) : [path + '/' + x.name]).filter(x => x.endsWith('.map'));
 }
-assert(maps('.next/faro-sourcemaps').length > 0, 'No private Faro source maps');
 assert.equal(maps('.next/static').length, 0, 'Public source maps remain');
 assert.equal(fs.existsSync('.next/standalone/hub/frontend/server.js'), true);
 """
