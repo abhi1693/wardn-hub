@@ -514,7 +514,7 @@ docker build --tag wardn-hub-backend --file hub/backend/Dockerfile hub/backend
 docker build --tag wardn-hub-frontend --file hub/frontend/Dockerfile .
 ```
 
-Pass `--build-arg APP_VERSION=0.2.182` to build release-versioned local images.
+Pass `--build-arg APP_VERSION=0.2.183` to build release-versioned local images.
 The frontend uses the pinned official Node.js 26.12.1 Alpine runtime as UID
 1001. Its source and locked dependencies remain in the image because the
 frontend builds with the environment provided at startup. Global npm/Yarn are
@@ -579,7 +579,7 @@ the smoke on a matching local architecture (backend also needs Trivy 0.76.0
 on PATH, or its verified executable selected through `TRIVY_BIN`):
 
 ```sh
-CI_IMAGE_COMPONENT=frontend scripts/runtime-smoke.sh wardn-hub-frontend linux/amd64 0.2.182
+CI_IMAGE_COMPONENT=frontend scripts/runtime-smoke.sh wardn-hub-frontend linux/amd64 0.2.183
 # Set CI_IMAGE_COMPONENT=backend or codex-app-server for the other images.
 ```
 
@@ -627,7 +627,7 @@ Wardn Hub is available under the [Apache License 2.0](LICENSE).
 
 ## Next patch release
 
-Version 0.2.182 is prepared in [the changelog](CHANGELOG.md). Dependency updates
+Version 0.2.183 is prepared in [the changelog](CHANGELOG.md). Dependency updates
 include the complete package locks and the tested local brace-depth security fix.
 Use Node.js 26.12.1 for frontend/CLI checks. ESLint 9 and TypeScript 6 remain at
 the latest versions supported by the current lint plugins.
@@ -638,3 +638,5 @@ Faro browser monitoring has been retired. The browser SDK, collector credentials
 private source-map endpoint, and source-map build stage are no longer required.
 Production browser source maps remain disabled. Existing application analytics
 and backend observability are preserved.
+
+The runtime pins filelock 3.20.3, before the affected SQLite reader/writer lock was introduced, while preserving LiteLLM compatibility. Undici is overridden to the patched 7.30.1 line.

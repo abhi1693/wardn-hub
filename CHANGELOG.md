@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.183 — 2026-10-28
+
+- Remove retired Faro browser monitoring and private source-map collection.
+- Patch runtime HTTP-client dependencies and avoid the affected SQLite file-lock implementation.
+
 ## 0.2.182 (release preparation)
 
 - Update all runtime, development and optional package manifests and regenerate
