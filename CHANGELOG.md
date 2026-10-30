@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.184 — 2026-10-30
 
 - Refresh backend, frontend, CLI, and transitive dependency locks from the public registries.
 - Fix Python security CI by requiring filelock 4.2.4 and validating compatibility
