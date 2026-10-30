@@ -126,6 +126,23 @@ never fail or roll back an install.
 See the [Skills CLI guide](hub/cli/README.md) for lifecycle commands, custom
 targets, snapshot pinning, and telemetry controls.
 
+### Find Skills in Codex
+
+The [Find Skills plugin](plugins/find-skills/README.md) packages the discovery
+workflow for Codex's plugin marketplace. It searches Wardn Hub, reviews audits,
+and loads an exact skill snapshot as temporary guidance. Requires Node.js 22.20
+or later and npm; no Wardn account or token is needed.
+
+From a checkout containing the marketplace files:
+
+```sh
+codex plugin marketplace add .
+codex plugin add find-skills@wardn-hub
+```
+
+The [plugin guide](plugins/find-skills/README.md) covers Git-backed installation,
+existing standalone skills, data practices, and package maintenance.
+
 ## Connect through MCP
 
 Wardn Hub also exposes a read-only MCP endpoint for skill discovery:

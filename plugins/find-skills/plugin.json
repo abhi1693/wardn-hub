@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "find-skills",
+  "version": "0.1.0",
+  "description": "Discover and audit agent skills from Wardn Hub, then load a selected snapshot as temporary task guidance.",
+  "author": {
+    "name": "Wardn AI",
+    "url": "https://github.com/abhi1693/wardn-hub"
+  },
+  "homepage": "https://hub.wardnai.dev",
+  "repository": "https://github.com/abhi1693/wardn-hub",
+  "license": "Apache-2.0",
+  "keywords": ["skills", "discovery", "audit", "wardn"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Find Skills",
+        "shortDescription": "Find and audit agent skills",
+        "longDescription": "Search Wardn Hub for a skill that fits your task, check its security audit, and load the exact reviewed snapshot as temporary guidance. Persistent skill installation, updates, and removal require an explicit request. Uses the published Wardn Skills CLI and public Hub API.",
+        "developerName": "Wardn AI",
+        "category": "Developer Tools",
+        "capabilities": [],
+        "websiteURL": "https://hub.wardnai.dev",
+        "defaultPrompt": [
+          "Find a skill for reviewing code.",
+          "Find a skill for testing a web app."
+        ]
+      }
+    }
+  }
+}

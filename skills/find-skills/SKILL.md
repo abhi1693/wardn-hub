@@ -290,10 +290,16 @@ content hash when applicable, target agent or directory, and outcome so the user
 
 ## Maintain This Bootstrap Skill
 
-The Wardn ID for this skill is `abhi1693/wardn-hub/find-skills`. When explicitly asked to install or
-update it, audit and inspect that ID using the workflow above, then run the same hash-pinned
-`install` command. This handles first installation and managed replacement without a bundled
-self-installer. Do not overwrite an unrelated local `find-skills` directory.
+When this skill is bundled in a Codex plugin, use the host's plugin manager for explicitly
+requested updates or removal of that plugin. Do not modify the plugin directory or its cache,
+and do not install a second standalone copy to update the bundled skill. The Wardn CLI workflow
+above still applies to other skills the user explicitly asks to install.
+
+For a standalone Wardn-managed copy, the Wardn ID is `abhi1693/wardn-hub/find-skills`. When
+explicitly asked to install or update that copy, audit and inspect that ID using the workflow
+above, then run the same hash-pinned `install` command. This handles first installation and
+managed replacement without a bundled self-installer. Do not overwrite an unrelated local
+`find-skills` directory.
 
 ## No Match Or Installation
 

@@ -1,0 +1,20 @@
+{
+  "name": "wardn-hub",
+  "interface": {
+    "displayName": "Wardn Hub"
+  },
+  "plugins": [
+    {
+      "name": "find-skills",
+      "source": {
+        "source": "local",
+        "path": "./plugins/find-skills"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
