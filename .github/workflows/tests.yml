@@ -48,14 +48,13 @@ jobs:
       scripts: '{"generate": "ci:frontend-generate", "lint": "web:lint", "test": "test:dependency-security", "build": "web:build"}'
       timeout-minutes: 10
       runs-on: ubuntu-latest
-      node-version: '26.12.1'
+      node-version: '26.13.0'
       cache-dependency-path: package-lock.json
       ignore-scripts: true
       generated-paths: '["hub/frontend/lib/api/generated"]'
     name: Frontend
   images:
     name: Native runtime images
-    if: github.event_name == 'pull_request'
     uses: abhi1693/actions/.github/workflows/container-images.yml@v1
     with:
       manifest: .github/images.json

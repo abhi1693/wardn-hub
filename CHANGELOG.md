@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Refresh backend, frontend, CLI, and transitive dependency locks from the public registries.
+- Fix Python security CI by requiring filelock 4.2.4 and validating compatibility
+  with LiteLLM and Hugging Face despite LiteLLM's older metadata upper bound.
+- Upgrade Cisco Skill Scanner to 2.3.2 and synchronize the audit configuration.
+- Refresh immutable container bases: Python 3.13.18, Node.js 26.13.0, uv 0.13.6,
+  Codex 0.166.0, and current Ubuntu/Go image digests.
+- Run native, non-publishing image validation on pushes to master as well as PRs.
+- Retain ESLint 9.39.5 and frontend TypeScript 6.0.3 while their installed lint
+  plugins exclude newer majors; retain the local braces security patch.
+
 ## 0.2.183 — 2026-10-28
 
 - Remove retired Faro browser monitoring and private source-map collection.

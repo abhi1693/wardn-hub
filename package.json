@@ -26,10 +26,10 @@
   "overrides": {
     "@hono/node-server": "2.1.5",
     "next": {
-      "postcss": "8.5.31",
+      "postcss": "8.5.32",
       "sharp": "0.35.5"
     },
-    "postcss": "8.5.31",
+    "postcss": "8.5.32",
     "sharp": "0.35.5",
     "braces": "$braces",
     "undici": "^7.30.1"

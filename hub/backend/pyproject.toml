@@ -10,13 +10,13 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.20.1",
   "asyncpg>=0.32.0",
-  "cisco-ai-skill-scanner==2.3.1",
+  "cisco-ai-skill-scanner==2.3.2",
   "email-validator>=2.3.0",
-  "fastapi>=0.161.0",
+  "fastapi>=0.162.0",
   "ftfy>=6.3.1,<7",
   "greenlet>=3.5.6",
   "psycopg[binary]>=3.3.6",
-  "pydantic-settings>=2.16.1",
+  "pydantic-settings>=2.16.2",
   "prometheus-client>=0.26.0",
   "pwdlib[argon2]>=0.3.1",
   "python-json-logger>=4.2.0",
@@ -25,16 +25,16 @@ dependencies = [
   "uvicorn[standard]>=0.54.0",
   "joserfc>=1.7.7",
   "httpx>=0.28.1",
-  # LiteLLM requires filelock <4; avoid the SQLite RW-lock introduced in 3.20.4.
-  "filelock==3.20.3",
+  # filelock 4.2.1 fixes CVE-2026-112909 and CVE-2026-112910.
+  "filelock>=4.2.4,<5",
   "markdown-it-py>=4.2.0",
-  "opentelemetry-api>=1.45.1",
-  "opentelemetry-exporter-otlp-proto-http>=1.45.1",
-  "opentelemetry-instrumentation-fastapi>=0.66b1",
-  "opentelemetry-instrumentation-httpx>=0.66b1",
-  "opentelemetry-instrumentation-logging>=0.66b1",
-  "opentelemetry-instrumentation-sqlalchemy>=0.66b1",
-  "opentelemetry-sdk>=1.45.1",
+  "opentelemetry-api>=1.45.2",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+  "opentelemetry-instrumentation-fastapi>=0.66b2",
+  "opentelemetry-instrumentation-httpx>=0.66b2",
+  "opentelemetry-instrumentation-logging>=0.66b2",
+  "opentelemetry-instrumentation-sqlalchemy>=0.66b2",
+  "opentelemetry-sdk>=1.45.2",
   "pyyaml>=6.0.3",
   "fastapi-redis-sdk==0.9.1",
   "typer>=0.27.3",
@@ -43,9 +43,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "httpx>=0.28.1",
-  "pytest>=9.1.1",
-  "pytest-asyncio>=1.4.0",
-  "ruff>=0.17.2"
+  "pytest>=9.2.0",
+  "pytest-asyncio>=1.4.1",
+  "ruff>=0.17.3"
 ]
 
 [tool.setuptools.packages.find]
@@ -65,3 +65,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.uv]
+# LiteLLM still declares <4, but uses the compatible FileLock context-manager API.
+# Keep the patched release while retaining a single resolved lock implementation.
+override-dependencies = ["filelock>=4.2.4,<5"]

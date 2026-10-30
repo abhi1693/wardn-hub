@@ -1,9 +1,9 @@
 {
-  "node": "26.12.1",
-  "python": "3.13.17",
-  "codex": "0.163.0",
+  "node": "26.13.0",
+  "python": "3.13.18",
+  "codex": "0.166.0",
   "scanner_go": "1.27.3",
-  "next": "16.4.2",
+  "next": "16.4.3",
   "uids": {
     "backend": 999,
     "frontend": 1001,
@@ -13,11 +13,11 @@
     "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",
     "d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4"
   ],
-  "scanner_version": "2.3.1",
+  "scanner_version": "2.3.2",
   "scanner_public_policy_sha256": {
     "default_policy.yaml": "fb238c1ee002f0c7a3700254e7d4687783cf516d5e8adaaabf1b9b1619e6d9f9",
     "low_noise_policy.yaml": "5e64444acde7ecb60d1e163f29359f36cd3fedc877a98ca4d8e5a3199320bc31",
-    "permissive_policy.yaml": "a6a5cdd5dc40ee8f79eaa357c28402d51b60ab795b54fe8666896e3dd29a4e7e",
+    "permissive_policy.yaml": "9436e0b803c028a3e0910e39d836eba61bac6591015e8b3a00c004884a29c3df",
     "quiet_policy.yaml": "597dfee014796a13fd891f7e211e42ef94059beb2a60963a3c8c9ee0665bd1c4"
   },
   "scanner_public_fixture_sha256": "2cafc0970149a84f3b9e62eaf169f36f59907a3b3e31f7b82e68c69cd27f7326"

@@ -204,7 +204,7 @@ Core conventions:
 - API prefix: `/api/v1`
 - Settings prefix: `WARDN_HUB_`
 - Backend: Python 3.12+, FastAPI, SQLAlchemy, Alembic, PostgreSQL
-- Frontend: Node.js 26.12.1, Next.js 16, React 19
+- Frontend: Node.js 26.13.0, Next.js 16, React 19
 - API client: OpenAPI plus Orval
 - Container platform: `linux/arm64`
 
@@ -214,7 +214,7 @@ Core conventions:
 
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 26.12.1 and npm
+- Node.js 26.13.0 and npm
 - PostgreSQL
 
 The repository intentionally does not include a Docker Compose stack. Run
@@ -532,7 +532,7 @@ docker build --tag wardn-hub-frontend --file hub/frontend/Dockerfile .
 ```
 
 Pass `--build-arg APP_VERSION=0.2.183` to build release-versioned local images.
-The frontend uses the pinned official Node.js 26.12.1 Alpine runtime as UID
+The frontend uses the pinned official Node.js 26.13.0 Alpine runtime as UID
 1001. Its source and locked dependencies remain in the image because the
 frontend builds with the environment provided at startup. Global npm/Yarn are
 excluded from that runtime: `hub/frontend/docker-build-next.sh` invokes the
@@ -554,25 +554,25 @@ glibc runtime. Do not move these images to Alpine by copying GNU libraries or
 removing scanner functionality.
 
 Backend and Codex app-server runtimes use pinned Ubuntu 26.04 LTS with signed
-Ubuntu security updates. The pinned official CPython 3.13.17 prefix and Node.js
-26.12.1 executable use Ubuntu's GNU libraries; no Debian OS libraries or package
+Ubuntu security updates. The pinned official CPython 3.13.18 prefix and Node.js
+26.13.0 executable use Ubuntu's GNU libraries; no Debian OS libraries or package
 database are copied. These are headless, installer-free application images:
 Tkinter/IDLE/Turtle and pip/ensurepip are excluded. Non-GUI standard-library
 extensions remain, including TLS, compression, SQLite, DBM and ctypes. Backend
-environments use uv 0.13.5 with managed Python downloads disabled; use `uv venv`
+environments use uv 0.13.6 with managed Python downloads disabled; use `uv venv`
 or `python -m venv --without-pip` for any additional disposable environment.
 The unused, unowned Pebble service-manager binary is removed from the Ubuntu
 base; application entrypoints use uvicorn or tini directly. Package inventory
 and strict security checks remain intact.
 
-The backend builds the locked Cisco scanner 2.3.1 source distribution through
+The backend builds the locked Cisco scanner 2.3.2 source distribution through
 its upstream Hatch hook with pinned Go 1.27.3 and `GOTOOLCHAIN=local`. The SDK
 is mounted only while building; the runtime contains the verified native CEL
 helper and upstream generated integrity manifest. Offline smoke exercises true
 and false CEL results and invalid-input rejection, and verifies the patched
 toolchain, scanner version and exact upstream policy hashes.
 
-`trivy-secret.yaml` classifies one exact published Cisco 2.3.1 test constant from
+`trivy-secret.yaml` classifies one exact published Cisco 2.3.2 test constant from
 `credentials.known_test_values[0]`; it does not exempt paths, token families or
 vulnerabilities. The source distribution SHA256 is
 `9d7f7ee5503a2694aab6f963203ded30976bfb36282217d12713cffbbacbc4f9`.
@@ -646,7 +646,7 @@ Wardn Hub is available under the [Apache License 2.0](LICENSE).
 
 Version 0.2.183 is prepared in [the changelog](CHANGELOG.md). Dependency updates
 include the complete package locks and the tested local brace-depth security fix.
-Use Node.js 26.12.1 for frontend/CLI checks. ESLint 9 and TypeScript 6 remain at
+Use Node.js 26.13.0 for frontend/CLI checks. ESLint 9 and TypeScript 6 remain at
 the latest versions supported by the current lint plugins.
 
 ## Browser telemetry
@@ -656,4 +656,7 @@ private source-map endpoint, and source-map build stage are no longer required.
 Production browser source maps remain disabled. Existing application analytics
 and backend observability are preserved.
 
-The runtime pins filelock 3.20.3, before the affected SQLite reader/writer lock was introduced, while preserving LiteLLM compatibility. Undici is overridden to the patched 7.30.1 line.
+The runtime requires filelock 4.2.4 to fix CVE-2026-112909 and CVE-2026-112910.
+A uv override lifts LiteLLM's older `<4` metadata bound; the upstream FileLock
+context-manager API and downstream locking behavior are covered by validation.
+Undici remains on the patched 7.30.1 line used by the current tooling.

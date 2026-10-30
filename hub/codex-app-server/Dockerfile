@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.13.17-slim-trixie@sha256:fe14fd57a4c0361110eaa0c284112b189750bcb43fb04bb5d1ee7b7744027ccf AS python
+FROM python:3.13.18-slim-trixie@sha256:76baad6037690d6e8c4397fbcaef17bca6f19eecef822b708fe8fa3417d30bb5 AS python
 
 # Headless, installer-free application runtime. uv creates the project venv.
 RUN python -m pip uninstall --yes pip setuptools wheel && \
@@ -10,12 +10,12 @@ RUN python -m pip uninstall --yes pip setuptools wheel && \
       /usr/local/lib/python3.13/__pycache__/turtle.* \
       /usr/local/lib/python3.13/lib-dynload/_tkinter.* /usr/local/bin/idle*
 
-FROM node:26.12.1-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS codex
-ARG CODEX_VERSION=0.163.0
+FROM node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS codex
+ARG CODEX_VERSION=0.166.0
 RUN npm install --prefix /opt/codex --no-audit --no-fund "@openai/codex@${CODEX_VERSION}" && \
     /opt/codex/node_modules/.bin/codex --version
 
-FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS runtime-base
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS runtime-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 # Bootstrap HTTPS from the pinned official donor, then use Ubuntu's own signed

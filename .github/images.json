@@ -38,7 +38,7 @@
       "smoke-script": "scripts/runtime-smoke.sh",
       "build-args": {
         "APP_VERSION": "{version}",
-        "CODEX_VERSION": "0.163.0"
+        "CODEX_VERSION": "0.166.0"
       }
     }
   ]

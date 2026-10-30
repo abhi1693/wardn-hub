@@ -291,7 +291,7 @@ config = yaml.safe_load(sys.argv[2])
 assert set(config) == {'allow-rules'} and len(config['allow-rules']) == 1
 rule, = config['allow-rules']
 assert set(rule) == {'id', 'description', 'regex'}
-assert rule['id'] == 'cisco-skill-scanner-2-3-1-public-fixture'
+assert rule['id'] == 'cisco-skill-scanner-2-3-2-public-fixture'
 source = importlib.resources.files('skill_scanner').joinpath('data/default_policy.yaml')
 value = yaml.safe_load(source.read_text())['credentials']['known_test_values'][0]
 assert hashlib.sha256(value.encode()).hexdigest() == policy['scanner_public_fixture_sha256']

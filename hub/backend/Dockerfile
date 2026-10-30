@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.13.17-slim-trixie@sha256:fe14fd57a4c0361110eaa0c284112b189750bcb43fb04bb5d1ee7b7744027ccf AS python
+FROM python:3.13.18-slim-trixie@sha256:76baad6037690d6e8c4397fbcaef17bca6f19eecef822b708fe8fa3417d30bb5 AS python
 
 # Headless, installer-free application runtime. uv creates the project venv.
 RUN python -m pip uninstall --yes pip setuptools wheel && \
@@ -10,16 +10,16 @@ RUN python -m pip uninstall --yes pip setuptools wheel && \
       /usr/local/lib/python3.13/__pycache__/turtle.* \
       /usr/local/lib/python3.13/lib-dynload/_tkinter.* /usr/local/bin/idle*
 
-FROM node:26.12.1-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS codex
-ARG CODEX_VERSION=0.163.0
+FROM node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS codex
+ARG CODEX_VERSION=0.166.0
 RUN npm install --prefix /opt/codex --no-audit --no-fund "@openai/codex@${CODEX_VERSION}" && \
     /opt/codex/node_modules/.bin/codex --version
 
 # Build only the locked upstream CEL helper with a patched native Go toolchain.
 # The SDK is mounted during dependency installation and is absent at runtime.
-FROM golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
+FROM golang:1.27.3-trixie@sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27e8a3c0f3be17cc385 AS go
 
-FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS runtime-base
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS runtime-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 # Bootstrap HTTPS from the pinned official donor, then use Ubuntu's own signed
@@ -47,7 +47,7 @@ RUN ldconfig && \
     python --version && node --version && codex --version && \
     python -c 'import ssl,bz2,sqlite3,ctypes,dbm.gnu,dbm.ndbm,lzma,curses,readline,uuid,venv; from zoneinfo import ZoneInfo; assert ZoneInfo("UTC"); assert ssl.create_default_context().get_ca_certs()'
 
-FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 FROM runtime-base AS runner
 COPY --from=uv /uv /uvx /bin/
