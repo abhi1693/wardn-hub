@@ -407,8 +407,8 @@ def main():
                                     json.dumps(POLICY), config_path.read_text())
                 public_fixture = json.loads(validated.stdout)["public_fixture"]
                 trivy = os.environ.get("TRIVY_BIN") or shutil.which("trivy")
-                if not trivy or "Version: 0.76.0" not in command([trivy, "--version"]).stdout:
-                    raise RuntimeError("Trivy 0.76.0 is required for fixture-policy checks")
+                if not trivy or "Version: 0.76.2" not in command([trivy, "--version"]).stdout:
+                    raise RuntimeError("Trivy 0.76.2 is required for fixture-policy checks")
                 secret_fixtures = fixture / "secret-policy-fixtures"
                 secret_fixtures.mkdir(mode=0o700)
                 other = "sk_live_" + secrets.token_hex(16)
