@@ -21,6 +21,8 @@ FROM golang:1.27.3-trixie@sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27
 
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS runtime-base
 
+# Refresh Ubuntu security updates for each application release.
+ARG APP_VERSION=0.0.0
 ARG DEBIAN_FRONTEND=noninteractive
 # Bootstrap HTTPS from the pinned official donor, then use Ubuntu's own signed
 # CA and OS packages. Copy no Debian OS libraries or package databases.
