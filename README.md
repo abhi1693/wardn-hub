@@ -592,7 +592,7 @@ blocked. Prefix, suffix and character mutations fail the allowance.
 All three images run native ARM64 checks on pull requests without publishing.
 Release builds repeat the same strict HIGH/CRITICAL scan, SBOM and offline
 application smoke before promotion; unfixed findings remain blocking. To run
-the smoke on a matching local architecture (backend also needs Trivy 0.76.0
+the smoke on a matching local architecture (backend also needs Trivy 0.76.2
 on PATH, or its verified executable selected through `TRIVY_BIN`):
 
 ```sh
