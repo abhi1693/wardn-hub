@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.185 — 2026-11-27
+
+- Skip trace instrumentation when no trace destination is configured.
+
 ## 0.2.184 — 2026-10-30
 
 - Refresh backend, frontend, CLI, and transitive dependency locks from the public registries.

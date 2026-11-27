@@ -23,7 +23,7 @@ _sqlalchemy_instrumented = False
 
 def configure_telemetry(app: FastAPI | None = None) -> None:
     settings = get_settings()
-    if not settings.otel_enabled:
+    if not settings.otel_enabled or not settings.otel_exporter_otlp_traces_endpoint.strip():
         return
 
     _configure_tracer_provider(settings)
@@ -44,7 +44,7 @@ def _configure_tracer_provider(settings: Settings) -> None:
         sampler=ParentBased(TraceIdRatioBased(settings.otel_traces_sample_ratio)),
     )
     exporter = OTLPSpanExporter(
-        endpoint=settings.otel_exporter_otlp_traces_endpoint or None,
+        endpoint=settings.otel_exporter_otlp_traces_endpoint,
         headers=_parse_key_value_pairs(settings.otel_exporter_otlp_traces_headers) or None,
     )
     provider.add_span_processor(BatchSpanProcessor(exporter))
