@@ -17,6 +17,8 @@ RUN npm install --prefix /opt/codex --no-audit --no-fund "@openai/codex@${CODEX_
 
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS runtime-base
 
+# Refresh Ubuntu security updates for each application release.
+ARG APP_VERSION=0.0.0
 ARG DEBIAN_FRONTEND=noninteractive
 # Bootstrap HTTPS from the pinned official donor, then use Ubuntu's own signed
 # CA and OS packages. Copy no Debian OS libraries or package databases.

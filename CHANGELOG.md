@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.186 — 2026-11-27
+
+- Refresh Ubuntu security updates in the backend and Codex images with each application release.
+
 ## 0.2.185 — 2026-11-27
 
 - Skip trace instrumentation when no trace destination is configured.
